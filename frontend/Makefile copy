@@ -1,0 +1,85 @@
+# Next.js Project Makefile
+
+# Variables
+NODE_ENV ?= development
+PORT ?= 3000
+
+# Colors for terminal output
+CYAN = \033[0;36m
+GREEN = \033[0;32m
+YELLOW = \033[0;33m
+RED = \033[0;31m
+NC = \033[0m # No Color
+
+.PHONY: help install dev build start clean lint test
+
+# Default target
+help:
+	@echo "$(CYAN)Available commands:$(NC)"
+	@echo "$(GREEN)make install$(NC)   - Install project dependencies"
+	@echo "$(GREEN)make dev$(NC)       - Start development server"
+	@echo "$(GREEN)make build$(NC)     - Build production version"
+	@echo "$(GREEN)make start$(NC)     - Start production server"
+	@echo "$(GREEN)make clean$(NC)     - Clean build artifacts"
+	@echo "$(GREEN)make lint$(NC)      - Run linter"
+	@echo "$(GREEN)make test$(NC)      - Run tests"
+	@echo "$(GREEN)make format$(NC)    - Format code using Prettier"
+	@echo "$(GREEN)make type-check$(NC) - Run TypeScript type checking"
+
+# Install dependencies
+install:
+	@echo "$(YELLOW)Installing dependencies...$(NC)"
+	npm install
+	@echo "$(GREEN)Dependencies installed successfully!$(NC)"
+
+# Start development server
+dev:
+	@echo "$(YELLOW)Starting development server...$(NC)"
+	npm run dev -- -p $(PORT)
+
+# Build for production
+build:
+	@echo "$(YELLOW)Building for production...$(NC)"
+	npm run build
+	@echo "$(GREEN)Build completed successfully!$(NC)"
+
+# Start production server
+start:
+	@echo "$(YELLOW)Starting production server...$(NC)"
+	npm start -- -p $(PORT)
+
+# Clean build artifacts
+clean:
+	@echo "$(YELLOW)Cleaning build artifacts...$(NC)"
+	rm -rf .next
+	rm -rf out
+	rm -rf node_modules/.cache
+	@echo "$(GREEN)Clean completed!$(NC)"
+
+# Run linter
+lint:
+	@echo "$(YELLOW)Running linter...$(NC)"
+	npm run lint
+
+# Run tests
+test:
+	@echo "$(YELLOW)Running tests...$(NC)"
+	npm test
+
+# Format code using Prettier
+format:
+	@echo "$(YELLOW)Formatting code...$(NC)"
+	npm run format || npx prettier --write "src/**/*.{js,jsx,ts,tsx}"
+	@echo "$(GREEN)Code formatting completed!$(NC)"
+
+# Run TypeScript type checking
+type-check:
+	@echo "$(YELLOW)Running type check...$(NC)"
+	npm run type-check || npx tsc --noEmit
+	@echo "$(GREEN)Type check completed!$(NC)"
+
+# Development workflow
+dev-workflow: install lint type-check dev
+
+# Production deployment workflow
+deploy: install lint type-check test build start 

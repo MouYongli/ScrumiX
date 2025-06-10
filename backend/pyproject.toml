@@ -1,0 +1,42 @@
+[build-system]
+requires = ["setuptools", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "scrumix"
+version = "0.1.0"
+description = ""
+authors = [
+    { name="Mou Yongli", email="mou@scrumix.ai" },
+    { name="Er Jin", email="jin@scrumix.ai" }
+]
+dependencies = [
+    "fastapi",
+    "uvicorn",
+    "sqlalchemy",
+    "alembic",
+    "psycopg2-binary",
+    "pydantic",
+    "pydantic-settings",
+    "pydantic[email]",
+    "python-jose[cryptography]",
+    "passlib[bcrypt]",
+    "python-multipart",
+    "httpx",
+    "authlib",
+    "itsdangerous"
+]
+requires-python = ">=3.8"
+
+[project.optional-dependencies]
+dev = []
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["scrumix"]
+
+
+
