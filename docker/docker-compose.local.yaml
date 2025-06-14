@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  scrumix-postgres:
+    image: postgres:16
+    env_file:
+      - ./postgres/.env
+    ports:
+      - "5432:5432"
+    volumes:
+      - scrumix_postgres_data:/var/lib/postgresql/data
+  
+  scrumix-keycloak:
+    image: quay.io/keycloak/keycloak:latest
+    env_file:
+      - ./keycloak/.env
+    ports:
+      - "8080:8080"
+    volumes:
+      - scrumix_keycloak_data:/opt/keycloak/data
+    command: start-dev
+
+volumes:
+  scrumix_postgres_data:
+  scrumix_keycloak_data:
