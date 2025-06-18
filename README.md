@@ -1,6 +1,6 @@
 # ScrumiX
 
-**ScrumiX** is an AI-powered Scrum management system designed to enhance agile team productivity and collaboration through intelligent automation and smart assistance with AI agents. This is official repo by DBIS at RWTH Aachen University ([Yongli Mou*](mou@dbis.rwth-aachen.de), Er Jin, Kevin Ha, Maximilian Kissgen and Stefan Decker). 
+**ScrumiX** is an AI-powered Scrum management system designed to enhance agile team productivity and collaboration through intelligent automation and smart assistance with AI agents. 
 
 [![Python](https://img.shields.io/badge/Python-3.10%2B-blue.svg)](https://www.python.org/)
 [![Node.js](https://img.shields.io/badge/Node.js-23-blue.svg)](https://nodejs.org/)
@@ -135,5 +135,7 @@ docker-compose -f docker-compose.prod.yml up -d
 ## License
 This project is licensed under the Apache License 2.0. See the [LICENSE](LICENSE) file for details.
 
+## Contributors
+This is the official repo by DBIS at RWTH Aachen University ([Yongli Mou*](mou@dbis.rwth-aachen.de), Er Jin, Kevin Ha, Hanbin Chen, Maximilian Kissgen and Stefan Decker). 
 ---
 <!-- ---Developed by **Your Name** | [LinkedIn](https://linkedin.com/in/YOURNAME) | [Twitter](https://twitter.com/YOURHANDLE) -->
