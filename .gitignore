@@ -56,3 +56,4 @@ frontend/*tern-port
 frontend/*idea/
 frontend/*vscode/
 
+docker/*/.env
