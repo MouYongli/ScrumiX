@@ -136,6 +136,7 @@ docker-compose -f docker-compose.prod.yml up -d
 This project is licensed under the Apache License 2.0. See the [LICENSE](LICENSE) file for details.
 
 ## Contributors
+
 This is the official repo by DBIS at RWTH Aachen University ([Yongli Mou*](mou@dbis.rwth-aachen.de), Er Jin, Kevin Ha, Hanbin Chen, Maximilian Kissgen and Stefan Decker). 
 ---
 <!-- ---Developed by **Your Name** | [LinkedIn](https://linkedin.com/in/YOURNAME) | [Twitter](https://twitter.com/YOURHANDLE) -->
