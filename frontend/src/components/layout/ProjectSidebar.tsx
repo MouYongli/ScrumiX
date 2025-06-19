@@ -41,14 +41,9 @@ const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
       icon: LayoutDashboard,
     },
     {
-      name: 'Product Backlog',
+      name: 'Backlog Management',
       href: `/project/${projectId}/backlog`,
       icon: ListTodo,
-    },
-    {
-      name: 'Sprint Backlog',
-      href: `/project/${projectId}/sprint-backlog`,
-      icon: CheckSquare,
     },
     {
       name: 'Sprint Management',
