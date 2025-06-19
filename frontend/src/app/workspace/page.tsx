@@ -104,7 +104,7 @@ const recentActivities = [
   },
 ];
 
-const GlobalDashboardPage = () => {
+const MyWorkspacePage = () => {
   const getStatusBadge = (status: string) => {
     const statusStyles = {
       active: 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100',
@@ -133,10 +133,10 @@ const GlobalDashboardPage = () => {
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            Global Dashboard
+            My Workspace
           </h1>
           <p className="text-gray-600 dark:text-gray-400 mt-2">
-            Welcome back! This is your overview of all projects
+            Welcome back! This is your overview of all your assigned project tasks.
           </p>
         </div>
         <Link
@@ -341,4 +341,4 @@ const GlobalDashboardPage = () => {
   );
 };
 
-export default GlobalDashboardPage; 
+export default MyWorkspacePage; 

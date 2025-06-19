@@ -75,7 +75,7 @@ const LoginPage = () => {
       localStorage.setItem('token', mockToken);
       
       // Login successful, redirect to dashboard
-      router.push('/dashboard');
+      router.push('/workspace');
     } catch (error) {
       setErrors({ submit: 'Login failed, please check your credentials' });
     } finally {

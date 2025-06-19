@@ -96,7 +96,7 @@ const SignupPage = () => {
       localStorage.setItem('token', mockToken);
       
       // Signup successful, redirect to dashboard
-      router.push('/dashboard');
+      router.push('/workspace');
     } catch (error) {
       setErrors({ submit: 'Registration failed, please try again later' });
     } finally {

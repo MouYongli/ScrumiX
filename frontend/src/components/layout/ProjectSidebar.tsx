@@ -46,19 +46,14 @@ const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
       icon: ListTodo,
     },
     {
+      name: 'Sprint Backlog',
+      href: `/project/${projectId}/sprint-backlog`,
+      icon: CheckSquare,
+    },
+    {
       name: 'Sprint Management',
       href: `/project/${projectId}/sprint`,
       icon: Zap,
-    },
-    {
-      name: 'Task Board',
-      href: `/project/${projectId}/kanban`,
-      icon: Kanban,
-    },
-    {
-      name: 'User Stories',
-      href: `/project/${projectId}/story`,
-      icon: FileText,
     },
     {
       name: 'Meeting Management',
@@ -66,29 +61,9 @@ const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
       icon: Calendar,
     },
     {
-      name: 'Team Collaboration',
-      href: `/project/${projectId}/collaboration`,
-      icon: MessageSquare,
-    },
-    {
-      name: 'Time Tracking',
-      href: `/project/${projectId}/timetrack`,
-      icon: Clock,
-    },
-    {
-      name: 'Burndown Chart',
-      href: `/project/${projectId}/burndown`,
-      icon: TrendingDown,
-    },
-    {
-      name: 'Project Reports',
-      href: `/project/${projectId}/reports`,
-      icon: BarChart,
-    },
-    {
-      name: 'Version Control',
-      href: `/project/${projectId}/versions`,
-      icon: GitBranch,
+      name: 'Documentation',
+      href: `/project/${projectId}/documentation`,
+      icon: FileText,
     },
   ];
 

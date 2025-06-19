@@ -16,39 +16,14 @@ const GlobalSidebar: React.FC<GlobalSidebarProps> = ({ isCollapsed, onToggle }) 
 
   const navigationItems = [
     {
-      name: 'Dashboard',
-      href: '/dashboard',
+      name: 'My Workspace',
+      href: '/workspace',
       icon: LayoutDashboard,
     },
     {
       name: 'My Projects',
       href: '/project',
       icon: FolderOpen,
-    },
-    {
-      name: 'Recent',
-      href: '/recent',
-      icon: Clock,
-    },
-    {
-      name: 'Favorites',
-      href: '/favorites',
-      icon: Star,
-    },
-    {
-      name: 'Team Management',
-      href: '/teams',
-      icon: Users,
-    },
-    {
-      name: 'Analytics',
-      href: '/analytics',
-      icon: BarChart3,
-    },
-    {
-      name: 'Notifications',
-      href: '/notifications',
-      icon: Bell,
     },
   ];
 
@@ -74,8 +49,8 @@ const GlobalSidebar: React.FC<GlobalSidebarProps> = ({ isCollapsed, onToggle }) 
   ];
 
   const isActive = (path: string) => {
-    if (path === '/dashboard') {
-      return pathname === '/dashboard';
+    if (path === '/workspace') {
+      return pathname === '/workspace';
     }
     return pathname.startsWith(path);
   };

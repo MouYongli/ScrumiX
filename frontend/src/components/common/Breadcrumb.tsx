@@ -18,7 +18,7 @@ const Breadcrumb: React.FC<BreadcrumbProps> = ({ items }) => {
   return (
     <nav className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400 mb-6">
       <Link 
-        href="/dashboard" 
+        href="/workspace" 
         className="flex items-center hover:text-gray-900 dark:hover:text-white transition-colors"
       >
         <Home className="w-4 h-4" />
