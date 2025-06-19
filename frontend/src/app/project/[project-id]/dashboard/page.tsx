@@ -110,6 +110,24 @@ const upcomingMeetings = [
   },
 ];
 
+// Mock kanban data for sprint preview
+const sprintKanbanData = {
+  todo: [
+    { id: 1, title: 'Product Search API', priority: 'high', assignee: 'John D.', storyPoints: 5 },
+    { id: 2, title: 'Payment Gateway Integration', priority: 'medium', assignee: 'Sarah M.', storyPoints: 8 },
+    { id: 3, title: 'Email Notification System', priority: 'low', assignee: 'Mike R.', storyPoints: 3 },
+  ],
+  inProgress: [
+    { id: 4, title: 'User Authentication Flow', priority: 'high', assignee: 'Jane S.', storyPoints: 5 },
+    { id: 5, title: 'Shopping Cart Optimization', priority: 'medium', assignee: 'Tom W.', storyPoints: 3 },
+  ],
+  done: [
+    { id: 6, title: 'Database Schema Design', priority: 'high', assignee: 'Alex K.', storyPoints: 8 },
+    { id: 7, title: 'User Profile Components', priority: 'medium', assignee: 'Lisa P.', storyPoints: 5 },
+    { id: 8, title: 'API Documentation', priority: 'low', assignee: 'David L.', storyPoints: 2 },
+  ],
+};
+
 const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
   const resolvedParams = React.use(params);
   const projectId = resolvedParams['project-id'];
@@ -278,9 +296,114 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                 <p className="text-sm text-gray-700 dark:text-gray-400">Pending</p>
               </div>
             </div>
+            {/* Kanban Board Preview */}
+            <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
+              <div className="flex justify-between items-center mb-4">
+                <h4 className="font-medium text-gray-900 dark:text-white">Sprint Kanban Preview</h4>
+                <Link 
+                  href={`/project/${projectId}/kanban`}
+                  className="text-blue-600 hover:text-blue-700 flex items-center gap-1 text-sm"
+                >
+                  View Full Board
+                  <ArrowRight className="w-4 h-4" />
+                </Link>
+              </div>
+              
+              <div className="grid grid-cols-3 gap-4">
+                {/* To Do Column */}
+                <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-3">
+                  <h5 className="font-medium text-gray-700 dark:text-gray-300 text-sm mb-3 flex items-center gap-2">
+                    <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
+                    To Do ({sprintKanbanData.todo.length})
+                  </h5>
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {sprintKanbanData.todo.map((task) => (
+                      <div key={task.id} className="bg-white dark:bg-gray-800 p-3 rounded border border-gray-200 dark:border-gray-700 shadow-sm">
+                        <h6 className="text-xs font-medium text-gray-900 dark:text-white mb-1 line-clamp-2">
+                          {task.title}
+                        </h6>
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-gray-500 dark:text-gray-400">{task.assignee}</span>
+                          <div className="flex items-center gap-1">
+                            <span className={`px-1.5 py-0.5 rounded text-xs ${
+                              task.priority === 'high' ? 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400' :
+                              task.priority === 'medium' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-400' :
+                              'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400'
+                            }`}>
+                              {task.priority}
+                            </span>
+                            <span className="text-gray-500 dark:text-gray-400">{task.storyPoints}pt</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
 
+                {/* In Progress Column */}
+                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3">
+                  <h5 className="font-medium text-blue-700 dark:text-blue-300 text-sm mb-3 flex items-center gap-2">
+                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                    In Progress ({sprintKanbanData.inProgress.length})
+                  </h5>
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {sprintKanbanData.inProgress.map((task) => (
+                      <div key={task.id} className="bg-white dark:bg-gray-800 p-3 rounded border border-gray-200 dark:border-gray-700 shadow-sm">
+                        <h6 className="text-xs font-medium text-gray-900 dark:text-white mb-1 line-clamp-2">
+                          {task.title}
+                        </h6>
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-gray-500 dark:text-gray-400">{task.assignee}</span>
+                          <div className="flex items-center gap-1">
+                            <span className={`px-1.5 py-0.5 rounded text-xs ${
+                              task.priority === 'high' ? 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400' :
+                              task.priority === 'medium' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-400' :
+                              'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400'
+                            }`}>
+                              {task.priority}
+                            </span>
+                            <span className="text-gray-500 dark:text-gray-400">{task.storyPoints}pt</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Done Column */}
+                <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3">
+                  <h5 className="font-medium text-green-700 dark:text-green-300 text-sm mb-3 flex items-center gap-2">
+                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                    Done ({sprintKanbanData.done.length})
+                  </h5>
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {sprintKanbanData.done.map((task) => (
+                      <div key={task.id} className="bg-white dark:bg-gray-800 p-3 rounded border border-gray-200 dark:border-gray-700 shadow-sm">
+                        <h6 className="text-xs font-medium text-gray-900 dark:text-white mb-1 line-clamp-2">
+                          {task.title}
+                        </h6>
+                        <div className="flex justify-between items-center text-xs">
+                          <span className="text-gray-500 dark:text-gray-400">{task.assignee}</span>
+                          <div className="flex items-center gap-1">
+                            <span className={`px-1.5 py-0.5 rounded text-xs ${
+                              task.priority === 'high' ? 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400' :
+                              task.priority === 'medium' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-400' :
+                              'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400'
+                            }`}>
+                              {task.priority}
+                            </span>
+                            <span className="text-gray-500 dark:text-gray-400">{task.storyPoints}pt</span>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+            
             {/* Team Velocity */}
-            <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+            <div className="border-t border-gray-200 dark:border-gray-700 pt-4 mb-6">
               <h4 className="font-medium text-gray-900 dark:text-white mb-3">Team Velocity</h4>
               <div className="grid grid-cols-3 gap-4 text-sm">
                 <div>
