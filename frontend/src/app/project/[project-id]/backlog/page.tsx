@@ -146,7 +146,7 @@ const mockBacklogItems: BacklogItem[] = [
   {
     id: '006',
     title: 'Fix Search Performance Issue',
-    description: 'As a user, I want the product search to respond quickly so that I can find items efficiently without waiting.',
+    description: 'Searching for products is slow',
     acceptanceCriteria: [
       'Search results load within 2 seconds',
       'Auto-complete suggestions work properly',
