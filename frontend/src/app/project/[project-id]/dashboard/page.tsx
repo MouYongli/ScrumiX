@@ -955,22 +955,16 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                 📋 Manage Product Backlog
               </Link>
               <Link
-                href={`/project/${projectId}/stories`}
+                href={`/project/${projectId}/documentation`}
                 className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors"
               >
-                📝 Create User Stories
+                📝 View Documentation
               </Link>
               <Link
                 href={`/project/${projectId}/meeting`}
                 className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors"
               >
                 📅 Schedule Meeting
-              </Link>
-              <Link
-                href={`/project/${projectId}/reports`}
-                className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors"
-              >
-                📊 View Reports
               </Link>
             </div>
           </div>
