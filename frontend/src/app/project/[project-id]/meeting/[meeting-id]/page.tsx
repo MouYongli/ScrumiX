@@ -9,7 +9,8 @@ import {
   CheckCircle, Plus, Save, Play, Pause, 
   FileText, ListChecks, Mic, MicOff, Eye, 
   PenTool, Bold, Italic, Code, List,
-  Quote, Image, Link as LinkIcon, Hash, FolderOpen
+  Quote, Image, Link as LinkIcon, Hash, FolderOpen,
+  Trash2, X, Check, GripVertical
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
 
@@ -460,20 +461,596 @@ const ParticipantsDetailView = ({ participants, facilitator }: {
   );
 };
 
+// Confirmation Modal Component
+const ConfirmationModal = ({ 
+  isOpen, 
+  onClose, 
+  onConfirm, 
+  title, 
+  message, 
+  confirmText = 'Delete',
+  confirmStyle = 'bg-red-600 hover:bg-red-700'
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onConfirm: () => void;
+  title: string;
+  message: string;
+  confirmText?: string;
+  confirmStyle?: string;
+}) => {
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
+          {title}
+        </h3>
+        <p className="text-gray-600 dark:text-gray-400 mb-6">
+          {message}
+        </p>
+        <div className="flex justify-end gap-3">
+          <button
+            onClick={onClose}
+            className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            className={`px-4 py-2 text-white rounded-lg transition-colors ${confirmStyle}`}
+          >
+            {confirmText}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Agenda Item Modal Component
+const AgendaItemModal = ({ 
+  isOpen, 
+  onClose, 
+  onSave, 
+  item = null 
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onSave: (item: string) => void;
+  item?: string | null;
+}) => {
+  const [agendaItem, setAgendaItem] = useState(item || '');
+
+  const handleSave = () => {
+    if (agendaItem.trim()) {
+      onSave(agendaItem.trim());
+      setAgendaItem('');
+      onClose();
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+          {item ? 'Edit Agenda Item' : 'Add Agenda Item'}
+        </h3>
+        <textarea
+          value={agendaItem}
+          onChange={(e) => setAgendaItem(e.target.value)}
+          placeholder="Enter agenda item..."
+          className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg resize-none h-24
+                   bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+                   placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        />
+        <div className="flex justify-end gap-3 mt-4">
+          <button
+            onClick={() => {
+              setAgendaItem('');
+              onClose();
+            }}
+            className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={!agendaItem.trim()}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+          >
+            {item ? 'Update' : 'Add'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Action Item Modal Component
+const ActionItemModal = ({ 
+  isOpen, 
+  onClose, 
+  onSave, 
+  item = null 
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onSave: (item: any) => void;
+  item?: any;
+}) => {
+  const [actionItem, setActionItem] = useState({
+    title: item?.title || '',
+    assignee: item?.assignee || '',
+    dueDate: item?.dueDate || '',
+    priority: item?.priority || 'medium',
+    status: item?.status || 'pending'
+  });
+
+  const handleSave = () => {
+    if (actionItem.title.trim() && actionItem.assignee.trim()) {
+      onSave({
+        ...actionItem,
+        id: item?.id || `action-${Date.now()}`,
+        title: actionItem.title.trim(),
+        assignee: actionItem.assignee.trim()
+      });
+      setActionItem({
+        title: '',
+        assignee: '',
+        dueDate: '',
+        priority: 'medium',
+        status: 'pending'
+      });
+      onClose();
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
+        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+          {item ? 'Edit Action Item' : 'Add Action Item'}
+        </h3>
+        <div className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Title *
+            </label>
+            <input
+              type="text"
+              value={actionItem.title}
+              onChange={(e) => setActionItem({...actionItem, title: e.target.value})}
+              placeholder="Enter action item title..."
+              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg
+                       bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+                       placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Assignee *
+            </label>
+            <input
+              type="text"
+              value={actionItem.assignee}
+              onChange={(e) => setActionItem({...actionItem, assignee: e.target.value})}
+              placeholder="Enter assignee name..."
+              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg
+                       bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+                       placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Due Date
+            </label>
+            <input
+              type="date"
+              value={actionItem.dueDate}
+              onChange={(e) => setActionItem({...actionItem, dueDate: e.target.value})}
+              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg
+                       bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+                       focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Priority
+              </label>
+              <select
+                value={actionItem.priority}
+                onChange={(e) => setActionItem({...actionItem, priority: e.target.value})}
+                className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg
+                         bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+                         focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Status
+              </label>
+              <select
+                value={actionItem.status}
+                onChange={(e) => setActionItem({...actionItem, status: e.target.value})}
+                className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg
+                         bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+                         focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              >
+                <option value="pending">Pending</option>
+                <option value="in-progress">In Progress</option>
+                <option value="completed">Completed</option>
+              </select>
+            </div>
+          </div>
+        </div>
+        <div className="flex justify-end gap-3 mt-6">
+          <button
+            onClick={() => {
+              setActionItem({
+                title: '',
+                assignee: '',
+                dueDate: '',
+                priority: 'medium',
+                status: 'pending'
+              });
+              onClose();
+            }}
+            className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={!actionItem.title.trim() || !actionItem.assignee.trim()}
+            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+          >
+            {item ? 'Update' : 'Add'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const MeetingDetail = () => {
   const params = useParams();
   const projectId = params['project-id'] as string;
   const meetingId = params['meeting-id'] as string;
-  const meeting = getMeetingData(meetingId);
+  const initialMeeting = getMeetingData(meetingId);
   
+  // State management
+  const [meeting, setMeeting] = useState(initialMeeting);
   const [activeTab, setActiveTab] = useState('overview');
   const [isRecording, setIsRecording] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  const [newNote, setNewNote] = useState('');
-  const [newActionItem, setNewActionItem] = useState({ title: '', assignee: '' });
+  const [meetingNotes, setMeetingNotes] = useState('');
+  const [hasUnsavedNotes, setHasUnsavedNotes] = useState(false);
+  const [notesHistory, setNotesHistory] = useState<Array<{
+    id: string;
+    content: string;
+    timestamp: string;
+    author: string;
+    replies?: Array<{
+      id: string;
+      content: string;
+      timestamp: string;
+      author: string;
+    }>;
+  }>>(() => {
+    if ('notesHistory' in meeting && Array.isArray(meeting.notesHistory)) {
+      return meeting.notesHistory;
+    }
+    return [];
+  });
+  const [replyingTo, setReplyingTo] = useState<string | null>(null);
+  const [replyContent, setReplyContent] = useState('');
+
+  // Overview editing states
+  const [editingDescription, setEditingDescription] = useState(false);
+  const [editingObjectives, setEditingObjectives] = useState(false);
+  const [editingParticipants, setEditingParticipants] = useState(false);
+  const [tempDescription, setTempDescription] = useState(meeting.description);
+  const [tempObjectives, setTempObjectives] = useState([...(meeting.objectives || [])]);
+  const [tempParticipants, setTempParticipants] = useState([...meeting.participants]);
+  const [newObjective, setNewObjective] = useState('');
+  const [newParticipant, setNewParticipant] = useState('');
+
+  // Modal states
+  const [agendaModalOpen, setAgendaModalOpen] = useState(false);
+  const [actionModalOpen, setActionModalOpen] = useState(false);
+  const [confirmModalOpen, setConfirmModalOpen] = useState(false);
+  const [editingAgendaIndex, setEditingAgendaIndex] = useState<number | null>(null);
+  const [editingActionItem, setEditingActionItem] = useState<any>(null);
+  const [deleteTarget, setDeleteTarget] = useState<{type: string, index?: number, item?: any} | null>(null);
+
+  // Drag and drop states
+  const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
   const meetingType = meetingTypes[meeting.type as keyof typeof meetingTypes];
   const IconComponent = meetingType.icon;
+
+  // Handle notes change
+  const handleNotesChange = (value: string) => {
+    setMeetingNotes(value);
+    setHasUnsavedNotes(value !== (('notes' in meeting ? meeting.notes : '') || ''));
+  };
+
+  // Save meeting notes
+  const handleSaveNotes = () => {
+    if (!meetingNotes.trim()) return;
+    
+    const newNote = {
+      id: `note-${Date.now()}`,
+      content: meetingNotes.trim(),
+      timestamp: new Date().toLocaleString(),
+      author: 'Current User', // In real app, this would be the current user's name
+      replies: []
+    };
+    
+    const updateHistory = [...notesHistory, newNote];
+    setNotesHistory(updateHistory);
+    setMeeting(prev => ({...prev, notesHistory: updateHistory}));
+    setMeetingNotes(''); // Clear the input field after saving
+    setHasUnsavedNotes(false);
+    // Here you would typically make an API call to save the notes
+    console.log('Adding new meeting note:', newNote);
+  };
+
+  // Reply to a note
+  const handleReply = (noteId: string) => {
+    if (!replyContent.trim()) return;
+    
+    const newReply = {
+      id: `reply-${Date.now()}`,
+      content: replyContent.trim(),
+      timestamp: new Date().toLocaleString(),
+      author: 'Current User' // In real app, this would be the current user's name
+    };
+    
+    const updatedHistory = notesHistory.map(note => 
+      note.id === noteId 
+        ? { ...note, replies: [...(note.replies || []), newReply] }
+        : note
+    );
+    
+    setNotesHistory(updatedHistory);
+    setMeeting(prev => ({...prev, notesHistory: updatedHistory}));
+    setReplyContent('');
+    setReplyingTo(null);
+    // Here you would typically make an API call to save the reply
+    console.log('Adding reply to note:', noteId, newReply);
+  };
+
+  // Cancel reply
+  const handleCancelReply = () => {
+    setReplyingTo(null);
+    setReplyContent('');
+  };
+
+  // Overview editing handlers
+  const handleSaveDescription = () => {
+    setMeeting(prev => ({...prev, description: tempDescription}));
+    setEditingDescription(false);
+    console.log('Updated description:', tempDescription);
+  };
+
+  const handleCancelDescription = () => {
+    setTempDescription(meeting.description);
+    setEditingDescription(false);
+  };
+
+  const handleSaveObjectives = () => {
+    setMeeting(prev => ({...prev, objectives: tempObjectives}));
+    setEditingObjectives(false);
+    setNewObjective('');
+    console.log('Updated objectives:', tempObjectives);
+  };
+
+  const handleCancelObjectives = () => {
+    setTempObjectives([...(meeting.objectives || [])]);
+    setEditingObjectives(false);
+    setNewObjective('');
+  };
+
+  const handleAddObjective = () => {
+    if (newObjective.trim()) {
+      setTempObjectives([...tempObjectives, newObjective.trim()]);
+      setNewObjective('');
+    }
+  };
+
+  const handleRemoveObjective = (index: number) => {
+    setTempObjectives(tempObjectives.filter((_, i) => i !== index));
+  };
+
+  const handleSaveParticipants = () => {
+    setMeeting(prev => ({...prev, participants: tempParticipants}));
+    setEditingParticipants(false);
+    setNewParticipant('');
+    console.log('Updated participants:', tempParticipants);
+  };
+
+  const handleCancelParticipants = () => {
+    setTempParticipants([...meeting.participants]);
+    setEditingParticipants(false);
+    setNewParticipant('');
+  };
+
+  const handleAddParticipant = () => {
+    if (newParticipant.trim() && !tempParticipants.includes(newParticipant.trim())) {
+      setTempParticipants([...tempParticipants, newParticipant.trim()]);
+      setNewParticipant('');
+    }
+  };
+
+  const handleRemoveParticipant = (index: number) => {
+    setTempParticipants(tempParticipants.filter((_, i) => i !== index));
+  };
+
+  // Delete meeting notes
+  const handleDeleteNotes = () => {
+    setNotesHistory([]);
+    setMeeting(prev => ({...prev, notesHistory: []}));
+    setConfirmModalOpen(false);
+    setDeleteTarget(null);
+    // Here you would typically make an API call to delete the notes
+    console.log('Deleting all meeting notes');
+  };
+
+  // Agenda item handlers
+  const handleAddAgendaItem = (item: string) => {
+    setMeeting(prev => ({
+      ...prev,
+      agenda: [...prev.agenda, item]
+    }));
+    // Here you would typically make an API call
+    console.log('Adding agenda item:', item);
+  };
+
+  const handleEditAgendaItem = (item: string) => {
+    if (editingAgendaIndex !== null) {
+      setMeeting(prev => ({
+        ...prev,
+        agenda: prev.agenda.map((agendaItem, index) => 
+          index === editingAgendaIndex ? item : agendaItem
+        )
+      }));
+      setEditingAgendaIndex(null);
+      // Here you would typically make an API call
+      console.log('Editing agenda item:', item);
+    }
+  };
+
+  const handleDeleteAgendaItem = (index: number) => {
+    setMeeting(prev => ({
+      ...prev,
+      agenda: prev.agenda.filter((_, i) => i !== index)
+    }));
+    setConfirmModalOpen(false);
+    setDeleteTarget(null);
+    // Here you would typically make an API call
+    console.log('Deleting agenda item at index:', index);
+  };
+
+  // Drag and drop handlers
+  const handleDragStart = (e: React.DragEvent, index: number) => {
+    setDraggedIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/html', ''); // Required for Firefox
+  };
+
+  const handleDragOver = (e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverIndex(index);
+  };
+
+  const handleDragLeave = () => {
+    setDragOverIndex(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
+    e.preventDefault();
+    setDragOverIndex(null);
+    
+    if (draggedIndex === null || draggedIndex === dropIndex) {
+      setDraggedIndex(null);
+      return;
+    }
+
+    const newAgenda = [...meeting.agenda];
+    const draggedItem = newAgenda[draggedIndex];
+    
+    // Remove the dragged item
+    newAgenda.splice(draggedIndex, 1);
+    
+    // Insert at new position
+    const insertIndex = draggedIndex < dropIndex ? dropIndex - 1 : dropIndex;
+    newAgenda.splice(insertIndex, 0, draggedItem);
+
+    setMeeting(prev => ({
+      ...prev,
+      agenda: newAgenda
+    }));
+
+    setDraggedIndex(null);
+    // Here you would typically make an API call to save the new order
+    console.log('Reordered agenda items:', newAgenda);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedIndex(null);
+    setDragOverIndex(null);
+  };
+
+  // Action item handlers
+  const handleAddActionItem = (item: any) => {
+    const actionItems = ('actionItems' in meeting ? meeting.actionItems : []) || [];
+    setMeeting(prev => ({
+      ...prev,
+      actionItems: [...actionItems, item]
+    }));
+    // Here you would typically make an API call
+    console.log('Adding action item:', item);
+  };
+
+  const handleEditActionItem = (item: any) => {
+    const actionItems = ('actionItems' in meeting ? meeting.actionItems : []) || [];
+    setMeeting(prev => ({
+      ...prev,
+      actionItems: actionItems.map((action: any) => 
+        action.id === item.id ? item : action
+      )
+    }));
+    setEditingActionItem(null);
+    // Here you would typically make an API call
+    console.log('Editing action item:', item);
+  };
+
+  const handleDeleteActionItem = (itemId: string) => {
+    const actionItems = ('actionItems' in meeting ? meeting.actionItems : []) || [];
+    setMeeting(prev => ({
+      ...prev,
+      actionItems: actionItems.filter((action: any) => action.id !== itemId)
+    }));
+    setConfirmModalOpen(false);
+    setDeleteTarget(null);
+    // Here you would typically make an API call
+    console.log('Deleting action item:', itemId);
+  };
+
+  // Confirmation handlers
+  const handleConfirmDelete = () => {
+    if (deleteTarget) {
+      switch (deleteTarget.type) {
+        case 'agenda':
+          if (deleteTarget.index !== undefined) {
+            handleDeleteAgendaItem(deleteTarget.index);
+          }
+          break;
+        case 'action':
+          if (deleteTarget.item?.id) {
+            handleDeleteActionItem(deleteTarget.item.id);
+          }
+          break;
+        case 'notes':
+          handleDeleteNotes();
+          break;
+      }
+    }
+  };
 
   // Get project name
   const getProjectName = (id: string) => {
@@ -672,34 +1249,209 @@ const MeetingDetail = () => {
           {/* Overview tab */}
           {activeTab === 'overview' && (
             <div className="space-y-6">
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
-                  Meeting Description
-                </h3>
-                <p className="text-gray-600 dark:text-gray-400">
-                  {meeting.description}
-                </p>
+              {/* Meeting Description Section */}
+              <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
+                <div className="flex justify-between items-center mb-3">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    Meeting Description
+                  </h3>
+                  {meeting.status !== 'completed' && !editingDescription && (
+                    <button
+                      onClick={() => setEditingDescription(true)}
+                      className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+                {editingDescription ? (
+                  <div className="space-y-3">
+                    <textarea
+                      value={tempDescription}
+                      onChange={(e) => setTempDescription(e.target.value)}
+                      className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg resize-none h-24
+                               bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+                               placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      placeholder="Enter meeting description..."
+                    />
+                    <div className="flex justify-end gap-2">
+                      <button
+                        onClick={handleCancelDescription}
+                        className="px-3 py-1 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleSaveDescription}
+                        className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
+                      >
+                        Save
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-gray-600 dark:text-gray-400">
+                    {meeting.description}
+                  </p>
+                )}
               </div>
 
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
-                  Meeting Objectives
-                </h3>
-                <ul className="space-y-2">
-                  {meeting.objectives?.map((objective, index) => (
-                    <li key={index} className="flex items-center gap-2">
-                      <Target className="w-4 h-4 text-blue-500" />
-                      <span className="text-gray-600 dark:text-gray-400">{objective}</span>
-                    </li>
-                  ))}
-                </ul>
+              {/* Meeting Objectives Section */}
+              <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
+                <div className="flex justify-between items-center mb-3">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    Meeting Objectives
+                  </h3>
+                  {meeting.status !== 'completed' && !editingObjectives && (
+                    <button
+                      onClick={() => setEditingObjectives(true)}
+                      className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+                {editingObjectives ? (
+                  <div className="space-y-3">
+                    <div className="space-y-2">
+                      {tempObjectives.map((objective, index) => (
+                        <div key={index} className="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-700 rounded">
+                          <Target className="w-4 h-4 text-blue-500" />
+                          <span className="flex-1 text-gray-900 dark:text-white">{objective}</span>
+                          <button
+                            onClick={() => handleRemoveObjective(index)}
+                            className="text-red-500 hover:text-red-700 transition-colors"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={newObjective}
+                        onChange={(e) => setNewObjective(e.target.value)}
+                        placeholder="Add new objective..."
+                        className="flex-1 p-2 border border-gray-300 dark:border-gray-600 rounded
+                                 bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+                                 placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        onKeyPress={(e) => e.key === 'Enter' && handleAddObjective()}
+                      />
+                      <button
+                        onClick={handleAddObjective}
+                        disabled={!newObjective.trim()}
+                        className="px-3 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded transition-colors"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <button
+                        onClick={handleCancelObjectives}
+                        className="px-3 py-1 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleSaveObjectives}
+                        className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
+                      >
+                        Save
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <ul className="space-y-2">
+                    {meeting.objectives?.map((objective, index) => (
+                      <li key={index} className="flex items-center gap-2">
+                        <Target className="w-4 h-4 text-blue-500" />
+                        <span className="text-gray-600 dark:text-gray-400">{objective}</span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
               </div>
 
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-3">
-                  Participants
-                </h3>
-                <ParticipantsDetailView participants={meeting.participants} facilitator={meeting.facilitator} />
+              {/* Participants Section */}
+              <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
+                <div className="flex justify-between items-center mb-3">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    Participants
+                  </h3>
+                  {meeting.status !== 'completed' && !editingParticipants && (
+                    <button
+                      onClick={() => setEditingParticipants(true)}
+                      className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
+                    >
+                      <Edit className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+                {editingParticipants ? (
+                  <div className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {tempParticipants.map((participant, index) => (
+                        <div key={index} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                          <div className="w-8 h-8 bg-gray-200 dark:bg-gray-600 rounded-full flex items-center justify-center">
+                            <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
+                              {participant.charAt(0)}
+                            </span>
+                          </div>
+                          <div className="flex-1">
+                            <p className="font-medium text-gray-900 dark:text-white">{participant}</p>
+                            <p className="text-sm text-gray-600 dark:text-gray-400">
+                              {participant === meeting.facilitator ? 'Facilitator' : 'Participant'}
+                            </p>
+                          </div>
+                          {participant !== meeting.facilitator && (
+                            <button
+                              onClick={() => handleRemoveParticipant(index)}
+                              className="text-red-500 hover:text-red-700 transition-colors"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                    <div className="flex gap-2">
+                      <input
+                        type="text"
+                        value={newParticipant}
+                        onChange={(e) => setNewParticipant(e.target.value)}
+                        placeholder="Add participant name..."
+                        className="flex-1 p-2 border border-gray-300 dark:border-gray-600 rounded
+                                 bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+                                 placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                        onKeyPress={(e) => e.key === 'Enter' && handleAddParticipant()}
+                      />
+                      <button
+                        onClick={handleAddParticipant}
+                        disabled={!newParticipant.trim() || tempParticipants.includes(newParticipant.trim())}
+                        className="px-3 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded transition-colors"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <button
+                        onClick={handleCancelParticipants}
+                        className="px-3 py-1 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+                      >
+                        Cancel
+                      </button>
+                      <button
+                        onClick={handleSaveParticipants}
+                        className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
+                      >
+                        Save
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <ParticipantsDetailView participants={meeting.participants} facilitator={meeting.facilitator} />
+                )}
               </div>
             </div>
           )}
@@ -712,7 +1464,10 @@ const MeetingDetail = () => {
                   Meeting Agenda
                 </h3>
                 {meeting.status !== 'completed' && (
-                  <button className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm flex items-center gap-2">
+                  <button 
+                    onClick={() => setAgendaModalOpen(true)}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm flex items-center gap-2"
+                  >
                     <Plus className="w-4 h-4" />
                     Add Agenda
                   </button>
@@ -721,13 +1476,59 @@ const MeetingDetail = () => {
               
               <div className="space-y-3">
                 {meeting.agenda.map((item, index) => (
-                  <div key={index} className="flex items-center gap-3 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                  <div 
+                    key={index} 
+                    draggable={meeting.status !== 'completed'}
+                    onDragStart={(e) => handleDragStart(e, index)}
+                    onDragOver={(e) => handleDragOver(e, index)}
+                    onDragLeave={handleDragLeave}
+                    onDrop={(e) => handleDrop(e, index)}
+                    onDragEnd={handleDragEnd}
+                    className={`flex items-center gap-3 p-4 rounded-lg group transition-all duration-200 ${
+                      draggedIndex === index 
+                        ? 'bg-blue-100 dark:bg-blue-900 opacity-50 scale-95' 
+                        : dragOverIndex === index && draggedIndex !== null
+                        ? 'bg-blue-50 dark:bg-blue-800 border-2 border-blue-300 dark:border-blue-600'
+                        : 'bg-gray-50 dark:bg-gray-700'
+                    } ${
+                      meeting.status !== 'completed' ? 'cursor-move' : ''
+                    }`}
+                  >
+                    {meeting.status !== 'completed' && (
+                      <div className="flex items-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
+                        <GripVertical className="w-4 h-4" />
+                      </div>
+                    )}
                     <div className="w-6 h-6 bg-blue-100 dark:bg-blue-800 text-blue-600 dark:text-blue-300 rounded-full flex items-center justify-center text-sm font-medium">
                       {index + 1}
                     </div>
                     <span className="flex-1 text-gray-900 dark:text-white">{item}</span>
                     {meeting.status === 'completed' && (
                       <CheckCircle className="w-5 h-5 text-green-500" />
+                    )}
+                    {meeting.status !== 'completed' && (
+                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => {
+                            setEditingAgendaIndex(index);
+                            setAgendaModalOpen(true);
+                          }}
+                          className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                          title="Edit agenda item"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setDeleteTarget({type: 'agenda', index});
+                            setConfirmModalOpen(true);
+                          }}
+                          className="p-1 text-gray-400 hover:text-red-600 transition-colors"
+                          title="Delete agenda item"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     )}
                   </div>
                 ))}
@@ -737,43 +1538,178 @@ const MeetingDetail = () => {
 
           {/* Meeting notes tab */}
           {activeTab === 'notes' && (
-            <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  Meeting Notes
-                </h3>
-                {meeting.status !== 'completed' && (
-                  <button className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm flex items-center gap-2">
-                    <Save className="w-4 h-4" />
-                    Save Notes
-                  </button>
-                )}
-              </div>
+            <div className="space-y-6">
+              {/* Meeting Notes History Section */}
+              {notesHistory.length > 0 && (
+                <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+                  <div className="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                      <MessageSquare className="w-5 h-5" />
+                      Meeting Notes History ({notesHistory.length})
+                    </h3>
+                    <div className="flex items-center gap-3">
+                      {meeting.status !== 'completed' && (
+                        <button 
+                          onClick={() => {
+                            setDeleteTarget({type: 'notes'});
+                            setConfirmModalOpen(true);
+                          }}
+                          className="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                          Clear All Notes
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                  <div className="px-6 py-4 space-y-4 max-h-96 overflow-y-auto">
+                    {notesHistory.map((note) => (
+                      <div key={note.id} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                        {/* Main note */}
+                        <div className="flex items-start gap-3">
+                          <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
+                            {note.author.charAt(0)}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2 mb-1">
+                              <span className="font-medium text-gray-900 dark:text-white">{note.author}</span>
+                              <span className="text-sm text-gray-500 dark:text-gray-400">{note.timestamp}</span>
+                            </div>
+                            <div className="prose prose-sm max-w-none dark:prose-invert">
+                              <MarkdownEditor value={note.content} readonly={true} />
+                            </div>
+                            {meeting.status !== 'completed' && (
+                              <button
+                                onClick={() => setReplyingTo(note.id)}
+                                className="mt-2 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
+                              >
+                                Reply
+                              </button>
+                            )}
+                          </div>
+                        </div>
 
-              {'notes' in meeting && meeting.notes ? (
-                <MarkdownEditor 
-                  value={meeting.notes} 
-                  readonly={meeting.status === 'completed'} 
-                  onChange={(value) => setNewNote(value)}
-                />
-              ) : (
-                <MarkdownEditor 
-                  value={newNote} 
-                  onChange={(value) => setNewNote(value)}
-                />
+                        {/* Replies */}
+                        {note.replies && note.replies.length > 0 && (
+                          <div className="mt-4 ml-11 space-y-3">
+                            {note.replies.map((reply) => (
+                              <div key={reply.id} className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
+                                <div className="flex items-start gap-3">
+                                  <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center text-white text-xs font-medium">
+                                    {reply.author.charAt(0)}
+                                  </div>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="flex items-center gap-2 mb-1">
+                                      <span className="font-medium text-gray-900 dark:text-white text-sm">{reply.author}</span>
+                                      <span className="text-xs text-gray-500 dark:text-gray-400">{reply.timestamp}</span>
+                                    </div>
+                                    <div className="prose prose-sm max-w-none dark:prose-invert">
+                                      <MarkdownEditor value={reply.content} readonly={true} />
+                                    </div>
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Reply input */}
+                        {replyingTo === note.id && meeting.status !== 'completed' && (
+                          <div className="mt-4 ml-11">
+                            <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600 p-3">
+                              <textarea
+                                value={replyContent}
+                                onChange={(e) => setReplyContent(e.target.value)}
+                                placeholder="Write a reply..."
+                                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded resize-none
+                                         bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+                                         placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                rows={3}
+                              />
+                              <div className="flex justify-end gap-2 mt-2">
+                                <button
+                                  onClick={handleCancelReply}
+                                  className="px-3 py-1 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+                                >
+                                  Cancel
+                                </button>
+                                <button
+                                  onClick={() => handleReply(note.id)}
+                                  disabled={!replyContent.trim()}
+                                  className="px-3 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white text-sm rounded transition-colors"
+                                >
+                                  Reply
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </div>
               )}
 
+              {/* Notes Editor Section */}
+              <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg" data-notes-editor>
+                <div className="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <Edit className="w-5 h-5" />
+                    {meeting.status === 'completed' ? 'Meeting Notes' : 'Write Meeting Notes'}
+                  </h3>
+                  <div className="flex items-center gap-2">
+                    {hasUnsavedNotes && (
+                      <span className="text-sm text-orange-600 dark:text-orange-400 flex items-center gap-1">
+                        <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+                        Unsaved changes
+                      </span>
+                    )}
+                    {meeting.status !== 'completed' && (
+                      <button 
+                        onClick={handleSaveNotes}
+                        disabled={!meetingNotes.trim()}
+                        className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors"
+                      >
+                        <Save className="w-4 h-4" />
+                        Add Note
+                      </button>
+                    )}
+                  </div>
+                </div>
+                <div className="p-6">
+                  {meeting.status === 'completed' ? (
+                    <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                      Meeting is completed. No new notes can be added.
+                    </div>
+                  ) : (
+                    <MarkdownEditor 
+                      value={meetingNotes} 
+                      readonly={false} 
+                      onChange={handleNotesChange}
+                    />
+                  )}
+                </div>
+              </div>
+
+              {/* Meeting Decisions Section */}
               {'decisions' in meeting && meeting.decisions && (
-                <div>
-                  <h4 className="font-semibold text-gray-900 dark:text-white mb-3">Meeting Decisions</h4>
-                  <ul className="space-y-2">
-                    {meeting.decisions.map((decision: string, index: number) => (
-                      <li key={index} className="flex items-center gap-2">
-                        <CheckCircle className="w-4 h-4 text-green-500" />
-                        <span className="text-gray-600 dark:text-gray-400">{decision}</span>
-                      </li>
-                    ))}
-                  </ul>
+                <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+                  <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                    <h4 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                      <CheckCircle className="w-5 h-5 text-green-500" />
+                      Meeting Decisions
+                    </h4>
+                  </div>
+                  <div className="px-6 py-4">
+                    <ul className="space-y-3">
+                      {meeting.decisions.map((decision: string, index: number) => (
+                        <li key={index} className="flex items-start gap-3 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
+                          <CheckCircle className="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
+                          <span className="text-gray-700 dark:text-gray-300 leading-relaxed">{decision}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
                 </div>
               )}
             </div>
@@ -786,29 +1722,64 @@ const MeetingDetail = () => {
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                   Action Items
                 </h3>
-                <button className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm flex items-center gap-2">
+                <button 
+                  onClick={() => setActionModalOpen(true)}
+                  className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm flex items-center gap-2"
+                >
                   <Plus className="w-4 h-4" />
                   Add Action Item
                 </button>
               </div>
 
-              {'actionItems' in meeting && meeting.actionItems ? (
+              {'actionItems' in meeting && meeting.actionItems && meeting.actionItems.length > 0 ? (
                 <div className="space-y-3">
                   {meeting.actionItems.map((action: any) => {
                     const actionStatus = getActionItemStatus(action.status);
+                    const priorityColors = {
+                      low: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100',
+                      medium: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-800 dark:text-yellow-100',
+                      high: 'bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-100'
+                    };
                     return (
-                      <div key={action.id} className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                      <div key={action.id} className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg group">
                         <div className="flex justify-between items-start mb-2">
                           <h4 className="font-medium text-gray-900 dark:text-white">
                             {action.title}
                           </h4>
-                          <span className={`px-2 py-1 text-xs font-medium rounded-full ${actionStatus.className}`}>
-                            {actionStatus.text}
-                          </span>
+                          <div className="flex items-center gap-2">
+                            <span className={`px-2 py-1 text-xs font-medium rounded-full ${priorityColors[action.priority as keyof typeof priorityColors]}`}>
+                              {action.priority}
+                            </span>
+                            <span className={`px-2 py-1 text-xs font-medium rounded-full ${actionStatus.className}`}>
+                              {actionStatus.text}
+                            </span>
+                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <button
+                                onClick={() => {
+                                  setEditingActionItem(action);
+                                  setActionModalOpen(true);
+                                }}
+                                className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                                title="Edit action item"
+                              >
+                                <Edit className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setDeleteTarget({type: 'action', item: action});
+                                  setConfirmModalOpen(true);
+                                }}
+                                className="p-1 text-gray-400 hover:text-red-600 transition-colors"
+                                title="Delete action item"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          </div>
                         </div>
                         <div className="flex justify-between items-center text-sm text-gray-600 dark:text-gray-400">
                           <span>Assignee: {action.assignee}</span>
-                          <span>Due: {action.dueDate}</span>
+                          <span>Due: {action.dueDate || 'No due date'}</span>
                         </div>
                       </div>
                     );
@@ -823,6 +1794,47 @@ const MeetingDetail = () => {
           )}
         </div>
       </div>
+
+      {/* Modals */}
+      <AgendaItemModal
+        isOpen={agendaModalOpen}
+        onClose={() => {
+          setAgendaModalOpen(false);
+          setEditingAgendaIndex(null);
+        }}
+        onSave={editingAgendaIndex !== null ? handleEditAgendaItem : handleAddAgendaItem}
+        item={editingAgendaIndex !== null ? meeting.agenda[editingAgendaIndex] : null}
+      />
+
+      <ActionItemModal
+        isOpen={actionModalOpen}
+        onClose={() => {
+          setActionModalOpen(false);
+          setEditingActionItem(null);
+        }}
+        onSave={editingActionItem ? handleEditActionItem : handleAddActionItem}
+        item={editingActionItem}
+      />
+
+      <ConfirmationModal
+        isOpen={confirmModalOpen}
+        onClose={() => {
+          setConfirmModalOpen(false);
+          setDeleteTarget(null);
+        }}
+        onConfirm={handleConfirmDelete}
+        title={
+          deleteTarget?.type === 'agenda' ? 'Delete Agenda Item' :
+          deleteTarget?.type === 'action' ? 'Delete Action Item' :
+          deleteTarget?.type === 'notes' ? 'Delete Meeting Notes' : 'Confirm Delete'
+        }
+        message={
+          deleteTarget?.type === 'agenda' ? 'Are you sure you want to delete this agenda item? This action cannot be undone.' :
+          deleteTarget?.type === 'action' ? 'Are you sure you want to delete this action item? This action cannot be undone.' :
+          deleteTarget?.type === 'notes' ? 'Are you sure you want to delete all meeting notes? This action cannot be undone.' :
+          'Are you sure you want to delete this item?'
+        }
+      />
     </div>
   );
 };
