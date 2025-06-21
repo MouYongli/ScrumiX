@@ -1,14 +1,17 @@
 'use client';
 
-import React from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { 
   Calendar, LayoutDashboard, Users, TrendingUp, CheckCircle2, Clock, AlertTriangle,
   Target, Zap, BarChart3, MessageSquare, Plus, ArrowRight, Activity,
-  FolderOpen
+  FolderOpen, CalendarDays, BarChart4
 } from 'lucide-react';
 import FavoriteButton from '@/components/common/FavoriteButton';
 import Breadcrumb from '@/components/common/Breadcrumb';
+import { Timeline } from 'vis-timeline/standalone';
+import { DataSet } from 'vis-data/standalone';
+import 'vis-timeline/styles/vis-timeline-graph2d.css';
 
 interface ProjectDashboardProps {
   params: Promise<{ 'project-id': string }>;
@@ -128,10 +131,238 @@ const sprintKanbanData = {
   ],
 };
 
+// Mock hierarchical data for timeline view (matching kanban board)
+const sprintTimelineData = [
+  {
+    id: 'epic-1',
+    type: 'epic',
+    title: 'E-commerce Core Features',
+    progress: 55,
+    startDay: 2,
+    duration: 12,
+    priority: 'high',
+    tasks: [
+      {
+        id: 1,
+        type: 'task',
+        title: 'Product Search API',
+        assignee: 'John D.',
+        progress: 0,
+        startDay: 2,
+        duration: 5,
+        priority: 'high',
+        status: 'todo'
+      },
+      {
+        id: 2,
+        type: 'task',
+        title: 'Payment Gateway Integration',
+        assignee: 'Sarah M.',
+        progress: 0,
+        startDay: 8,
+        duration: 6,
+        priority: 'medium',
+        status: 'todo'
+      },
+      {
+        id: 3,
+        type: 'task',
+        title: 'Email Notification System',
+        assignee: 'Mike R.',
+        progress: 0,
+        startDay: 10,
+        duration: 3,
+        priority: 'low',
+        status: 'todo'
+      }
+    ]
+  },
+  {
+    id: 'epic-2',
+    type: 'epic',
+    title: 'User Experience Enhancement',
+    progress: 65,
+    startDay: 1,
+    duration: 8,
+    priority: 'high',
+    tasks: [
+      {
+        id: 4,
+        type: 'task',
+        title: 'User Authentication Flow',
+        assignee: 'Jane S.',
+        progress: 70,
+        startDay: 1,
+        duration: 4,
+        priority: 'high',
+        status: 'inProgress'
+      },
+      {
+        id: 5,
+        type: 'task',
+        title: 'Shopping Cart Optimization',
+        assignee: 'Tom W.',
+        progress: 60,
+        startDay: 4,
+        duration: 4,
+        priority: 'medium',
+        status: 'inProgress'
+      }
+    ]
+  }
+];
+
 const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
   const resolvedParams = React.use(params);
   const projectId = resolvedParams['project-id'];
   const project = mockProjectData;
+  
+  // Sprint preview view state
+  const [sprintViewType, setSprintViewType] = useState<'kanban' | 'timeline' | 'calendar'>('kanban');
+  
+  // Kanban drag and drop state
+  const [kanbanData, setKanbanData] = useState(sprintKanbanData);
+  const [draggedItem, setDraggedItem] = useState<any>(null);
+  const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
+  
+  // Timeline reference
+  const timelineRef = useRef<HTMLDivElement>(null);
+  const timelineInstance = useRef<Timeline | null>(null);
+
+  // Drag and drop handlers
+  const handleDragStart = (e: React.DragEvent, task: any, sourceColumn: string) => {
+    setDraggedItem({ task, sourceColumn });
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: React.DragEvent, targetColumn: string) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverColumn(targetColumn);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setDragOverColumn(null);
+  };
+
+  const handleDrop = (e: React.DragEvent, targetColumn: string) => {
+    e.preventDefault();
+    setDragOverColumn(null);
+
+    if (!draggedItem || draggedItem.sourceColumn === targetColumn) {
+      return;
+    }
+
+    const newKanbanData = { ...kanbanData };
+    
+    // Remove task from source column
+    newKanbanData[draggedItem.sourceColumn as keyof typeof newKanbanData] = 
+      newKanbanData[draggedItem.sourceColumn as keyof typeof newKanbanData]
+        .filter(task => task.id !== draggedItem.task.id);
+    
+    // Add task to target column
+    newKanbanData[targetColumn as keyof typeof newKanbanData] = [
+      ...newKanbanData[targetColumn as keyof typeof newKanbanData],
+      draggedItem.task
+    ];
+
+    setKanbanData(newKanbanData);
+    setDraggedItem(null);
+  };
+
+  const handleDragEnd = () => {
+    setDraggedItem(null);
+    setDragOverColumn(null);
+  };
+
+  // Initialize timeline
+  useEffect(() => {
+    if (sprintViewType === 'timeline' && timelineRef.current && !timelineInstance.current) {
+      // Prepare timeline data
+      const items = new DataSet<any>([]);
+      const groups = new DataSet<any>([]);
+      
+      // Add groups (epics)
+      sprintTimelineData.forEach((epic) => {
+        groups.add({
+          id: epic.id,
+          content: epic.title,
+          className: `epic-group priority-${epic.priority}`
+        });
+        
+        // Add epic as an item
+        items.add({
+          id: `epic-${epic.id}`,
+          group: epic.id,
+          content: epic.title,
+          start: new Date(2024, 2, epic.startDay), // March 2024
+          end: new Date(2024, 2, epic.startDay + epic.duration),
+          type: 'range',
+          className: `epic-item priority-${epic.priority}`
+        });
+        
+        // Add tasks
+        epic.tasks.forEach((task) => {
+          items.add({
+            id: task.id,
+            group: epic.id,
+            content: `${task.title} (${task.assignee})`,
+            start: new Date(2024, 2, task.startDay),
+            end: new Date(2024, 2, task.startDay + task.duration),
+            type: 'range',
+            className: `task-item status-${task.status} priority-${task.priority}`
+          });
+        });
+      });
+
+      // Timeline options
+      const options = {
+        width: '100%',
+        height: '400px',
+        margin: { item: 10, axis: 40 },
+        orientation: 'top',
+        showCurrentTime: false,
+        zoomable: true,
+        moveable: true,
+        stack: true,
+        stackSubgroups: true,
+        groupOrder: 'id',
+        editable: {
+          add: false,
+          updateTime: true,
+          updateGroup: false,
+          remove: false
+        },
+        format: {
+          minorLabels: {
+            millisecond: 'SSS',
+            second: 's',
+            minute: 'HH:mm',
+            hour: 'HH:mm',
+            weekday: 'ddd D',
+            day: 'D',
+            week: 'w',
+            month: 'MMM',
+            year: 'YYYY'
+          }
+        },
+        start: new Date(2024, 2, 1),
+        end: new Date(2024, 2, 15)
+      };
+
+      // Create timeline
+      timelineInstance.current = new Timeline(timelineRef.current, items, options);
+      timelineInstance.current.setGroups(groups);
+    }
+    
+    return () => {
+      if (timelineInstance.current) {
+        timelineInstance.current.destroy();
+        timelineInstance.current = null;
+      }
+    };
+  }, [sprintViewType]);
 
   // Prepare favorite data
   const favoriteItem = {
@@ -155,6 +386,88 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
 
   return (
     <div className="space-y-8">
+      {/* Timeline Custom Styles */}
+      <style jsx global>{`
+        .timeline-container .vis-timeline {
+          border: none !important;
+          font-family: inherit !important;
+        }
+        
+        .timeline-container .vis-item {
+          border-radius: 6px !important;
+          border: none !important;
+          box-shadow: 0 2px 4px rgba(0,0,0,0.1) !important;
+        }
+        
+        .timeline-container .vis-item.epic-item {
+          background: linear-gradient(135deg, #3b82f6, #1d4ed8) !important;
+          color: white !important;
+          font-weight: 600 !important;
+          height: 30px !important;
+        }
+        
+        .timeline-container .vis-item.task-item {
+          height: 24px !important;
+          font-size: 12px !important;
+        }
+        
+        .timeline-container .vis-item.status-todo {
+          background: linear-gradient(135deg, #9ca3af, #6b7280) !important;
+          color: white !important;
+        }
+        
+        .timeline-container .vis-item.status-inProgress {
+          background: linear-gradient(135deg, #3b82f6, #1e40af) !important;
+          color: white !important;
+        }
+        
+        .timeline-container .vis-item.status-done {
+          background: linear-gradient(135deg, #10b981, #059669) !important;
+          color: white !important;
+        }
+        
+        .timeline-container .vis-item.priority-high {
+          border-left: 4px solid #ef4444 !important;
+        }
+        
+        .timeline-container .vis-item.priority-medium {
+          border-left: 4px solid #f59e0b !important;
+        }
+        
+        .timeline-container .vis-item.priority-low {
+          border-left: 4px solid #10b981 !important;
+        }
+        
+        .timeline-container .vis-labelset .vis-label {
+          background: #f8fafc !important;
+          border-bottom: 1px solid #e2e8f0 !important;
+          color: #1e293b !important;
+          font-weight: 500 !important;
+        }
+        
+        .timeline-container .vis-time-axis {
+          background: #f1f5f9 !important;
+          border-bottom: 1px solid #cbd5e1 !important;
+        }
+        
+        .timeline-container .vis-time-axis .vis-text {
+          color: #475569 !important;
+          font-weight: 500 !important;
+        }
+        
+        .timeline-container .vis-panel.vis-background {
+          background: white !important;
+        }
+        
+        .timeline-container .vis-grid.vis-vertical {
+          border-left: 1px solid #e2e8f0 !important;
+        }
+        
+        .timeline-container .vis-grid.vis-horizontal {
+          border-top: 1px solid #f1f5f9 !important;
+        }
+      `}</style>
+      
       <Breadcrumb items={breadcrumbItems} />
       
       {/* Page Header */}
@@ -296,10 +609,10 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                 <p className="text-sm text-gray-700 dark:text-gray-400">Pending</p>
               </div>
             </div>
-            {/* Kanban Board Preview */}
+            {/* Sprint Preview with View Selector */}
             <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
               <div className="flex justify-between items-center mb-4">
-                <h4 className="font-medium text-gray-900 dark:text-white">Sprint Kanban Preview</h4>
+                <h4 className="font-medium text-gray-900 dark:text-white">Sprint Preview</h4>
                 <Link 
                   href={`/project/${projectId}/kanban`}
                   className="text-blue-600 hover:text-blue-700 flex items-center gap-1 text-sm"
@@ -309,97 +622,232 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                 </Link>
               </div>
               
-              <div className="grid grid-cols-3 gap-4">
-                {/* To Do Column */}
-                <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-3">
-                  <h5 className="font-medium text-gray-700 dark:text-gray-300 text-sm mb-3 flex items-center gap-2">
-                    <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
-                    To Do ({sprintKanbanData.todo.length})
-                  </h5>
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {sprintKanbanData.todo.map((task) => (
-                      <div key={task.id} className="bg-white dark:bg-gray-800 p-3 rounded border border-gray-200 dark:border-gray-700 shadow-sm">
-                        <h6 className="text-xs font-medium text-gray-900 dark:text-white mb-1 line-clamp-2">
-                          {task.title}
-                        </h6>
-                        <div className="flex justify-between items-center text-xs">
-                          <span className="text-gray-500 dark:text-gray-400">{task.assignee}</span>
-                          <div className="flex items-center gap-1">
-                            <span className={`px-1.5 py-0.5 rounded text-xs ${
-                              task.priority === 'high' ? 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400' :
-                              task.priority === 'medium' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-400' :
-                              'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400'
-                            }`}>
-                              {task.priority}
-                            </span>
-                            <span className="text-gray-500 dark:text-gray-400">{task.storyPoints}pt</span>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* In Progress Column */}
-                <div className="bg-blue-50 dark:bg-blue-900/20 rounded-lg p-3">
-                  <h5 className="font-medium text-blue-700 dark:text-blue-300 text-sm mb-3 flex items-center gap-2">
-                    <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                    In Progress ({sprintKanbanData.inProgress.length})
-                  </h5>
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {sprintKanbanData.inProgress.map((task) => (
-                      <div key={task.id} className="bg-white dark:bg-gray-800 p-3 rounded border border-gray-200 dark:border-gray-700 shadow-sm">
-                        <h6 className="text-xs font-medium text-gray-900 dark:text-white mb-1 line-clamp-2">
-                          {task.title}
-                        </h6>
-                        <div className="flex justify-between items-center text-xs">
-                          <span className="text-gray-500 dark:text-gray-400">{task.assignee}</span>
-                          <div className="flex items-center gap-1">
-                            <span className={`px-1.5 py-0.5 rounded text-xs ${
-                              task.priority === 'high' ? 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400' :
-                              task.priority === 'medium' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-400' :
-                              'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400'
-                            }`}>
-                              {task.priority}
-                            </span>
-                            <span className="text-gray-500 dark:text-gray-400">{task.storyPoints}pt</span>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Done Column */}
-                <div className="bg-green-50 dark:bg-green-900/20 rounded-lg p-3">
-                  <h5 className="font-medium text-green-700 dark:text-green-300 text-sm mb-3 flex items-center gap-2">
-                    <div className="w-2 h-2 bg-green-500 rounded-full"></div>
-                    Done ({sprintKanbanData.done.length})
-                  </h5>
-                  <div className="space-y-2 max-h-48 overflow-y-auto">
-                    {sprintKanbanData.done.map((task) => (
-                      <div key={task.id} className="bg-white dark:bg-gray-800 p-3 rounded border border-gray-200 dark:border-gray-700 shadow-sm">
-                        <h6 className="text-xs font-medium text-gray-900 dark:text-white mb-1 line-clamp-2">
-                          {task.title}
-                        </h6>
-                        <div className="flex justify-between items-center text-xs">
-                          <span className="text-gray-500 dark:text-gray-400">{task.assignee}</span>
-                          <div className="flex items-center gap-1">
-                            <span className={`px-1.5 py-0.5 rounded text-xs ${
-                              task.priority === 'high' ? 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400' :
-                              task.priority === 'medium' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-400' :
-                              'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400'
-                            }`}>
-                              {task.priority}
-                            </span>
-                            <span className="text-gray-500 dark:text-gray-400">{task.storyPoints}pt</span>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+              {/* View Type Selector */}
+              <div className="flex bg-gray-100 dark:bg-gray-700 rounded-lg p-1 mb-4 w-fit">
+                <button
+                  onClick={() => setSprintViewType('kanban')}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    sprintViewType === 'kanban'
+                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  <LayoutDashboard className="w-4 h-4" />
+                  Kanban
+                </button>
+                <button
+                  onClick={() => setSprintViewType('timeline')}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    sprintViewType === 'timeline'
+                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  <BarChart4 className="w-4 h-4" />
+                  Timeline
+                </button>
+                <button
+                  onClick={() => setSprintViewType('calendar')}
+                  className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                    sprintViewType === 'calendar'
+                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
+                  }`}
+                >
+                  <CalendarDays className="w-4 h-4" />
+                  Calendar
+                </button>
               </div>
+
+              {/* Kanban View */}
+              {sprintViewType === 'kanban' && (
+                <div className="grid grid-cols-2 gap-6">
+                  {/* To Do Column */}
+                  <div 
+                    className={`bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4 transition-colors ${
+                      dragOverColumn === 'todo' ? 'bg-gray-100 dark:bg-gray-800/50 ring-2 ring-blue-400' : ''
+                    }`}
+                    onDragOver={(e) => handleDragOver(e, 'todo')}
+                    onDragLeave={handleDragLeave}
+                    onDrop={(e) => handleDrop(e, 'todo')}
+                  >
+                    <h5 className="font-medium text-gray-700 dark:text-gray-300 text-sm mb-4 flex items-center gap-2">
+                      <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
+                      To Do ({kanbanData.todo.length})
+                    </h5>
+                    <div className="space-y-3 max-h-64 overflow-y-auto">
+                      {kanbanData.todo.map((task) => (
+                        <div 
+                          key={task.id} 
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, task, 'todo')}
+                          onDragEnd={handleDragEnd}
+                          className={`bg-white dark:bg-gray-800 p-3 rounded border border-gray-200 dark:border-gray-700 shadow-sm cursor-move hover:shadow-md transition-shadow ${
+                            draggedItem?.task.id === task.id ? 'opacity-50' : ''
+                          }`}
+                        >
+                          <h6 className="text-xs font-medium text-gray-900 dark:text-white mb-2 line-clamp-2">
+                            {task.title}
+                          </h6>
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="text-gray-500 dark:text-gray-400">{task.assignee}</span>
+                            <div className="flex items-center gap-1">
+                              <span className={`px-1.5 py-0.5 rounded text-xs ${
+                                task.priority === 'high' ? 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400' :
+                                task.priority === 'medium' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-400' :
+                                'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400'
+                              }`}>
+                                {task.priority}
+                              </span>
+                              <span className="text-gray-500 dark:text-gray-400">{task.storyPoints}pt</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      {kanbanData.todo.length === 0 && (
+                        <div className="text-center py-8 text-gray-500 dark:text-gray-400 text-sm">
+                          No tasks in To Do
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* In Progress Column */}
+                  <div 
+                    className={`bg-blue-50 dark:bg-blue-900/20 rounded-lg p-4 transition-colors ${
+                      dragOverColumn === 'inProgress' ? 'bg-blue-100 dark:bg-blue-800/30 ring-2 ring-blue-400' : ''
+                    }`}
+                    onDragOver={(e) => handleDragOver(e, 'inProgress')}
+                    onDragLeave={handleDragLeave}
+                    onDrop={(e) => handleDrop(e, 'inProgress')}
+                  >
+                    <h5 className="font-medium text-blue-700 dark:text-blue-300 text-sm mb-4 flex items-center gap-2">
+                      <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                      In Progress ({kanbanData.inProgress.length})
+                    </h5>
+                    <div className="space-y-3 max-h-64 overflow-y-auto">
+                      {kanbanData.inProgress.map((task) => (
+                        <div 
+                          key={task.id} 
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, task, 'inProgress')}
+                          onDragEnd={handleDragEnd}
+                          className={`bg-white dark:bg-gray-800 p-3 rounded border border-gray-200 dark:border-gray-700 shadow-sm cursor-move hover:shadow-md transition-shadow ${
+                            draggedItem?.task.id === task.id ? 'opacity-50' : ''
+                          }`}
+                        >
+                          <h6 className="text-xs font-medium text-gray-900 dark:text-white mb-2 line-clamp-2">
+                            {task.title}
+                          </h6>
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="text-gray-500 dark:text-gray-400">{task.assignee}</span>
+                            <div className="flex items-center gap-1">
+                              <span className={`px-1.5 py-0.5 rounded text-xs ${
+                                task.priority === 'high' ? 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400' :
+                                task.priority === 'medium' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-400' :
+                                'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400'
+                              }`}>
+                                {task.priority}
+                              </span>
+                              <span className="text-gray-500 dark:text-gray-400">{task.storyPoints}pt</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      {kanbanData.inProgress.length === 0 && (
+                        <div className="text-center py-8 text-gray-500 dark:text-gray-400 text-sm">
+                          No tasks in progress
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
+                                          {/* Timeline View */}
+              {sprintViewType === 'timeline' && (
+                <div className="bg-white dark:bg-gray-800 rounded-lg p-6 border-2 border-blue-200 dark:border-blue-700 shadow-lg">
+                  {/* Timeline Header */}
+                  <div className="mb-6 pb-3 border-b-2 border-blue-100 dark:border-blue-800">
+                    <h6 className="text-lg font-semibold text-blue-800 dark:text-blue-300 text-center bg-blue-50 dark:bg-blue-900/20 py-3 rounded-md">
+                      📅 Interactive Sprint Timeline
+                    </h6>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 text-center mt-2">
+                      Drag and zoom to explore the timeline. Click and drag items to reschedule.
+                    </p>
+                  </div>
+
+                  {/* Timeline Container */}
+                  <div 
+                    ref={timelineRef} 
+                    className="timeline-container border border-gray-200 dark:border-gray-600 rounded-lg overflow-hidden"
+                    style={{ minHeight: '400px' }}
+                  />
+
+                  {/* Timeline Legend */}
+                  <div className="mt-4 flex justify-center gap-6 text-sm">
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 bg-red-500 rounded"></div>
+                      <span className="text-gray-600 dark:text-gray-400">High Priority</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 bg-yellow-500 rounded"></div>
+                      <span className="text-gray-600 dark:text-gray-400">Medium Priority</span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="w-3 h-3 bg-green-500 rounded"></div>
+                      <span className="text-gray-600 dark:text-gray-400">Low Priority</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Calendar View */}
+              {sprintViewType === 'calendar' && (
+                <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
+                  <div className="grid grid-cols-7 gap-1 mb-2">
+                    {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
+                      <div key={day} className="text-center text-xs font-medium text-gray-600 dark:text-gray-400 p-2">
+                        {day}
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid grid-cols-7 gap-1">
+                    {Array.from({ length: 14 }, (_, i) => {
+                      const date = i + 1;
+                                             const tasksForDay = [...kanbanData.todo, ...kanbanData.inProgress]
+                         .filter((_, taskIndex) => (taskIndex + date) % 7 < 3);
+                      
+                      return (
+                        <div key={date} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded p-1 min-h-[60px]">
+                          <div className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            Mar {date}
+                          </div>
+                          <div className="space-y-1">
+                            {tasksForDay.slice(0, 2).map((task) => (
+                              <div 
+                                key={task.id}
+                                className={`text-xs px-1 py-0.5 rounded truncate ${
+                                  task.priority === 'high' ? 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400' :
+                                  task.priority === 'medium' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-400' :
+                                  'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400'
+                                }`}
+                              >
+                                {task.title}
+                              </div>
+                            ))}
+                            {tasksForDay.length > 2 && (
+                              <div className="text-xs text-gray-500 dark:text-gray-400">
+                                +{tasksForDay.length - 2} more
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
             </div>
             
             {/* Team Velocity */}
