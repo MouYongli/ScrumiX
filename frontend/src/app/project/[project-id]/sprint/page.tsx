@@ -136,6 +136,14 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
   };
 
   const handleStartSprint = (sprintId: string) => {
+    // Check if there's already an active sprint
+    const hasActiveSprint = sprints.some(sprint => sprint.status === 'active');
+    
+    if (hasActiveSprint) {
+      alert('Cannot start a new sprint while another sprint is active. Please complete the current sprint first.');
+      return;
+    }
+    
     setSprints(sprints.map(sprint => 
       sprint.id === sprintId ? { ...sprint, status: 'active' as const } : sprint
     ));
@@ -148,6 +156,7 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
   };
 
   const activeSprint = sprints.find(s => s.status === 'active');
+  const hasActiveSprint = Boolean(activeSprint);
   const totalActiveStoryPoints = activeSprint?.totalStoryPoints || 0;
   const completedActiveStoryPoints = activeSprint?.completedStoryPoints || 0;
 
@@ -357,12 +366,25 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
                 
                 <div className="flex items-center gap-2 ml-4">
                   {sprint.status === 'planning' && (
-                    <button
-                      onClick={() => handleStartSprint(sprint.id)}
-                      className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-sm"
-                    >
-                      Start Sprint
-                    </button>
+                    <div className="relative group">
+                      <button
+                        onClick={() => handleStartSprint(sprint.id)}
+                        disabled={hasActiveSprint}
+                        className={`px-3 py-1 rounded text-sm transition-colors ${
+                          hasActiveSprint
+                            ? 'bg-gray-400 cursor-not-allowed text-gray-600'
+                            : 'bg-green-600 hover:bg-green-700 text-white'
+                        }`}
+                      >
+                        Start Sprint
+                      </button>
+                      {hasActiveSprint && (
+                        <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
+                          Complete the active sprint first
+                          <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-900"></div>
+                        </div>
+                      )}
+                    </div>
                   )}
                   {sprint.status === 'active' && (
                     <button
