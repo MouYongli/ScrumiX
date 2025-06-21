@@ -1,11 +1,12 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { 
   Plus, Search, Filter, Edit2, Trash2, FolderOpen, 
   Zap, Play, Square, Calendar, Target, TrendingUp,
-  Clock, Users, CheckCircle, AlertCircle, MoreHorizontal
+  Clock, Users, CheckCircle, AlertCircle, MoreHorizontal,
+  X, ChevronDown
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
 
@@ -78,6 +79,558 @@ const mockSprints: Sprint[] = [
   },
 ];
 
+// Add CreateSprintModal component
+const CreateSprintModal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  onSubmit: (sprintData: Omit<Sprint, 'id' | 'totalStoryPoints' | 'completedStoryPoints' | 'totalStories' | 'completedStories' | 'createdAt'>) => void;
+}> = ({ isOpen, onClose, onSubmit }) => {
+  const [formData, setFormData] = useState({
+    name: '',
+    goal: '',
+    startDate: '',
+    endDate: '',
+    capacity: 40,
+    status: 'planning' as const,
+    teamMembers: [] as string[]
+  });
+
+  const [isTeamDropdownOpen, setIsTeamDropdownOpen] = useState(false);
+
+  // Mock team members - in real app, this would come from API
+  const availableTeamMembers = [
+    'Sarah Johnson',
+    'Mike Chen', 
+    'Emily Rodriguez',
+    'David Park',
+    'Lisa Wang',
+    'James Smith',
+    'Maria Gonzalez',
+    'Alex Kim'
+  ];
+
+  const statusOptions = [
+    { value: 'planning', label: 'Planning' },
+    { value: 'active', label: 'Active' },
+    { value: 'completed', label: 'Completed' }
+  ];
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Basic validation
+    if (!formData.name.trim()) {
+      alert('Sprint name is required');
+      return;
+    }
+    
+    if (!formData.startDate || !formData.endDate) {
+      alert('Start and end dates are required');
+      return;
+    }
+    
+    if (new Date(formData.startDate) >= new Date(formData.endDate)) {
+      alert('End date must be after start date');
+      return;
+    }
+
+    onSubmit(formData);
+    
+    // Reset form
+    setFormData({
+      name: '',
+      goal: '',
+      startDate: '',
+      endDate: '',
+      capacity: 40,
+      status: 'planning',
+      teamMembers: []
+    });
+    onClose();
+  };
+
+  const toggleTeamMember = (member: string) => {
+    setFormData(prev => ({
+      ...prev,
+      teamMembers: prev.teamMembers.includes(member)
+        ? prev.teamMembers.filter(m => m !== member)
+        : [...prev.teamMembers, member]
+    }));
+  };
+
+  const removeTeamMember = (member: string) => {
+    setFormData(prev => ({
+      ...prev,
+      teamMembers: prev.teamMembers.filter(m => m !== member)
+    }));
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[100]">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        {/* Modal Header */}
+        <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700">
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Create New Sprint</h2>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Modal Body */}
+        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          {/* Sprint Name */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Sprint Name <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={formData.name}
+              onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+              placeholder="e.g., Sprint 1 - User Authentication"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              required
+            />
+          </div>
+
+          {/* Sprint Goal */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Sprint Goal <span className="text-gray-400 text-sm">(Optional)</span>
+            </label>
+            <textarea
+              value={formData.goal}
+              onChange={(e) => setFormData(prev => ({ ...prev, goal: e.target.value }))}
+              placeholder="Describe the main objective of this sprint..."
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+            />
+          </div>
+
+          {/* Time Period */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Start Date <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="date"
+                value={formData.startDate}
+                onChange={(e) => setFormData(prev => ({ ...prev, startDate: e.target.value }))}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                End Date <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="date"
+                value={formData.endDate}
+                onChange={(e) => setFormData(prev => ({ ...prev, endDate: e.target.value }))}
+                min={formData.startDate}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                required
+              />
+            </div>
+          </div>
+
+          {/* Capacity */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Sprint Capacity (Story Points)
+            </label>
+            <input
+              type="number"
+              value={formData.capacity}
+              onChange={(e) => setFormData(prev => ({ ...prev, capacity: parseInt(e.target.value) || 0 }))}
+              min="1"
+              max="200"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              Estimated total story points the team can complete in this sprint
+            </p>
+          </div>
+
+          {/* Team Members */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Team Members
+            </label>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setIsTeamDropdownOpen(!isTeamDropdownOpen)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent flex justify-between items-center"
+              >
+                <span className="text-gray-500 dark:text-gray-400">
+                  {formData.teamMembers.length === 0 
+                    ? 'Select team members...' 
+                    : `${formData.teamMembers.length} member${formData.teamMembers.length !== 1 ? 's' : ''} selected`
+                  }
+                </span>
+                <ChevronDown className={`w-4 h-4 transform transition-transform ${isTeamDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+              
+              {isTeamDropdownOpen && (
+                <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                  {availableTeamMembers.map(member => (
+                    <label key={member} className="flex items-center px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-600 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.teamMembers.includes(member)}
+                        onChange={() => toggleTeamMember(member)}
+                        className="mr-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-gray-900 dark:text-white">{member}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+            
+            {/* Selected team members */}
+            {formData.teamMembers.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {formData.teamMembers.map(member => (
+                  <span
+                    key={member}
+                    className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-900/20 text-blue-800 dark:text-blue-400 text-sm rounded-full"
+                  >
+                    {member}
+                    <button
+                      type="button"
+                      onClick={() => removeTeamMember(member)}
+                      className="hover:text-blue-600 dark:hover:text-blue-300"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Status */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Status
+            </label>
+            <select
+              value={formData.status}
+              onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value as any }))}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              {statusOptions.map(option => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Modal Footer */}
+          <div className="flex justify-end gap-3 pt-6 border-t border-gray-200 dark:border-gray-700">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+            >
+              Create Sprint
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+// Add EditSprintModal component before ProjectSprints component
+const EditSprintModal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  onSubmit: (sprintData: Sprint) => void;
+  sprint: Sprint | null;
+}> = ({ isOpen, onClose, onSubmit, sprint }) => {
+  const [formData, setFormData] = useState<Sprint | null>(null);
+  const [isTeamDropdownOpen, setIsTeamDropdownOpen] = useState(false);
+
+  // Initialize form data when sprint changes
+  useEffect(() => {
+    if (sprint) {
+      setFormData(sprint);
+    }
+  }, [sprint]);
+
+  // Mock team members - in real app, this would come from API
+  const availableTeamMembers = [
+    'Sarah Johnson',
+    'Mike Chen', 
+    'Emily Rodriguez',
+    'David Park',
+    'Lisa Wang',
+    'James Smith',
+    'Maria Gonzalez',
+    'Alex Kim'
+  ];
+
+  const statusOptions = [
+    { value: 'planning', label: 'Planning' },
+    { value: 'active', label: 'Active' },
+    { value: 'completed', label: 'Completed' }
+  ];
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!formData) return;
+
+    // Basic validation
+    if (!formData.name.trim()) {
+      alert('Sprint name is required');
+      return;
+    }
+    
+    if (!formData.startDate || !formData.endDate) {
+      alert('Start and end dates are required');
+      return;
+    }
+    
+    if (new Date(formData.startDate) >= new Date(formData.endDate)) {
+      alert('End date must be after start date');
+      return;
+    }
+
+    onSubmit(formData);
+    onClose();
+  };
+
+  const toggleTeamMember = (member: string) => {
+    if (!formData) return;
+    setFormData(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        teamMembers: prev.teamMembers.includes(member)
+          ? prev.teamMembers.filter(m => m !== member)
+          : [...prev.teamMembers, member]
+      };
+    });
+  };
+
+  const removeTeamMember = (member: string) => {
+    if (!formData) return;
+    setFormData(prev => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        teamMembers: prev.teamMembers.filter(m => m !== member)
+      };
+    });
+  };
+
+  if (!isOpen || !formData) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[100]">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+        {/* Modal Header */}
+        <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700">
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Edit Sprint</h2>
+          <button
+            onClick={onClose}
+            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Modal Body */}
+        <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          {/* Sprint Name */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Sprint Name <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={formData.name}
+              onChange={(e) => setFormData(prev => prev ? { ...prev, name: e.target.value } : prev)}
+              placeholder="e.g., Sprint 1 - User Authentication"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              required
+            />
+          </div>
+
+          {/* Sprint Goal */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Sprint Goal <span className="text-gray-400 text-sm">(Optional)</span>
+            </label>
+            <textarea
+              value={formData.goal}
+              onChange={(e) => setFormData(prev => prev ? { ...prev, goal: e.target.value } : prev)}
+              placeholder="Describe the main objective of this sprint..."
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+            />
+          </div>
+
+          {/* Time Period */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Start Date <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="date"
+                value={formData.startDate}
+                onChange={(e) => setFormData(prev => prev ? { ...prev, startDate: e.target.value } : prev)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                End Date <span className="text-red-500">*</span>
+              </label>
+              <input
+                type="date"
+                value={formData.endDate}
+                onChange={(e) => setFormData(prev => prev ? { ...prev, endDate: e.target.value } : prev)}
+                min={formData.startDate}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                required
+              />
+            </div>
+          </div>
+
+          {/* Capacity */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Sprint Capacity (Story Points)
+            </label>
+            <input
+              type="number"
+              value={formData.capacity}
+              onChange={(e) => setFormData(prev => prev ? { ...prev, capacity: parseInt(e.target.value) || 0 } : prev)}
+              min="1"
+              max="200"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+
+          {/* Team Members */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Team Members
+            </label>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setIsTeamDropdownOpen(!isTeamDropdownOpen)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent flex justify-between items-center"
+              >
+                <span className="text-gray-500 dark:text-gray-400">
+                  {formData.teamMembers.length === 0 
+                    ? 'Select team members...' 
+                    : `${formData.teamMembers.length} member${formData.teamMembers.length !== 1 ? 's' : ''} selected`
+                  }
+                </span>
+                <ChevronDown className={`w-4 h-4 transform transition-transform ${isTeamDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+              
+              {isTeamDropdownOpen && (
+                <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                  {availableTeamMembers.map(member => (
+                    <label key={member} className="flex items-center px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-600 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.teamMembers.includes(member)}
+                        onChange={() => toggleTeamMember(member)}
+                        className="mr-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-gray-900 dark:text-white">{member}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+            
+            {formData.teamMembers.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {formData.teamMembers.map(member => (
+                  <span
+                    key={member}
+                    className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-900/20 text-blue-800 dark:text-blue-400 text-sm rounded-full"
+                  >
+                    {member}
+                    <button
+                      type="button"
+                      onClick={() => removeTeamMember(member)}
+                      className="hover:text-blue-600 dark:hover:text-blue-300"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Status */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Status
+            </label>
+            <select
+              value={formData.status}
+              onChange={(e) => setFormData(prev => prev ? { ...prev, status: e.target.value as any } : prev)}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              {statusOptions.map(option => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Modal Footer */}
+          <div className="flex justify-end gap-3 pt-6 border-t border-gray-200 dark:border-gray-700">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+            >
+              Save Changes
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
 const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
   const resolvedParams = React.use(params);
   const projectId = resolvedParams['project-id'];
@@ -87,6 +640,8 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedSprint, setSelectedSprint] = useState<Sprint | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
 
   // Breadcrumb navigation
   const breadcrumbItems = [
@@ -159,6 +714,46 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
   const hasActiveSprint = Boolean(activeSprint);
   const totalActiveStoryPoints = activeSprint?.totalStoryPoints || 0;
   const completedActiveStoryPoints = activeSprint?.completedStoryPoints || 0;
+
+  const handleCreateSprint = (sprintData: Omit<Sprint, 'id' | 'totalStoryPoints' | 'completedStoryPoints' | 'totalStories' | 'completedStories' | 'createdAt'>) => {
+    const newSprint: Sprint = {
+      ...sprintData,
+      id: (sprints.length + 1).toString(),
+      totalStoryPoints: 0,
+      completedStoryPoints: 0,
+      totalStories: 0,
+      completedStories: 0,
+      createdAt: new Date().toISOString().split('T')[0]
+    };
+    
+    setSprints([...sprints, newSprint]);
+  };
+
+  const handleEditSprint = (sprint: Sprint) => {
+    setSelectedSprint(sprint);
+    setIsEditModalOpen(true);
+  };
+
+  const handleUpdateSprint = (updatedSprint: Sprint) => {
+    setSprints(sprints.map(sprint => 
+      sprint.id === updatedSprint.id ? updatedSprint : sprint
+    ));
+    setSelectedSprint(null);
+    setIsEditModalOpen(false);
+  };
+
+  const handleDeleteClick = (sprint: Sprint) => {
+    setSelectedSprint(sprint);
+    setIsDeleteModalOpen(true);
+  };
+
+  const handleDeleteConfirm = () => {
+    if (selectedSprint) {
+      setSprints(sprints.filter(sprint => sprint.id !== selectedSprint.id));
+      setSelectedSprint(null);
+      setIsDeleteModalOpen(false);
+    }
+  };
 
   return (
     <div className="space-y-8">
@@ -400,9 +995,30 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
                   >
                     View Details
                   </Link>
-                  <button className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1">
-                    <MoreHorizontal className="w-4 h-4" />
-                  </button>
+                  <div className="relative group">
+                    <button 
+                      className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1"
+                      onClick={() => setSelectedSprint(sprint)}
+                    >
+                      <MoreHorizontal className="w-4 h-4" />
+                    </button>
+                    {selectedSprint?.id === sprint.id && (
+                      <div className="absolute right-0 mt-2 w-48 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-10">
+                        <button
+                          onClick={() => handleEditSprint(sprint)}
+                          className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+                        >
+                          <Edit2 className="w-4 h-4" /> Edit Sprint
+                        </button>
+                        <button
+                          onClick={() => handleDeleteClick(sprint)}
+                          className="w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 flex items-center gap-2"
+                        >
+                          <Trash2 className="w-4 h-4" /> Delete Sprint
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -476,6 +1092,55 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
           >
             Create Sprint
           </button>
+        </div>
+      )}
+
+      {/* Create Sprint Modal */}
+      <CreateSprintModal
+        isOpen={isCreateModalOpen}
+        onClose={() => setIsCreateModalOpen(false)}
+        onSubmit={handleCreateSprint}
+      />
+
+      {/* Edit Sprint Modal */}
+      <EditSprintModal
+        isOpen={isEditModalOpen}
+        onClose={() => {
+          setIsEditModalOpen(false);
+          setSelectedSprint(null);
+        }}
+        onSubmit={handleUpdateSprint}
+        sprint={selectedSprint}
+      />
+
+      {/* Delete Confirmation Modal */}
+      {isDeleteModalOpen && selectedSprint && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[100]">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md p-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+              Delete Sprint
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-6">
+              Are you sure you want to delete "{selectedSprint.name}"? This action cannot be undone.
+            </p>
+            <div className="flex justify-end gap-3">
+              <button
+                onClick={() => {
+                  setIsDeleteModalOpen(false);
+                  setSelectedSprint(null);
+                }}
+                className="px-4 py-2 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDeleteConfirm}
+                className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+              >
+                Delete Sprint
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>
