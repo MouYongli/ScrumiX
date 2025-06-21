@@ -34,6 +34,8 @@
     "react-day-picker": "^9.7.0",
     "react-dom": "^19.0.0",
     "recharts": "^2.15.3",
+    "vis-data": "^7.1.9",
+    "vis-timeline": "^7.7.4",
     "zustand": "^5.0.5"
   },
   "devDependencies": {
