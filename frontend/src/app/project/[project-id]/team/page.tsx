@@ -399,7 +399,7 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
                   </div>
                 </div>
                 {member.isAdmin && (
-                  <Crown className="w-4 h-4 text-yellow-500" title="Admin" />
+                  <Crown className="w-4 h-4 text-yellow-500" aria-label="Admin" />
                 )}
               </div>
 
