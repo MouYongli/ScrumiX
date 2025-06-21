@@ -1079,6 +1079,7 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
   const [isCreateTaskModalOpen, setIsCreateTaskModalOpen] = useState(false);
   const [selectedStoryForTask, setSelectedStoryForTask] = useState<UserStory | null>(null);
   const [tasks, setTasks] = useState<Task[]>([]);
+  const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
 
   // Breadcrumb navigation
   const breadcrumbItems = [
@@ -1239,6 +1240,15 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
       case 'done': return 'text-green-600 bg-green-50 dark:bg-green-900/20 dark:text-green-400';
       default: return 'text-gray-600 bg-gray-50 dark:bg-gray-900/20';
     }
+  };
+
+  const handleDeleteTask = (taskToRemove: Task) => {
+    setTasks(prev => prev.filter(task => task.id !== taskToRemove.id));
+    setTaskToDelete(null);
+  };
+
+  const confirmDeleteTask = (task: Task) => {
+    setTaskToDelete(task);
   };
 
   return (
@@ -1523,9 +1533,18 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                               <div key={task.id} className="bg-gray-50 dark:bg-gray-700 rounded-md p-3">
                                 <div className="flex items-start justify-between mb-1">
                                   <h6 className="text-sm font-medium text-gray-900 dark:text-white">{task.title}</h6>
-                                  <span className={`px-2 py-1 rounded text-xs font-medium ${getTaskStatusColor(task.status)}`}>
-                                    {task.status.replace('-', ' ').toUpperCase()}
-                                  </span>
+                                  <div className="flex items-center gap-2">
+                                    <span className={`px-2 py-1 rounded text-xs font-medium ${getTaskStatusColor(task.status)}`}>
+                                      {task.status.replace('-', ' ').toUpperCase()}
+                                    </span>
+                                    <button
+                                      onClick={() => confirmDeleteTask(task)}
+                                      className="text-gray-400 hover:text-red-600 dark:hover:text-red-400 p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                      title="Delete task"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                    </button>
+                                  </div>
                                 </div>
                                 {task.description && (
                                   <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">{task.description}</p>
@@ -1738,6 +1757,74 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                 >
                   <Trash2 className="w-4 h-4" />
                   Remove Story
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Task Confirmation Modal */}
+      {taskToDelete && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[100]">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md">
+            <div className="p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 bg-red-100 dark:bg-red-900/20 rounded-full flex items-center justify-center">
+                  <Trash2 className="w-5 h-5 text-red-600 dark:text-red-400" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Delete Task</h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">This action cannot be undone</p>
+                </div>
+              </div>
+              
+              <div className="mb-6">
+                <p className="text-gray-700 dark:text-gray-300 mb-3">
+                  Are you sure you want to delete the task <strong>"{taskToDelete.title}"</strong>?
+                </p>
+                <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3">
+                  <div className="flex items-center justify-between text-sm mb-2">
+                    <span className="text-gray-600 dark:text-gray-400">Status:</span>
+                    <span className={`px-2 py-1 rounded text-xs font-medium ${getTaskStatusColor(taskToDelete.status)}`}>
+                      {taskToDelete.status.replace('-', ' ').toUpperCase()}
+                    </span>
+                  </div>
+                  {taskToDelete.description && (
+                    <div className="text-sm">
+                      <span className="text-gray-600 dark:text-gray-400">Description:</span>
+                      <p className="text-gray-900 dark:text-white mt-1">{taskToDelete.description}</p>
+                    </div>
+                  )}
+                  {taskToDelete.assignees.length > 0 && (
+                    <div className="flex items-center justify-between text-sm mt-2">
+                      <span className="text-gray-600 dark:text-gray-400">Assignees:</span>
+                      <div className="flex flex-wrap gap-1">
+                        {taskToDelete.assignees.map((assignee, idx) => (
+                          <span key={assignee} className="text-gray-900 dark:text-white">
+                            {assignee}
+                            {idx < taskToDelete.assignees.length - 1 && ', '}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => setTaskToDelete(null)}
+                  className="px-4 py-2 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => handleDeleteTask(taskToDelete)}
+                  className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors flex items-center gap-2"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  Delete Task
                 </button>
               </div>
             </div>
