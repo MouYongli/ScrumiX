@@ -191,6 +191,11 @@ const MyWorkspacePage = () => {
                     <p className="text-gray-400 text-base mt-1 mb-2">
                       {project.description}
                     </p>
+
+
+                    epic
+                        user story
+                        user 
                     <p className="text-gray-500 text-base">
                       Role: {project.role}
                     </p>
@@ -260,9 +265,6 @@ const MyWorkspacePage = () => {
                         </p>
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            <div className="w-4 h-4 bg-gray-600 rounded-full flex items-center justify-center">
-                              <div className="w-2 h-2 bg-white rounded-full"></div>
-                            </div>
                             <span className="text-xs text-gray-500">
                               Start {task.startedDate}
                             </span>
