@@ -1441,13 +1441,22 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
             <div className="p-6 border-b border-gray-200 dark:border-gray-700">
               <div className="flex justify-between items-center">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Sprint Backlog</h3>
-                <button 
-                  onClick={() => setIsAddStoryModalOpen(true)}
-                  className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2"
-                >
-                  <Plus className="w-4 h-4" />
-                  Add Story
-                </button>
+                <div className="flex items-center gap-3">
+                  <Link
+                    href={`/project/${projectId}/kanban`}
+                    className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+                  >
+                    <ExternalLink className="w-4 h-4" />
+                    View Kanban
+                  </Link>
+                  <button 
+                    onClick={() => setIsAddStoryModalOpen(true)}
+                    className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add Story
+                  </button>
+                </div>
               </div>
             </div>
             <div className="p-6">
