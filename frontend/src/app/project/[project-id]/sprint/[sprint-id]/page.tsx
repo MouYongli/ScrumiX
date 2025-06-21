@@ -10,6 +10,15 @@ import {
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
 
+interface Task {
+  id: string;
+  title: string;
+  description: string;
+  assignees: string[];
+  status: 'todo' | 'in-progress' | 'review' | 'done';
+  storyId: string;
+}
+
 interface UserStory {
   id: string;
   title: string;
@@ -21,6 +30,7 @@ interface UserStory {
   assignee?: string;
   priority: 'critical' | 'high' | 'medium' | 'low';
   labels: string[];
+  tasks?: Task[];
 }
 
 interface Sprint {
@@ -563,6 +573,231 @@ const AddStoryModal: React.FC<{
   );
 };
 
+// Add CreateTaskModal component
+const CreateTaskModal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  onSubmit: (task: Omit<Task, 'id'>) => void;
+  storyId: string;
+  storyTitle: string;
+  teamMembers: string[];
+}> = ({ isOpen, onClose, onSubmit, storyId, storyTitle, teamMembers }) => {
+  const [formData, setFormData] = useState<{
+    title: string;
+    description: string;
+    assignees: string[];
+    status: Task['status'];
+    storyId: string;
+  }>({
+    title: '',
+    description: '',
+    assignees: [],
+    status: 'todo',
+    storyId
+  });
+
+  const [isAssigneeDropdownOpen, setIsAssigneeDropdownOpen] = useState(false);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!formData.title.trim()) {
+      alert('Task title is required');
+      return;
+    }
+
+    onSubmit(formData);
+    
+    // Reset form
+    setFormData({
+      title: '',
+      description: '',
+      assignees: [],
+      status: 'todo' as Task['status'],
+      storyId
+    });
+    
+    onClose();
+  };
+
+  const handleCancel = () => {
+    // Reset form on cancel
+    setFormData({
+      title: '',
+      description: '',
+      assignees: [],
+      status: 'todo' as Task['status'],
+      storyId
+    });
+    onClose();
+  };
+
+  const toggleAssignee = (member: string) => {
+    setFormData(prev => ({
+      ...prev,
+      assignees: prev.assignees.includes(member)
+        ? prev.assignees.filter(a => a !== member)
+        : [...prev.assignees, member]
+    }));
+  };
+
+  const removeAssignee = (member: string) => {
+    setFormData(prev => ({
+      ...prev,
+      assignees: prev.assignees.filter(a => a !== member)
+    }));
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[100]">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+        {/* Modal Header */}
+        <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700">
+          <div>
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Create Task</h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+              Add a task to "{storyTitle}"
+            </p>
+          </div>
+          <button
+            onClick={handleCancel}
+            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Modal Body */}
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {/* Title */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Title <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={formData.title}
+              onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
+              placeholder="Enter task title..."
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              required
+            />
+          </div>
+
+          {/* Description */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Description
+            </label>
+            <textarea
+              value={formData.description}
+              onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+              placeholder="Describe the task..."
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+            />
+          </div>
+
+          {/* Assignees */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Assignees
+            </label>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setIsAssigneeDropdownOpen(!isAssigneeDropdownOpen)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent flex justify-between items-center"
+              >
+                <span className="text-gray-500 dark:text-gray-400">
+                  {formData.assignees.length === 0 
+                    ? 'Select assignees...' 
+                    : `${formData.assignees.length} assignee${formData.assignees.length !== 1 ? 's' : ''} selected`
+                  }
+                </span>
+                <ChevronDown className={`w-4 h-4 transform transition-transform ${isAssigneeDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+              
+              {isAssigneeDropdownOpen && (
+                <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                  {teamMembers.map(member => (
+                    <label key={member} className="flex items-center px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-600 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.assignees.includes(member)}
+                        onChange={() => toggleAssignee(member)}
+                        className="mr-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-gray-900 dark:text-white">{member}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+            
+            {formData.assignees.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {formData.assignees.map(member => (
+                  <span
+                    key={member}
+                    className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-900/20 text-blue-800 dark:text-blue-400 text-sm rounded-full"
+                  >
+                    {member}
+                    <button
+                      type="button"
+                      onClick={() => removeAssignee(member)}
+                      className="hover:text-blue-600 dark:hover:text-blue-300"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Status */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Status
+            </label>
+            <select
+              value={formData.status}
+              onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value as Task['status'] }))}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="todo">To Do</option>
+              <option value="in-progress">In Progress</option>
+              <option value="review">Review</option>
+              <option value="done">Done</option>
+            </select>
+          </div>
+
+          {/* Modal Footer */}
+          <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <button
+              type="button"
+              onClick={handleCancel}
+              className="px-4 py-2 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
+            >
+              <Plus className="w-4 h-4" />
+              Create Task
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
 // Add EditSprintModal component before SprintDetail component
 const EditSprintModal: React.FC<{
   isOpen: boolean;
@@ -839,6 +1074,11 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
   const [isAddStoryModalOpen, setIsAddStoryModalOpen] = useState(false);
   const [recentlyAddedStories, setRecentlyAddedStories] = useState<Set<string>>(new Set());
   const [storyToDelete, setStoryToDelete] = useState<UserStory | null>(null);
+  
+  // Task modal state
+  const [isCreateTaskModalOpen, setIsCreateTaskModalOpen] = useState(false);
+  const [selectedStoryForTask, setSelectedStoryForTask] = useState<UserStory | null>(null);
+  const [tasks, setTasks] = useState<Task[]>([]);
 
   // Breadcrumb navigation
   const breadcrumbItems = [
@@ -925,7 +1165,7 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
       soThat: story.soThat,
       storyPoints: story.storyPoints,
       status: 'todo' as const,
-      assignee: story.assignee,
+      assignees: story.assignee ? [story.assignee] : [],
       priority: story.priority,
       labels: story.labels
     }));
@@ -968,6 +1208,37 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
 
   const confirmDeleteStory = (story: UserStory) => {
     setStoryToDelete(story);
+  };
+
+  // Task management handlers
+  const handleCreateTask = (taskData: Omit<Task, 'id'>) => {
+    const newTask: Task = {
+      ...taskData,
+      id: `task-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+    };
+    
+    setTasks(prev => [...prev, newTask]);
+    setIsCreateTaskModalOpen(false);
+    setSelectedStoryForTask(null);
+  };
+
+  const openCreateTaskModal = (story: UserStory) => {
+    setSelectedStoryForTask(story);
+    setIsCreateTaskModalOpen(true);
+  };
+
+  const getTasksForStory = (storyId: string) => {
+    return tasks.filter(task => task.storyId === storyId);
+  };
+
+  const getTaskStatusColor = (status: string) => {
+    switch (status) {
+      case 'todo': return 'text-gray-600 bg-gray-50 dark:bg-gray-900/20 dark:text-gray-400';
+      case 'in-progress': return 'text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-400';
+      case 'review': return 'text-yellow-600 bg-yellow-50 dark:bg-yellow-900/20 dark:text-yellow-400';
+      case 'done': return 'text-green-600 bg-green-50 dark:bg-green-900/20 dark:text-green-400';
+      default: return 'text-gray-600 bg-gray-50 dark:bg-gray-900/20';
+    }
   };
 
   return (
@@ -1209,6 +1480,13 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                       </div>
                       <div className="flex items-center gap-2 ml-4">
                         <button
+                          onClick={() => openCreateTaskModal(story)}
+                          className="text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 p-2 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                          title="Create task"
+                        >
+                          <Plus className="w-4 h-4" />
+                        </button>
+                        <button
                           onClick={() => confirmDeleteStory(story)}
                           className="text-gray-400 hover:text-red-600 dark:hover:text-red-400 p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
                           title="Remove from sprint"
@@ -1217,13 +1495,76 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                         </button>
                       </div>
                     </div>
-                    <div className="flex flex-wrap gap-1">
+                    <div className="flex flex-wrap gap-1 mb-3">
                       {story.labels.map((label, index) => (
                         <span key={index} className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-xs rounded">
                           {label}
                         </span>
                       ))}
                     </div>
+                    
+                    {/* Tasks Section */}
+                    {(() => {
+                      const storyTasks = getTasksForStory(story.id);
+                      return storyTasks.length > 0 ? (
+                        <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
+                          <div className="flex items-center justify-between mb-2">
+                            <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300">Tasks ({storyTasks.length})</h5>
+                            <button
+                              onClick={() => openCreateTaskModal(story)}
+                              className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 flex items-center gap-1"
+                            >
+                              <Plus className="w-3 h-3" />
+                              Add Task
+                            </button>
+                          </div>
+                          <div className="space-y-2">
+                            {storyTasks.map((task) => (
+                              <div key={task.id} className="bg-gray-50 dark:bg-gray-700 rounded-md p-3">
+                                <div className="flex items-start justify-between mb-1">
+                                  <h6 className="text-sm font-medium text-gray-900 dark:text-white">{task.title}</h6>
+                                  <span className={`px-2 py-1 rounded text-xs font-medium ${getTaskStatusColor(task.status)}`}>
+                                    {task.status.replace('-', ' ').toUpperCase()}
+                                  </span>
+                                </div>
+                                {task.description && (
+                                  <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">{task.description}</p>
+                                )}
+                                <div className="flex items-center justify-between text-xs">
+                                  <div className="text-gray-500 dark:text-gray-400">
+                                    {task.assignees.length > 0 ? (
+                                      <div className="flex items-center gap-1 flex-wrap">
+                                        <User className="w-3 h-3" />
+                                        <div className="flex flex-wrap gap-1">
+                                          {task.assignees.map((assignee, idx) => (
+                                            <span key={assignee} className="inline-flex items-center">
+                                              {assignee}
+                                              {idx < task.assignees.length - 1 && <span className="ml-1 mr-1">,</span>}
+                                            </span>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    ) : (
+                                      'Unassigned'
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+                          <button
+                            onClick={() => openCreateTaskModal(story)}
+                            className="w-full text-sm text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 py-2 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg hover:border-blue-300 dark:hover:border-blue-500 transition-colors flex items-center justify-center gap-2"
+                          >
+                            <Plus className="w-4 h-4" />
+                            Create Task
+                          </button>
+                        </div>
+                      );
+                    })()}
                   </div>
                 ))}
               </div>
@@ -1332,6 +1673,21 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
         onSubmit={handleUpdateSprint}
         sprint={sprint}
       />
+
+      {/* Create Task Modal */}
+      {selectedStoryForTask && (
+        <CreateTaskModal
+          isOpen={isCreateTaskModalOpen}
+          onClose={() => {
+            setIsCreateTaskModalOpen(false);
+            setSelectedStoryForTask(null);
+          }}
+          onSubmit={handleCreateTask}
+          storyId={selectedStoryForTask.id}
+          storyTitle={selectedStoryForTask.title}
+          teamMembers={sprint.teamMembers}
+        />
+      )}
 
       {/* Delete Story Confirmation Modal */}
       {storyToDelete && (
