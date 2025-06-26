@@ -42,7 +42,8 @@ Characteristics:
 - Self-managing (decide internally who does what, when, and how)  
 - Typically up to 10 people to maintain nimbleness and productivity  
 - Responsible for all product-related activities to achieve the Product Goal  
-- Accountable for delivering a valuable Increment each Sprint  
+- Accountable for delivering a valuable Increment each Sprint 
+- Scrum does not forbid roles from overlapping, but overlapping roles should be approached with caution
 
 ---
 
