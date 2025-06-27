@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { Eye, EyeOff, Mail, Lock, ArrowRight, Github } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Eye, EyeOff, Mail, Lock, ArrowRight, Github, Shield } from 'lucide-react';
 
 const LoginPage = () => {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [formData, setFormData] = useState({
     email: '',
     password: '',
@@ -15,6 +16,20 @@ const LoginPage = () => {
   const [showPassword, setShowPassword] = useState(false);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [isLoading, setIsLoading] = useState(false);
+
+  // Check for OAuth errors or success on component mount
+  useEffect(() => {
+    const error = searchParams.get('error');
+    const code = searchParams.get('code');
+    const state = searchParams.get('state');
+
+    if (error) {
+      setErrors({ oauth: decodeURIComponent(error) });
+    } else if (code && state) {
+      // Handle OAuth callback
+      handleOAuthCallback(code, state);
+    }
+  }, [searchParams]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
@@ -86,6 +101,90 @@ const LoginPage = () => {
   const handleSocialLogin = (provider: string) => {
     // Simulate third-party login
     console.log(`Login with ${provider}`);
+  };
+
+  const handleKeycloakLogin = async () => {
+    setIsLoading(true);
+    setErrors({});
+
+    try {
+      // Get authorization URL from backend
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/auth/oauth/keycloak/authorize`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to get authorization URL');
+      }
+
+      const data = await response.json();
+      
+      // Store state in localStorage for verification
+      localStorage.setItem('oauth_state', data.state);
+      
+      // Redirect to Keycloak
+      window.location.href = data.authorization_url;
+    } catch (error) {
+      console.error('Keycloak login error:', error);
+      setErrors({ oauth: 'Failed to initiate Keycloak login' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleOAuthCallback = async (code: string, state: string) => {
+    setIsLoading(true);
+    
+    try {
+      // Verify state
+      const storedState = localStorage.getItem('oauth_state');
+      if (state !== storedState) {
+        throw new Error('Invalid state parameter');
+      }
+
+      // Exchange code for tokens
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/auth/oauth/keycloak/callback`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ 
+          code, 
+          state,
+          redirect_uri: `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/auth/oauth/keycloak/callback`
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.detail || 'Failed to exchange code for tokens');
+      }
+
+      const tokenData = await response.json();
+      
+      // Save Keycloak tokens and user data to localStorage
+      localStorage.setItem('keycloak_access_token', tokenData.access_token);
+      if (tokenData.refresh_token) {
+        localStorage.setItem('keycloak_refresh_token', tokenData.refresh_token);
+      }
+      localStorage.setItem('token_expires_at', (Date.now() + (tokenData.expires_in * 1000)).toString());
+      localStorage.setItem('user', JSON.stringify(tokenData.user));
+      localStorage.setItem('auth_provider', 'keycloak');
+      
+      // Clean up OAuth state
+      localStorage.removeItem('oauth_state');
+      
+      console.log('Keycloak login successful:', tokenData.user);
+      
+      // Redirect to workspace
+      router.push('/workspace');
+    } catch (error) {
+      console.error('OAuth callback error:', error);
+      setErrors({ oauth: error instanceof Error ? error.message : 'OAuth login failed' });
+      
+      // Clean up URL parameters
+      router.replace('/auth/login');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -163,6 +262,13 @@ const LoginPage = () => {
             >
               <Github className="w-5 h-5" />
               <span className="text-gray-700 dark:text-gray-300">Sign in with GitHub</span>
+            </button>
+            <button
+              onClick={handleKeycloakLogin}
+              className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            >
+              <Shield className="w-5 h-5" />
+              <span className="text-gray-700 dark:text-gray-300">Sign in with Keycloak</span>
             </button>
           </div>
 
@@ -266,6 +372,13 @@ const LoginPage = () => {
             {errors.submit && (
               <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
                 <p className="text-sm text-red-600 dark:text-red-400">{errors.submit}</p>
+              </div>
+            )}
+
+            {/* OAuth error */}
+            {errors.oauth && (
+              <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                <p className="text-sm text-red-600 dark:text-red-400">{errors.oauth}</p>
               </div>
             )}
 
