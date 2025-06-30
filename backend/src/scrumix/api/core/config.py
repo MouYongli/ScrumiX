@@ -2,17 +2,36 @@
 Configuration settings for the application
 """
 import os
+from pathlib import Path
 from typing import Any, Dict, Optional
 from pydantic import PostgresDsn, field_validator, ConfigDict
 from pydantic_settings import BaseSettings
 
+# Find the .env file in common locations
+def find_env_file():
+    """Find the .env file in common locations"""
+    possible_paths = [
+        ".env",  # Current working directory
+        "backend/.env",  # From project root
+        Path(__file__).parent.parent.parent.parent.parent / ".env",  # Relative to this file
+    ]
+    
+    for path in possible_paths:
+        if Path(path).exists():
+            return str(path)
+    
+    return None
+
 class Settings(BaseSettings):
-    model_config = ConfigDict(env_file=".env", extra="ignore")
+    model_config = ConfigDict(env_file=find_env_file(), extra="ignore")
     """Application settings"""
     PROJECT_NAME: str = "ScrumiX"
     API_V1_STR: str = "/api/v1"
     SECRET_KEY: str = os.environ.get("SECRET_KEY", "changeme")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days
+    
+    # Debug Settings (TODO: Remove in production)
+    DEBUG_OAUTH: bool = os.environ.get("DEBUG_OAUTH", "true").lower() == "true"
     
     # URLs
     BACKEND_URL: str = os.environ.get("BACKEND_URL", "http://localhost:8000")
