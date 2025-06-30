@@ -37,6 +37,7 @@ const ProfilePage = () => {
   });
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [isLoading, setIsLoading] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string>('');
 
   // Load user information
   useEffect(() => {
@@ -88,9 +89,12 @@ const ProfilePage = () => {
       ...prev,
       [name]: value,
     }));
-    // Clear error messages
+    // Clear error and success messages
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
+    }
+    if (successMessage) {
+      setSuccessMessage('');
     }
   };
 
@@ -164,13 +168,44 @@ const ProfilePage = () => {
       // Mock save API call
       await new Promise(resolve => setTimeout(resolve, 1000));
       
-      // Update user information in localStorage
+      // Update user information in localStorage with proper field mapping
       const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
-      const updatedUser = { ...currentUser, ...userInfo };
+      const updatedUser = {
+        ...currentUser,
+        // Map profile fields to User interface fields
+        full_name: userInfo.name,
+        email: userInfo.email,
+        avatar_url: userInfo.avatar,
+        username: userInfo.name.toLowerCase().replace(/\s+/g, ''), // Generate username from name
+        // Keep additional profile fields as extended properties
+        phone: userInfo.phone,
+        department: userInfo.department,
+        position: userInfo.position,
+        location: userInfo.location,
+        bio: userInfo.bio,
+        joinDate: userInfo.joinDate,
+        provider: userInfo.provider,
+        is_verified: currentUser.is_verified || true
+      };
+      
+      // Update localStorage - this will trigger the storage change listener in useAuth()
       localStorage.setItem('user', JSON.stringify(updatedUser));
       
+      // Trigger a storage event manually for same-tab updates
+      window.dispatchEvent(new StorageEvent('storage', {
+        key: 'user',
+        newValue: JSON.stringify(updatedUser),
+        oldValue: JSON.stringify(currentUser)
+      }));
+      
       setIsEditing(false);
-      // Success message can be added here
+      
+      // Show success message
+      setSuccessMessage('Profile updated successfully! Changes will appear in the header.');
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => setSuccessMessage(''), 3000);
+      
     } catch (error) {
       setErrors({ submit: 'Save failed, please try again later' });
     } finally {
@@ -208,9 +243,27 @@ const ProfilePage = () => {
     if (file) {
       const reader = new FileReader();
       reader.onload = (event) => {
+        const newAvatar = event.target?.result as string;
+        
+        // Update local state
         setUserInfo(prev => ({
           ...prev,
-          avatar: event.target?.result as string,
+          avatar: newAvatar,
+        }));
+        
+        // Immediately update the global user context for instant feedback
+        const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+        const updatedUser = {
+          ...currentUser,
+          avatar_url: newAvatar
+        };
+        localStorage.setItem('user', JSON.stringify(updatedUser));
+        
+        // Trigger storage event for immediate header update
+        window.dispatchEvent(new StorageEvent('storage', {
+          key: 'user',
+          newValue: JSON.stringify(updatedUser),
+          oldValue: JSON.stringify(currentUser)
         }));
       };
       reader.readAsDataURL(file);
@@ -267,7 +320,11 @@ const ProfilePage = () => {
               </button>
             )}
             <button
-              onClick={() => setIsEditing(true)}
+              onClick={() => {
+                setIsEditing(true);
+                setErrors({});
+                setSuccessMessage('');
+              }}
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
             >
               Edit Information
@@ -639,17 +696,36 @@ const ProfilePage = () => {
                   onClick={() => {
                     setIsEditing(false);
                     setErrors({});
+                    setSuccessMessage('');
                     // Re-load original data
                     const userData = localStorage.getItem('user');
                     if (userData) {
                       const user = JSON.parse(userData);
-                      setUserInfo(prev => ({ ...prev, ...user }));
+                      setUserInfo(prev => ({ 
+                        ...prev, 
+                        name: user.full_name || user.username || user.email?.split('@')[0] || prev.name,
+                        email: user.email || prev.email,
+                        avatar: user.avatar_url || prev.avatar,
+                        phone: user.phone || prev.phone,
+                        department: user.department || prev.department,
+                        position: user.position || prev.position,
+                        location: user.location || prev.location,
+                        bio: user.bio || prev.bio,
+                        provider: user.provider || prev.provider
+                      }));
                     }
                   }}
                   className="border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 px-4 py-2 rounded-lg transition-colors"
                 >
                   Cancel
                 </button>
+              </div>
+            )}
+
+            {/* Success message */}
+            {successMessage && (
+              <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+                <p className="text-sm text-green-600 dark:text-green-400">{successMessage}</p>
               </div>
             )}
 

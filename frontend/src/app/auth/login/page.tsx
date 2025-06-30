@@ -20,11 +20,15 @@ const LoginPage = () => {
   // Check for OAuth errors or success on component mount
   useEffect(() => {
     const error = searchParams.get('error');
+    const message = searchParams.get('message');
     const code = searchParams.get('code');
     const state = searchParams.get('state');
 
     if (error) {
       setErrors({ oauth: decodeURIComponent(error) });
+    } else if (message) {
+      // Handle success messages (like registration success)
+      setErrors({ success: decodeURIComponent(message) });
     } else if (code && state) {
       // Handle OAuth callback
       handleOAuthCallback(code, state);
@@ -72,27 +76,25 @@ const LoginPage = () => {
     setIsLoading(true);
     
     try {
-      // Simulate login API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Use REAL authentication instead of mock
+      const { login } = await import('../../../utils/auth');
       
-      // Simulate successful login, set user data
-      const mockUserData = {
-        id: '1',
-        name: 'John Doe',
-        email: formData.email,
-        avatar: null
-      };
+      const loginData = await login(
+        formData.email, 
+        formData.password, 
+        formData.rememberMe
+      );
       
-      const mockToken = 'mock-jwt-token-' + Date.now();
+      console.log('Real login successful:', loginData.user);
+      console.log('Auth method:', loginData.auth_method || 'cookie');
       
-      // Save to localStorage
-      localStorage.setItem('user', JSON.stringify(mockUserData));
-      localStorage.setItem('token', mockToken);
-      
-      // Login successful, redirect to dashboard
+      // Redirect to workspace
       router.push('/workspace');
     } catch (error) {
-      setErrors({ submit: 'Login failed, please check your credentials' });
+      console.error('Login error:', error);
+      setErrors({ 
+        submit: error instanceof Error ? error.message : 'Login failed, please check your credentials' 
+      });
     } finally {
       setIsLoading(false);
     }
@@ -108,18 +110,14 @@ const LoginPage = () => {
     setErrors({});
 
     try {
-      // Get authorization URL from backend with login origin
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/auth/oauth/keycloak/authorize?origin=login`);
+      // Import the new cookie-based auth function
+      const { getKeycloakAuthUrl } = await import('../../../utils/auth');
       
-      if (!response.ok) {
-        throw new Error('Failed to get authorization URL');
-      }
-
-      const data = await response.json();
+      // Get authorization URL using the new secure method
+      const data = await getKeycloakAuthUrl('login');
       
-      // Store state in localStorage for verification
+      // Store state in localStorage for verification (still needed for OAuth flow)
       localStorage.setItem('oauth_state', data.state);
-      // Store that OAuth was initiated from login page
       localStorage.setItem('oauth_origin', 'login');
       
       // Redirect to Keycloak
@@ -150,40 +148,19 @@ const LoginPage = () => {
         throw new Error('Invalid state parameter');
       }
 
-      // Exchange code for tokens
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/auth/oauth/keycloak/callback`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 
-          code, 
-          state,
-          redirect_uri: `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/auth/oauth/keycloak/callback`
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to exchange code for tokens');
-      }
-
-      const tokenData = await response.json();
+      // Import the new cookie-based auth function
+      const { loginWithKeycloak } = await import('../../../utils/auth');
       
-      // Save Keycloak tokens and user data to localStorage
-      localStorage.setItem('keycloak_access_token', tokenData.access_token);
-      if (tokenData.refresh_token) {
-        localStorage.setItem('keycloak_refresh_token', tokenData.refresh_token);
-      }
-      localStorage.setItem('token_expires_at', (Date.now() + (tokenData.expires_in * 1000)).toString());
-      localStorage.setItem('user', JSON.stringify(tokenData.user));
-      localStorage.setItem('auth_provider', 'keycloak');
+      // Exchange code for tokens using secure cookie method
+      const redirectUri = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/auth/oauth/keycloak/callback`;
+      const tokenData = await loginWithKeycloak(code, state, redirectUri);
       
       // Clean up OAuth state and origin
       localStorage.removeItem('oauth_state');
       localStorage.removeItem('oauth_origin');
       
       console.log('Keycloak login successful:', tokenData.user);
+      console.log('Auth method:', tokenData.auth_method); // Should show "cookie"
       
       // Redirect to workspace
       router.push('/workspace');
@@ -390,6 +367,13 @@ const LoginPage = () => {
             {errors.oauth && (
               <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
                 <p className="text-sm text-red-600 dark:text-red-400">{errors.oauth}</p>
+              </div>
+            )}
+
+            {/* Success message */}
+            {errors.success && (
+              <div className="p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+                <p className="text-sm text-green-600 dark:text-green-400">{errors.success}</p>
               </div>
             )}
 

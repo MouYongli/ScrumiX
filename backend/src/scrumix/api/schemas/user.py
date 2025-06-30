@@ -1,7 +1,7 @@
 """
 用户相关的Pydantic schemas
 """
-from typing import Optional, List
+from typing import Optional, List, Union
 from datetime import datetime
 from pydantic import BaseModel, EmailStr, ConfigDict
 from scrumix.api.models.user import AuthProvider, UserStatus
@@ -68,9 +68,13 @@ class LoginResponse(BaseModel):
 
 class TokenData(BaseModel):
     """Token数据"""
-    user_id: Optional[int] = None
+    user_id: Optional[Union[int, str]] = None
     email: Optional[str] = None
     scopes: List[str] = []
+    full_name: Optional[str] = None
+    username: Optional[str] = None
+    avatar_url: Optional[str] = None
+    provider: Optional[str] = None
 
 class OAuthTokenRequest(BaseModel):
     """OAuth Token请求"""

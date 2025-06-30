@@ -30,8 +30,26 @@ class Settings(BaseSettings):
     SECRET_KEY: str = os.environ.get("SECRET_KEY", "changeme")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days
     
+    # Environment Configuration
+    ENVIRONMENT: str = os.environ.get("ENVIRONMENT", "development")
+    
     # Debug Settings (TODO: Remove in production)
     DEBUG_OAUTH: bool = os.environ.get("DEBUG_OAUTH", "true").lower() == "true"
+    
+    # Security Settings - Environment Aware
+    @property
+    def SECURE_COOKIES(self) -> bool:
+        """Enable secure cookies only in production (requires HTTPS)"""
+        return self.ENVIRONMENT in ["production", "staging"]
+    
+    @property
+    def COOKIE_SAMESITE(self) -> str:
+        """Strict in production, Lax in development for easier testing"""
+        return "strict" if self.ENVIRONMENT == "production" else "lax"
+    
+    COOKIE_DOMAIN: Optional[str] = os.environ.get("COOKIE_DOMAIN", None)
+    SESSION_COOKIE_NAME: str = os.environ.get("SESSION_COOKIE_NAME", "scrumix_session")
+    REFRESH_COOKIE_NAME: str = os.environ.get("REFRESH_COOKIE_NAME", "scrumix_refresh")
     
     # URLs
     BACKEND_URL: str = os.environ.get("BACKEND_URL", "http://localhost:8000")

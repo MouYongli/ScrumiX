@@ -2,7 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { isAuthenticated, getCurrentUser, logout, type User } from '@/utils/auth';
+import { isAuthenticated, isAuthenticatedSync, getCurrentUser, logout, User } from '../../utils/auth';
 
 interface AuthGuardProps {
   children: React.ReactNode;
@@ -22,20 +22,40 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({
   const [user, setUser] = useState<User | null>(null);
 
   useEffect(() => {
-    const checkAuth = () => {
+    const checkAuth = async () => {
       try {
-        if (isAuthenticated()) {
+        // First do a quick sync check using local data
+        if (isAuthenticatedSync()) {
+          const currentUser = getCurrentUser();
+          if (currentUser) {
+            setUser(currentUser);
+            setIsLoading(false);
+            
+            // Then verify with server in background
+            const isValid = await isAuthenticated();
+            if (!isValid) {
+              // Server says token is invalid, redirect to login
+              await logout();
+              router.push('/auth/login');
+            }
+            return;
+          }
+        }
+        
+        // No local user data or sync check failed, verify with server
+        const isValid = await isAuthenticated();
+        if (isValid) {
           const currentUser = getCurrentUser();
           setUser(currentUser);
           setIsLoading(false);
         } else {
-          // Clear any stale data and redirect to login
-          logout();
+          // Not authenticated, clear any stale data and redirect
+          await logout();
           router.push('/auth/login');
         }
       } catch (error) {
         console.error('Authentication check failed:', error);
-        logout();
+        await logout();
         router.push('/auth/login');
       }
     };
@@ -55,16 +75,38 @@ export const AuthGuard: React.FC<AuthGuardProps> = ({
 };
 
 /**
- * Hook to get current authenticated user
+ * Hook to get current authenticated user with server verification
  */
 export const useAuth = () => {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const checkAuth = () => {
+    const checkAuth = async () => {
       try {
-        if (isAuthenticated()) {
+        // Quick sync check first
+        if (isAuthenticatedSync()) {
+          const currentUser = getCurrentUser();
+          if (currentUser) {
+            setUser(currentUser);
+            setLoading(false);
+            
+            // Verify with server in background
+            const isValid = await isAuthenticated();
+            if (!isValid) {
+              setUser(null);
+            } else {
+              // Update user data from server
+              const updatedUser = getCurrentUser();
+              setUser(updatedUser);
+            }
+            return;
+          }
+        }
+        
+        // No local data, check with server
+        const isValid = await isAuthenticated();
+        if (isValid) {
           const currentUser = getCurrentUser();
           setUser(currentUser);
         } else {
@@ -82,7 +124,7 @@ export const useAuth = () => {
 
     // Optional: Listen for storage changes to sync across tabs
     const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === 'user' || e.key === 'keycloak_access_token') {
+      if (e.key === 'user') {
         checkAuth();
       }
     };
@@ -94,10 +136,17 @@ export const useAuth = () => {
     };
   }, []);
 
-  const handleLogout = () => {
-    logout();
-    setUser(null);
-    window.location.href = '/auth/login';
+  const handleLogout = async () => {
+    try {
+      await logout();
+      setUser(null);
+      window.location.href = '/auth/login';
+    } catch (error) {
+      console.error('Logout failed:', error);
+      // Force logout even if API call fails
+      setUser(null);
+      window.location.href = '/auth/login';
+    }
   };
 
   return {
@@ -106,6 +155,23 @@ export const useAuth = () => {
     isAuthenticated: !!user,
     logout: handleLogout
   };
+};
+
+/**
+ * Hook for components that need to ensure authentication
+ * Automatically redirects to login if not authenticated
+ */
+export const useRequireAuth = () => {
+  const router = useRouter();
+  const { user, loading } = useAuth();
+
+  useEffect(() => {
+    if (!loading && !user) {
+      router.push('/auth/login');
+    }
+  }, [user, loading, router]);
+
+  return { user, loading };
 };
 
 /**

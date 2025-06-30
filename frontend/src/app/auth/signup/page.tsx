@@ -14,6 +14,7 @@ const SignupPage = () => {
     password: '',
     confirmPassword: '',
     agreeToTerms: false,
+    username: '',
   });
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
@@ -38,40 +39,19 @@ const SignupPage = () => {
         throw new Error('Invalid state parameter');
       }
 
-      // Exchange code for tokens
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/auth/oauth/keycloak/callback`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ 
-          code, 
-          state,
-          redirect_uri: `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/auth/oauth/keycloak/callback`
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.detail || 'Failed to exchange code for tokens');
-      }
-
-      const tokenData = await response.json();
+      // Import the new cookie-based auth function
+      const { loginWithKeycloak } = await import('../../../utils/auth');
       
-      // Save Keycloak tokens and user data to localStorage
-      localStorage.setItem('keycloak_access_token', tokenData.access_token);
-      if (tokenData.refresh_token) {
-        localStorage.setItem('keycloak_refresh_token', tokenData.refresh_token);
-      }
-      localStorage.setItem('token_expires_at', (Date.now() + (tokenData.expires_in * 1000)).toString());
-      localStorage.setItem('user', JSON.stringify(tokenData.user));
-      localStorage.setItem('auth_provider', 'keycloak');
+      // Exchange code for tokens using secure cookie method
+      const redirectUri = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/auth/oauth/keycloak/callback`;
+      const tokenData = await loginWithKeycloak(code, state, redirectUri);
       
       // Clean up OAuth state and origin
       localStorage.removeItem('oauth_state');
       localStorage.removeItem('oauth_origin');
       
       console.log('Keycloak signup successful:', tokenData.user);
+      console.log('Auth method:', tokenData.auth_method); // Should show "cookie"
       
       // Redirect to workspace
       router.push('/workspace');
@@ -159,27 +139,25 @@ const SignupPage = () => {
     setIsLoading(true);
     
     try {
-      // Simulate signup API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      //  Use REAL registration instead of mock
+      const { register } = await import('../../../utils/auth');
       
-      // Simulate successful signup, set user data
-      const mockUserData = {
-        id: '1',
-        name: formData.name,
+      const user = await register({
         email: formData.email,
-        avatar: null
-      };
+        password: formData.password, 
+        full_name: formData.name,
+        username: formData.username || undefined
+      });
       
-      const mockToken = 'mock-jwt-token-' + Date.now();
+      console.log('Real registration successful:', user);
       
-      // Save to localStorage
-      localStorage.setItem('user', JSON.stringify(mockUserData));
-      localStorage.setItem('token', mockToken);
-      
-      // Signup successful, redirect to dashboard
-      router.push('/workspace');
+      // Registration successful, redirect to login with success message
+      router.push('/auth/login?message=Registration successful! Please sign in.');
     } catch (error) {
-      setErrors({ submit: 'Registration failed, please try again later' });
+      console.error('Registration error:', error);
+      setErrors({ 
+        submit: error instanceof Error ? error.message : 'Registration failed, please try again later' 
+      });
     } finally {
       setIsLoading(false);
     }
