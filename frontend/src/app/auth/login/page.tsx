@@ -108,8 +108,8 @@ const LoginPage = () => {
     setErrors({});
 
     try {
-      // Get authorization URL from backend
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/auth/oauth/keycloak/authorize`);
+      // Get authorization URL from backend with login origin
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/auth/oauth/keycloak/authorize?origin=login`);
       
       if (!response.ok) {
         throw new Error('Failed to get authorization URL');
@@ -119,6 +119,8 @@ const LoginPage = () => {
       
       // Store state in localStorage for verification
       localStorage.setItem('oauth_state', data.state);
+      // Store that OAuth was initiated from login page
+      localStorage.setItem('oauth_origin', 'login');
       
       // Redirect to Keycloak
       window.location.href = data.authorization_url;
@@ -134,9 +136,17 @@ const LoginPage = () => {
     setIsLoading(true);
     
     try {
-      // Verify state
+      // Verify state (extract base state from encoded format)
       const storedState = localStorage.getItem('oauth_state');
-      if (state !== storedState) {
+      let baseState = state;
+      if (state && state.includes(':')) {
+        baseState = state.split(':')[0];
+      }
+      let storedBaseState = storedState;
+      if (storedState && storedState.includes(':')) {
+        storedBaseState = storedState.split(':')[0];
+      }
+      if (baseState !== storedBaseState) {
         throw new Error('Invalid state parameter');
       }
 
@@ -169,8 +179,9 @@ const LoginPage = () => {
       localStorage.setItem('user', JSON.stringify(tokenData.user));
       localStorage.setItem('auth_provider', 'keycloak');
       
-      // Clean up OAuth state
+      // Clean up OAuth state and origin
       localStorage.removeItem('oauth_state');
+      localStorage.removeItem('oauth_origin');
       
       console.log('Keycloak login successful:', tokenData.user);
       

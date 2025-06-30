@@ -120,18 +120,22 @@ async def logout(
     return {"message": "Successfully logged out"}
 
 @router.get("/oauth/keycloak/authorize")
-async def keycloak_authorize():
+async def keycloak_authorize(origin: str = "login"):
     """获取Keycloak OAuth授权URL"""
     # 后端callback的redirect_uri
     redirect_uri = f"{settings.BACKEND_URL}/api/v1/auth/oauth/keycloak/callback"
-    state = secrets.token_urlsafe(32)
+    # 生成基础状态令牌
+    base_state = secrets.token_urlsafe(32)
+    # 将origin编码到状态中：{base_state}:{origin}
+    encoded_state = f"{base_state}:{origin}"
+    
     authorization_url = keycloak_oauth.get_authorization_url(
         redirect_uri=redirect_uri,
-        state=state
+        state=encoded_state
     )
     return {
         "authorization_url": authorization_url,
-        "state": state
+        "state": encoded_state
     }
 
 @router.get("/oauth/keycloak/callback")
@@ -145,32 +149,44 @@ async def keycloak_callback_get(
     """处理Keycloak OAuth GET回调（Keycloak重定向到这里）- 简化版本，不存储到数据库"""
     frontend_url = settings.FRONTEND_URL or "http://localhost:3000"
     
+    # 解码状态以获取origin信息
+    origin = "login"  # 默认为login
+    if state and ":" in state:
+        try:
+            base_state, origin = state.split(":", 1)
+        except ValueError:
+            # 如果解析失败，使用原始state和默认origin
+            pass
+    
+    # 根据origin确定重定向页面
+    redirect_page = "/auth/signup" if origin == "signup" else "/auth/login"
+    
     try:
         # 检查是否有错误
         if error:
             error_msg = error_description or f"OAuth error: {error}"
             return RedirectResponse(
-                url=f"{frontend_url}/auth/login?error={error_msg}",
+                url=f"{frontend_url}{redirect_page}?error={error_msg}",
                 status_code=302
             )
         
         # 检查必需的参数
         if not code or not state:
             return RedirectResponse(
-                url=f"{frontend_url}/auth/login?error=Missing authorization code or state",
+                url=f"{frontend_url}{redirect_page}?error=Missing authorization code or state",
                 status_code=302
             )
         
         # 直接重定向到前端，让前端处理token交换
         return RedirectResponse(
-            url=f"{frontend_url}/auth/login?code={code}&state={state}",
+            url=f"{frontend_url}{redirect_page}?code={code}&state={state}",
             status_code=302
         )
         
     except Exception as e:
         print(f"Keycloak callback error: {e}")
         return RedirectResponse(
-            url=f"{frontend_url}/auth/login?error=Internal server error",
+            url=f"{frontend_url}{redirect_page}?error=Internal server error",
             status_code=302
         )
 

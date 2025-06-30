@@ -1,6 +1,6 @@
 # Backend Python ignores
-backend/*__pycache__/
-backend/*.py[cod]
+backend/**/__pycache__/
+backend/**/*.py[cod]
 backend/*.pyc
 backend/*$py.class
 backend/*.so
