@@ -138,6 +138,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
                          placeholder-gray-500 dark:placeholder-gray-400 text-sm"
               />
             </div>
+
           </div>
 
           {/* Right: Notifications and user menu */}
