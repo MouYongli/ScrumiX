@@ -1,0 +1,211 @@
+"""
+Project management API routes
+"""
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlalchemy.orm import Session
+from typing import List, Optional
+
+from scrumix.api.core.security import get_current_user
+from scrumix.api.db.database import get_db
+from scrumix.api.crud.project import project_crud
+from scrumix.api.models.project import ProjectStatus
+from scrumix.api.schemas.project import (
+    ProjectResponse, ProjectCreate, ProjectUpdate
+)
+
+router = APIRouter()
+
+@router.get("/", response_model=List[ProjectResponse])
+async def get_projects(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    status: Optional[str] = Query(None, description="Filter by project status"),
+    search: Optional[str] = Query(None, description="Search term"),
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get list of projects"""
+    try:
+        # Validate status parameter
+        project_status = None
+        if status and status != "all":
+            try:
+                project_status = ProjectStatus(status.replace("-", "_").upper())
+            except ValueError:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail=f"Invalid status: {status}"
+                )
+        
+        # Execute search or get project list
+        if search:
+            projects = project_crud.search_projects(db, search, skip=skip, limit=limit)
+        else:
+            projects = project_crud.get_projects(db, skip=skip, limit=limit, status=project_status)
+        
+        # Convert to response format
+        response_projects = []
+        for project in projects:
+            # TODO: Calculate actual progress, member count and task statistics
+            # Currently using default values, will be retrieved from database when relationships are added
+            project_response = ProjectResponse.from_db_model(
+                project=project,
+                progress=0,  # Calculate from task relationships
+                members=1,   # Calculate from project member relationships
+                tasks_completed=0,  # Calculate from task relationships
+                tasks_total=0       # Calculate from task relationships
+            )
+            response_projects.append(project_response)
+        
+        return response_projects
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@router.post("/", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
+async def create_project(
+    project_create: ProjectCreate,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new project"""
+    try:
+        # Check if project name already exists
+        existing_project = project_crud.get_by_name(db, project_create.name)
+        if existing_project:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Project name already exists"
+            )
+        
+        # Create project
+        project = project_crud.create_project(db, project_create)
+        
+        # Convert to response format
+        project_response = ProjectResponse.from_db_model(
+            project=project,
+            progress=0,
+            members=1,
+            tasks_completed=0,
+            tasks_total=0
+        )
+        
+        return project_response
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@router.get("/{project_id}", response_model=ProjectResponse)
+async def get_project(
+    project_id: int,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get project details by ID"""
+    project = project_crud.get_by_id(db, project_id)
+    if not project:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    # Convert to response format
+    project_response = ProjectResponse.from_db_model(
+        project=project,
+        progress=0,  # TODO: Calculate from actual relationships
+        members=1,   # TODO: Calculate from actual relationships
+        tasks_completed=0,  # TODO: Calculate from actual relationships
+        tasks_total=0       # TODO: Calculate from actual relationships
+    )
+    
+    return project_response
+
+@router.put("/{project_id}", response_model=ProjectResponse)
+async def update_project(
+    project_id: int,
+    project_update: ProjectUpdate,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update project information"""
+    try:
+        updated_project = project_crud.update_project(db, project_id, project_update)
+        if not updated_project:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Project not found"
+            )
+        
+        # Convert to response format
+        project_response = ProjectResponse.from_db_model(
+            project=updated_project,
+            progress=0,  # TODO: Calculate from actual relationships
+            members=1,   # TODO: Calculate from actual relationships
+            tasks_completed=0,  # TODO: Calculate from actual relationships
+            tasks_total=0       # TODO: Calculate from actual relationships
+        )
+        
+        return project_response
+        
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@router.delete("/{project_id}")
+async def delete_project(
+    project_id: int,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete project"""
+    success = project_crud.delete_project(db, project_id)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Project not found"
+        )
+    
+    return {"message": "Project deleted successfully"}
+
+@router.get("/status/{status}", response_model=List[ProjectResponse])
+async def get_projects_by_status(
+    status: str,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get projects by status"""
+    try:
+        # Convert status parameter
+        project_status = ProjectStatus(status.replace("-", "_").upper())
+        
+        projects = project_crud.get_projects_by_status(db, project_status, skip=skip, limit=limit)
+        
+        # Convert to response format
+        response_projects = []
+        for project in projects:
+            project_response = ProjectResponse.from_db_model(
+                project=project,
+                progress=0,
+                members=1,
+                tasks_completed=0,
+                tasks_total=0
+            )
+            response_projects.append(project_response)
+        
+        return response_projects
+        
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Invalid status: {status}"
+        ) 

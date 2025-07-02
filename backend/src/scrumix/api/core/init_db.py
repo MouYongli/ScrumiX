@@ -1,8 +1,10 @@
 """
-数据库初始化
+Database initialization
 """
 from scrumix.api.db.database import create_tables
+# Import all models to ensure SQLAlchemy can find them
+from scrumix.api.models import User, UserOAuth, UserSession, Project, ProjectStatus, Backlog, BacklogStatus, BacklogPriority
 
 def init_db():
-    """初始化数据库"""
+    """Initialize database"""
     create_tables() 
