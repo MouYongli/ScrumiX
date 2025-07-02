@@ -1,23 +1,84 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { Eye, EyeOff, Mail, Lock, User, ArrowRight, Github, CheckCircle } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Eye, EyeOff, Mail, Lock, User, ArrowRight, Github, CheckCircle, Shield } from 'lucide-react';
 
 const SignupPage = () => {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     password: '',
     confirmPassword: '',
     agreeToTerms: false,
+    username: '',
   });
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [isLoading, setIsLoading] = useState(false);
+
+  const handleOAuthCallback = async (code: string, state: string) => {
+    setIsLoading(true);
+    
+    try {
+      // Verify state (extract base state from encoded format)
+      const storedState = localStorage.getItem('oauth_state');
+      let baseState = state;
+      if (state && state.includes(':')) {
+        baseState = state.split(':')[0];
+      }
+      let storedBaseState = storedState;
+      if (storedState && storedState.includes(':')) {
+        storedBaseState = storedState.split(':')[0];
+      }
+      if (baseState !== storedBaseState) {
+        throw new Error('Invalid state parameter');
+      }
+
+      // Import the new cookie-based auth function
+      const { loginWithKeycloak } = await import('../../../utils/auth');
+      
+      // Exchange code for tokens using secure cookie method
+      const redirectUri = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/auth/oauth/keycloak/callback`;
+      const tokenData = await loginWithKeycloak(code, state, redirectUri);
+      
+      // Clean up OAuth state and origin
+      localStorage.removeItem('oauth_state');
+      localStorage.removeItem('oauth_origin');
+      
+      console.log('Keycloak signup successful:', tokenData.user);
+      console.log('Auth method:', tokenData.auth_method); // Should show "cookie"
+      
+      // Redirect to workspace
+      router.push('/workspace');
+    } catch (error) {
+      console.error('OAuth callback error:', error);
+      setErrors({ oauth: error instanceof Error ? error.message : 'OAuth signup failed' });
+      
+      // Clean up URL parameters
+      router.replace('/auth/signup');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Check for OAuth errors or success on component mount
+  useEffect(() => {
+    const error = searchParams.get('error');
+    const code = searchParams.get('code');
+    const state = searchParams.get('state');
+
+    if (error) {
+      setErrors({ oauth: decodeURIComponent(error) });
+    } else if (code && state) {
+      // Handle OAuth callback
+      handleOAuthCallback(code, state);
+    }
+  }, [searchParams]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
@@ -78,27 +139,25 @@ const SignupPage = () => {
     setIsLoading(true);
     
     try {
-      // Simulate signup API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      //  Use REAL registration instead of mock
+      const { register } = await import('../../../utils/auth');
       
-      // Simulate successful signup, set user data
-      const mockUserData = {
-        id: '1',
-        name: formData.name,
+      const user = await register({
         email: formData.email,
-        avatar: null
-      };
+        password: formData.password, 
+        full_name: formData.name,
+        username: formData.username || undefined
+      });
       
-      const mockToken = 'mock-jwt-token-' + Date.now();
+      console.log('Real registration successful:', user);
       
-      // Save to localStorage
-      localStorage.setItem('user', JSON.stringify(mockUserData));
-      localStorage.setItem('token', mockToken);
-      
-      // Signup successful, redirect to dashboard
-      router.push('/workspace');
+      // Registration successful, redirect to login with success message
+      router.push('/auth/login?message=Registration successful! Please sign in.');
     } catch (error) {
-      setErrors({ submit: 'Registration failed, please try again later' });
+      console.error('Registration error:', error);
+      setErrors({ 
+        submit: error instanceof Error ? error.message : 'Registration failed, please try again later' 
+      });
     } finally {
       setIsLoading(false);
     }
@@ -107,6 +166,35 @@ const SignupPage = () => {
   const handleSocialSignup = (provider: string) => {
     // Simulate third-party signup
     console.log(`Signup with ${provider}`);
+  };
+
+  const handleKeycloakSignup = async () => {
+    setIsLoading(true);
+    setErrors({});
+
+    try {
+      // Get authorization URL from backend with signup origin
+      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/auth/oauth/keycloak/authorize?origin=signup`);
+      
+      if (!response.ok) {
+        throw new Error('Failed to get authorization URL');
+      }
+
+      const data = await response.json();
+      
+      // Store state in localStorage for verification
+      localStorage.setItem('oauth_state', data.state);
+      // Store that OAuth was initiated from signup page
+      localStorage.setItem('oauth_origin', 'signup');
+      
+      // Redirect to Keycloak
+      window.location.href = data.authorization_url;
+    } catch (error) {
+      console.error('Keycloak signup error:', error);
+      setErrors({ oauth: 'Failed to initiate Keycloak signup' });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const getPasswordStrength = () => {
@@ -208,6 +296,13 @@ const SignupPage = () => {
             >
               <Github className="w-5 h-5" />
               <span className="text-gray-700 dark:text-gray-300">Sign up with GitHub</span>
+            </button>
+            <button
+              onClick={handleKeycloakSignup}
+              className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            >
+              <Shield className="w-5 h-5" />
+              <span className="text-gray-700 dark:text-gray-300">Sign up with Keycloak</span>
             </button>
           </div>
 
@@ -392,6 +487,13 @@ const SignupPage = () => {
             {errors.submit && (
               <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
                 <p className="text-sm text-red-600 dark:text-red-400">{errors.submit}</p>
+              </div>
+            )}
+
+            {/* OAuth error */}
+            {errors.oauth && (
+              <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                <p className="text-sm text-red-600 dark:text-red-400">{errors.oauth}</p>
               </div>
             )}
 

@@ -1,10 +1,13 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { User, Mail, Phone, MapPin, Calendar, Camera, Save, Lock, Eye, EyeOff, Edit2, CheckCircle2 } from 'lucide-react';
+import { User, Mail, Phone, MapPin, Calendar, Camera, Save, Lock, Eye, EyeOff, Edit2, CheckCircle2, Shield } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
+import { useAuth } from '@/components/auth/AuthGuard';
+import { getCurrentUser, getAuthProvider } from '@/utils/auth';
 
 const ProfilePage = () => {
+  const { user: authUser, isAuthenticated } = useAuth();
   const [userInfo, setUserInfo] = useState({
     id: '',
     name: '',
@@ -16,6 +19,8 @@ const ProfilePage = () => {
     bio: '',
     joinDate: '',
     avatar: null as string | null,
+    provider: '',
+    is_keycloak_user: false,
   });
 
   const [isEditing, setIsEditing] = useState(false);
@@ -32,30 +37,51 @@ const ProfilePage = () => {
   });
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [isLoading, setIsLoading] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string>('');
 
   // Load user information
   useEffect(() => {
     const loadUserData = () => {
-      const userData = localStorage.getItem('user');
-      if (userData) {
-        const user = JSON.parse(userData);
+      const currentUser = getCurrentUser();
+      const authProvider = getAuthProvider();
+      const isKeycloakUser = authProvider === 'keycloak';
+      
+      if (currentUser) {
         setUserInfo({
-          id: user.id || '1',
-          name: user.name || '',
-          email: user.email || '',
-          phone: user.phone || '',
-          department: user.department || 'Product Development',
-          position: user.position || 'Scrum Master',
-          location: user.location || 'Shanghai',
-          bio: user.bio || 'Passionate about agile development, dedicated to improving team collaboration efficiency.',
-          joinDate: user.joinDate || '2023-01-15',
-          avatar: user.avatar || null,
+          id: currentUser.id || '1',
+          name: currentUser.full_name || currentUser.username || currentUser.email.split('@')[0],
+          email: currentUser.email || '',
+          phone: (currentUser as any).phone || '',
+          department: (currentUser as any).department || 'Product Development',
+          position: (currentUser as any).position || 'Scrum Master',
+          location: (currentUser as any).location || 'Remote',
+          bio: (currentUser as any).bio || `${isKeycloakUser ? 'Authenticated via Keycloak SSO. ' : ''}Passionate about agile development, dedicated to improving team collaboration efficiency.`,
+          joinDate: (currentUser as any).joinDate || new Date().toISOString().split('T')[0],
+          avatar: currentUser.avatar_url || null,
+          provider: currentUser.provider || 'local',
+          is_keycloak_user: isKeycloakUser,
+        });
+      } else {
+        // Fallback for unauthenticated users
+        setUserInfo({
+          id: '1',
+          name: 'Guest User',
+          email: 'guest@example.com',
+          phone: '',
+          department: 'Product Development',
+          position: 'Scrum Master',
+          location: 'Remote',
+          bio: 'Passionate about agile development, dedicated to improving team collaboration efficiency.',
+          joinDate: '2023-01-15',
+          avatar: null,
+          provider: 'local',
+          is_keycloak_user: false,
         });
       }
     };
 
     loadUserData();
-  }, []);
+  }, [authUser, isAuthenticated]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
     const { name, value } = e.target;
@@ -63,9 +89,12 @@ const ProfilePage = () => {
       ...prev,
       [name]: value,
     }));
-    // Clear error messages
+    // Clear error and success messages
     if (errors[name]) {
       setErrors(prev => ({ ...prev, [name]: '' }));
+    }
+    if (successMessage) {
+      setSuccessMessage('');
     }
   };
 
@@ -139,13 +168,44 @@ const ProfilePage = () => {
       // Mock save API call
       await new Promise(resolve => setTimeout(resolve, 1000));
       
-      // Update user information in localStorage
+      // Update user information in localStorage with proper field mapping
       const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
-      const updatedUser = { ...currentUser, ...userInfo };
+      const updatedUser = {
+        ...currentUser,
+        // Map profile fields to User interface fields
+        full_name: userInfo.name,
+        email: userInfo.email,
+        avatar_url: userInfo.avatar,
+        username: userInfo.name.toLowerCase().replace(/\s+/g, ''), // Generate username from name
+        // Keep additional profile fields as extended properties
+        phone: userInfo.phone,
+        department: userInfo.department,
+        position: userInfo.position,
+        location: userInfo.location,
+        bio: userInfo.bio,
+        joinDate: userInfo.joinDate,
+        provider: userInfo.provider,
+        is_verified: currentUser.is_verified || true
+      };
+      
+      // Update localStorage - this will trigger the storage change listener in useAuth()
       localStorage.setItem('user', JSON.stringify(updatedUser));
       
+      // Trigger a storage event manually for same-tab updates
+      window.dispatchEvent(new StorageEvent('storage', {
+        key: 'user',
+        newValue: JSON.stringify(updatedUser),
+        oldValue: JSON.stringify(currentUser)
+      }));
+      
       setIsEditing(false);
-      // Success message can be added here
+      
+      // Show success message
+      setSuccessMessage('Profile updated successfully! Changes will appear in the header.');
+      
+      // Clear success message after 3 seconds
+      setTimeout(() => setSuccessMessage(''), 3000);
+      
     } catch (error) {
       setErrors({ submit: 'Save failed, please try again later' });
     } finally {
@@ -183,9 +243,27 @@ const ProfilePage = () => {
     if (file) {
       const reader = new FileReader();
       reader.onload = (event) => {
+        const newAvatar = event.target?.result as string;
+        
+        // Update local state
         setUserInfo(prev => ({
           ...prev,
-          avatar: event.target?.result as string,
+          avatar: newAvatar,
+        }));
+        
+        // Immediately update the global user context for instant feedback
+        const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+        const updatedUser = {
+          ...currentUser,
+          avatar_url: newAvatar
+        };
+        localStorage.setItem('user', JSON.stringify(updatedUser));
+        
+        // Trigger storage event for immediate header update
+        window.dispatchEvent(new StorageEvent('storage', {
+          key: 'user',
+          newValue: JSON.stringify(updatedUser),
+          oldValue: JSON.stringify(currentUser)
         }));
       };
       reader.readAsDataURL(file);
@@ -203,8 +281,10 @@ const ProfilePage = () => {
       );
     }
     return (
-      <div className="w-24 h-24 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center">
-        <User className="w-12 h-12 text-gray-500 dark:text-gray-400" />
+      <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
+        <span className="text-white font-bold text-2xl">
+          {userInfo.name.charAt(0).toUpperCase()}
+        </span>
       </div>
     );
   };
@@ -230,19 +310,33 @@ const ProfilePage = () => {
         
         {!isEditing && !isChangingPassword && (
           <div className="flex gap-3">
+            {!userInfo.is_keycloak_user && (
+              <button
+                onClick={() => setIsChangingPassword(true)}
+                className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors"
+              >
+                <Lock className="w-4 h-4" />
+                Change Password
+              </button>
+            )}
             <button
-              onClick={() => setIsChangingPassword(true)}
-              className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors"
-            >
-              <Lock className="w-4 h-4" />
-              Change Password
-            </button>
-            <button
-              onClick={() => setIsEditing(true)}
+              onClick={() => {
+                setIsEditing(true);
+                setErrors({});
+                setSuccessMessage('');
+              }}
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
             >
               Edit Information
             </button>
+            
+            {/* Info about Keycloak password management */}
+            {userInfo.is_keycloak_user && (
+              <div className="flex items-center gap-2 px-4 py-2 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 rounded-lg text-sm">
+                <Shield className="w-4 h-4" />
+                <span>Password managed by Keycloak SSO</span>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -272,6 +366,14 @@ const ProfilePage = () => {
               </h3>
               <p className="text-gray-600 dark:text-gray-400">{userInfo.position}</p>
               <p className="text-sm text-gray-500 dark:text-gray-400">{userInfo.department}</p>
+              
+              {/* Keycloak authentication indicator */}
+              {userInfo.is_keycloak_user && (
+                <div className="mt-3 inline-flex items-center gap-2 px-3 py-1 bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 rounded-full text-sm">
+                  <Shield className="w-4 h-4" />
+                  <span>Keycloak SSO</span>
+                </div>
+              )}
             </div>
 
             {/* Quick info */}
@@ -295,6 +397,19 @@ const ProfilePage = () => {
                 <span className="text-gray-600 dark:text-gray-400">
                   Joined on {new Date(userInfo.joinDate).toLocaleDateString('en-US')}
                 </span>
+              </div>
+              
+              {/* Authentication provider info */}
+              <div className="flex items-center gap-3 text-sm">
+                <Shield className="w-4 h-4 text-gray-400" />
+                <span className="text-gray-600 dark:text-gray-400">
+                  {userInfo.is_keycloak_user ? 'Keycloak SSO Authentication' : 'Local Authentication'}
+                </span>
+                {userInfo.is_keycloak_user && (
+                  <span className="bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 px-2 py-1 rounded-full text-xs">
+                    Verified
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -457,15 +572,18 @@ const ProfilePage = () => {
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                   Email
+                  {userInfo.is_keycloak_user && (
+                    <span className="ml-2 text-xs text-blue-600 dark:text-blue-400">(Managed by Keycloak)</span>
+                  )}
                 </label>
                 <input
                   type="email"
                   name="email"
                   value={userInfo.email}
                   onChange={handleInputChange}
-                  disabled={!isEditing}
+                  disabled={!isEditing || userInfo.is_keycloak_user}
                   className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white transition-colors ${
-                    !isEditing ? 'bg-gray-50 dark:bg-gray-600' : ''
+                    !isEditing || userInfo.is_keycloak_user ? 'bg-gray-50 dark:bg-gray-600' : ''
                   } ${errors.email ? 'border-red-300 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'}`}
                 />
                 {errors.email && (
@@ -578,17 +696,36 @@ const ProfilePage = () => {
                   onClick={() => {
                     setIsEditing(false);
                     setErrors({});
+                    setSuccessMessage('');
                     // Re-load original data
                     const userData = localStorage.getItem('user');
                     if (userData) {
                       const user = JSON.parse(userData);
-                      setUserInfo(prev => ({ ...prev, ...user }));
+                      setUserInfo(prev => ({ 
+                        ...prev, 
+                        name: user.full_name || user.username || user.email?.split('@')[0] || prev.name,
+                        email: user.email || prev.email,
+                        avatar: user.avatar_url || prev.avatar,
+                        phone: user.phone || prev.phone,
+                        department: user.department || prev.department,
+                        position: user.position || prev.position,
+                        location: user.location || prev.location,
+                        bio: user.bio || prev.bio,
+                        provider: user.provider || prev.provider
+                      }));
                     }
                   }}
                   className="border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 px-4 py-2 rounded-lg transition-colors"
                 >
                   Cancel
                 </button>
+              </div>
+            )}
+
+            {/* Success message */}
+            {successMessage && (
+              <div className="mt-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
+                <p className="text-sm text-green-600 dark:text-green-400">{successMessage}</p>
               </div>
             )}
 

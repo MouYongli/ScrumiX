@@ -2,17 +2,54 @@
 Configuration settings for the application
 """
 import os
+from pathlib import Path
 from typing import Any, Dict, Optional
 from pydantic import PostgresDsn, field_validator, ConfigDict
 from pydantic_settings import BaseSettings
 
+# Find the .env file in common locations
+def find_env_file():
+    """Find the .env file in common locations"""
+    possible_paths = [
+        ".env",  # Current working directory
+        "backend/.env",  # From project root
+        Path(__file__).parent.parent.parent.parent.parent / ".env",  # Relative to this file
+    ]
+    
+    for path in possible_paths:
+        if Path(path).exists():
+            return str(path)
+    
+    return None
+
 class Settings(BaseSettings):
-    model_config = ConfigDict(env_file=".env", extra="ignore")
+    model_config = ConfigDict(env_file=find_env_file(), extra="ignore")
     """Application settings"""
     PROJECT_NAME: str = "ScrumiX"
     API_V1_STR: str = "/api/v1"
     SECRET_KEY: str = os.environ.get("SECRET_KEY", "changeme")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days
+    
+    # Environment Configuration
+    ENVIRONMENT: str = os.environ.get("ENVIRONMENT", "development")
+    
+    # Debug Settings (TODO: Remove in production)
+    DEBUG_OAUTH: bool = os.environ.get("DEBUG_OAUTH", "true").lower() == "true"
+    
+    # Security Settings - Environment Aware
+    @property
+    def SECURE_COOKIES(self) -> bool:
+        """Enable secure cookies only in production (requires HTTPS)"""
+        return self.ENVIRONMENT in ["production", "staging"]
+    
+    @property
+    def COOKIE_SAMESITE(self) -> str:
+        """Strict in production, Lax in development for easier testing"""
+        return "strict" if self.ENVIRONMENT == "production" else "lax"
+    
+    COOKIE_DOMAIN: Optional[str] = os.environ.get("COOKIE_DOMAIN", None)
+    SESSION_COOKIE_NAME: str = os.environ.get("SESSION_COOKIE_NAME", "scrumix_session")
+    REFRESH_COOKIE_NAME: str = os.environ.get("REFRESH_COOKIE_NAME", "scrumix_refresh")
     
     # URLs
     BACKEND_URL: str = os.environ.get("BACKEND_URL", "http://localhost:8000")
