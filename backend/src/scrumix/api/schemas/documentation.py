@@ -11,7 +11,7 @@ class DocumentationBase(BaseModel):
     title: str
     type: DocumentationType = DocumentationType.OTHER
     description: Optional[str] = None
-    content: str
+    file_url: str
 
 class DocumentationCreate(DocumentationBase):
     """Create documentation schema"""
@@ -24,7 +24,7 @@ class DocumentationUpdate(BaseModel):
     title: Optional[str] = None
     type: Optional[DocumentationType] = None
     description: Optional[str] = None
-    content: Optional[str] = None
+    file_url: Optional[str] = None
 
 class DocumentationInDB(DocumentationBase):
     """Documentation information in database"""
@@ -42,32 +42,19 @@ class DocumentationResponse(DocumentationBase):
     createdAt: datetime = Field(alias="created_at")
     updatedAt: datetime = Field(alias="updated_at")
     
-    # Calculated fields for frontend display
-    contentPreview: Optional[str] = None  # First 200 characters of content
-    wordCount: Optional[int] = None  # Word count of content
+    # Additional fields for frontend display
+    fileUrl: str = Field(alias="file_url")  # Aliased for frontend consistency
     
     @classmethod
-    def from_db_model(cls, documentation: "Documentation", 
-                     include_full_content: bool = True) -> "DocumentationResponse":
+    def from_db_model(cls, documentation: "Documentation") -> "DocumentationResponse":
         """Create response object from database model"""
-        content = documentation.content if include_full_content else ""
-        content_preview = None
-        word_count = None
-        
-        if documentation.content:
-            # Create preview (first 200 characters)
-            content_preview = (documentation.content[:200] + "...") if len(documentation.content) > 200 else documentation.content
-            # Calculate word count
-            word_count = len(documentation.content.split())
-        
         return cls(
             id=documentation.doc_id,
             title=documentation.title,
             type=documentation.type,
             description=documentation.description,
-            content=content,
+            file_url=documentation.file_url,
             createdAt=documentation.created_at,
             updatedAt=documentation.updated_at,
-            contentPreview=content_preview,
-            wordCount=word_count
+            fileUrl=documentation.file_url
         ) 

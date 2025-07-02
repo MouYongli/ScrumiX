@@ -23,7 +23,7 @@ class DocumentationCRUD(CRUDBase[Documentation, DocumentationCreate, Documentati
             title=documentation_create.title,
             type=documentation_create.type,
             description=documentation_create.description,
-            content=documentation_create.content
+            file_url=documentation_create.file_url
         )
         
         db.add(db_documentation)
@@ -50,21 +50,20 @@ class DocumentationCRUD(CRUDBase[Documentation, DocumentationCreate, Documentati
         return query.order_by(Documentation.updated_at.desc()).offset(skip).limit(limit).all()
     
     def search_documentations(self, db: Session, search_term: str, skip: int = 0, limit: int = 100) -> List[Documentation]:
-        """Search documentation items by title, description, or content"""
+        """Search documentation items by title and description"""
         query = db.query(Documentation).filter(
             or_(
                 Documentation.title.ilike(f"%{search_term}%"),
-                Documentation.description.ilike(f"%{search_term}%"),
-                Documentation.content.ilike(f"%{search_term}%")
+                Documentation.description.ilike(f"%{search_term}%")
             )
         )
         
         return query.order_by(Documentation.updated_at.desc()).offset(skip).limit(limit).all()
     
-    def search_by_content(self, db: Session, search_term: str, skip: int = 0, limit: int = 100) -> List[Documentation]:
-        """Search documentation items specifically by content"""
+    def search_by_file_url(self, db: Session, search_term: str, skip: int = 0, limit: int = 100) -> List[Documentation]:
+        """Search documentation items by file URL pattern"""
         query = db.query(Documentation).filter(
-            Documentation.content.ilike(f"%{search_term}%")
+            Documentation.file_url.ilike(f"%{search_term}%")
         )
         
         return query.order_by(Documentation.updated_at.desc()).offset(skip).limit(limit).all()
@@ -135,14 +134,8 @@ class DocumentationCRUD(CRUDBase[Documentation, DocumentationCreate, Documentati
         for doc_type in DocumentationType:
             type_counts[doc_type.value] = self.count_documentations(db, doc_type)
         
-        # Get total word count
-        docs = db.query(Documentation).all()
-        total_words = sum(len(doc.content.split()) for doc in docs if doc.content)
-        
         return {
             "total_documents": total,
-            "total_words": total_words,
-            "average_words_per_document": total_words // total if total > 0 else 0,
             "documents_by_type": type_counts
         }
 

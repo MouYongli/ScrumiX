@@ -23,8 +23,7 @@ def get_documentations(
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
     doc_type: Optional[DocumentationType] = Query(None, description="Filter by documentation type"),
-    search: Optional[str] = Query(None, description="Search in title, description, and content"),
-    preview_only: bool = Query(False, description="Return only preview content"),
+    search: Optional[str] = Query(None, description="Search in title and description"),
     db: Session = Depends(get_db),
     current_user: UserInDB = Depends(get_current_user)
 ):
@@ -38,7 +37,7 @@ def get_documentations(
             documentations = documentation_crud.get_documentations(db, skip=skip, limit=limit, doc_type=doc_type)
         
         return [
-            DocumentationResponse.from_db_model(doc, include_full_content=not preview_only) 
+            DocumentationResponse.from_db_model(doc) 
             for doc in documentations
         ]
     except Exception as e:
@@ -117,7 +116,7 @@ def get_documentations_by_type(
     doc_type: DocumentationType,
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
-    preview_only: bool = Query(False, description="Return only preview content"),
+
     db: Session = Depends(get_db),
     current_user: UserInDB = Depends(get_current_user)
 ):
@@ -127,38 +126,36 @@ def get_documentations_by_type(
     try:
         documentations = documentation_crud.get_documentations_by_type(db, doc_type, skip=skip, limit=limit)
         return [
-            DocumentationResponse.from_db_model(doc, include_full_content=not preview_only) 
+            DocumentationResponse.from_db_model(doc) 
             for doc in documentations
         ]
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching documentation by type: {str(e)}")
 
-@router.get("/search/content", response_model=List[DocumentationResponse])
-def search_documentation_content(
-    search_term: str = Query(..., description="Search term for content"),
+@router.get("/search/file-url", response_model=List[DocumentationResponse])
+def search_documentation_by_file_url(
+    search_term: str = Query(..., description="Search term for file URL"),
     skip: int = Query(0, ge=0),
     limit: int = Query(100, ge=1, le=1000),
-    preview_only: bool = Query(True, description="Return only preview content"),
     db: Session = Depends(get_db),
     current_user: UserInDB = Depends(get_current_user)
 ):
     """
-    Search documentation items by content
+    Search documentation items by file URL pattern
     """
     try:
-        documentations = documentation_crud.search_by_content(db, search_term, skip=skip, limit=limit)
+        documentations = documentation_crud.search_by_file_url(db, search_term, skip=skip, limit=limit)
         return [
-            DocumentationResponse.from_db_model(doc, include_full_content=not preview_only) 
+            DocumentationResponse.from_db_model(doc) 
             for doc in documentations
         ]
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error searching documentation content: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Error searching documentation by file URL: {str(e)}")
 
 @router.get("/recent/updates", response_model=List[DocumentationResponse])
 def get_recent_documentations(
     days: int = Query(7, ge=1, le=30, description="Number of days to look back"),
     limit: int = Query(10, ge=1, le=100),
-    preview_only: bool = Query(True, description="Return only preview content"),
     db: Session = Depends(get_db),
     current_user: UserInDB = Depends(get_current_user)
 ):
@@ -168,7 +165,7 @@ def get_recent_documentations(
     try:
         documentations = documentation_crud.get_recent_documentations(db, days=days, limit=limit)
         return [
-            DocumentationResponse.from_db_model(doc, include_full_content=not preview_only) 
+            DocumentationResponse.from_db_model(doc) 
             for doc in documentations
         ]
     except Exception as e:

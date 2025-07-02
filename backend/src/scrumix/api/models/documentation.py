@@ -27,7 +27,7 @@ class Documentation(Base):
     title = Column(String(255), nullable=False, index=True)
     type = Column(SQLEnum(DocumentationType), default=DocumentationType.OTHER, nullable=False)
     description = Column(Text, nullable=True)
-    content = Column(Text, nullable=False)
+    file_url = Column(String(500), nullable=False, comment="URL to access the documentation file")
     
     # System timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
