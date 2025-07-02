@@ -13,18 +13,35 @@ app = FastAPI(
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
 )
 
+# Configure CORS for cookie-based authentication
+allowed_origins = [
+    "http://localhost:3000",  # Next.js dev server
+    "http://localhost:8080",  # Production frontend
+    "https://scrumix.ai",  # Production domain
+    settings.FRONTEND_URL,  # From environment
+]
+
 # Set all CORS enabled origins
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",  # Next.js dev server
-        "http://localhost:8080",  # Production frontend
-        "https://scrumix.ai",  # Production domain
+    allow_origins=allowed_origins,
+    allow_credentials=True,  # Essential for cookie-based auth
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "Accept",
+        "Origin",
+        "User-Agent",
+        "DNT",
+        "Cache-Control",
+        "X-Mx-ReqToken",
+        "Keep-Alive",
+        "X-Requested-With",
+        "If-Modified-Since",
+        "X-CSRF-Token",
     ],
-    # allow_origins=["*"], 
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 app.include_router(api_router, prefix=settings.API_V1_STR)

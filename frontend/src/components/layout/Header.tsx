@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { Search, Bell, ChevronDown, User, Settings, HelpCircle, LogOut, Menu, Sun, Moon, Monitor } from 'lucide-react';
 import NotificationPopover from '../common/NotificationPopover';
 import { useTheme } from '@/contexts/ThemeContext';
+import { useAuth } from '../auth/AuthGuard';
 
 interface HeaderProps {
   onMenuToggle?: () => void;
@@ -14,32 +15,34 @@ interface HeaderProps {
 const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
-  const [currentUser, setCurrentUser] = useState<any>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+  
+  // Theme management
   const { theme, setTheme, effectiveTheme } = useTheme();
+  
+  // Authentication management
+  const { user, isAuthenticated, logout: authLogout } = useAuth();
 
-  // Load user data
-  useEffect(() => {
-    const loadUserData = () => {
-      const userData = localStorage.getItem('user');
-      if (userData) {
-        setCurrentUser(JSON.parse(userData));
-      }
-    };
-
-    loadUserData();
-  }, []);
-
-  // Mock user data (fallback)
+  // Mock user data (fallback for unauthenticated users)
   const defaultUser = {
-    name: "John Doe",
-    email: "john.doe@example.com",
-    avatar: null
+    full_name: "Guest User",
+    email: "guest@example.com",
+    avatar_url: null
   };
 
-  // Use current user data or default data
-  const user = currentUser || defaultUser;
+  // Use authenticated user data or default data
+  const displayUser = isAuthenticated && user ? {
+    name: user.full_name || user.username || user.email.split('@')[0],
+    email: user.email,
+    avatar: user.avatar_url,
+    provider: user.provider
+  } : {
+    name: defaultUser.full_name,
+    email: defaultUser.email, 
+    avatar: defaultUser.avatar_url,
+    provider: 'local'
+  };
 
   const toggleUserMenu = () => {
     setIsUserMenuOpen(!isUserMenuOpen);
@@ -79,9 +82,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
   const handleLogout = () => {
     console.log('User logout');
     if (confirm('Are you sure you want to logout?')) {
-      localStorage.removeItem('user');
-      localStorage.removeItem('token');
-      router.push('/auth/login');
+      authLogout(); // This will handle clearing all auth data and redirect
     }
   };
 
@@ -104,18 +105,20 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
 
   // Render user avatar
   const renderUserAvatar = () => {
-    if (user.avatar) {
+    if (displayUser.avatar) {
       return (
         <img
-          src={user.avatar}
+          src={displayUser.avatar}
           alt="User Avatar"
-          className="w-8 h-8 rounded-full"
+          className="w-8 h-8 rounded-full object-cover"
         />
       );
     }
     return (
-      <div className="w-8 h-8 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center">
-        <User className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+      <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
+        <span className="text-white font-semibold text-sm">
+          {displayUser.name.charAt(0).toUpperCase()}
+        </span>
       </div>
     );
   };
@@ -193,17 +196,32 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
               >
                 {renderUserAvatar()}
                 <span className="hidden md:block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  {user.name}
+                  {displayUser.name}
                 </span>
+                {isAuthenticated && displayUser.provider === 'keycloak' && (
+                  <span className="hidden lg:block text-xs bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 px-2 py-1 rounded-full ml-1">
+                    SSO
+                  </span>
+                )}
                 <ChevronDown className="w-4 h-4 text-gray-400" />
               </button>
 
               {/* Dropdown menu */}
               {isUserMenuOpen && (
-                <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50">
+                <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50">
                   <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-                    <p className="text-sm text-gray-900 dark:text-white font-medium">{user.name}</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">{user.email}</p>
+                    <div className="flex items-center space-x-3">
+                      {renderUserAvatar()}
+                      <div className="flex-1">
+                        <p className="text-sm text-gray-900 dark:text-white font-medium">{displayUser.name}</p>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">{displayUser.email}</p>
+                        {isAuthenticated && displayUser.provider === 'keycloak' && (
+                          <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                            Authenticated via Keycloak
+                          </p>
+                        )}
+                      </div>
+                    </div>
                   </div>
                   
                   <Link href="/profile" className="flex items-center px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
