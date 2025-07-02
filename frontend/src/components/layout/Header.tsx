@@ -3,8 +3,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Search, Bell, ChevronDown, User, Settings, HelpCircle, LogOut, Menu } from 'lucide-react';
+import { Search, Bell, ChevronDown, User, Settings, HelpCircle, LogOut, Menu, Sun, Moon, Monitor } from 'lucide-react';
 import NotificationPopover from '../common/NotificationPopover';
+import { useTheme } from '@/contexts/ThemeContext';
 
 interface HeaderProps {
   onMenuToggle?: () => void;
@@ -16,6 +17,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+  const { theme, setTheme, effectiveTheme } = useTheme();
 
   // Load user data
   useEffect(() => {
@@ -50,6 +52,27 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
 
   const closeNotifications = () => {
     setIsNotificationsOpen(false);
+  };
+
+  // Theme toggle functionality
+  const getThemeIcon = () => {
+    switch (theme) {
+      case 'light':
+        return Sun;
+      case 'dark':
+        return Moon;
+      case 'system':
+        return Monitor;
+      default:
+        return effectiveTheme === 'dark' ? Moon : Sun;
+    }
+  };
+
+  const cycleTheme = () => {
+    const themes: ('light' | 'dark' | 'system')[] = ['light', 'dark', 'system'];
+    const currentIndex = themes.indexOf(theme);
+    const nextIndex = (currentIndex + 1) % themes.length;
+    setTheme(themes[nextIndex]);
   };
 
   // Handle logout
@@ -141,8 +164,20 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
 
           </div>
 
-          {/* Right: Notifications and user menu */}
+          {/* Right: Theme toggle, notifications and user menu */}
           <div className="flex items-center space-x-3">
+            {/* Theme Toggle */}
+            <button
+              onClick={cycleTheme}
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+              title={`Current theme: ${theme} (Click to cycle: Light → Dark → System)`}
+            >
+              {(() => {
+                const IconComponent = getThemeIcon();
+                return <IconComponent className="w-5 h-5 text-gray-600 dark:text-gray-400" />;
+              })()}
+            </button>
+
             {/* Notification Popover */}
             <NotificationPopover 
               isOpen={isNotificationsOpen} 

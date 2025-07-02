@@ -36,8 +36,8 @@ export default function RootLayout({
   }, [pathname]);
 
   return (
-    <html lang="en">
-      <body className="bg-gray-50 dark:bg-gray-900">
+    <html lang="en" suppressHydrationWarning>
+      <body className="bg-gray-50 dark:bg-gray-900" suppressHydrationWarning>
         <script dangerouslySetInnerHTML={{
           __html: `
             try {

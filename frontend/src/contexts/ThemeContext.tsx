@@ -14,18 +14,12 @@ const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [theme, setThemeState] = useState<Theme>('system');
-  // Initialize with system preference to avoid flash
-  const [effectiveTheme, setEffectiveTheme] = useState<'light' | 'dark'>(() => {
-    if (typeof window !== 'undefined') {
-      return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-    }
-    return 'dark'; // Default for SSR
-  });
+  const [effectiveTheme, setEffectiveTheme] = useState<'light' | 'dark'>('light'); // Default to light for SSR consistency
+  const [mounted, setMounted] = useState(false);
 
-  // Load theme from localStorage on mount
+  // Set mounted flag and load theme from localStorage on mount
   useEffect(() => {
-    // Only access localStorage on client side
-    if (typeof window === 'undefined') return;
+    setMounted(true);
     
     try {
       const savedSettings = localStorage.getItem('userSettings');
@@ -33,17 +27,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         const settings = JSON.parse(savedSettings);
         if (settings.profile?.theme) {
           setThemeState(settings.profile.theme);
-          return; // If we have a saved theme, don't apply system theme
         }
-      }
-      
-      // Only apply system theme if no saved theme exists
-      const initialSystemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-      const root = document.documentElement;
-      if (initialSystemTheme === 'dark') {
-        root.classList.add('dark');
-      } else {
-        root.classList.remove('dark');
       }
     } catch (error) {
       console.error('Failed to load theme from localStorage:', error);
@@ -52,8 +36,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
 
   // Calculate effective theme based on theme setting and system preference
   useEffect(() => {
-    // Only run on client side
-    if (typeof window === 'undefined') return;
+    // Only run on client side after mount
+    if (!mounted) return;
     
     const updateEffectiveTheme = () => {
       let newEffectiveTheme: 'light' | 'dark';
@@ -113,6 +97,15 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
       }
     }
   };
+
+  // Prevent hydration mismatch by ensuring consistent rendering
+  if (!mounted) {
+    return (
+      <ThemeContext.Provider value={{ theme: 'system', setTheme, effectiveTheme: 'light' }}>
+        {children}
+      </ThemeContext.Provider>
+    );
+  }
 
   return (
     <ThemeContext.Provider value={{ theme, setTheme, effectiveTheme }}>
