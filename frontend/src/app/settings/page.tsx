@@ -8,13 +8,13 @@ import {
   Lock, Eye, Database, Download, Trash2
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
+import { useTheme } from '@/contexts/ThemeContext';
 
 interface SettingsData {
   profile: {
     language: string;
     timezone: string;
     dateFormat: string;
-    theme: 'light' | 'dark' | 'system';
   };
   notifications: {
     email: {
@@ -51,12 +51,12 @@ interface SettingsData {
 
 const SettingsPage = () => {
   const [activeTab, setActiveTab] = useState('profile');
+  const { theme, setTheme } = useTheme();
   const [settings, setSettings] = useState<SettingsData>({
     profile: {
       language: 'en-US',
       timezone: 'America/New_York',
       dateFormat: 'MM/DD/YYYY',
-      theme: 'system',
     },
     notifications: {
       email: {
@@ -279,9 +279,9 @@ const SettingsPage = () => {
                       return (
                         <button
                           key={option.value}
-                          onClick={() => updateSetting('profile', 'theme', option.value)}
+                          onClick={() => setTheme(option.value as 'light' | 'dark' | 'system')}
                           className={`flex items-center gap-3 p-3 border rounded-lg transition-colors ${
-                            settings.profile.theme === option.value
+                            theme === option.value
                               ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
                               : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
                           }`}
