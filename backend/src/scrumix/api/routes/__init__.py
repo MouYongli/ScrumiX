@@ -9,6 +9,7 @@ from .backlogs import router as backlogs_router
 from .documentations import router as documentations_router
 from .sprints import router as sprints_router
 from .tasks import router as tasks_router
+from .meetings import router as meetings_router
 
 api_router = APIRouter()
 
@@ -19,3 +20,4 @@ api_router.include_router(backlogs_router, prefix="/backlogs", tags=["backlogs"]
 api_router.include_router(documentations_router, prefix="/documentations", tags=["documentation"])
 api_router.include_router(sprints_router, prefix="/sprints", tags=["sprints"])
 api_router.include_router(tasks_router, prefix="/tasks", tags=["tasks"])
+api_router.include_router(meetings_router, prefix="/meetings", tags=["meetings"])

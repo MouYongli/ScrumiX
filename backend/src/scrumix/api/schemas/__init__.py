@@ -7,3 +7,4 @@ from .backlog import BacklogCreate, BacklogUpdate, BacklogResponse, BacklogInDB
 from .documentation import DocumentationCreate, DocumentationUpdate, DocumentationResponse, DocumentationInDB
 from .sprint import SprintCreate, SprintUpdate, SprintResponse, SprintInDB
 from .task import TaskCreate, TaskUpdate, TaskResponse, TaskInDB
+from .meeting import MeetingCreate, MeetingUpdate, MeetingResponse, MeetingInDB

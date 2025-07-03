@@ -7,3 +7,4 @@ from .backlog import backlog_crud
 from .documentation import documentation_crud
 from .sprint import sprint_crud
 from .task import task
+from .meeting import meeting
