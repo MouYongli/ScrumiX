@@ -1,4 +1,5 @@
 from sqlalchemy import Column, Integer, String, Text, DateTime, Enum as SQLEnum
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import enum
 
@@ -32,6 +33,9 @@ class Meeting(Base):
     location = Column(String(200), nullable=True, comment="Meeting location or virtual link")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # Relationship to agenda items
+    agenda_items = relationship("MeetingAgenda", back_populates="meeting", cascade="all, delete-orphan")
     
     def __repr__(self):
         return f"<Meeting(meeting_id={self.meeting_id}, type='{self.meeting_type.value}', start='{self.start_datetime}')>" 

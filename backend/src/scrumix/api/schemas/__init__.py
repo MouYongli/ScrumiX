@@ -10,3 +10,4 @@ from .task import TaskCreate, TaskUpdate, TaskResponse, TaskInDB
 from .meeting import MeetingCreate, MeetingUpdate, MeetingResponse, MeetingInDB
 from .tag import TagCreate, TagUpdate, TagResponse, TagInDB
 from .acceptance_criteria import AcceptanceCriteriaCreate, AcceptanceCriteriaUpdate, AcceptanceCriteriaResponse, AcceptanceCriteriaInDB
+from .meeting_agenda import MeetingAgendaCreate, MeetingAgendaUpdate, MeetingAgendaResponse, MeetingAgendaInDB

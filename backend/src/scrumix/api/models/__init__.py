@@ -10,3 +10,4 @@ from .task import Task, TaskStatus
 from .meeting import Meeting, MeetingType
 from .tag import Tag
 from .acceptance_criteria import AcceptanceCriteria
+from .meeting_agenda import MeetingAgenda
