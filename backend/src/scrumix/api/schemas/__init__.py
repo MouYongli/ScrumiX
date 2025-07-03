@@ -6,3 +6,4 @@ from .project import ProjectCreate, ProjectUpdate, ProjectResponse, ProjectInDB
 from .backlog import BacklogCreate, BacklogUpdate, BacklogResponse, BacklogInDB
 from .documentation import DocumentationCreate, DocumentationUpdate, DocumentationResponse, DocumentationInDB
 from .sprint import SprintCreate, SprintUpdate, SprintResponse, SprintInDB
+from .task import TaskCreate, TaskUpdate, TaskResponse, TaskInDB
