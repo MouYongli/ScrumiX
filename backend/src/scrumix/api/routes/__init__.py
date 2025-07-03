@@ -10,6 +10,7 @@ from .documentations import router as documentations_router
 from .sprints import router as sprints_router
 from .tasks import router as tasks_router
 from .meetings import router as meetings_router
+from .tags import router as tags_router
 
 api_router = APIRouter()
 
@@ -21,3 +22,4 @@ api_router.include_router(documentations_router, prefix="/documentations", tags=
 api_router.include_router(sprints_router, prefix="/sprints", tags=["sprints"])
 api_router.include_router(tasks_router, prefix="/tasks", tags=["tasks"])
 api_router.include_router(meetings_router, prefix="/meetings", tags=["meetings"])
+api_router.include_router(tags_router, prefix="/tags", tags=["tags"])

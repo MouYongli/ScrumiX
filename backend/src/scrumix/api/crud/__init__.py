@@ -8,3 +8,4 @@ from .documentation import documentation_crud
 from .sprint import sprint_crud
 from .task import task
 from .meeting import meeting
+from .tag import tag
