@@ -13,6 +13,7 @@ from .meetings import router as meetings_router
 from .tags import router as tags_router
 from .acceptance_criteria import router as acceptance_criteria_router
 from .meeting_agenda import router as meeting_agenda_router
+from .meeting_note import router as meeting_note_router
 
 api_router = APIRouter()
 
@@ -27,3 +28,4 @@ api_router.include_router(meetings_router, prefix="/meetings", tags=["meetings"]
 api_router.include_router(tags_router, prefix="/tags", tags=["tags"])
 api_router.include_router(acceptance_criteria_router, prefix="/acceptance-criteria", tags=["acceptance-criteria"])
 api_router.include_router(meeting_agenda_router, prefix="/meeting-agenda", tags=["meeting-agenda"])
+api_router.include_router(meeting_note_router, prefix="/meeting-notes", tags=["meeting-notes"])

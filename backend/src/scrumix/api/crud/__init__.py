@@ -11,3 +11,4 @@ from .meeting import meeting
 from .tag import tag
 from .acceptance_criteria import acceptance_criteria
 from .meeting_agenda import meeting_agenda
+from .meeting_note import meeting_note

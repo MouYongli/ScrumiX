@@ -37,5 +37,8 @@ class Meeting(Base):
     # Relationship to agenda items
     agenda_items = relationship("MeetingAgenda", back_populates="meeting", cascade="all, delete-orphan")
     
+    # Relationship to notes
+    notes = relationship("MeetingNote", back_populates="meeting", cascade="all, delete-orphan")
+    
     def __repr__(self):
         return f"<Meeting(meeting_id={self.meeting_id}, type='{self.meeting_type.value}', start='{self.start_datetime}')>" 
