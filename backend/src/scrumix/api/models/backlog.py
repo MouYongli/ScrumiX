@@ -47,6 +47,9 @@ class Backlog(Base):
     parent = relationship("Backlog", remote_side=[backlog_id], back_populates="children")
     children = relationship("Backlog", back_populates="parent")
     
+    # Relationship to acceptance criteria
+    acceptance_criteria = relationship("AcceptanceCriteria", back_populates="backlog", cascade="all, delete-orphan")
+    
     # TODO: Add relationships to other entities when implemented
     # project_id = Column(Integer, ForeignKey("projects.id"), nullable=True)
     # assignee_id = Column(Integer, ForeignKey("users.id"), nullable=True)

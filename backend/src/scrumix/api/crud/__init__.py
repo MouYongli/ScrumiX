@@ -9,3 +9,4 @@ from .sprint import sprint_crud
 from .task import task
 from .meeting import meeting
 from .tag import tag
+from .acceptance_criteria import acceptance_criteria
