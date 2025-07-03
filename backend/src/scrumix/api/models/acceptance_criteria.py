@@ -16,6 +16,8 @@ class AcceptanceCriteria(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     
+    # Foreign keys to backlog
+    backlog_id = Column(Integer, ForeignKey("backlogs.backlog_id"), nullable=False, index=True)
     # Relationship to backlog
     backlog = relationship("Backlog", back_populates="acceptance_criteria")
     

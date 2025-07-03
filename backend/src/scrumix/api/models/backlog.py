@@ -50,8 +50,13 @@ class Backlog(Base):
     # Relationship to acceptance criteria
     acceptance_criteria = relationship("AcceptanceCriteria", back_populates="backlog", cascade="all, delete-orphan")
     
-    # TODO: Add relationships to other entities when implemented
-    # project_id = Column(Integer, ForeignKey("projects.id"), nullable=True)
-    # assignee_id = Column(Integer, ForeignKey("users.id"), nullable=True)
-    # project = relationship("Project", back_populates="backlog_items")
-    # assignee = relationship("User", back_populates="assigned_backlog_items") 
+    # Foreign keys to user, project, and sprint
+    created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=True, index=True)
+    sprint_id = Column(Integer, ForeignKey("sprints.sprint_id"), nullable=True, index=True)
+
+    # Relationships
+    creator = relationship("User", backref="created_backlog_items")
+    project = relationship("Project", backref="backlog_items")
+    sprint = relationship("Sprint", backref="backlog_items")
+    

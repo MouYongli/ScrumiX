@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, Enum as SQLEnum
+from sqlalchemy import Column, Integer, String, Text, ForeignKey, DateTime, Enum as SQLEnum
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import enum
@@ -34,14 +34,16 @@ class Meeting(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     
-    # Relationship to agenda items
+    # Foreign keys to sprint, project
+    sprint_id = Column(Integer, ForeignKey("sprints.sprint_id"), nullable=False, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
+
+    # Relationship to agenda items, notes, action items
     agenda_items = relationship("MeetingAgenda", back_populates="meeting", cascade="all, delete-orphan")
-    
-    # Relationship to notes
     notes = relationship("MeetingNote", back_populates="meeting", cascade="all, delete-orphan")
-    
-    # Relationship to action items
     action_items = relationship("MeetingActionItem", back_populates="meeting", cascade="all, delete-orphan")
+    user_meetings = relationship("UserMeeting", back_populates="meeting", cascade="all, delete-orphan")
+    users = relationship("User", secondary="user_meeting", back_populates="meetings")
     
     def __repr__(self):
         return f"<Meeting(meeting_id={self.meeting_id}, type='{self.meeting_type.value}', start='{self.start_datetime}')>" 

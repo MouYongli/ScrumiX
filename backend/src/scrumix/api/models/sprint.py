@@ -1,7 +1,7 @@
 """
 Sprint-related database models
 """
-from sqlalchemy import Column, Integer, String, DateTime, Enum as SQLEnum
+from sqlalchemy import Column, Integer, String, relationship, ForeignKey, DateTime, Enum as SQLEnum
 from sqlalchemy.sql import func
 from enum import Enum
 from scrumix.api.db.base import Base
@@ -29,7 +29,8 @@ class Sprint(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
-    # TODO: Add relationships to other entities when implemented
-    # project_id = Column(Integer, ForeignKey("projects.id"), nullable=False)
-    # project = relationship("Project", back_populates="sprints")
-    # backlog_items = relationship("Backlog", back_populates="sprint") 
+    # Foreign keys to project
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True) 
+
+    # Relationship to project
+    project = relationship("Project", back_populates="sprints")

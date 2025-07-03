@@ -50,6 +50,14 @@ class User(Base):
     # 关联关系
     oauth_accounts = relationship("UserOAuth", back_populates="user", cascade="all, delete-orphan")
     sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan")
+    user_projects = relationship("UserProject", back_populates="user", cascade="all, delete-orphan")
+    projects = relationship("Project", secondary="user_project", back_populates="users")
+    user_tasks = relationship("UserTask", back_populates="user", cascade="all, delete-orphan")
+    tasks = relationship("Task", secondary="user_task", back_populates="users")
+    user_meetings = relationship("UserMeeting", back_populates="user", cascade="all, delete-orphan")
+    meetings = relationship("Meeting", secondary="user_meeting", back_populates="users")
+    user_documentations = relationship("UserDocumentation", back_populates="user", cascade="all, delete-orphan")
+    documentations = relationship("Documentation", secondary="user_documentation", back_populates="users")
 
 class UserOAuth(Base):
     """OAuth账户关联表"""
@@ -57,6 +65,10 @@ class UserOAuth(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    username = Column(String(255), nullable=False)
+    email = Column(String(255), nullable=False)
+    password = Column(String(255), nullable=False)
+    avatar_url = Column(String(500), nullable=True)
     
     # OAuth信息
     provider = Column(SQLEnum(AuthProvider), nullable=False)

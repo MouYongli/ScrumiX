@@ -5,6 +5,7 @@ from sqlalchemy import Column, Integer, String, DateTime, Enum as SQLEnum, Text
 from sqlalchemy.sql import func
 from enum import Enum
 from scrumix.api.db.base import Base
+from sqlalchemy.orm import relationship
 
 class ProjectStatus(str, Enum):
     """Project status enumeration"""
@@ -34,6 +35,7 @@ class Project(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     last_activity_at = Column(DateTime(timezone=True), server_default=func.now())
     
-    # TODO: Add relationships (project members, tasks, etc.)
-    # members = relationship("ProjectMember", back_populates="project")
-    # tasks = relationship("Task", back_populates="project") 
+    user_projects = relationship("UserProject", back_populates="project", cascade="all, delete-orphan")
+    users = relationship("User", secondary="user_project", back_populates="projects")
+    
+    
