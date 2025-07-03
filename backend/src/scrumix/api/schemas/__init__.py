@@ -12,3 +12,4 @@ from .tag import TagCreate, TagUpdate, TagResponse, TagInDB
 from .acceptance_criteria import AcceptanceCriteriaCreate, AcceptanceCriteriaUpdate, AcceptanceCriteriaResponse, AcceptanceCriteriaInDB
 from .meeting_agenda import MeetingAgendaCreate, MeetingAgendaUpdate, MeetingAgendaResponse, MeetingAgendaInDB
 from .meeting_note import MeetingNoteCreate, MeetingNoteUpdate, MeetingNoteResponse, MeetingNoteInDB
+from .meeting_action_item import MeetingActionItemCreate, MeetingActionItemUpdate, MeetingActionItemResponse, MeetingActionItemInDB

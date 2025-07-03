@@ -12,3 +12,4 @@ from .tag import Tag
 from .acceptance_criteria import AcceptanceCriteria
 from .meeting_agenda import MeetingAgenda
 from .meeting_note import MeetingNote
+from .meeting_action_item import MeetingActionItem
