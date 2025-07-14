@@ -19,11 +19,6 @@ interface TeamMember {
   phone?: string;
   location?: string;
   joinedAt: string;
-  lastActive: string;
-  skills: string[];
-  currentTasks: number;
-  completedTasks: number;
-  status: 'online' | 'offline' | 'away' | 'busy';
   isAdmin: boolean;
 }
 
@@ -42,31 +37,10 @@ const mockTeamMembers: TeamMember[] = [
     phone: '+1 (555) 123-4567',
     location: 'San Francisco, CA',
     joinedAt: '2024-01-15',
-    lastActive: '2024-03-12T10:30:00Z',
-    skills: ['Product Strategy', 'User Research', 'Stakeholder Management'],
-    currentTasks: 3,
-    completedTasks: 45,
-    status: 'online',
     isAdmin: true,
   },
   {
     id: '2',
-    name: 'Jane Doe',
-    email: 'jane.doe@company.com',
-    role: 'scrum_master',
-    avatar: 'https://images.unsplash.com/photo-1494790108755-2616b612b786?w=150&h=150&fit=crop&crop=face',
-    phone: '+1 (555) 234-5678',
-    location: 'New York, NY',
-    joinedAt: '2024-01-20',
-    lastActive: '2024-03-12T09:45:00Z',
-    skills: ['Agile Coaching', 'Team Facilitation', 'Process Improvement'],
-    currentTasks: 2,
-    completedTasks: 38,
-    status: 'online',
-    isAdmin: true,
-  },
-  {
-    id: '3',
     name: 'Mike Johnson',
     email: 'mike.johnson@company.com',
     role: 'developer',
@@ -74,15 +48,10 @@ const mockTeamMembers: TeamMember[] = [
     phone: '+1 (555) 345-6789',
     location: 'Austin, TX',
     joinedAt: '2024-02-01',
-    lastActive: '2024-03-12T11:15:00Z',
-    skills: ['React', 'Node.js', 'TypeScript', 'GraphQL'],
-    currentTasks: 5,
-    completedTasks: 32,
-    status: 'online',
     isAdmin: false,
   },
   {
-    id: '4',
+    id: '3',
     name: 'Sarah Wilson',
     email: 'sarah.wilson@company.com',
     role: 'designer',
@@ -90,30 +59,20 @@ const mockTeamMembers: TeamMember[] = [
     phone: '+1 (555) 456-7890',
     location: 'Seattle, WA',
     joinedAt: '2024-02-10',
-    lastActive: '2024-03-12T08:20:00Z',
-    skills: ['UI/UX Design', 'Figma', 'Prototyping', 'User Testing'],
-    currentTasks: 4,
-    completedTasks: 28,
-    status: 'away',
     isAdmin: false,
   },
   {
-    id: '5',
+    id: '4',
     name: 'David Chen',
     email: 'david.chen@company.com',
     role: 'developer',
     avatar: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150&h=150&fit=crop&crop=face',
     location: 'Los Angeles, CA',
     joinedAt: '2024-02-15',
-    lastActive: '2024-03-11T16:30:00Z',
-    skills: ['Python', 'Django', 'PostgreSQL', 'Docker'],
-    currentTasks: 3,
-    completedTasks: 25,
-    status: 'offline',
     isAdmin: false,
   },
   {
-    id: '6',
+    id: '5',
     name: 'Emily Rodriguez',
     email: 'emily.rodriguez@company.com',
     role: 'tester',
@@ -121,11 +80,6 @@ const mockTeamMembers: TeamMember[] = [
     phone: '+1 (555) 567-8901',
     location: 'Miami, FL',
     joinedAt: '2024-02-20',
-    lastActive: '2024-03-12T07:45:00Z',
-    skills: ['Manual Testing', 'Automation', 'Selenium', 'Test Planning'],
-    currentTasks: 2,
-    completedTasks: 22,
-    status: 'busy',
     isAdmin: false,
   },
 ];
@@ -137,7 +91,6 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>(mockTeamMembers);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterRole, setFilterRole] = useState<string>('all');
-  const [filterStatus, setFilterStatus] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
   // Breadcrumb navigation
@@ -150,11 +103,9 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
   // Filter team members
   const filteredMembers = teamMembers.filter(member => {
     const matchesSearch = member.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         member.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         member.skills.some(skill => skill.toLowerCase().includes(searchTerm.toLowerCase()));
+                         member.email.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesRole = filterRole === 'all' || member.role === filterRole;
-    const matchesStatus = filterStatus === 'all' || member.status === filterStatus;
-    return matchesSearch && matchesRole && matchesStatus;
+    return matchesSearch && matchesRole;
   });
 
   const getRoleIcon = (role: string) => {
@@ -181,15 +132,7 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
     }
   };
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'online': return 'bg-green-500';
-      case 'away': return 'bg-yellow-500';
-      case 'busy': return 'bg-red-500';
-      case 'offline': return 'bg-gray-400';
-      default: return 'bg-gray-400';
-    }
-  };
+
 
   const getRoleDisplayName = (role: string) => {
     switch (role) {
@@ -203,20 +146,8 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
     }
   };
 
-  const formatLastActive = (dateString: string) => {
-    const date = new Date(dateString);
-    const now = new Date();
-    const diffInMinutes = Math.floor((now.getTime() - date.getTime()) / (1000 * 60));
-    
-    if (diffInMinutes < 1) return 'Just now';
-    if (diffInMinutes < 60) return `${diffInMinutes}m ago`;
-    if (diffInMinutes < 1440) return `${Math.floor(diffInMinutes / 60)}h ago`;
-    return `${Math.floor(diffInMinutes / 1440)}d ago`;
-  };
-
   const teamStats = {
     total: teamMembers.length,
-    online: teamMembers.filter(m => m.status === 'online').length,
     productOwners: teamMembers.filter(m => m.role === 'product_owner').length,
     scrumMasters: teamMembers.filter(m => m.role === 'scrum_master').length,
     developers: teamMembers.filter(m => m.role === 'developer').length,
@@ -247,7 +178,7 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
       </div>
 
       {/* Team Statistics */}
-      <div className="grid grid-cols-1 md:grid-cols-6 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between">
             <div>
@@ -255,17 +186,6 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
               <p className="text-2xl font-bold text-gray-900 dark:text-white">{teamStats.total}</p>
             </div>
             <Users className="w-8 h-8 text-blue-500" />
-          </div>
-        </div>
-        <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-600 dark:text-gray-400">Online Now</p>
-              <p className="text-2xl font-bold text-green-600">{teamStats.online}</p>
-            </div>
-            <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
-              <div className="w-3 h-3 bg-white rounded-full"></div>
-            </div>
           </div>
         </div>
         <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
@@ -337,17 +257,7 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
               <option value="analyst">Analyst</option>
             </select>
 
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-            >
-              <option value="all">All Status</option>
-              <option value="online">Online</option>
-              <option value="away">Away</option>
-              <option value="busy">Busy</option>
-              <option value="offline">Offline</option>
-            </select>
+
 
             <div className="flex rounded-lg border border-gray-300 dark:border-gray-600 overflow-hidden">
               <button
@@ -388,7 +298,6 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
                       alt={member.name}
                       className="w-12 h-12 rounded-full object-cover"
                     />
-                    <div className={`absolute bottom-0 right-0 w-3 h-3 ${getStatusColor(member.status)} rounded-full border-2 border-white dark:border-gray-800`}></div>
                   </div>
                   <div>
                     <h3 className="font-semibold text-gray-900 dark:text-white">{member.name}</h3>
@@ -420,44 +329,12 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
                     {member.location}
                   </div>
                 )}
-                <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
-                  <Clock className="w-4 h-4" />
-                  Last active: {formatLastActive(member.lastActive)}
-                </div>
+
               </div>
 
-              <div className="flex justify-between text-sm mb-4">
-                <div className="text-center">
-                  <div className="font-semibold text-gray-900 dark:text-white">{member.currentTasks}</div>
-                  <div className="text-gray-600 dark:text-gray-400">Current</div>
-                </div>
-                <div className="text-center">
-                  <div className="font-semibold text-gray-900 dark:text-white">{member.completedTasks}</div>
-                  <div className="text-gray-600 dark:text-gray-400">Completed</div>
-                </div>
-                <div className="text-center">
-                  <div className="font-semibold text-gray-900 dark:text-white">{member.skills.length}</div>
-                  <div className="text-gray-600 dark:text-gray-400">Skills</div>
-                </div>
-              </div>
 
-              <div className="flex flex-wrap gap-1 mb-4">
-                {member.skills.slice(0, 3).map((skill, index) => (
-                  <span key={index} className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs rounded">
-                    {skill}
-                  </span>
-                ))}
-                {member.skills.length > 3 && (
-                  <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 text-xs rounded">
-                    +{member.skills.length - 3} more
-                  </span>
-                )}
-              </div>
 
               <div className="flex gap-2">
-                <button className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded text-sm transition-colors">
-                  Message
-                </button>
                 <button className="px-3 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded transition-colors">
                   <MoreHorizontal className="w-4 h-4" />
                 </button>
@@ -477,18 +354,9 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                     Role
                   </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Status
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Tasks
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Last Active
-                  </th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                    Actions
-                  </th>
+                                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Actions
+                    </th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-200 dark:divide-gray-700">
@@ -502,7 +370,6 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
                             alt={member.name}
                             className="w-8 h-8 rounded-full object-cover"
                           />
-                          <div className={`absolute bottom-0 right-0 w-2 h-2 ${getStatusColor(member.status)} rounded-full border border-white dark:border-gray-800`}></div>
                         </div>
                         <div>
                           <div className="flex items-center gap-2">
@@ -520,26 +387,7 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="flex items-center gap-2">
-                        <div className={`w-2 h-2 ${getStatusColor(member.status)} rounded-full`}></div>
-                        <span className="text-sm text-gray-900 dark:text-white capitalize">{member.status}</span>
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-900 dark:text-white">
-                        {member.currentTasks} active, {member.completedTasks} completed
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
-                      <div className="text-sm text-gray-600 dark:text-gray-400">
-                        {formatLastActive(member.lastActive)}
-                      </div>
-                    </td>
-                    <td className="px-6 py-4 whitespace-nowrap">
                       <div className="flex gap-2">
-                        <button className="text-blue-600 hover:text-blue-800 dark:text-blue-400 dark:hover:text-blue-300">
-                          <MessageSquare className="w-4 h-4" />
-                        </button>
                         <button className="text-gray-600 hover:text-gray-800 dark:text-gray-400 dark:hover:text-gray-300">
                           <Edit2 className="w-4 h-4" />
                         </button>
