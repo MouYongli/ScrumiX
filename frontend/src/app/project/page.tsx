@@ -298,22 +298,22 @@ const ProjectsPage = () => {
       members: 8,
       tasks: { completed: 25, total: 37 },
       startDate: '2024-01-15',
-      endDate: '2024-06-30',
+      endDate: '2025-07-10',
       lastActivity: '2024-03-15T14:30:00',
-      color: 'bg-blue-500'
+      color: 'bg-green-500'
     },
     {
       id: '2',
-      name: 'Corporate Website Rebuild',
-      description: 'Company official website reconstruction project, using modern design and technology stack.',
+      name: 'E-commerce Platform Rebuild',
+      description: 'Modern e-commerce platform based on React',
       status: 'active',
-      progress: 45,
-      members: 5,
-      tasks: { completed: 12, total: 28 },
-      startDate: '2024-02-01',
-      endDate: '2024-05-15',
+      progress: 32,
+      members: 8,
+      tasks: { completed: 8, total: 25 },
+      startDate: '2024-01-15',
+      endDate: '2025-08-15',
       lastActivity: '2024-03-14T16:20:00',
-      color: 'bg-green-500'
+      color: 'bg-blue-500'
     },
     {
       id: '3',
@@ -377,6 +377,29 @@ const ProjectsPage = () => {
       completed: { label: 'Completed', color: 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400', icon: '✅' }
     };
     return statusMap[status as keyof typeof statusMap] || statusMap.active;
+  };
+
+  const getDaysRemainingInfo = (project: Project) => {
+    // Don't show days remaining for completed, on-hold, or planning projects
+    if (project.status === 'completed' || project.status === 'on-hold' || project.status === 'planning') {
+      return null;
+    }
+
+    const daysRemaining = Math.ceil((new Date(project.endDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24));
+    
+    if (daysRemaining < 0) {
+      return {
+        value: Math.abs(daysRemaining),
+        label: 'Overdue by',
+        color: 'text-red-600 dark:text-red-400'
+      };
+    } else {
+      return {
+        value: daysRemaining,
+        label: 'Days Remaining',
+        color: 'text-gray-900 dark:text-white'
+      };
+    }
   };
 
   const handleCreateProject = (newProjectData: Omit<Project, 'id' | 'progress' | 'tasks' | 'lastActivity'>) => {
@@ -458,6 +481,7 @@ const ProjectsPage = () => {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredProjects.map(project => {
           const statusInfo = getStatusInfo(project.status);
+          const daysRemainingInfo = getDaysRemainingInfo(project);
           const favoriteItem = {
             id: project.id,
             type: 'project' as const,
@@ -540,15 +564,27 @@ const ProjectsPage = () => {
                     <div className="text-xs text-gray-500 dark:text-gray-400">Tasks</div>
                   </div>
                   
-                  <div>
-                    <div className="flex items-center justify-center gap-1 text-gray-400 mb-1">
-                      <Calendar className="w-4 h-4" />
+                  {daysRemainingInfo ? (
+                    <div>
+                      <div className="flex items-center justify-center gap-1 text-gray-400 mb-1">
+                        <Calendar className="w-4 h-4" />
+                      </div>
+                      <div className={`text-sm font-medium ${daysRemainingInfo.color}`}>
+                        {daysRemainingInfo.value}
+                      </div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">{daysRemainingInfo.label}</div>
                     </div>
-                    <div className="text-sm font-medium text-gray-900 dark:text-white">
-                      {Math.ceil((new Date(project.endDate).getTime() - new Date().getTime()) / (1000 * 60 * 60 * 24))}
+                  ) : (
+                    <div>
+                      <div className="flex items-center justify-center gap-1 text-gray-400 mb-1">
+                        <Calendar className="w-4 h-4" />
+                      </div>
+                      <div className="text-sm font-medium text-gray-400 dark:text-gray-500">
+                        -
+                      </div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400">Days Remaining</div>
                     </div>
-                    <div className="text-xs text-gray-500 dark:text-gray-400">Days Remaining</div>
-                  </div>
+                  )}
                 </div>
 
                 {/* 最后活动时间 */}

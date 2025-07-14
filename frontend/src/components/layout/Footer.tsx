@@ -15,7 +15,7 @@ const Footer = () => {
                 <span className="text-white font-bold text-lg">S</span>
               </div>
               <span className="text-xl font-bold text-gray-900 dark:text-white">
-                Scrumix
+                ScrumiX
               </span>
             </div>
 
@@ -37,7 +37,7 @@ const Footer = () => {
 
             {/* Copyright */}
             <div className="text-sm text-gray-500 dark:text-gray-400 mt-4 md:mt-0">
-              © {currentYear} Scrumix. All rights reserved.
+              © {currentYear} ScrumiX. All rights reserved.
             </div>
           </div>
         </div>

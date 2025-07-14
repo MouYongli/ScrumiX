@@ -18,7 +18,7 @@ export default function Home() {
                   <span className="text-white font-bold text-lg">S</span>
                 </div>
                 <span className="text-xl font-bold text-gray-900 dark:text-white">
-                  Scrumix
+                  ScrumiX
                 </span>
               </Link>
             </div>
@@ -72,7 +72,7 @@ export default function Home() {
         <div className="text-center">
           <h1 className="text-4xl md:text-6xl font-bold text-gray-900 dark:text-white mb-6">
             Welcome to
-            <span className="text-blue-600 dark:text-blue-400"> Scrumix</span>
+            <span className="text-blue-600 dark:text-blue-400"> ScrumiX</span>
           </h1>
           <p className="text-xl md:text-2xl text-gray-600 dark:text-gray-400 mb-8 max-w-3xl mx-auto">
             Professional agile project management platform that makes team collaboration more efficient and Scrum management simpler
@@ -156,7 +156,7 @@ export default function Home() {
                   <span className="text-white font-bold text-lg">S</span>
                 </div>
                 <span className="text-xl font-bold text-gray-900 dark:text-white">
-                  Scrumix
+                  ScrumiX
                 </span>
               </div>
 
@@ -178,7 +178,7 @@ export default function Home() {
 
               {/* Copyright */}
               <div className="text-sm text-gray-500 dark:text-gray-400 mt-4 md:mt-0">
-                © {new Date().getFullYear()} Scrumix. All rights reserved.
+                © {new Date().getFullYear()} ScrumiX. All rights reserved.
               </div>
             </div>
           </div>
