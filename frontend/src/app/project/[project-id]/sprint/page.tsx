@@ -6,9 +6,10 @@ import {
   Plus, Search, Filter, Edit2, Trash2, FolderOpen, 
   Zap, Play, Square, Calendar, Target, TrendingUp,
   Clock, Users, CheckCircle, AlertCircle, MoreHorizontal,
-  X, ChevronDown
+  X, ChevronDown, BarChart3
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
+
 
 interface Sprint {
   id: string;
@@ -37,23 +38,23 @@ const mockSprints: Sprint[] = [
     name: 'Sprint 1 - Authentication Foundation',
     goal: 'Implement core user authentication system and basic user management features',
     status: 'completed',
-    startDate: '2024-02-15',
-    endDate: '2024-02-29',
+    startDate: '2025-06-15',
+    endDate: '2025-07-05',
     capacity: 40,
     totalStoryPoints: 38,
     completedStoryPoints: 38,
     totalStories: 8,
     completedStories: 8,
     teamMembers: ['Sarah Johnson', 'Mike Chen', 'Emily Rodriguez'],
-    createdAt: '2024-02-10',
+    createdAt: '2025-06-15',
   },
   {
     id: '2',
     name: 'Sprint 2 - E-commerce Core',
     goal: 'Build shopping cart, product catalog, and basic checkout functionality',
     status: 'active',
-    startDate: '2024-03-01',
-    endDate: '2024-03-15',
+    startDate: '2025-07-15',
+    endDate: '2025-07-29',
     capacity: 45,
     totalStoryPoints: 42,
     completedStoryPoints: 28,
@@ -67,8 +68,8 @@ const mockSprints: Sprint[] = [
     name: 'Sprint 3 - Payment Integration',
     goal: 'Integrate payment gateway and complete order processing workflow',
     status: 'planning',
-    startDate: '2024-03-16',
-    endDate: '2024-03-30',
+    startDate: '2025-07-30',
+    endDate: '2025-08-13',
     capacity: 50,
     totalStoryPoints: 0,
     completedStoryPoints: 0,
@@ -631,6 +632,8 @@ const EditSprintModal: React.FC<{
   );
 };
 
+
+
 const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
   const resolvedParams = React.use(params);
   const projectId = resolvedParams['project-id'];
@@ -755,6 +758,21 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
     }
   };
 
+  // Calculate velocity for completed and active sprints
+  const calculateVelocity = () => {
+    // Only include completed and active sprints, in order
+    const relevantSprints = sprints.filter(sprint => sprint.status === 'completed' || sprint.status === 'active');
+    return relevantSprints.map(sprint => ({
+      sprint: sprint.name,
+      velocity: sprint.completedStoryPoints
+    }));
+  };
+
+  const velocityData = calculateVelocity();
+  const averageVelocity = velocityData.length > 0 
+    ? Math.round(velocityData.reduce((sum, data) => sum + data.velocity, 0) / velocityData.length)
+    : 0;
+
   return (
     <div className="space-y-8">
       <Breadcrumb items={breadcrumbItems} />
@@ -779,7 +797,7 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
       </div>
 
       {/* Stats Overview */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-6">
         <div className="bg-white dark:bg-gray-800 p-6 rounded-lg border border-gray-200 dark:border-gray-700">
           <div className="flex items-center">
             <div className="p-2 bg-blue-100 dark:bg-blue-900/20 rounded-lg">
@@ -828,6 +846,25 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
                 {sprints.filter(s => s.status === 'completed').length}
               </p>
             </div>
+          </div>
+        </div>
+        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg border border-gray-200 dark:border-gray-700">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center">
+              <div className="p-2 bg-indigo-100 dark:bg-indigo-900/20 rounded-lg">
+                <TrendingUp className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+              </div>
+              <div className="ml-4">
+                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Velocity</p>
+                <p className="text-2xl font-bold text-gray-900 dark:text-white">{averageVelocity}</p>
+              </div>
+            </div>
+            <Link
+              href={`/project/${projectId}/velocity`}
+              className="px-3 py-1 bg-indigo-100 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-200 dark:hover:bg-indigo-900/40 rounded-md text-sm font-medium transition-colors ml-6"
+            >
+              View Details
+            </Link>
           </div>
         </div>
       </div>
@@ -1143,6 +1180,8 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
           </div>
         </div>
       )}
+
+
     </div>
   );
 };
