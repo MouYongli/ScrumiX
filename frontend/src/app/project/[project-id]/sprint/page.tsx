@@ -6,7 +6,7 @@ import {
   Plus, Search, Filter, Edit2, Trash2, FolderOpen, 
   Zap, Play, Square, Calendar, Target, TrendingUp,
   Clock, Users, CheckCircle, AlertCircle, MoreHorizontal,
-  X, ChevronDown, BarChart3
+  X, ChevronDown, BarChart3, ArrowRight
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
 
@@ -836,37 +836,32 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
           </div>
         </div>
         <div className="bg-white dark:bg-gray-800 p-6 rounded-lg border border-gray-200 dark:border-gray-700">
-          <div className="flex items-center">
-            <div className="p-2 bg-orange-100 dark:bg-orange-900/20 rounded-lg">
+          <div className="flex items-center min-w-0">
+            <div className="p-2 bg-orange-100 dark:bg-orange-900/20 rounded-lg flex-shrink-0">
               <CheckCircle className="w-5 h-5 text-orange-600 dark:text-orange-400" />
             </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Completed</p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">
+            <div className="ml-4 min-w-0 flex-1">
+              <p className="text-sm font-medium text-gray-600 dark:text-gray-400 truncate">Completed</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white truncate">
                 {sprints.filter(s => s.status === 'completed').length}
               </p>
             </div>
           </div>
         </div>
-        <div className="bg-white dark:bg-gray-800 p-6 rounded-lg border border-gray-200 dark:border-gray-700">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              <div className="p-2 bg-indigo-100 dark:bg-indigo-900/20 rounded-lg">
-                <TrendingUp className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-              </div>
-              <div className="ml-4">
-                <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Velocity</p>
-                <p className="text-2xl font-bold text-gray-900 dark:text-white">{averageVelocity}</p>
-              </div>
+        <Link
+          href={`/project/${projectId}/velocity`}
+          className="bg-white dark:bg-gray-800 p-6 rounded-lg border border-gray-200 dark:border-gray-700 hover:shadow-lg transition-all duration-200 cursor-pointer group"
+        >
+          <div className="flex items-center">
+            <div className="p-2 bg-indigo-100 dark:bg-indigo-900/20 rounded-lg flex-shrink-0">
+              <TrendingUp className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
             </div>
-            <Link
-              href={`/project/${projectId}/velocity`}
-              className="px-3 py-1 bg-indigo-100 dark:bg-indigo-900/20 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-200 dark:hover:bg-indigo-900/40 rounded-md text-sm font-medium transition-colors ml-6"
-            >
-              View Details
-            </Link>
+            <div className="ml-4">
+              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Velocity</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white">{averageVelocity}</p>
+            </div>
           </div>
-        </div>
+        </Link>
       </div>
 
       {/* Active Sprint Highlight */}
