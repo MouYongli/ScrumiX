@@ -36,6 +36,7 @@ class Project(Base):
     last_activity_at = Column(DateTime(timezone=True), server_default=func.now())
     
     user_projects = relationship("UserProject", back_populates="project", cascade="all, delete-orphan")
-    users = relationship("User", secondary="user_project", back_populates="projects")
+    users = relationship("User", secondary="user_project", back_populates="projects", overlaps="user_projects")
+    sprints = relationship("Sprint", back_populates="project", cascade="all, delete-orphan")
     
     

@@ -43,7 +43,7 @@ class Meeting(Base):
     notes = relationship("MeetingNote", back_populates="meeting", cascade="all, delete-orphan")
     action_items = relationship("MeetingActionItem", back_populates="meeting", cascade="all, delete-orphan")
     user_meetings = relationship("UserMeeting", back_populates="meeting", cascade="all, delete-orphan")
-    users = relationship("User", secondary="user_meeting", back_populates="meetings")
+    users = relationship("User", secondary="user_meeting", back_populates="meetings", overlaps="user_meetings")
     
     def __repr__(self):
         return f"<Meeting(meeting_id={self.meeting_id}, type='{self.meeting_type.value}', start='{self.start_datetime}')>" 

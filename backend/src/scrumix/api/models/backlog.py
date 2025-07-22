@@ -63,10 +63,10 @@ class Backlog(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
     # Self-referential relationship for hierarchical structure
-    parent = relationship("Backlog", remote_side=[backlog_id], back_populates="children")
-    children = relationship("Backlog", back_populates="parent")
-    root = relationship("Backlog", remote_side=[backlog_id], back_populates="descendants")
-    descendants = relationship("Backlog", back_populates="root")
+    parent = relationship("Backlog", remote_side=[backlog_id], foreign_keys=[parent_id], back_populates="children")
+    children = relationship("Backlog", foreign_keys=[parent_id], back_populates="parent")
+    root = relationship("Backlog", remote_side=[backlog_id], foreign_keys=[root_id], back_populates="descendants")
+    descendants = relationship("Backlog", foreign_keys=[root_id], back_populates="root")
     
     # Relationship to acceptance criteria
     acceptance_criteria = relationship("AcceptanceCriteria", back_populates="backlog", cascade="all, delete-orphan")
@@ -74,7 +74,7 @@ class Backlog(Base):
     # Foreign keys to user, project, and sprint
     created_by_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     assigned_to_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)  # Direct assignee
-    project_id = Column(Integer, ForeignKey("projects.id"), nullable=True, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
     sprint_id = Column(Integer, ForeignKey("sprints.sprint_id"), nullable=True, index=True)
 
     # Relationships

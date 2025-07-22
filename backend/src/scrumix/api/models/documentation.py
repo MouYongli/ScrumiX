@@ -1,7 +1,8 @@
 """
 Documentation-related database models
 """
-from sqlalchemy import Column, Integer, String, DateTime, relationship, ForeignKey, Enum as SQLEnum, Text
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum as SQLEnum, Text
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from enum import Enum
 from scrumix.api.db.base import Base
@@ -33,12 +34,11 @@ class Documentation(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     
-    # Foreign keys to user, project, and sprint
-    doc_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
+    # Foreign keys to project
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
    
-    # Relationships 
-    doc_creator = relationship("User", backref="created_documentation")
+    # Relationships - N:M with users through UserDocumentation association table
     user_documentations = relationship("UserDocumentation", back_populates="documentation", cascade="all, delete-orphan")
-    users = relationship("User", secondary="user_documentation", back_populates="documentations")
+    users = relationship("User", secondary="user_documentation", back_populates="documentations", overlaps="user_documentations")
     tag_documentations = relationship("TagDocumentation", back_populates="documentation", cascade="all, delete-orphan")
-    tags = relationship("Tag", secondary="tag_documentation", back_populates="documentations")
+    tags = relationship("Tag", secondary="tag_documentation", back_populates="documentations", overlaps="tag_documentations")

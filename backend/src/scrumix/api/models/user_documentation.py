@@ -9,5 +9,5 @@ class UserDocumentation(Base):
     doc_id = Column(Integer, ForeignKey("documentations.doc_id"), primary_key=True)
 
     # Relationships
-    user = relationship("User", back_populates="user_documentations")
-    documentation = relationship("Documentation", back_populates="user_documentations") 
+    user = relationship("User", back_populates="user_documentations", overlaps="documentations,users")
+    documentation = relationship("Documentation", back_populates="user_documentations", overlaps="documentations,users") 

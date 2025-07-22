@@ -1,4 +1,5 @@
-from sqlalchemy import Column, Integer, String, relationship, ForeignKey, Text, DateTime, Enum as SQLEnum
+from sqlalchemy import Column, Integer, String, ForeignKey, Text, DateTime, Enum as SQLEnum
+from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 import enum
 
@@ -32,9 +33,9 @@ class Task(Base):
     # Relationship to sprint
     sprint = relationship("Sprint", back_populates="tasks")
     user_tasks = relationship("UserTask", back_populates="task", cascade="all, delete-orphan")
-    users = relationship("User", secondary="user_task", back_populates="tasks")
+    users = relationship("User", secondary="user_task", back_populates="tasks", overlaps="user_tasks")
     tag_tasks = relationship("TagTask", back_populates="task", cascade="all, delete-orphan")
-    tags = relationship("Tag", secondary="tag_task", back_populates="tasks")
+    tags = relationship("Tag", secondary="tag_task", back_populates="tasks", overlaps="tag_tasks")
 
     def __repr__(self):
         return f"<Task(task_id={self.task_id}, title='{self.title}', status='{self.status.value}')>" 

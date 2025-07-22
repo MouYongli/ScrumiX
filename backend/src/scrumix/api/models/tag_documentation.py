@@ -9,5 +9,5 @@ class TagDocumentation(Base):
     doc_id = Column(Integer, ForeignKey("documentations.doc_id"), primary_key=True)
 
     # Relationships
-    tag = relationship("Tag", back_populates="tag_documentations")
-    documentation = relationship("Documentation", back_populates="tag_documentations") 
+    tag = relationship("Tag", back_populates="tag_documentations", overlaps="documentations,tags")
+    documentation = relationship("Documentation", back_populates="tag_documentations", overlaps="documentations,tags") 

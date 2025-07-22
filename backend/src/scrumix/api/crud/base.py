@@ -3,6 +3,7 @@ from typing import Any, Dict, Generic, List, Optional, Type, TypeVar, Union
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
+from sqlalchemy.inspection import inspect
 from ..db.base import Base
 
 ModelType = TypeVar("ModelType", bound=Base)
@@ -16,9 +17,20 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         * `model`: SQLAlchemy模型类
         """
         self.model = model
+        # Automatically detect the primary key column name
+        self._primary_key = self._get_primary_key_name()
+
+    def _get_primary_key_name(self) -> str:
+        """Get the primary key column name for the model"""
+        mapper = inspect(self.model)
+        primary_key_columns = mapper.primary_key
+        if primary_key_columns:
+            return primary_key_columns[0].name
+        return 'id'  # fallback to 'id'
 
     def get(self, db: Session, id: Any) -> Optional[ModelType]:
-        return db.query(self.model).filter(self.model.id == id).first()
+        primary_key_attr = getattr(self.model, self._primary_key)
+        return db.query(self.model).filter(primary_key_attr == id).first()
 
     def get_multi(
         self, db: Session, *, skip: int = 0, limit: int = 100
@@ -26,7 +38,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         return db.query(self.model).offset(skip).limit(limit).all()
 
     def create(self, db: Session, *, obj_in: CreateSchemaType) -> ModelType:
-        obj_in_data = jsonable_encoder(obj_in)
+        obj_in_data = obj_in.model_dump(by_alias=True)
         db_obj = self.model(**obj_in_data)
         db.add(db_obj)
         db.commit()
@@ -44,7 +56,7 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         if isinstance(obj_in, dict):
             update_data = obj_in
         else:
-            update_data = obj_in.dict(exclude_unset=True)
+            update_data = obj_in.model_dump(exclude_unset=True, by_alias=True)
         for field in obj_data:
             if field in update_data:
                 setattr(db_obj, field, update_data[field])
@@ -54,7 +66,9 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         return db_obj
 
     def remove(self, db: Session, *, id: int) -> ModelType:
-        obj = db.query(self.model).get(id)
-        db.delete(obj)
-        db.commit()
+        primary_key_attr = getattr(self.model, self._primary_key)
+        obj = db.query(self.model).filter(primary_key_attr == id).first()
+        if obj:
+            db.delete(obj)
+            db.commit()
         return obj 

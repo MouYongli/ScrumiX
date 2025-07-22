@@ -13,6 +13,14 @@ from ..schemas.backlog import BacklogCreate, BacklogUpdate
 class BacklogCRUD(CRUDBase[Backlog, BacklogCreate, BacklogUpdate]):
     """Optimized CRUD operations for Backlog."""
     
+    def get_by_id(self, db: Session, backlog_id: int) -> Optional[Backlog]:
+        """Get backlog item by ID"""
+        return self.get(db, backlog_id)
+    
+    def create_backlog(self, db: Session, backlog_create: BacklogCreate) -> Backlog:
+        """Create a new backlog item"""
+        return self.create(db, obj_in=backlog_create)
+    
     def get_backlogs(
         self, 
         db: Session, 

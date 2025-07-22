@@ -2,7 +2,7 @@
 Project-related Pydantic schemas
 """
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timedelta
 from pydantic import BaseModel, ConfigDict, Field
 from scrumix.api.models.project import ProjectStatus
 
@@ -11,8 +11,8 @@ class ProjectBase(BaseModel):
     name: str
     description: Optional[str] = None
     status: ProjectStatus = ProjectStatus.PLANNING
-    startDate: datetime = Field(alias="start_date")
-    endDate: datetime = Field(alias="end_date")
+    startDate: Optional[datetime] = Field(alias="start_date", default_factory=lambda: datetime.now())
+    endDate: Optional[datetime] = Field(alias="end_date", default_factory=lambda: datetime.now() + timedelta(days=30))
     color: str = "bg-blue-500"
 
 class ProjectCreate(ProjectBase):

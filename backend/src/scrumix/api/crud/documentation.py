@@ -33,7 +33,11 @@ class DocumentationCRUD(CRUDBase[Documentation, DocumentationCreate, Documentati
     
     def get_by_id(self, db: Session, doc_id: int) -> Optional[Documentation]:
         """Get documentation by ID"""
-        return db.query(Documentation).filter(Documentation.doc_id == doc_id).first()
+        return self.get(db, doc_id)
+    
+    def create_documentation(self, db: Session, documentation_create: DocumentationCreate) -> Documentation:
+        """Create a new documentation"""
+        return self.create(db, obj_in=documentation_create)
     
     def get_by_title(self, db: Session, title: str) -> Optional[Documentation]:
         """Get documentation by title"""

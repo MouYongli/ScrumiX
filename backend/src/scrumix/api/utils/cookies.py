@@ -148,3 +148,30 @@ def clear_auth_cookies(response: Response) -> None:
     """
     clear_session_cookie(response, settings.SESSION_COOKIE_NAME)
     clear_session_cookie(response, settings.REFRESH_COOKIE_NAME) 
+
+
+# Convenience functions for testing
+def create_auth_cookie(token: str) -> str:
+    """Create a simple auth cookie string for testing purposes.
+    
+    Args:
+        token: Authentication token
+        
+    Returns:
+        Cookie string representation
+    """
+    return f"auth_token={token}; Path=/; HttpOnly"
+
+
+def parse_auth_cookie(request) -> Optional[str]:
+    """Parse auth token from request cookies.
+    
+    Args:
+        request: Request object with cookies attribute
+        
+    Returns:
+        Auth token if found, None otherwise
+    """
+    if hasattr(request, 'cookies') and 'auth_token' in request.cookies:
+        return request.cookies['auth_token']
+    return None 

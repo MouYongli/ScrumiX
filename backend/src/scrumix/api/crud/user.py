@@ -11,27 +11,31 @@ import json
 from scrumix.api.models.user import User, UserOAuth, UserSession, AuthProvider
 from scrumix.api.schemas.user import UserCreate, UserUpdate
 from scrumix.api.utils.password import get_password_hash, verify_password
+from .base import CRUDBase
 
-class UserCRUD:
-    def create_user(self, db: Session, user_create: UserCreate) -> User:
-        """创建新用户"""
+class UserCRUD(CRUDBase[User, UserCreate, UserUpdate]):
+    def __init__(self):
+        super().__init__(User)
+    
+    def create(self, db: Session, *, obj_in: UserCreate) -> User:
+        """Create a new user with proper validation"""
         # 检查邮箱是否已存在
-        if self.get_by_email(db, user_create.email):
+        if self.get_by_email(db, obj_in.email):
             raise ValueError("邮箱已被注册")
         
         # 检查用户名是否已存在
-        if user_create.username and self.get_by_username(db, user_create.username):
+        if obj_in.username and self.get_by_username(db, obj_in.username):
             raise ValueError("用户名已被使用")
         
         # 创建用户对象
         db_user = User(
-            email=user_create.email,
-            username=user_create.username,
-            full_name=user_create.full_name,
-            avatar_url=user_create.avatar_url,
-            timezone=user_create.timezone,
-            language=user_create.language,
-            hashed_password=get_password_hash(user_create.password) if user_create.password else None,
+            email=obj_in.email,
+            username=obj_in.username,
+            full_name=obj_in.full_name,
+            avatar_url=obj_in.avatar_url,
+            timezone=obj_in.timezone,
+            language=obj_in.language,
+            hashed_password=get_password_hash(obj_in.password) if obj_in.password else None,
             is_verified=False  # 需要邮箱验证
         )
         
@@ -39,10 +43,14 @@ class UserCRUD:
         db.commit()
         db.refresh(db_user)
         return db_user
+
+    def create_user(self, db: Session, user_create: UserCreate) -> User:
+        """Create a new user (alias for create method)"""
+        return self.create(db, obj_in=user_create)
     
     def get_by_id(self, db: Session, user_id: int) -> Optional[User]:
         """根据ID获取用户"""
-        return db.query(User).filter(User.id == user_id).first()
+        return self.get(db, user_id)
     
     def get_by_email(self, db: Session, email: str) -> Optional[User]:
         """根据邮箱获取用户"""
@@ -143,6 +151,14 @@ class UserCRUD:
     def get_users(self, db: Session, skip: int = 0, limit: int = 100) -> List[User]:
         """获取用户列表"""
         return db.query(User).offset(skip).limit(limit).all()
+    
+    def is_active(self, user: User) -> bool:
+        """Check if user is active"""
+        return user.is_active
+    
+    def is_superuser(self, user: User) -> bool:
+        """Check if user is superuser"""
+        return user.is_superuser
 
 class UserOAuthCRUD:
     def create_oauth_account(self, db: Session, user_id: int, provider: AuthProvider, 

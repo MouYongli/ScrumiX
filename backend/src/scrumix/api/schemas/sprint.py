@@ -13,7 +13,19 @@ class SprintBase(BaseModel):
     start_date: datetime = Field(alias="startDate")
     end_date: datetime = Field(alias="endDate")
     status: SprintStatus = SprintStatus.PLANNING
-    sprint_capacity: int = Field(alias="sprintCapacity", ge=0)
+    sprint_capacity: int = Field(alias="sprintCapacity", ge=0, default=0)
+    
+    # Allow alternative field names for backward compatibility
+    name: Optional[str] = None
+    goal: Optional[str] = None
+    
+    def __init__(self, **data):
+        super().__init__(**data)
+        # Map alternative field names to standard names
+        if self.name and not self.sprint_name:
+            self.sprint_name = self.name
+        if self.goal and not self.sprint_goal:
+            self.sprint_goal = self.goal
 
     @field_validator('end_date')
     @classmethod
@@ -27,6 +39,8 @@ class SprintBase(BaseModel):
 class SprintCreate(SprintBase):
     """Create sprint schema"""
     model_config = ConfigDict(populate_by_name=True)
+    
+    project_id: int
 
 class SprintUpdate(BaseModel):
     """Update sprint schema"""

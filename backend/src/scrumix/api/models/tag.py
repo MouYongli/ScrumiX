@@ -16,9 +16,9 @@ class Tag(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     
     tag_documentations = relationship("TagDocumentation", back_populates="tag", cascade="all, delete-orphan")
-    documentations = relationship("Documentation", secondary="tag_documentation", back_populates="tags")
+    documentations = relationship("Documentation", secondary="tag_documentation", back_populates="tags", overlaps="tag_documentations")
     tag_tasks = relationship("TagTask", back_populates="tag", cascade="all, delete-orphan")
-    tasks = relationship("Task", secondary="tag_task", back_populates="tags")
+    tasks = relationship("Task", secondary="tag_task", back_populates="tags", overlaps="tag_tasks")
     
     def __repr__(self):
         return f"<Tag(id={self.id}, title='{self.title}')>" 

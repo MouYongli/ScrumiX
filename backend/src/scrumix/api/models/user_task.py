@@ -11,5 +11,5 @@ class UserTask(Base):
     added_by = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     # Relationships
-    user = relationship("User", back_populates="user_tasks")
-    task = relationship("Task", back_populates="user_tasks") 
+    user = relationship("User", back_populates="user_tasks", overlaps="tasks,users")
+    task = relationship("Task", back_populates="user_tasks", overlaps="tasks,users") 

@@ -8,3 +8,6 @@ def get_db():
         yield db
     finally:
         db.close() 
+
+# Alias for test compatibility
+get_session = get_db

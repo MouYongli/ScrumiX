@@ -19,6 +19,8 @@ class BacklogBase(BaseModel):
 class BacklogCreate(BacklogBase):
     """Create backlog item schema"""
     model_config = ConfigDict(populate_by_name=True)
+    
+    project_id: int
 
 class BacklogUpdate(BaseModel):
     """Update backlog item schema"""

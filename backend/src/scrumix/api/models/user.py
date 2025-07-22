@@ -51,13 +51,13 @@ class User(Base):
     oauth_accounts = relationship("UserOAuth", back_populates="user", cascade="all, delete-orphan")
     sessions = relationship("UserSession", back_populates="user", cascade="all, delete-orphan")
     user_projects = relationship("UserProject", back_populates="user", cascade="all, delete-orphan")
-    projects = relationship("Project", secondary="user_project", back_populates="users")
+    projects = relationship("Project", secondary="user_project", back_populates="users", overlaps="user_projects")
     user_tasks = relationship("UserTask", back_populates="user", cascade="all, delete-orphan")
-    tasks = relationship("Task", secondary="user_task", back_populates="users")
+    tasks = relationship("Task", secondary="user_task", back_populates="users", overlaps="user_tasks")
     user_meetings = relationship("UserMeeting", back_populates="user", cascade="all, delete-orphan")
-    meetings = relationship("Meeting", secondary="user_meeting", back_populates="users")
+    meetings = relationship("Meeting", secondary="user_meeting", back_populates="users", overlaps="user_meetings")
     user_documentations = relationship("UserDocumentation", back_populates="user", cascade="all, delete-orphan")
-    documentations = relationship("Documentation", secondary="user_documentation", back_populates="users")
+    documentations = relationship("Documentation", secondary="user_documentation", back_populates="users", overlaps="user_documentations")
 
 class UserOAuth(Base):
     """OAuth账户关联表"""

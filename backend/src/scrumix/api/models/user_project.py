@@ -12,5 +12,5 @@ class UserProject(Base):
     added_by = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     # Relationships
-    user = relationship("User", back_populates="user_projects")
-    project = relationship("Project", back_populates="user_projects") 
+    user = relationship("User", back_populates="user_projects", overlaps="projects,users")
+    project = relationship("Project", back_populates="user_projects", overlaps="projects,users") 

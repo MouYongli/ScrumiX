@@ -44,7 +44,7 @@ def get_sprints(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching sprints: {str(e)}")
 
-@router.post("/", response_model=SprintResponse)
+@router.post("/", response_model=SprintResponse, status_code=201)
 def create_sprint(
     sprint_create: SprintCreate,
     db: Session = Depends(get_db),

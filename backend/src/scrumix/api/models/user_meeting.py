@@ -9,5 +9,5 @@ class UserMeeting(Base):
     meeting_id = Column(Integer, ForeignKey("meetings.meeting_id"), primary_key=True)
 
     # Relationships
-    user = relationship("User", back_populates="user_meetings")
-    meeting = relationship("Meeting", back_populates="user_meetings") 
+    user = relationship("User", back_populates="user_meetings", overlaps="meetings,users")
+    meeting = relationship("Meeting", back_populates="user_meetings", overlaps="meetings,users") 

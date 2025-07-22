@@ -35,7 +35,29 @@ class ProjectCRUD(CRUDBase[Project, ProjectCreate, ProjectUpdate]):
     
     def get_by_id(self, db: Session, project_id: int) -> Optional[Project]:
         """Get project by ID"""
-        return db.query(Project).filter(Project.id == project_id).first()
+        return self.get(db, project_id)
+    
+    def create_project(self, db: Session, project_create: ProjectCreate) -> Project:
+        """Create a new project"""
+        # Validate dates
+        if project_create.startDate >= project_create.endDate:
+            raise ValueError("End date must be after start date")
+        
+        # Create project object
+        db_project = Project(
+            name=project_create.name,
+            description=project_create.description,
+            status=project_create.status,
+            start_date=project_create.startDate,
+            end_date=project_create.endDate,
+            color=project_create.color,
+            last_activity_at=datetime.now()
+        )
+        
+        db.add(db_project)
+        db.commit()
+        db.refresh(db_project)
+        return db_project
     
     def get_by_name(self, db: Session, name: str) -> Optional[Project]:
         """Get project by name"""

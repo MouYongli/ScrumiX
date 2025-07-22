@@ -21,3 +21,14 @@ def get_db():
 # 创建数据库表
 def create_tables():
     Base.metadata.create_all(bind=engine)
+
+# Alias for test compatibility
+get_session = get_db
+
+# Additional functions for testing
+def create_all_tables():
+    """Create all database tables"""
+    Base.metadata.create_all(bind=engine)
+
+# Database URL for configuration
+SQLALCHEMY_DATABASE_URL = str(settings.SQLALCHEMY_DATABASE_URI)
