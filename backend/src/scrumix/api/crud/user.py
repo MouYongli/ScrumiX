@@ -145,6 +145,17 @@ class UserCRUD(CRUDBase[User, UserCreate, UserUpdate]):
             return False
         
         user.is_active = False
+        user.deactivated_at = datetime.now()
+        db.commit()
+        return True
+    
+    def delete_user(self, db: Session, user_id: int) -> bool:
+        """删除用户"""
+        user = self.get_by_id(db, user_id)
+        if not user:
+            return False
+        
+        db.delete(user)
         db.commit()
         return True
     
@@ -348,6 +359,25 @@ class UserSessionCRUD:
                 UserSession.expires_at > datetime.now()
             )
         ).order_by(UserSession.last_activity_at.desc()).all()
+    
+    def deactivate_user_sessions(self, db: Session, user_id: int) -> int:
+        """Deactivate all sessions for a user"""
+        from ..models.user import UserSession
+        sessions = db.query(UserSession).filter(
+            and_(
+                UserSession.user_id == user_id,
+                UserSession.is_active == True
+            )
+        ).all()
+        
+        deactivated_count = 0
+        for session in sessions:
+            session.is_active = False
+            session.deactivated_at = datetime.now()
+            deactivated_count += 1
+        
+        db.commit()
+        return deactivated_count
 
 # Create instances
 user_crud = UserCRUD()

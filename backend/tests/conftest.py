@@ -83,7 +83,7 @@ def db_session() -> Generator[Session, None, None]:
 @pytest.fixture(scope="function")
 def client(db_session: Session) -> Generator[TestClient, None, None]:
     """Create a test client with overridden database dependency"""
-    from scrumix.api.core.security import get_current_user_hybrid
+    from scrumix.api.core.security import get_current_user_hybrid, get_current_user, get_current_superuser
     from fastapi import Request
     
     # Override the database dependency
@@ -103,23 +103,103 @@ def client(db_session: Session) -> Generator[TestClient, None, None]:
                 headers={"WWW-Authenticate": "Bearer"},
             )
         
-        # Return mock user if authenticated
-        mock_user = User(
-            id=1,
-            email="test@example.com",
-            username="testuser",
-            full_name="Test User",
-            is_active=True,
-            is_verified=True,
-            is_superuser=False,
-            status=UserStatus.ACTIVE
-        )
-        return mock_user
+        # Extract token and decode to get user info
+        token = auth_header.split(" ")[1]
+        try:
+            from scrumix.api.core.security import verify_token
+            token_data = verify_token(token)
+            user_id = int(token_data.user_id) if token_data.user_id else 1
+            
+            # Get the actual user from the database
+            from scrumix.api.crud.user import user_crud
+            user = user_crud.get_by_id(db_session, user_id=user_id)
+            
+            if user is None:
+                # Fallback to mock user if not found in database
+                user = User(
+                    id=user_id,
+                    email=f"user{user_id}@example.com",
+                    username=f"user{user_id}",
+                    full_name=f"User {user_id}",
+                    is_active=True,
+                    is_verified=True,
+                    is_superuser=user_id == 2,
+                    status=UserStatus.ACTIVE,
+                    timezone="UTC",
+                    language="zh-CN",
+                    created_at=datetime.now(),
+                    updated_at=datetime.now()
+                )
+            
+            return user
+        except:
+            # Fallback to regular user if token verification fails
+            user = User(
+                id=1,
+                email="test@example.com",
+                username="testuser",
+                full_name="Test User",
+                is_active=True,
+                is_verified=True,
+                is_superuser=False,
+                status=UserStatus.ACTIVE,
+                timezone="UTC",
+                language="zh-CN",
+                created_at=datetime.now(),
+                updated_at=datetime.now()
+            )
+            return user
     
+    def mock_get_current_superuser(request: Request):
+        from scrumix.api.models.user import User, UserStatus
+        
+        # Check if Authorization header is present
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            from fastapi import HTTPException, status
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Not authenticated",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        # Extract token and decode to get user info
+        token = auth_header.split(" ")[1]
+        try:
+            from scrumix.api.core.security import verify_token
+            token_data = verify_token(token)
+            user_id = int(token_data.user_id) if token_data.user_id else 2
+            
+            # Get the actual user from the database
+            from scrumix.api.crud.user import user_crud
+            user = user_crud.get_by_id(db_session, user_id=user_id)
+            
+            if user is None or not user.is_superuser:
+                # If user not found or not superuser, raise 403
+                from fastapi import HTTPException, status
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Not enough privileges"
+                )
+            
+            return user
+        except:
+            # If token verification fails, raise 403 for superuser routes
+            from fastapi import HTTPException, status
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not enough privileges"
+            )
+    
+    # Override both authentication dependencies
     app.dependency_overrides[get_current_user_hybrid] = mock_get_current_user
+    app.dependency_overrides[get_current_user] = mock_get_current_user
+    app.dependency_overrides[get_current_superuser] = mock_get_current_superuser
     
-    test_client = TestClient(app)
-    yield test_client
+    with TestClient(app) as client:
+        yield client
+    
+    # Clean up overrides
     app.dependency_overrides.clear()
 
 
@@ -141,6 +221,8 @@ def test_user_data() -> Dict[str, Any]:
 @pytest.fixture
 def test_user(db_session: Session, test_user_data: Dict[str, Any]) -> User:
     """Create a test user in the database"""
+    from datetime import datetime
+    
     user = User(
         email=test_user_data["email"],
         username=test_user_data["username"],
@@ -149,7 +231,11 @@ def test_user(db_session: Session, test_user_data: Dict[str, Any]) -> User:
         is_active=test_user_data["is_active"],
         is_verified=test_user_data["is_verified"],
         is_superuser=test_user_data["is_superuser"],
-        status=test_user_data["status"]
+        status=test_user_data["status"],
+        timezone="UTC",
+        language="zh-CN",
+        created_at=datetime.now(),
+        updated_at=datetime.now()
     )
     db_session.add(user)
     db_session.commit()
@@ -175,6 +261,8 @@ def test_superuser_data() -> Dict[str, Any]:
 @pytest.fixture
 def test_superuser(db_session: Session, test_superuser_data: Dict[str, Any]) -> User:
     """Create a test superuser in the database"""
+    from datetime import datetime
+    
     user = User(
         email=test_superuser_data["email"],
         username=test_superuser_data["username"],
@@ -183,7 +271,11 @@ def test_superuser(db_session: Session, test_superuser_data: Dict[str, Any]) -> 
         is_active=test_superuser_data["is_active"],
         is_verified=test_superuser_data["is_verified"],
         is_superuser=test_superuser_data["is_superuser"],
-        status=test_superuser_data["status"]
+        status=test_superuser_data["status"],
+        timezone="UTC",
+        language="zh-CN",
+        created_at=datetime.now(),
+        updated_at=datetime.now()
     )
     db_session.add(user)
     db_session.commit()

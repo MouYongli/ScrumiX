@@ -2,7 +2,7 @@
 Backlog-related API routes
 """
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status as fastapi_status
 from sqlalchemy.orm import Session
 from scrumix.api.db.database import get_db
 from scrumix.api.core.security import get_current_user_hybrid
@@ -34,17 +34,20 @@ def get_backlogs(
     """Get all backlog items with optional filtering"""
     try:
         if search:
-            backlogs = backlog_crud.search_backlogs(db, search, skip=skip, limit=limit)
+            backlogs = backlog_crud.search_backlogs(db, search, skip, limit)
         else:
             backlogs = backlog_crud.get_backlogs(
-                db=db,
-                skip=skip,
-                limit=limit,
-                status=status,
-                priority=priority,
-                project_id=project_id,
-                sprint_id=sprint_id,
-                assignee_id=assigned_to_id
+                db,
+                skip,
+                limit,
+                status,
+                priority,
+                None,  # item_type
+                project_id,
+                sprint_id,
+                assigned_to_id,
+                False,  # root_only
+                False   # include_children
             )
         
         # Convert to response format
@@ -54,7 +57,7 @@ def get_backlogs(
         ]
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching backlogs: {str(e)}"
         )
 
@@ -69,13 +72,13 @@ def get_backlog(
     backlog = backlog_crud.get(db=db, id=backlog_id)
     if not backlog:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=fastapi_status.HTTP_404_NOT_FOUND,
             detail="Backlog not found"
         )
     return BacklogResponse.from_db_model(backlog)
 
 
-@router.post("/", response_model=BacklogResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=BacklogResponse, status_code=fastapi_status.HTTP_201_CREATED)
 def create_backlog(
     backlog: BacklogCreate,
     db: Session = Depends(get_db),
@@ -87,7 +90,7 @@ def create_backlog(
         return BacklogResponse.from_db_model(created_backlog)
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error creating backlog: {str(e)}"
         )
 
@@ -103,7 +106,7 @@ def update_backlog(
     existing_backlog = backlog_crud.get(db=db, id=backlog_id)
     if not existing_backlog:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=fastapi_status.HTTP_404_NOT_FOUND,
             detail="Backlog not found"
         )
     
@@ -112,12 +115,12 @@ def update_backlog(
         return BacklogResponse.from_db_model(updated_backlog)
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error updating backlog: {str(e)}"
         )
 
 
-@router.delete("/{backlog_id}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{backlog_id}", status_code=fastapi_status.HTTP_204_NO_CONTENT)
 def delete_backlog(
     backlog_id: int,
     db: Session = Depends(get_db),
@@ -127,16 +130,16 @@ def delete_backlog(
     existing_backlog = backlog_crud.get(db=db, id=backlog_id)
     if not existing_backlog:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=fastapi_status.HTTP_404_NOT_FOUND,
             detail="Backlog not found"
         )
     
     try:
-        backlog_crud.remove(db=db, id=backlog_id)
+        backlog_crud.delete_backlog(db=db, backlog_id=backlog_id)
         return None
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error deleting backlog: {str(e)}"
         )
 
@@ -152,7 +155,7 @@ def update_backlog_status(
     existing_backlog = backlog_crud.get(db=db, id=backlog_id)
     if not existing_backlog:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=fastapi_status.HTTP_404_NOT_FOUND,
             detail="Backlog not found"
         )
     
@@ -161,7 +164,7 @@ def update_backlog_status(
         return BacklogResponse.from_db_model(updated_backlog)
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error updating backlog status: {str(e)}"
         )
 
@@ -181,7 +184,7 @@ def bulk_update_status(
         return {"updated_count": updated_count}
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error bulk updating status: {str(e)}"
         )
 
@@ -197,7 +200,7 @@ def get_backlog_children(
         return [BacklogResponse.from_db_model(child) for child in children]
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching backlog children: {str(e)}"
         )
 
@@ -213,7 +216,7 @@ def get_backlogs_by_status(
         return [BacklogResponse.from_db_model(backlog) for backlog in backlogs]
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching backlogs by status: {str(e)}"
         )
 
@@ -229,6 +232,6 @@ def get_backlogs_by_priority(
         return [BacklogResponse.from_db_model(backlog) for backlog in backlogs]
     except Exception as e:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error fetching backlogs by priority: {str(e)}"
         ) 

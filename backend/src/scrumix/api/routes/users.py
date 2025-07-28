@@ -154,4 +154,23 @@ async def verify_user(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
-    return {"message": "User verified successfully"} 
+    return {"message": "User verified successfully"}
+
+@router.delete("/{user_id}")
+async def delete_user(
+    user_id: int,
+    current_user = Depends(get_current_superuser),
+    db: Session = Depends(get_db)
+):
+    """删除用户（管理员）"""
+    success = user_crud.delete_user(db, user_id)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # 删除用户的所有会话
+    session_crud.deactivate_user_sessions(db, user_id)
+    
+    return {"message": "User deleted successfully"} 

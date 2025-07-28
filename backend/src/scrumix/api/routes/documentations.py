@@ -2,7 +2,7 @@
 Documentation-related API routes
 """
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status as fastapi_status
 from sqlalchemy.orm import Session
 
 from scrumix.api.db.session import get_db
@@ -32,9 +32,9 @@ def get_documentations(
     """
     try:
         if search:
-            documentations = documentation_crud.search_documentations(db, search, skip=skip, limit=limit)
+            documentations = documentation_crud.search_documentations(db, search, skip, limit)
         else:
-            documentations = documentation_crud.get_documentations(db, skip=skip, limit=limit, doc_type=doc_type)
+            documentations = documentation_crud.get_documentations(db, skip, limit, doc_type)
         
         return [
             DocumentationResponse.from_db_model(doc) 
@@ -43,7 +43,7 @@ def get_documentations(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching documentation: {str(e)}")
 
-@router.post("/", response_model=DocumentationResponse)
+@router.post("/", response_model=DocumentationResponse, status_code=fastapi_status.HTTP_201_CREATED)
 def create_documentation(
     documentation_create: DocumentationCreate,
     db: Session = Depends(get_db),

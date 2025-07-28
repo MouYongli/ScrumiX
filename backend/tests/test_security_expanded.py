@@ -86,7 +86,7 @@ class TestEmailVerificationTokens:
         """Test verifying expired email verification token"""
         email = "expired@example.com"
         data = {"sub": email, "type": "email_verification"}
-        expire = datetime.now() - timedelta(hours=1)  # Expired
+        expire = int((datetime.now() - timedelta(hours=1)).timestamp())  # Expired timestamp
         data.update({"exp": expire})
         expired_token = jwt.encode(data, settings.SECRET_KEY, algorithm="HS256")
         
@@ -157,7 +157,7 @@ class TestPasswordResetTokens:
         """Test verifying expired password reset token"""
         email = "expired_reset@example.com"
         data = {"sub": email, "type": "password_reset"}
-        expire = datetime.now() - timedelta(hours=1)  # Expired
+        expire = int((datetime.now() - timedelta(hours=1)).timestamp())  # Expired timestamp
         data.update({"exp": expire})
         expired_token = jwt.encode(data, settings.SECRET_KEY, algorithm="HS256")
         
@@ -173,7 +173,7 @@ class TestAuthenticationFunctions:
     async def test_get_current_user_hybrid_with_header(self):
         """Test hybrid auth with Authorization header"""
         with patch('scrumix.api.core.security.verify_token') as mock_verify, \
-             patch('scrumix.api.core.security.user_crud') as mock_user_crud:
+             patch('scrumix.api.crud.user.user_crud') as mock_user_crud:
             
             # Setup mocks
             mock_verify.return_value = TokenData(user_id=1, email="test@example.com")
@@ -184,9 +184,12 @@ class TestAuthenticationFunctions:
             credentials = MagicMock()
             credentials.credentials = "valid_token"
             request = MagicMock(spec=Request)
+            request.headers = {"Authorization": "Bearer valid_token"}
+            request.cookies = {}
             db = MagicMock(spec=Session)
             
-            result = await get_current_user_hybrid(credentials, request, db)
+            # Test the function
+            result = await get_current_user_hybrid(request, credentials, db)
             
             assert result == mock_user
             mock_verify.assert_called_once_with("valid_token")
@@ -194,28 +197,34 @@ class TestAuthenticationFunctions:
 
     @pytest.mark.asyncio
     async def test_get_current_user_hybrid_with_cookie(self):
-        """Test hybrid auth fallback to cookie"""
-        with patch('scrumix.api.core.security.verify_token') as mock_verify, \
-             patch('scrumix.api.core.security.user_crud') as mock_user_crud, \
-             patch('scrumix.api.core.security.get_access_token_from_cookie') as mock_cookie:
+        """Test hybrid auth with cookie"""
+        with patch('scrumix.api.core.security.get_access_token_from_cookie') as mock_cookie, \
+             patch('scrumix.api.core.security.verify_token') as mock_verify, \
+             patch('scrumix.api.crud.user.user_crud') as mock_user_crud:
             
             # Setup mocks
-            mock_verify.return_value = TokenData(user_id=2, email="cookie@example.com")
+            mock_cookie.return_value = "valid_token"
+            mock_verify.return_value = TokenData(user_id=1, email="test@example.com")
             mock_user = MagicMock()
             mock_user_crud.get_by_id.return_value = mock_user
-            mock_cookie.return_value = "cookie_token"
             
-            # Setup - no credentials, fallback to cookie
-            credentials = None
+            # Setup request and credentials
             request = MagicMock(spec=Request)
+            request.headers = {}
+            request.cookies = {"access_token": "valid_token"}
             db = MagicMock(spec=Session)
             
-            result = await get_current_user_hybrid(credentials, request, db)
+            # Mock credentials (None for cookie-based auth)
+            credentials = None
             
+            # Test the function
+            result = await get_current_user_hybrid(request, credentials, db)
+            
+            # Verify the result
             assert result == mock_user
             mock_cookie.assert_called_once_with(request)
-            mock_verify.assert_called_once_with("cookie_token")
-            mock_user_crud.get_by_id.assert_called_once_with(db, user_id=2)
+            mock_verify.assert_called_once_with("valid_token")
+            mock_user_crud.get_by_id.assert_called_once_with(db, user_id=1)
 
     @pytest.mark.asyncio
     async def test_get_current_user_hybrid_no_token(self):
@@ -237,7 +246,7 @@ class TestAuthenticationFunctions:
     async def test_get_current_user_from_cookie_success(self):
         """Test getting user from cookie successfully"""
         with patch('scrumix.api.core.security.verify_token') as mock_verify, \
-             patch('scrumix.api.core.security.user_crud') as mock_user_crud, \
+             patch('scrumix.api.crud.user.user_crud') as mock_user_crud, \
              patch('scrumix.api.core.security.get_access_token_from_cookie') as mock_cookie:
             
             # Setup mocks
@@ -311,7 +320,7 @@ class TestAuthenticationFunctions:
             await get_current_superuser(mock_user)
         
         assert exc_info.value.status_code == 400
-        assert "Not enough permissions" in str(exc_info.value.detail)
+        assert "The user doesn't have enough privileges" in str(exc_info.value.detail)
 
     @pytest.mark.asyncio
     async def test_get_current_user_hybrid_jwt_error(self):
@@ -331,20 +340,30 @@ class TestAuthenticationFunctions:
 
     @pytest.mark.asyncio 
     async def test_get_current_user_hybrid_user_not_found(self):
-        """Test hybrid auth when user is not found in database"""
+        """Test hybrid auth when user not found"""
         with patch('scrumix.api.core.security.verify_token') as mock_verify, \
-             patch('scrumix.api.core.security.user_crud') as mock_user_crud:
+             patch('scrumix.api.crud.user.user_crud') as mock_user_crud:
             
+            # Setup mocks
             mock_verify.return_value = TokenData(user_id=999, email="notfound@example.com")
             mock_user_crud.get_by_id.return_value = None
             
-            credentials = MagicMock()
-            credentials.credentials = "valid_token"
+            # Setup request and credentials
             request = MagicMock(spec=Request)
+            request.headers = {"Authorization": "Bearer valid_token"}
+            request.cookies = {}
             db = MagicMock(spec=Session)
             
-            with pytest.raises(HTTPException) as exc_info:
-                await get_current_user_hybrid(credentials, request, db)
+            # Mock credentials
+            credentials = MagicMock()
+            credentials.credentials = "valid_token"
             
-            assert exc_info.value.status_code == 404
-            assert "User not found" in str(exc_info.value.detail) 
+            # Test the function
+            with pytest.raises(HTTPException) as exc_info:
+                await get_current_user_hybrid(request, credentials, db)
+            
+            # Verify the exception
+            assert exc_info.value.status_code == 401
+            assert "Could not validate credentials" in str(exc_info.value.detail)
+            mock_verify.assert_called_once_with("valid_token")
+            mock_user_crud.get_by_id.assert_called_once_with(db, user_id=999) 

@@ -141,4 +141,25 @@ class DocumentationCRUD(CRUDBase[Documentation, DocumentationCreate, Documentati
         }
 
 # Create CRUD instance
-documentation_crud = DocumentationCRUD(Documentation) 
+documentation_crud = DocumentationCRUD(Documentation)
+
+# Export functions for test compatibility
+def get_documentations(db: Session, skip: int = 0, limit: int = 100, **kwargs) -> List[Documentation]:
+    """Get list of documentation items"""
+    return documentation_crud.get_documentations(db, skip=skip, limit=limit, **kwargs)
+
+def get_documentation(db: Session, doc_id: int) -> Optional[Documentation]:
+    """Get documentation by ID"""
+    return documentation_crud.get_by_id(db, doc_id)
+
+def create_documentation(db: Session, documentation_create: DocumentationCreate) -> Documentation:
+    """Create a new documentation item"""
+    return documentation_crud.create_documentation(db, documentation_create)
+
+def update_documentation(db: Session, doc_id: int, documentation_update: DocumentationUpdate) -> Optional[Documentation]:
+    """Update documentation"""
+    return documentation_crud.update_documentation(db, doc_id, documentation_update)
+
+def delete_documentation(db: Session, doc_id: int) -> bool:
+    """Delete documentation"""
+    return documentation_crud.delete_documentation(db, doc_id) 

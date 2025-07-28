@@ -32,11 +32,11 @@ def get_meeting_notes(
     """Get all meeting notes with pagination and optional filtering."""
     notes, total = meeting_note.get_multi_with_pagination(
         db, 
-        skip=skip, 
-        limit=limit, 
-        meeting_id=meeting_id,
-        search=search,
-        parent_only=parent_only
+        skip, 
+        limit, 
+        meeting_id,
+        search,
+        parent_only
     )
     
     pages = math.ceil(total / limit) if total > 0 else 0

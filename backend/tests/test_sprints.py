@@ -57,8 +57,8 @@ class TestSprintEndpoints:
         response = client.post("/api/v1/sprints/", json=sprint_data, headers=auth_headers)
         assert response.status_code == status.HTTP_201_CREATED
         data = response.json()
-        assert data["sprint_name"] == "Test Sprint"
-        assert data["sprint_goal"] == "Complete test features"
+        assert data["sprintName"] == "Test Sprint"
+        assert data["sprintGoal"] == "Complete test features"
     
     def test_create_sprint_invalid_data(self, client, auth_headers):
         """Test sprint creation with invalid data"""
@@ -115,7 +115,7 @@ class TestSprintEndpoints:
         response = client.get(f"/api/v1/sprints/{sprint_id}", headers=auth_headers)
         assert response.status_code == status.HTTP_200_OK
         data = response.json()
-        assert data["sprint_name"] == "Test Sprint for Get"
+        assert data["sprintName"] == "Test Sprint for Get"
     
     def test_get_sprint_by_id_not_found(self, client, auth_headers):
         """Test getting non-existent sprint by ID"""
@@ -146,15 +146,16 @@ class TestSprintEndpoints:
         # Update the sprint
         sprint_id = created_sprint["id"]
         update_data = {
-            "sprint_name": "Updated Sprint Name",
-            "sprint_goal": "Updated goal"
+            "sprintName": "Updated Sprint Name",
+            "sprintGoal": "Updated goal"
         }
 
         response = client.put(f"/api/v1/sprints/{sprint_id}", json=update_data, headers=auth_headers)
         assert response.status_code == status.HTTP_200_OK
+        
         data = response.json()
-        assert data["sprint_name"] == "Updated Sprint Name"
-        assert data["sprint_goal"] == "Updated goal"
+        assert data["sprintName"] == update_data["sprintName"]
+        assert data["sprintGoal"] == update_data["sprintGoal"]
     
     def test_update_sprint_not_found(self, client, auth_headers):
         """Test updating non-existent sprint"""

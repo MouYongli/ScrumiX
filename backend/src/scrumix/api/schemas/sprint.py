@@ -67,28 +67,28 @@ class SprintResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True, populate_by_name=True, use_enum_values=True)
     
     id: int
-    sprint_name: str
-    sprint_goal: Optional[str] = None
-    start_date: datetime
-    end_date: datetime
+    sprint_name: str = Field(..., alias="sprintName")
+    sprint_goal: Optional[str] = Field(None, alias="sprintGoal")
+    start_date: datetime = Field(..., alias="startDate")
+    end_date: datetime = Field(..., alias="endDate")
     status: SprintStatus
-    sprint_capacity: Optional[int] = None
-    project_id: int
-    created_at: datetime
-    updated_at: datetime
+    sprint_capacity: Optional[int] = Field(None, alias="sprintCapacity")
+    project_id: int = Field(..., alias="projectId")
+    created_at: datetime = Field(..., alias="createdAt")
+    updated_at: datetime = Field(..., alias="updatedAt")
     
     @classmethod
     def from_db_model(cls, sprint):
         """Create a response model from an ORM model."""
         return cls(
             id=sprint.id,
-            sprint_name=sprint.sprint_name,
-            sprint_goal=sprint.sprint_goal,
-            start_date=sprint.start_date,
-            end_date=sprint.end_date,
+            sprint_name=sprint.sprint_name,  # Use actual field name
+            sprint_goal=sprint.sprint_goal,  # Use actual field name
+            start_date=sprint.start_date,    # Use actual field name
+            end_date=sprint.end_date,        # Use actual field name
             status=sprint.status,
-            sprint_capacity=sprint.sprint_capacity,
-            project_id=sprint.project_id,
-            created_at=sprint.created_at,
-            updated_at=sprint.updated_at
+            sprint_capacity=sprint.sprint_capacity,  # Use actual field name
+            project_id=sprint.project_id,    # Use actual field name
+            created_at=sprint.created_at,    # Use actual field name
+            updated_at=sprint.updated_at     # Use actual field name
         ) 

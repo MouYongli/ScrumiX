@@ -124,10 +124,7 @@ class TestBacklogRoutesComprehensive:
         backlog_id = test_backlog.backlog_id
         
         response = client.delete(f"/api/v1/backlogs/{backlog_id}", headers=auth_headers)
-        assert response.status_code == status.HTTP_200_OK
-        
-        data = response.json()
-        assert "message" in data
+        assert response.status_code == status.HTTP_204_NO_CONTENT
 
     def test_delete_backlog_not_found(self, client, auth_headers):
         """Test DELETE /backlogs/{id} with non-existent ID"""
@@ -245,7 +242,7 @@ class TestSprintRoutesComprehensive:
         sprint_id = test_sprint.id
         
         response = client.delete(f"/api/v1/sprints/{sprint_id}", headers=auth_headers)
-        assert response.status_code == status.HTTP_200_OK
+        assert response.status_code == status.HTTP_204_NO_CONTENT
 
 
 class TestTaskRoutesComprehensive:
@@ -257,7 +254,12 @@ class TestTaskRoutesComprehensive:
         assert response.status_code == status.HTTP_200_OK
         
         data = response.json()
-        assert isinstance(data, list)
+        assert isinstance(data, dict)
+        assert "tasks" in data
+        assert "total" in data
+        assert "page" in data
+        assert "pages" in data
+        assert isinstance(data["tasks"], list)
 
     def test_get_single_task(self, client, auth_headers, test_task):
         """Test GET /tasks/{id} - get single task"""
@@ -266,7 +268,7 @@ class TestTaskRoutesComprehensive:
         assert response.status_code == status.HTTP_200_OK
         
         data = response.json()
-        assert data["task_id"] == task_id
+        assert data["id"] == task_id
         assert data["title"] == test_task.title
 
     def test_update_task(self, client, auth_headers, test_task):

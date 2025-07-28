@@ -245,9 +245,15 @@ def verify_email_verification_token(token: str) -> Optional[str]:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
         email: str = payload.get("sub")
         token_type: str = payload.get("type")
+        exp: int = payload.get("exp")
         
         if email is None or token_type != "email_verification":
             return None
+        
+        # Check if token is expired
+        if exp and datetime.fromtimestamp(exp) < datetime.now():
+            return None
+            
         return email
     except JWTError:
         return None
@@ -265,9 +271,15 @@ def verify_password_reset_token(token: str) -> Optional[str]:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
         email: str = payload.get("sub")
         token_type: str = payload.get("type")
+        exp: int = payload.get("exp")
         
         if email is None or token_type != "password_reset":
             return None
+        
+        # Check if token is expired
+        if exp and datetime.fromtimestamp(exp) < datetime.now():
+            return None
+            
         return email
     except JWTError:
         return None 

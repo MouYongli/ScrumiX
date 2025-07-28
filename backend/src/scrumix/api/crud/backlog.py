@@ -409,4 +409,25 @@ class BacklogCRUD(CRUDBase[Backlog, BacklogCreate, BacklogUpdate]):
         return build_node(root)
 
 # Create CRUD instance
-backlog_crud = BacklogCRUD(Backlog) 
+backlog_crud = BacklogCRUD(Backlog)
+
+# Export functions for test compatibility
+def get_backlogs(db: Session, skip: int = 0, limit: int = 100, **kwargs) -> List[Backlog]:
+    """Get list of backlog items"""
+    return backlog_crud.get_backlogs(db, skip=skip, limit=limit, **kwargs)
+
+def get_backlog(db: Session, backlog_id: int) -> Optional[Backlog]:
+    """Get backlog item by ID"""
+    return backlog_crud.get_backlog(db, backlog_id)
+
+def create_backlog(db: Session, backlog_create: BacklogCreate) -> Backlog:
+    """Create a new backlog item"""
+    return backlog_crud.create_backlog(db, backlog_create)
+
+def update_backlog(db: Session, backlog_id: int, backlog_update: BacklogUpdate) -> Optional[Backlog]:
+    """Update backlog item"""
+    return backlog_crud.update_backlog(db, backlog_id, backlog_update)
+
+def delete_backlog(db: Session, backlog_id: int) -> bool:
+    """Delete backlog item"""
+    return backlog_crud.delete_backlog(db, backlog_id) 

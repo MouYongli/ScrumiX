@@ -60,7 +60,7 @@ class TestDocumentationEndpoints:
         }
         
         response = client.post("/api/v1/documentations/", json=documentation_data, headers=auth_headers)
-        assert response.status_code == status.HTTP_200_OK
+        assert response.status_code == status.HTTP_201_CREATED
         
         data = response.json()
         assert data["title"] == documentation_data["title"]
@@ -120,7 +120,7 @@ class TestDocumentationEndpoints:
         }
         
         create_response = client.post("/api/v1/documentations/", json=documentation_data, headers=auth_headers)
-        assert create_response.status_code == status.HTTP_200_OK
+        assert create_response.status_code == status.HTTP_201_CREATED
         
         doc_id = create_response.json()["id"]
         
@@ -155,7 +155,7 @@ class TestDocumentationEndpoints:
         }
         
         create_response = client.post("/api/v1/documentations/", json=documentation_data, headers=auth_headers)
-        assert create_response.status_code == status.HTTP_200_OK
+        assert create_response.status_code == status.HTTP_201_CREATED
         
         doc_id = create_response.json()["id"]
         
@@ -204,7 +204,7 @@ class TestDocumentationEndpoints:
         }
         
         create_response = client.post("/api/v1/documentations/", json=documentation_data, headers=auth_headers)
-        assert create_response.status_code == status.HTTP_200_OK
+        assert create_response.status_code == status.HTTP_201_CREATED
         
         doc_id = create_response.json()["id"]
         

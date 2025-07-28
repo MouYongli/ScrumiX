@@ -1,13 +1,8 @@
 # Session 管理
-from .database import SessionLocal
+from .database import SessionLocal, get_db
 
-def get_db():
-    """获取数据库会话"""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close() 
+# Re-export get_db for consistency
+__all__ = ['get_db', 'SessionLocal']
 
 # Alias for test compatibility
 get_session = get_db

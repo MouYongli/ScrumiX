@@ -40,7 +40,7 @@ async def get_projects(
         if search:
             projects = project_crud.search_projects(db, search, skip=skip, limit=limit)
         else:
-            projects = project_crud.get_projects(db, skip=skip, limit=limit, status=project_status)
+            projects = project_crud.get_projects(db, skip, limit, project_status)
         
         # Convert to response format
         response_projects = []
