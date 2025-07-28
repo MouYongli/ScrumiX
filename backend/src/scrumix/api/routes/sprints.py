@@ -86,18 +86,12 @@ def update_sprint(
     """
     Update sprint
     """
-    try:
-        sprint = sprint_crud.update_sprint(db, sprint_id, sprint_update)
-        if not sprint:
-            raise HTTPException(status_code=404, detail="Sprint not found")
-        
-        return SprintResponse.from_db_model(sprint)
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error updating sprint: {str(e)}")
+    sprint = sprint_crud.update_sprint(db, sprint_id, sprint_update)
+    if not sprint:
+        raise HTTPException(status_code=404, detail="Sprint not found")
+    return SprintResponse.from_db_model(sprint)
 
-@router.delete("/{sprint_id}")
+@router.delete("/{sprint_id}", status_code=204)
 def delete_sprint(
     sprint_id: int,
     db: Session = Depends(get_db),
@@ -110,7 +104,7 @@ def delete_sprint(
     if not success:
         raise HTTPException(status_code=404, detail="Sprint not found")
     
-    return {"message": "Sprint deleted successfully"}
+    return None
 
 @router.get("/status/{status}", response_model=List[SprintResponse])
 def get_sprints_by_status(

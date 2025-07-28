@@ -6,18 +6,14 @@ import enum
 from ..db.base import Base
 
 
-class MeetingType(enum.Enum):
-    """Meeting type enumeration."""
-    daily_standup = "daily-standup"
-    sprint_planning = "sprint-planning"
-    sprint_review = "sprint-review"
-    sprint_retrospective = "sprint-retrospective"
-    backlog_refinement = "backlog-refinement"
-    team_meeting = "team-meeting"
-    one_on_one = "one-on-one"
-    project_kickoff = "project-kickoff"
-    client_meeting = "client-meeting"
-    other = "other"
+class MeetingType(str, enum.Enum):
+    """Meeting type enumeration"""
+    TEAM_MEETING = "team_meeting"
+    SPRINT_PLANNING = "sprint_planning"
+    SPRINT_REVIEW = "sprint_review"
+    SPRINT_RETROSPECTIVE = "sprint_retrospective"
+    DAILY_STANDUP = "daily_standup"
+    OTHER = "other"
 
 
 class Meeting(Base):
@@ -25,20 +21,21 @@ class Meeting(Base):
     
     __tablename__ = "meetings"
     
-    meeting_id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    meeting_type = Column(SQLEnum(MeetingType), nullable=False, default=MeetingType.team_meeting, index=True)
-    start_datetime = Column(DateTime(timezone=True), nullable=False, index=True)
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    title = Column(String(200), nullable=False, index=True)
+    meeting_type = Column(SQLEnum(MeetingType), nullable=False, default=MeetingType.TEAM_MEETING, index=True)
+    start_datetime = Column(DateTime(timezone=True), nullable=False)
     description = Column(Text, nullable=True)
-    duration = Column(Integer, nullable=False, default=30, comment="Duration in minutes")
-    location = Column(String(200), nullable=True, comment="Meeting location or virtual link")
+    duration = Column(Integer, nullable=False, default=30)
+    location = Column(String(500), nullable=True)
+    sprint_id = Column(Integer, ForeignKey("sprints.id"), nullable=False, index=True)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     
-    # Foreign keys to sprint, project
-    sprint_id = Column(Integer, ForeignKey("sprints.sprint_id"), nullable=False, index=True)
-    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
-
-    # Relationship to agenda items, notes, action items
+    # Relationships
+    sprint = relationship("Sprint", back_populates="meetings")
+    project = relationship("Project", back_populates="meetings")
     agenda_items = relationship("MeetingAgenda", back_populates="meeting", cascade="all, delete-orphan")
     notes = relationship("MeetingNote", back_populates="meeting", cascade="all, delete-orphan")
     action_items = relationship("MeetingActionItem", back_populates="meeting", cascade="all, delete-orphan")
@@ -46,4 +43,4 @@ class Meeting(Base):
     users = relationship("User", secondary="user_meeting", back_populates="meetings", overlaps="user_meetings")
     
     def __repr__(self):
-        return f"<Meeting(meeting_id={self.meeting_id}, type='{self.meeting_type.value}', start='{self.start_datetime}')>" 
+        return f"<Meeting(id={self.id}, type='{self.meeting_type.value}', start='{self.start_datetime}')>" 

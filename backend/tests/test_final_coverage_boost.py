@@ -255,7 +255,7 @@ class TestCRUDModulesCoverage:
         mock_project.id = 1
         mock_query.filter.return_value.first.return_value = mock_project
         
-        found_project = project_crud.get_by_name(db=mock_db, name="Test Project")
+        found_project = project_crud.get_by_name(mock_db, "Test Project")
         assert found_project == mock_project
         mock_db.query.assert_called()
         
@@ -264,7 +264,7 @@ class TestCRUDModulesCoverage:
         mock_db.reset_mock()
         mock_query.filter.return_value.first.return_value = None
         
-        not_found = project_crud.get_by_name(db=mock_db, name="Non-existent")
+        not_found = project_crud.get_by_name(mock_db, "Non-existent")
         assert not_found is None
         mock_db.query.assert_called()
 

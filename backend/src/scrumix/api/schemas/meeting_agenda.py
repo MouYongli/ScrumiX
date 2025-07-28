@@ -39,7 +39,7 @@ class MeetingAgendaInDB(MeetingAgendaBase):
     """Schema for meeting agenda stored in database."""
     model_config = ConfigDict(from_attributes=True)
     
-    agenda_id: int
+    id: int = Field(alias="agenda_id")
     created_at: datetime
     updated_at: datetime
 
@@ -48,7 +48,7 @@ class MeetingAgendaResponse(BaseModel):
     """Schema for meeting agenda API responses with frontend field aliasing."""
     model_config = ConfigDict(from_attributes=True)
     
-    agendaId: int = Field(alias="agenda_id")
+    agendaId: int = Field(alias="id")
     meetingId: int = Field(alias="meeting_id")
     title: str
     createdAt: datetime = Field(alias="created_at")

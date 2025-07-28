@@ -274,7 +274,7 @@ class TestUserCRUD:
             language="en"
         )
         
-        updated_user = user_crud.update_user(db_session, test_user, update_data)
+        updated_user = user_crud.update_user(db_session, test_user.id, update_data)
         assert updated_user.full_name == "Updated Name"
         assert updated_user.timezone == "UTC"
         assert updated_user.language == "en"

@@ -40,7 +40,7 @@ def get_acceptance_criteria(
     current_page = (skip // limit) + 1
     
     return AcceptanceCriteriaListResponse(
-        acceptanceCriteria=[AcceptanceCriteriaResponse.model_validate(c) for c in criteria],
+        acceptance_criteria=[AcceptanceCriteriaResponse.model_validate(c) for c in criteria],
         total=total,
         page=current_page,
         pages=pages

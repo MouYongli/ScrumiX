@@ -23,7 +23,8 @@ class DocumentationCRUD(CRUDBase[Documentation, DocumentationCreate, Documentati
             title=documentation_create.title,
             type=documentation_create.type,
             description=documentation_create.description,
-            file_url=documentation_create.file_url
+            file_url=documentation_create.file_url,
+            project_id=documentation_create.project_id
         )
         
         db.add(db_documentation)
@@ -34,10 +35,6 @@ class DocumentationCRUD(CRUDBase[Documentation, DocumentationCreate, Documentati
     def get_by_id(self, db: Session, doc_id: int) -> Optional[Documentation]:
         """Get documentation by ID"""
         return self.get(db, doc_id)
-    
-    def create_documentation(self, db: Session, documentation_create: DocumentationCreate) -> Documentation:
-        """Create a new documentation"""
-        return self.create(db, obj_in=documentation_create)
     
     def get_by_title(self, db: Session, title: str) -> Optional[Documentation]:
         """Get documentation by title"""
@@ -83,7 +80,7 @@ class DocumentationCRUD(CRUDBase[Documentation, DocumentationCreate, Documentati
         # Check if title is already in use (if being updated)
         if "title" in update_data and update_data["title"] != documentation.title:
             existing_doc = self.get_by_title(db, update_data["title"])
-            if existing_doc and existing_doc.doc_id != doc_id:
+            if existing_doc and existing_doc.id != doc_id:
                 raise ValueError("Documentation title already in use")
         
         for field, value in update_data.items():

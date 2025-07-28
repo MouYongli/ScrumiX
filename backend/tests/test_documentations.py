@@ -35,7 +35,7 @@ class TestDocumentationEndpoints:
 
     def test_get_documentations_with_type_filter(self, client, auth_headers):
         """Test getting documentations with type filter"""
-        response = client.get("/api/v1/documentations/?doc_type=user_guide", headers=auth_headers)
+        response = client.get("/api/v1/documentations/?type=user_guide", headers=auth_headers)
         assert response.status_code == status.HTTP_200_OK
         
         data = response.json()
@@ -54,10 +54,9 @@ class TestDocumentationEndpoints:
         documentation_data = {
             "title": "Test Documentation",
             "description": "A test documentation",
-            "doc_type": "user_guide",
-            "content": "This is the content of the documentation",
+            "type": "user_guide",
             "file_url": "https://example.com/doc.pdf",
-            "version": "1.0"
+            "project_id": 1
         }
         
         response = client.post("/api/v1/documentations/", json=documentation_data, headers=auth_headers)
@@ -66,10 +65,8 @@ class TestDocumentationEndpoints:
         data = response.json()
         assert data["title"] == documentation_data["title"]
         assert data["description"] == documentation_data["description"]
-        assert data["doc_type"] == documentation_data["doc_type"]
-        assert data["content"] == documentation_data["content"]
+        assert data["type"] == documentation_data["type"]
         assert data["file_url"] == documentation_data["file_url"]
-        assert data["version"] == documentation_data["version"]
         assert "id" in data
 
     def test_create_documentation_invalid_data(self, client, auth_headers):
@@ -77,8 +74,9 @@ class TestDocumentationEndpoints:
         documentation_data = {
             "title": "",  # Empty title
             "description": "A test documentation",
-            "doc_type": "user_guide",
-            "content": "This is the content"
+            "type": "user_guide",
+            "file_url": "https://example.com/doc.pdf",
+            "project_id": 1
         }
         
         response = client.post("/api/v1/documentations/", json=documentation_data, headers=auth_headers)
@@ -89,8 +87,9 @@ class TestDocumentationEndpoints:
         documentation_data = {
             "title": "Test Documentation",
             "description": "A test documentation",
-            "doc_type": "invalid_type",
-            "content": "This is the content"
+            "type": "invalid_type",
+            "file_url": "https://example.com/doc.pdf",
+            "project_id": 1
         }
         
         response = client.post("/api/v1/documentations/", json=documentation_data, headers=auth_headers)
@@ -101,8 +100,9 @@ class TestDocumentationEndpoints:
         documentation_data = {
             "title": "Test Documentation",
             "description": "A test documentation",
-            "doc_type": "user_guide",
-            "content": "This is the content"
+            "type": "user_guide",
+            "file_url": "https://example.com/doc.pdf",
+            "project_id": 1
         }
         
         response = client.post("/api/v1/documentations/", json=documentation_data)
@@ -114,10 +114,9 @@ class TestDocumentationEndpoints:
         documentation_data = {
             "title": "Test Documentation for Get",
             "description": "A test documentation for getting",
-            "doc_type": "user_guide",
-            "content": "This is the content of the documentation",
+            "type": "user_guide",
             "file_url": "https://example.com/doc.pdf",
-            "version": "1.0"
+            "project_id": 1
         }
         
         create_response = client.post("/api/v1/documentations/", json=documentation_data, headers=auth_headers)
@@ -150,10 +149,9 @@ class TestDocumentationEndpoints:
         documentation_data = {
             "title": "Test Documentation for Update",
             "description": "A test documentation for updating",
-            "doc_type": "user_guide",
-            "content": "This is the content of the documentation",
+            "type": "user_guide",
             "file_url": "https://example.com/doc.pdf",
-            "version": "1.0"
+            "project_id": 1
         }
         
         create_response = client.post("/api/v1/documentations/", json=documentation_data, headers=auth_headers)
@@ -165,8 +163,6 @@ class TestDocumentationEndpoints:
         update_data = {
             "title": "Updated Documentation Title",
             "description": "Updated description",
-            "content": "Updated content",
-            "version": "2.0"
         }
         
         response = client.put(f"/api/v1/documentations/{doc_id}", json=update_data, headers=auth_headers)
@@ -175,8 +171,6 @@ class TestDocumentationEndpoints:
         data = response.json()
         assert data["title"] == update_data["title"]
         assert data["description"] == update_data["description"]
-        assert data["content"] == update_data["content"]
-        assert data["version"] == update_data["version"]
 
     def test_update_documentation_not_found(self, client, auth_headers):
         """Test updating non-existent documentation"""
@@ -204,10 +198,9 @@ class TestDocumentationEndpoints:
         documentation_data = {
             "title": "Test Documentation for Delete",
             "description": "A test documentation for deletion",
-            "doc_type": "user_guide",
-            "content": "This is the content of the documentation",
+            "type": "user_guide",
             "file_url": "https://example.com/doc.pdf",
-            "version": "1.0"
+            "project_id": 1
         }
         
         create_response = client.post("/api/v1/documentations/", json=documentation_data, headers=auth_headers)
@@ -306,17 +299,16 @@ class TestDocumentationCRUD:
         documentation_data = DocumentationCreate(
             title="Test Documentation",
             description="A test documentation",
-            doc_type=DocumentationType.USER_GUIDE,
-            content="This is the content of the documentation",
+            type=DocumentationType.USER_GUIDE,
             file_url="https://example.com/doc.pdf",
-            version="1.0"
+            project_id=1
         )
         
         documentation_obj = documentation_crud.create_documentation(db_session, documentation_data)
         assert documentation_obj.title == documentation_data.title
         assert documentation_obj.description == documentation_data.description
-        assert documentation_obj.doc_type == documentation_data.doc_type
-        assert documentation_obj.content == documentation_data.content
+        assert documentation_obj.type == documentation_data.type
+        assert documentation_obj.file_url == documentation_data.file_url
 
     def test_get_documentation_by_id(self, db_session):
         """Test getting documentation by ID"""
@@ -326,10 +318,9 @@ class TestDocumentationCRUD:
         documentation_data = DocumentationCreate(
             title="Test Documentation",
             description="A test documentation",
-            doc_type=DocumentationType.USER_GUIDE,
-            content="This is the content of the documentation",
+            type=DocumentationType.USER_GUIDE,
             file_url="https://example.com/doc.pdf",
-            version="1.0"
+            project_id=1
         )
         
         created_documentation = documentation_crud.create_documentation(db_session, documentation_data)
@@ -349,10 +340,9 @@ class TestDocumentationCRUD:
             documentation_data = DocumentationCreate(
                 title=f"Test Documentation {i}",
                 description=f"A test documentation {i}",
-                doc_type=DocumentationType.USER_GUIDE,
-                content=f"This is the content of documentation {i}",
+                type=DocumentationType.USER_GUIDE,
                 file_url=f"https://example.com/doc{i}.pdf",
-                version="1.0"
+                project_id=1
             )
             documentation_crud.create_documentation(db_session, documentation_data)
         
@@ -365,22 +355,21 @@ class TestDocumentationCRUD:
         from scrumix.api.schemas.documentation import DocumentationCreate
         
         # Create documentations with different types
-        doc_types = [DocumentationType.USER_GUIDE, DocumentationType.API, DocumentationType.TUTORIAL]
-        for doc_type in doc_types:
+        types = [DocumentationType.USER_GUIDE, DocumentationType.API_DOC, DocumentationType.OTHER]
+        for type in types:
             documentation_data = DocumentationCreate(
-                title=f"Test Documentation {doc_type}",
+                title=f"Test Documentation {type}",
                 description="A test documentation",
-                doc_type=doc_type,
-                content="This is the content of the documentation",
+                type=type,
                 file_url="https://example.com/doc.pdf",
-                version="1.0"
+                project_id=1
             )
             documentation_crud.create_documentation(db_session, documentation_data)
         
         # Get user guide documentations
         user_guide_docs = documentation_crud.get_documentations_by_type(db_session, DocumentationType.USER_GUIDE, skip=0, limit=10)
         assert len(user_guide_docs) == 1
-        assert user_guide_docs[0].doc_type == DocumentationType.USER_GUIDE
+        assert user_guide_docs[0].type == DocumentationType.USER_GUIDE
 
     def test_search_documentations(self, db_session):
         """Test searching documentations"""
@@ -393,10 +382,9 @@ class TestDocumentationCRUD:
             documentation_data = DocumentationCreate(
                 title=title,
                 description="A test documentation",
-                doc_type=DocumentationType.USER_GUIDE,
-                content="This is the content of the documentation",
+                type=DocumentationType.USER_GUIDE,
                 file_url="https://example.com/doc.pdf",
-                version="1.0"
+                project_id=1
             )
             documentation_crud.create_documentation(db_session, documentation_data)
         
@@ -413,12 +401,11 @@ class TestDocumentationCRUD:
         file_urls = ["https://example.com/doc1.pdf", "https://example.com/doc2.pdf", "https://example.com/guide.md"]
         for file_url in file_urls:
             documentation_data = DocumentationCreate(
-                title="Test Documentation",
+                title=f"Test Documentation {file_url.split('/')[-1].replace('.pdf', '')}",
                 description="A test documentation",
-                doc_type=DocumentationType.USER_GUIDE,
-                content="This is the content of the documentation",
+                type=DocumentationType.USER_GUIDE,
                 file_url=file_url,
-                version="1.0"
+                project_id=1
             )
             documentation_crud.create_documentation(db_session, documentation_data)
         
@@ -436,10 +423,9 @@ class TestDocumentationCRUD:
             documentation_data = DocumentationCreate(
                 title=f"Test Documentation {i}",
                 description="A test documentation",
-                doc_type=DocumentationType.USER_GUIDE,
-                content="This is the content of the documentation",
+                type=DocumentationType.USER_GUIDE,
                 file_url="https://example.com/doc.pdf",
-                version="1.0"
+                project_id=1
             )
             documentation_crud.create_documentation(db_session, documentation_data)
         
@@ -455,10 +441,9 @@ class TestDocumentationCRUD:
         documentation_data = DocumentationCreate(
             title="Test Documentation",
             description="A test documentation",
-            doc_type=DocumentationType.USER_GUIDE,
-            content="This is the content of the documentation",
+            type=DocumentationType.USER_GUIDE,
             file_url="https://example.com/doc.pdf",
-            version="1.0"
+            project_id=1
         )
         
         created_documentation = documentation_crud.create_documentation(db_session, documentation_data)
@@ -466,15 +451,11 @@ class TestDocumentationCRUD:
         update_data = DocumentationUpdate(
             title="Updated Documentation",
             description="Updated description",
-            content="Updated content",
-            version="2.0"
         )
         
         updated_documentation = documentation_crud.update_documentation(db_session, created_documentation.id, update_data)
         assert updated_documentation.title == update_data.title
         assert updated_documentation.description == update_data.description
-        assert updated_documentation.content == update_data.content
-        assert updated_documentation.version == update_data.version
 
     def test_delete_documentation(self, db_session):
         """Test deleting documentation"""
@@ -484,10 +465,9 @@ class TestDocumentationCRUD:
         documentation_data = DocumentationCreate(
             title="Test Documentation",
             description="A test documentation",
-            doc_type=DocumentationType.USER_GUIDE,
-            content="This is the content of the documentation",
+            type=DocumentationType.USER_GUIDE,
             file_url="https://example.com/doc.pdf",
-            version="1.0"
+            project_id=1
         )
         
         created_documentation = documentation_crud.create_documentation(db_session, documentation_data)
@@ -506,15 +486,14 @@ class TestDocumentationCRUD:
         from scrumix.api.schemas.documentation import DocumentationCreate
         
         # Create documentations with different types
-        doc_types = [DocumentationType.USER_GUIDE, DocumentationType.API, DocumentationType.TUTORIAL]
-        for doc_type in doc_types:
+        types = [DocumentationType.USER_GUIDE, DocumentationType.API_DOC, DocumentationType.OTHER]
+        for type in types:
             documentation_data = DocumentationCreate(
-                title=f"Test Documentation {doc_type}",
+                title=f"Test Documentation {type}",
                 description="A test documentation",
-                doc_type=doc_type,
-                content="This is the content of the documentation",
+                type=type,
                 file_url="https://example.com/doc.pdf",
-                version="1.0"
+                project_id=1
             )
             documentation_crud.create_documentation(db_session, documentation_data)
         

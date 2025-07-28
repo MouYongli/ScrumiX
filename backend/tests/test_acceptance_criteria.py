@@ -17,11 +17,11 @@ class TestAcceptanceCriteriaEndpoints:
         assert response.status_code == status.HTTP_200_OK
         
         data = response.json()
-        assert "acceptanceCriteria" in data
+        assert "acceptance_criteria" in data
         assert "total" in data
         assert "page" in data
         assert "pages" in data
-        assert isinstance(data["acceptanceCriteria"], list)
+        assert isinstance(data["acceptance_criteria"], list)
 
     def test_get_acceptance_criteria_unauthorized(self, client):
         """Test getting acceptance criteria without authentication"""
@@ -34,7 +34,7 @@ class TestAcceptanceCriteriaEndpoints:
         assert response.status_code == status.HTTP_200_OK
         
         data = response.json()
-        assert "acceptanceCriteria" in data
+        assert "acceptance_criteria" in data
         assert "total" in data
         assert "page" in data
         assert "pages" in data
@@ -45,8 +45,8 @@ class TestAcceptanceCriteriaEndpoints:
         assert response.status_code == status.HTTP_200_OK
         
         data = response.json()
-        assert "acceptanceCriteria" in data
-        assert isinstance(data["acceptanceCriteria"], list)
+        assert "acceptance_criteria" in data
+        assert isinstance(data["acceptance_criteria"], list)
 
     def test_get_acceptance_criteria_with_search(self, client, auth_headers):
         """Test getting acceptance criteria with search"""
@@ -54,8 +54,8 @@ class TestAcceptanceCriteriaEndpoints:
         assert response.status_code == status.HTTP_200_OK
         
         data = response.json()
-        assert "acceptanceCriteria" in data
-        assert isinstance(data["acceptanceCriteria"], list)
+        assert "acceptance_criteria" in data
+        assert isinstance(data["acceptance_criteria"], list)
 
     def test_create_acceptance_criteria_success(self, client, auth_headers, db_session):
         """Test successful acceptance criteria creation"""

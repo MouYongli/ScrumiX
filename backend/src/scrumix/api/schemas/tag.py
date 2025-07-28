@@ -6,6 +6,7 @@ from datetime import datetime
 class TagBase(BaseModel):
     """Base tag schema with common fields."""
     title: str = Field(..., min_length=1, max_length=100, description="Tag title")
+    description: Optional[str] = Field(None, max_length=255, description="Tag description")
     
     @field_validator('title')
     @classmethod
@@ -22,8 +23,11 @@ class TagCreate(TagBase):
 
 
 class TagUpdate(BaseModel):
-    """Schema for updating an existing tag."""
+    """Schema for updating a tag."""
+    model_config = ConfigDict(populate_by_name=True)
+    
     title: Optional[str] = Field(None, min_length=1, max_length=100, description="Tag title")
+    description: Optional[str] = Field(None, max_length=255, description="Tag description")
     
     @field_validator('title')
     @classmethod
@@ -49,8 +53,9 @@ class TagResponse(BaseModel):
     
     id: int
     title: str
-    createdAt: datetime = Field(alias="created_at")
-    updatedAt: datetime = Field(alias="updated_at")
+    description: Optional[str]
+    created_at: datetime
+    updated_at: datetime
 
 
 class TagListResponse(BaseModel):

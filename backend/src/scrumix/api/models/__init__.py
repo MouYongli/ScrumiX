@@ -6,7 +6,7 @@ from .project import Project, ProjectStatus
 from .backlog import Backlog, BacklogStatus, BacklogPriority
 from .documentation import Documentation, DocumentationType
 from .sprint import Sprint, SprintStatus
-from .task import Task, TaskStatus
+from .task import Task, TaskStatus, TaskPriority
 from .meeting import Meeting, MeetingType
 from .tag import Tag
 from .acceptance_criteria import AcceptanceCriteria

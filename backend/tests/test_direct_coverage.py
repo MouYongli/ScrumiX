@@ -187,9 +187,9 @@ class TestModelCoverage:
         assert ProjectStatus.COMPLETED.value == "completed"
         
         # Test Task enums
-        assert TaskStatus.todo.value == "todo"
-        assert TaskStatus.in_progress.value == "in-progress"
-        assert TaskStatus.done.value == "done"
+        assert TaskStatus.TODO.value == "todo"
+        assert TaskStatus.IN_PROGRESS.value == "in_progress"
+        assert TaskStatus.DONE.value == "done"
         
         # Test Sprint enums
         assert SprintStatus.PLANNING.value == "planning"
@@ -197,9 +197,9 @@ class TestModelCoverage:
         assert SprintStatus.COMPLETED.value == "completed"
         
         # Test Documentation enums
-        assert DocumentationType.REQUIREMENTS.value == "requirements"
-        assert DocumentationType.DESIGN.value == "design"
-        assert DocumentationType.API.value == "api"
+        assert DocumentationType.REQUIREMENT.value == "requirement"
+        assert DocumentationType.DESIGN_DOC.value == "design_doc"
+        assert DocumentationType.API_DOC.value == "api_doc"
     
     def test_model_instantiation(self):
         """Test model instantiation (skipped - SQLAlchemy relationship issues)"""
@@ -271,24 +271,24 @@ class TestSchemaCoverage:
         # Test TaskCreate with minimal data
         minimal_task = TaskCreate(title="Test Task")
         assert minimal_task.title == "Test Task"
-        assert minimal_task.status == TaskStatus.todo  # Default
+        assert minimal_task.status == TaskStatus.TODO  # Default
         
         # Test TaskCreate with full data
         full_task = TaskCreate(
             title="Full Task",
             description="A comprehensive test task",
-            status=TaskStatus.in_progress
+            status=TaskStatus.IN_PROGRESS
         )
         assert full_task.description == "A comprehensive test task"
-        assert full_task.status == TaskStatus.in_progress
+        assert full_task.status == TaskStatus.IN_PROGRESS
         
         # Test TaskUpdate
         task_update = TaskUpdate(
             title="Updated Task",
-            status=TaskStatus.done
+            status=TaskStatus.DONE
         )
         assert task_update.title == "Updated Task"
-        assert task_update.status == TaskStatus.done
+        assert task_update.status == TaskStatus.DONE
         assert task_update.description is None  # Not provided
 
 
@@ -344,16 +344,16 @@ class TestCRUDBasicOperations:
         
         # Test update_status - task found
         mock_task = Mock()
-        mock_task.status = TaskStatus.todo
+        mock_task.status = TaskStatus.TODO
         mock_query.filter.return_value.first.return_value = mock_task
         
-        updated_task = task.update_status(db=mock_db, task_id=1, status=TaskStatus.done)
-        assert updated_task.status == TaskStatus.done
+        updated_task = task.update_status(db=mock_db, task_id=1, status=TaskStatus.DONE)
+        assert updated_task.status == TaskStatus.DONE
         mock_db.commit.assert_called()
         
         # Test update_status - task not found
         mock_query.filter.return_value.first.return_value = None
-        no_task = task.update_status(db=mock_db, task_id=999, status=TaskStatus.done)
+        no_task = task.update_status(db=mock_db, task_id=999, status=TaskStatus.DONE)
         assert no_task is None
 
 

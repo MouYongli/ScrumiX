@@ -140,11 +140,11 @@ class TestSchemaValidation:
         # Test TaskUpdate
         update_data = {
             "title": "Updated Task",
-            "status": "in-progress"
+            "status": "in_progress"
         }
         task_update = TaskUpdate(**update_data)
         assert task_update.title == "Updated Task"
-        assert task_update.status.value == "in-progress"  # Compare enum value
+        assert task_update.status.value == "in_progress"  # Compare enum value
         assert task_update.description is None  # Should be None if not provided
     
     def test_tag_schemas(self):

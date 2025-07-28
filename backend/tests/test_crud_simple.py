@@ -150,8 +150,8 @@ class TestSprintCRUD:
         """Test creating a new sprint"""
         end_date = datetime(2024, 1, 29, 10, 30, 0, tzinfo=timezone.utc)  # End after start
         sprint_data = SprintCreate(
-            sprintName="Sprint 1",
-            sprintGoal="Complete user stories",
+            sprint_name="Sprint 1",
+            sprint_goal="Complete user stories 1-5",
             start_date=sample_datetime,
             end_date=end_date,
             project_id=1
@@ -241,9 +241,12 @@ class TestDocumentationCRUD:
     def test_create_documentation(self, mock_session):
         """Test creating documentation"""
         doc_data = DocumentationCreate(
-            title="Documentation",
-            type=DocumentationType.API,
-            file_url="http://example.com/doc.pdf",
+            title="Test Documentation",
+            description="A test documentation",
+            type=DocumentationType.API_DOC,
+            content="This is the content of the documentation",
+            file_url="https://example.com/doc.pdf",
+            version="1.0",
             project_id=1
         )
         
@@ -277,9 +280,10 @@ class TestProjectCRUD:
     def test_get_project(self, mock_session):
         """Test getting a project by ID"""
         mock_project = MagicMock(spec=Project)
+        mock_project.project_id = 1
         mock_session.query.return_value.filter.return_value.first.return_value = mock_project
         
-        result = project_crud.get(mock_session, id=1)
+        result = project_crud.get_by_id(mock_session, 1)
         
         assert result == mock_project
         mock_session.query.assert_called_once_with(Project)
@@ -293,26 +297,27 @@ class TestProjectCRUD:
             end_date=sample_datetime
         )
         
-        with patch.object(project_crud, 'create') as mock_create:
+        with patch.object(project_crud, 'create_project') as mock_create:
             mock_instance = MagicMock()
             mock_create.return_value = mock_instance
             
-            result = project_crud.create(mock_session, obj_in=project_data)
+            result = project_crud.create_project(mock_session, project_data)
             
-            mock_create.assert_called_once_with(mock_session, obj_in=project_data)
+            mock_create.assert_called_once_with(mock_session, project_data)
             assert result == mock_instance
     
     def test_update_project(self, mock_session):
         """Test updating a project"""
         mock_project = MagicMock(spec=Project)
+        mock_project.project_id = 1
         update_data = ProjectUpdate(name="Updated Project")
         
-        with patch.object(project_crud, 'update') as mock_update:
+        with patch.object(project_crud, 'update_project') as mock_update:
             mock_update.return_value = mock_project
             
-            result = project_crud.update(mock_session, db_obj=mock_project, obj_in=update_data)
+            result = project_crud.update_project(mock_session, mock_project.project_id, update_data)
             
-            mock_update.assert_called_once_with(mock_session, db_obj=mock_project, obj_in=update_data)
+            mock_update.assert_called_once_with(mock_session, mock_project.project_id, update_data)
             assert result == mock_project
 
 

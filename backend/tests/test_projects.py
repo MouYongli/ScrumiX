@@ -168,7 +168,7 @@ class TestProjectEndpoints:
         update_data = {
             "name": "Updated Project Name",
             "description": "Updated description",
-            "status": "on-hold"
+            "status": "on_hold"
         }
         
         response = client.put(f"/api/v1/projects/{project.id}", json=update_data, headers=auth_headers)
@@ -244,7 +244,7 @@ class TestProjectCRUD:
             end_date=datetime.now() + timedelta(days=30)
         )
         
-        project = project_crud.create(db_session, obj_in=project_data)
+        project = project_crud.create_project(db_session, project_data)
         assert project.name == project_data.name
         assert project.description == project_data.description
         assert project.status == project_data.status
@@ -262,10 +262,10 @@ class TestProjectCRUD:
             end_date=datetime.now() + timedelta(days=30)
         )
         
-        created_project = project_crud.create(db_session, obj_in=project_data)
+        created_project = project_crud.create_project(db_session, project_data)
         
         # Get the project
-        project = project_crud.get(db_session, id=created_project.id)
+        project = project_crud.get_by_id(db_session, created_project.id)
         assert project is not None
         assert project.name == project_data.name
 
@@ -282,7 +282,7 @@ class TestProjectCRUD:
             end_date=datetime.now() + timedelta(days=30)
         )
         
-        created_project = project_crud.create(db_session, obj_in=project_data)
+        created_project = project_crud.create_project(db_session, project_data)
         
         # Get the project by name
         project = project_crud.get_by_name(db_session, project_data.name)
@@ -303,7 +303,7 @@ class TestProjectCRUD:
                 start_date=datetime.now(),
                 end_date=datetime.now() + timedelta(days=30)
             )
-            project_crud.create(db_session, obj_in=project_data)
+            project_crud.create_project(db_session, project_data)
             
         # Get projects with pagination
         projects = project_crud.get_projects(db_session, skip=0, limit=3)
@@ -325,7 +325,7 @@ class TestProjectCRUD:
             start_date=datetime.now(),
             end_date=datetime.now() + timedelta(days=30)
         )
-        project_crud.create(db_session, obj_in=project_data_active)
+        project_crud.create_project(db_session, project_data_active)
         
         project_data_planning = ProjectCreate(
             name="Planning Project",
@@ -334,7 +334,16 @@ class TestProjectCRUD:
             start_date=datetime.now(),
             end_date=datetime.now() + timedelta(days=30)
         )
-        project_crud.create(db_session, obj_in=project_data_planning)
+        project_crud.create_project(db_session, project_data_planning)
+
+        project_data_completed = ProjectCreate(
+            name="Completed Project",
+            description="A completed project",
+            status=ProjectStatus.COMPLETED,
+            start_date=datetime.now(),
+            end_date=datetime.now() + timedelta(days=30)
+        )
+        project_crud.create_project(db_session, project_data_completed)
 
         # Get active projects
         active_projects = project_crud.get_projects(db_session, status=ProjectStatus.ACTIVE)
@@ -354,22 +363,31 @@ class TestProjectCRUD:
         # Create some projects to search
         project_data_1 = ProjectCreate(
             name="Searchable Project One",
-            description="A project with searchable content",
+            description="A project with Development content",
             status=ProjectStatus.ACTIVE,
             start_date=datetime.now(),
             end_date=datetime.now() + timedelta(days=30)
         )
-        project_crud.create(db_session, obj_in=project_data_1)
+        project_crud.create_project(db_session, project_data_1)
         
         project_data_2 = ProjectCreate(
-            name="Another Project",
-            description="Another searchable project",
+            name="Another Development Project",
+            description="Another searchable project for Development",
             status=ProjectStatus.ACTIVE,
             start_date=datetime.now(),
             end_date=datetime.now() + timedelta(days=30)
         )
-        project_crud.create(db_session, obj_in=project_data_2)
+        project_crud.create_project(db_session, project_data_2)
         
+        frontend_project = ProjectCreate(
+            name="Frontend Project",
+            description="A project for frontend development",
+            status=ProjectStatus.ACTIVE,
+            start_date=datetime.now(),
+            end_date=datetime.now() + timedelta(days=30)
+        )
+        project_crud.create_project(db_session, frontend_project)
+
         # Search for projects
         frontend_projects = project_crud.search_projects(db_session, "Frontend")
         assert len(frontend_projects) == 1
@@ -377,7 +395,7 @@ class TestProjectCRUD:
         
         # Search for "Development"
         dev_projects = project_crud.search_projects(db_session, "Development")
-        assert len(dev_projects) == 2
+        assert len(dev_projects) == 3
 
     def test_update_project(self, db_session):
         """Test updating project"""
@@ -392,7 +410,7 @@ class TestProjectCRUD:
             end_date=datetime.now() + timedelta(days=30)
         )
         
-        created_project = project_crud.create(db_session, obj_in=project_data)
+        created_project = project_crud.create_project(db_session, project_data)
         
         # Update the project
         update_data = ProjectUpdate(
@@ -401,7 +419,7 @@ class TestProjectCRUD:
             status=ProjectStatus.COMPLETED
         )
         
-        updated_project = project_crud.update_project(db_session, created_project, update_data)
+        updated_project = project_crud.update_project(db_session, created_project.id, update_data)
         assert updated_project.name == update_data.name
         assert updated_project.description == update_data.description
         assert updated_project.status == update_data.status
@@ -420,12 +438,12 @@ class TestProjectCRUD:
             end_date=datetime.now() + timedelta(days=30)
         )
         
-        created_project = project_crud.create(db_session, obj_in=project_data)
+        created_project = project_crud.create_project(db_session, project_data)
         
         # Delete the project
-        deleted = project_crud.remove(db_session, id=created_project.id)
+        deleted = project_crud.delete_project(db_session, created_project.id)
         assert deleted
         
         # Verify it's deleted
-        project = project_crud.get(db_session, id=created_project.id)
+        project = project_crud.get_by_id(db_session, created_project.id)
         assert project is None 

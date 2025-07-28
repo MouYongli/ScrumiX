@@ -1,19 +1,18 @@
 """
 Project management API routes
 """
-from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlalchemy.orm import Session
 from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import status as fastapi_status
+from sqlalchemy.orm import Session
 
+from scrumix.api.db.session import get_db
 from scrumix.api.core.security import get_current_user
-from scrumix.api.db.database import get_db
 from scrumix.api.crud.project import project_crud
 from scrumix.api.models.project import ProjectStatus
-from scrumix.api.schemas.project import (
-    ProjectResponse, ProjectCreate, ProjectUpdate
-)
+from scrumix.api.schemas.project import ProjectCreate, ProjectUpdate, ProjectResponse
 
-router = APIRouter()
+router = APIRouter(tags=["projects"])
 
 @router.get("/", response_model=List[ProjectResponse])
 async def get_projects(
@@ -24,18 +23,18 @@ async def get_projects(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Get list of projects"""
+    """Get list of projects with optional filtering"""
     try:
         # Validate status parameter
         project_status = None
         if status and status != "all":
-            try:
-                project_status = ProjectStatus(status.replace("-", "_").upper())
-            except ValueError:
+            valid_statuses = {s.value for s in ProjectStatus}
+            if status not in valid_statuses:
                 raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
+                    status_code=fastapi_status.HTTP_400_BAD_REQUEST,
                     detail=f"Invalid status: {status}"
                 )
+            project_status = ProjectStatus(status)
         
         # Execute search or get project list
         if search:
@@ -61,11 +60,11 @@ async def get_projects(
         
     except ValueError as e:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=fastapi_status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
 
-@router.post("/", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/", response_model=ProjectResponse, status_code=fastapi_status.HTTP_201_CREATED)
 async def create_project(
     project_create: ProjectCreate,
     current_user = Depends(get_current_user),
@@ -77,7 +76,7 @@ async def create_project(
         existing_project = project_crud.get_by_name(db, project_create.name)
         if existing_project:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
+                status_code=fastapi_status.HTTP_400_BAD_REQUEST,
                 detail="Project name already exists"
             )
         
@@ -97,7 +96,7 @@ async def create_project(
         
     except ValueError as e:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=fastapi_status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
 
@@ -111,7 +110,7 @@ async def get_project(
     project = project_crud.get_by_id(db, project_id)
     if not project:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=fastapi_status.HTTP_404_NOT_FOUND,
             detail="Project not found"
         )
     
@@ -138,7 +137,7 @@ async def update_project(
         updated_project = project_crud.update_project(db, project_id, project_update)
         if not updated_project:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
+                status_code=fastapi_status.HTTP_404_NOT_FOUND,
                 detail="Project not found"
             )
         
@@ -155,7 +154,7 @@ async def update_project(
         
     except ValueError as e:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=fastapi_status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
 
@@ -169,7 +168,7 @@ async def delete_project(
     success = project_crud.delete_project(db, project_id)
     if not success:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+            status_code=fastapi_status.HTTP_404_NOT_FOUND,
             detail="Project not found"
         )
     
@@ -206,6 +205,6 @@ async def get_projects_by_status(
         
     except ValueError:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
+            status_code=fastapi_status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid status: {status}"
         ) 

@@ -40,7 +40,7 @@ class MeetingActionItemInDB(MeetingActionItemBase):
     """Schema for meeting action item stored in database."""
     model_config = ConfigDict(from_attributes=True)
     
-    action_id: int
+    id: int = Field(alias="action_id")
     created_at: datetime
     updated_at: datetime
 
@@ -49,7 +49,7 @@ class MeetingActionItemResponse(BaseModel):
     """Schema for meeting action item API responses with frontend field aliasing."""
     model_config = ConfigDict(from_attributes=True)
     
-    actionId: int = Field(alias="action_id")
+    actionId: int = Field(alias="id")
     meetingId: int = Field(alias="meeting_id")
     title: str
     dueDate: Optional[datetime] = Field(alias="due_date")

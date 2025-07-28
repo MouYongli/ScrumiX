@@ -7,7 +7,7 @@ from ..db.base import Base
 class UserTask(Base):
     __tablename__ = "user_task"
     user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
-    task_id = Column(Integer, ForeignKey("tasks.task_id"), primary_key=True)
+    task_id = Column(Integer, ForeignKey("tasks.id"), primary_key=True)
     added_by = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
 
     # Relationships

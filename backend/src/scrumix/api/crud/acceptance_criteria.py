@@ -42,7 +42,6 @@ class CRUDAcceptanceCriteria(CRUDBase[AcceptanceCriteria, AcceptanceCriteriaCrea
     def get_by_backlog_id(
         self,
         db: Session,
-        *,
         backlog_id: int,
         skip: int = 0,
         limit: int = 100
@@ -57,14 +56,13 @@ class CRUDAcceptanceCriteria(CRUDBase[AcceptanceCriteria, AcceptanceCriteriaCrea
             .all()
         )
     
-    def count_by_backlog_id(self, db: Session, *, backlog_id: int) -> int:
+    def count_by_backlog_id(self, db: Session, backlog_id: int) -> int:
         """Count acceptance criteria for a specific backlog."""
         return db.query(self.model).filter(self.model.backlog_id == backlog_id).count()
     
     def search_criteria(
         self,
         db: Session,
-        *,
         query: str,
         backlog_id: Optional[int] = None,
         skip: int = 0,
@@ -107,7 +105,6 @@ class CRUDAcceptanceCriteria(CRUDBase[AcceptanceCriteria, AcceptanceCriteriaCrea
     def bulk_create_for_backlog(
         self,
         db: Session,
-        *,
         backlog_id: int,
         criteria_titles: List[str]
     ) -> List[AcceptanceCriteria]:
@@ -124,7 +121,7 @@ class CRUDAcceptanceCriteria(CRUDBase[AcceptanceCriteria, AcceptanceCriteriaCrea
         
         return criteria_objects
     
-    def delete_all_by_backlog_id(self, db: Session, *, backlog_id: int) -> int:
+    def delete_all_by_backlog_id(self, db: Session, backlog_id: int) -> int:
         """Delete all acceptance criteria for a specific backlog."""
         count = db.query(self.model).filter(self.model.backlog_id == backlog_id).count()
         db.query(self.model).filter(self.model.backlog_id == backlog_id).delete()

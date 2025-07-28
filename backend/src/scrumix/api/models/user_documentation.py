@@ -6,7 +6,7 @@ from ..db.base import Base
 class UserDocumentation(Base):
     __tablename__ = "user_documentation"
     user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
-    doc_id = Column(Integer, ForeignKey("documentations.doc_id"), primary_key=True)
+    doc_id = Column(Integer, ForeignKey("documentations.id"), primary_key=True)
 
     # Relationships
     user = relationship("User", back_populates="user_documentations", overlaps="documentations,users")

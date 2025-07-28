@@ -4,9 +4,11 @@ Tests all API endpoints with proper authentication and database mocking
 """
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock, patch
-from datetime import datetime, timezone
+from unittest.mock import AsyncMock, MagicMock, patch, Mock
+from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
+from typing import List
+from fastapi import status
 
 from scrumix.api.app import app
 from scrumix.api.core.security import get_current_user
@@ -194,57 +196,64 @@ class TestBacklogRoutes:
 
 # ===== SPRINT ROUTE TESTS =====
 class TestSprintRoutes:
-    """Test sprint API routes"""
-    
-    @patch('scrumix.api.crud.sprint.get_sprints')
-    def test_get_sprints(self, mock_get_sprints, client, mock_session):
-        """Test GET /api/v1/sprints/"""
-        mock_sprint = MagicMock()
-        mock_sprint.sprint_id = 1
-        mock_sprint.name = "Sprint 1"
-        mock_sprint.description = "Test sprint"
-        mock_sprint.status = SprintStatus.PLANNING
+    """Test sprint routes"""
+
+    def test_get_sprints(self, client, auth_headers, mock_db):
+        """Test getting sprints list"""
+        mock_sprint = Mock()
+        mock_sprint.id = 1
+        mock_sprint.sprint_name = "Test Sprint"
+        mock_sprint.sprint_goal = "Test Goal"
+        mock_sprint.status = "active"
+        mock_sprint.start_date = datetime.now()
+        mock_sprint.end_date = datetime.now() + timedelta(days=14)
         mock_sprint.project_id = 1
-        mock_sprint.start_date = datetime(2024, 1, 15, tzinfo=timezone.utc)
-        mock_sprint.end_date = datetime(2024, 1, 29, tzinfo=timezone.utc)
-        mock_sprint.created_at = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
-        mock_sprint.updated_at = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
+        mock_sprint.created_at = datetime.now()
+        mock_sprint.updated_at = datetime.now()
         
-        mock_get_sprints.return_value = [mock_sprint]
+        mock_db.query.return_value.filter.return_value.all.return_value = [mock_sprint]
         
-        response = client.get("/api/v1/sprints/")
+        response = client.get("/api/v1/sprints/", headers=auth_headers)
+        assert response.status_code == status.HTTP_200_OK
         
-        assert response.status_code == 200
-        mock_get_sprints.assert_called_once_with(mock_session, skip=0, limit=100)
-    
-    @patch('scrumix.api.crud.sprint.create_sprint')
-    def test_create_sprint(self, mock_create_sprint, client, mock_session):
-        """Test POST /api/v1/sprints/"""
-        mock_sprint = MagicMock()
-        mock_sprint.sprint_id = 1
-        mock_sprint.name = "New Sprint"
-        mock_sprint.description = "New sprint description"
-        mock_sprint.status = SprintStatus.PLANNING
-        mock_sprint.project_id = 1
-        mock_sprint.start_date = datetime(2024, 1, 15, tzinfo=timezone.utc)
-        mock_sprint.end_date = datetime(2024, 1, 29, tzinfo=timezone.utc)
-        mock_sprint.created_at = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
-        mock_sprint.updated_at = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
-        
-        mock_create_sprint.return_value = mock_sprint
-        
+        data = response.json()
+        assert isinstance(data, list)
+        assert len(data) == 1
+        assert data[0]["id"] == mock_sprint.id
+        assert data[0]["sprintName"] == mock_sprint.sprint_name
+
+    def test_create_sprint(self, client, auth_headers, mock_db):
+        """Test creating a new sprint"""
         sprint_data = {
-            "name": "New Sprint",
-            "description": "New sprint description",
-            "project_id": 1,
-            "start_date": "2024-01-15T00:00:00Z",
-            "end_date": "2024-01-29T00:00:00Z"
+            "sprintName": "New Sprint",
+            "sprintGoal": "New Goal",
+            "startDate": (datetime.now() + timedelta(days=1)).isoformat(),
+            "endDate": (datetime.now() + timedelta(days=15)).isoformat(),
+            "status": "planning",
+            "projectId": 1
         }
         
-        response = client.post("/api/v1/sprints/", json=sprint_data)
+        mock_sprint = Mock()
+        mock_sprint.id = 1
+        mock_sprint.sprint_name = sprint_data["sprintName"]
+        mock_sprint.sprint_goal = sprint_data["sprintGoal"]
+        mock_sprint.status = sprint_data["status"]
+        mock_sprint.project_id = sprint_data["projectId"]
+        mock_sprint.created_at = datetime.now()
+        mock_sprint.updated_at = datetime.now()
         
-        assert response.status_code == 201
-        mock_create_sprint.assert_called_once()
+        mock_db.add.return_value = None
+        mock_db.commit.return_value = None
+        mock_db.refresh.return_value = None
+        mock_db.query.return_value.filter.return_value.first.return_value = mock_sprint
+        
+        response = client.post("/api/v1/sprints/", json=sprint_data, headers=auth_headers)
+        assert response.status_code == status.HTTP_201_CREATED
+        
+        data = response.json()
+        assert data["id"] == mock_sprint.id
+        assert data["sprintName"] == mock_sprint.sprint_name
+        assert data["sprintGoal"] == mock_sprint.sprint_goal
 
 
 # ===== PROJECT ROUTE TESTS =====
@@ -307,7 +316,7 @@ class TestProjectRoutes:
 class TestMeetingNoteRoutes:
     """Test meeting note API routes"""
     
-    @patch('scrumix.api.crud.meeting_note.get_meeting_notes')
+    @patch('scrumix.api.routes.meeting_note.meeting_note.get_multi_with_pagination')
     def test_get_meeting_notes(self, mock_get_meeting_notes, client, mock_session):
         """Test GET /api/v1/meeting-notes/"""
         mock_note = MagicMock()
@@ -317,15 +326,14 @@ class TestMeetingNoteRoutes:
         mock_note.meeting_id = 1
         mock_note.created_at = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
         mock_note.updated_at = datetime(2024, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
-        
-        mock_get_meeting_notes.return_value = [mock_note]
-        
+        mock_get_meeting_notes.return_value = ([mock_note], 1)
         response = client.get("/api/v1/meeting-notes/")
-        
         assert response.status_code == 200
-        mock_get_meeting_notes.assert_called_once_with(mock_session, skip=0, limit=100)
+        mock_get_meeting_notes.assert_called_once_with(
+            mock_session, skip=0, limit=100, meeting_id=None, search=None, parent_only=False
+        )
     
-    @patch('scrumix.api.crud.meeting_note.create_meeting_note')
+    @patch('scrumix.api.routes.meeting_note.meeting_note.create')
     def test_create_meeting_note(self, mock_create_meeting_note, client, mock_session):
         """Test POST /api/v1/meeting-notes/"""
         mock_note = MagicMock()
@@ -360,7 +368,7 @@ class TestDocumentationRoutes:
         mock_doc = MagicMock()
         mock_doc.doc_id = 1
         mock_doc.title = "API Documentation"
-        mock_doc.type = DocumentationType.API
+        mock_doc.type = DocumentationType.API_DOC
         mock_doc.description = "API documentation"
         mock_doc.file_url = "http://example.com/api-doc.pdf"
         mock_doc.project_id = 1
@@ -380,7 +388,7 @@ class TestDocumentationRoutes:
         mock_doc = MagicMock()
         mock_doc.doc_id = 1
         mock_doc.title = "New Documentation"
-        mock_doc.type = DocumentationType.API
+        mock_doc.type = DocumentationType.API_DOC
         mock_doc.description = "New API documentation"
         mock_doc.file_url = "http://example.com/new-doc.pdf"
         mock_doc.project_id = 1

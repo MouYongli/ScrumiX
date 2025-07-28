@@ -20,7 +20,7 @@ class MeetingNoteBase(BaseModel):
 
 class MeetingNoteCreate(MeetingNoteBase):
     """Schema for creating a new meeting note."""
-    pass
+    user_id: Optional[int] = Field(None, description="ID of the user creating the note")
 
 
 class MeetingNoteUpdate(BaseModel):
@@ -40,7 +40,7 @@ class MeetingNoteInDB(MeetingNoteBase):
     """Schema for meeting note stored in database."""
     model_config = ConfigDict(from_attributes=True)
     
-    note_id: int
+    id: int = Field(alias="note_id")
     created_at: datetime
     updated_at: datetime
 
@@ -49,7 +49,7 @@ class MeetingNoteResponse(BaseModel):
     """Schema for meeting note API responses with frontend field aliasing."""
     model_config = ConfigDict(from_attributes=True)
     
-    noteId: int = Field(alias="note_id")
+    noteId: int = Field(alias="id")
     meetingId: int = Field(alias="meeting_id")
     content: str
     parentNoteId: Optional[int] = Field(alias="parent_note_id")

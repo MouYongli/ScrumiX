@@ -31,7 +31,7 @@ class TestMain:
         assert hasattr(scrumix.main, 'app')
 
     @patch.dict(os.environ, {"POSTGRES_SERVER": "localhost", "POSTGRES_PASSWORD": "password"})
-    @patch('scrumix.main.init_db')
+    @patch('scrumix.api.core.init_db.init_db')
     @patch('builtins.print')
     def test_main_with_postgres_success(self, mock_print, mock_init_db):
         """Test main module initialization with PostgreSQL environment - success"""
@@ -49,7 +49,7 @@ class TestMain:
         mock_print.assert_called_with("Database initialized successfully")
 
     @patch.dict(os.environ, {"POSTGRES_SERVER": "localhost", "POSTGRES_PASSWORD": "password"})
-    @patch('scrumix.main.init_db', side_effect=Exception("Database connection failed"))
+    @patch('scrumix.api.core.init_db.init_db', side_effect=Exception("Database connection failed"))
     @patch('builtins.print')
     def test_main_with_postgres_failure(self, mock_print, mock_init_db):
         """Test main module initialization with PostgreSQL environment - failure"""
@@ -65,7 +65,7 @@ class TestMain:
         mock_print.assert_any_call("Application will start without database connection")
 
     @patch.dict(os.environ, {}, clear=True)
-    @patch('scrumix.main.init_db')
+    @patch('scrumix.api.core.init_db.init_db')
     @patch('builtins.print')
     def test_main_without_postgres_env(self, mock_print, mock_init_db):
         """Test main module initialization without PostgreSQL environment"""
@@ -81,7 +81,7 @@ class TestMain:
         mock_print.assert_not_called()
 
     @patch.dict(os.environ, {"POSTGRES_SERVER": "localhost"})  # Missing password
-    @patch('scrumix.main.init_db')
+    @patch('scrumix.api.core.init_db.init_db')
     @patch('builtins.print')
     def test_main_partial_postgres_env(self, mock_print, mock_init_db):
         """Test main module initialization with partial PostgreSQL environment"""

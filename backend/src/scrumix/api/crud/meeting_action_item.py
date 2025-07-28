@@ -44,7 +44,7 @@ class CRUDMeetingActionItem(CRUDBase[MeetingActionItem, MeetingActionItemCreate,
         total = query.count()
         
         # Apply pagination and ordering
-        action_items = query.order_by(self.model.due_date.asc().nulls_last(), self.model.action_id.asc()).offset(skip).limit(limit).all()
+        action_items = query.order_by(self.model.due_date.asc().nulls_last(), self.model.id.asc()).offset(skip).limit(limit).all()
         
         return action_items, total
     
@@ -60,7 +60,7 @@ class CRUDMeetingActionItem(CRUDBase[MeetingActionItem, MeetingActionItemCreate,
         return (
             db.query(self.model)
             .filter(self.model.meeting_id == meeting_id)
-            .order_by(self.model.due_date.asc().nulls_last(), self.model.action_id.asc())
+            .order_by(self.model.due_date.asc().nulls_last(), self.model.id.asc())
             .offset(skip)
             .limit(limit)
             .all()
@@ -90,7 +90,7 @@ class CRUDMeetingActionItem(CRUDBase[MeetingActionItem, MeetingActionItemCreate,
         
         return (
             db_query
-            .order_by(self.model.due_date.asc().nulls_last(), self.model.action_id.asc())
+            .order_by(self.model.due_date.asc().nulls_last(), self.model.id.asc())
             .offset(skip)
             .limit(limit)
             .all()

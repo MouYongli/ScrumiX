@@ -37,8 +37,11 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
     ) -> List[ModelType]:
         return db.query(self.model).offset(skip).limit(limit).all()
 
-    def create(self, db: Session, *, obj_in: CreateSchemaType) -> ModelType:
-        obj_in_data = obj_in.model_dump(by_alias=True)
+    def create(self, db: Session, *, obj_in: Union[CreateSchemaType, Dict[str, Any]]) -> ModelType:
+        if isinstance(obj_in, dict):
+            obj_in_data = obj_in
+        else:
+            obj_in_data = obj_in.model_dump(by_alias=True)
         db_obj = self.model(**obj_in_data)
         db.add(db_obj)
         db.commit()
@@ -57,8 +60,8 @@ class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             update_data = obj_in
         else:
             update_data = obj_in.model_dump(exclude_unset=True, by_alias=True)
-        for field in obj_data:
-            if field in update_data:
+        for field in update_data:
+            if field in obj_data and update_data[field] is not None:
                 setattr(db_obj, field, update_data[field])
         db.add(db_obj)
         db.commit()

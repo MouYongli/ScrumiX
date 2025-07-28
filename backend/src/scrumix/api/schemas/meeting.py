@@ -7,11 +7,14 @@ from ..models.meeting import MeetingType
 
 class MeetingBase(BaseModel):
     """Base meeting schema with common fields."""
-    meeting_type: MeetingType = Field(MeetingType.team_meeting, description="Type of meeting")
+    title: str = Field(..., min_length=1, max_length=200, description="Meeting title")
+    meeting_type: MeetingType = Field(MeetingType.TEAM_MEETING, description="Type of meeting")
     start_datetime: datetime = Field(..., description="Meeting start date and time")
-    description: Optional[str] = Field(None, description="Meeting description or agenda")
-    duration: int = Field(30, ge=5, le=480, description="Meeting duration in minutes (5-480)")
-    location: Optional[str] = Field(None, max_length=200, description="Meeting location or virtual link")
+    description: Optional[str] = Field(None, description="Meeting description")
+    duration: int = Field(30, gt=0, le=480, description="Meeting duration in minutes")
+    location: Optional[str] = Field(None, description="Meeting location or virtual link")
+    sprint_id: int = Field(..., gt=0, description="ID of the sprint this meeting belongs to")
+    project_id: int = Field(..., gt=0, description="ID of the project this meeting belongs to")
     
     @field_validator('start_datetime')
     @classmethod
@@ -39,11 +42,14 @@ class MeetingCreate(MeetingBase):
 
 class MeetingUpdate(BaseModel):
     """Schema for updating an existing meeting."""
+    title: Optional[str] = Field(None, min_length=1, max_length=200, description="Meeting title")
     meeting_type: Optional[MeetingType] = Field(None, description="Type of meeting")
     start_datetime: Optional[datetime] = Field(None, description="Meeting start date and time")
     description: Optional[str] = Field(None, description="Meeting description or agenda")
     duration: Optional[int] = Field(None, ge=5, le=480, description="Meeting duration in minutes")
     location: Optional[str] = Field(None, max_length=200, description="Meeting location or virtual link")
+    sprint_id: Optional[int] = Field(None, gt=0, description="ID of the sprint this meeting belongs to")
+    project_id: Optional[int] = Field(None, gt=0, description="ID of the project this meeting belongs to")
     
     @field_validator('start_datetime')
     @classmethod
@@ -52,13 +58,16 @@ class MeetingUpdate(BaseModel):
         if v and v < datetime.now():
             raise ValueError('Meeting start time cannot be in the past')
         return v
+    
+    class Config:
+        exclude_unset = True
 
 
 class MeetingInDB(MeetingBase):
     """Schema for meeting stored in database."""
     model_config = ConfigDict(from_attributes=True)
     
-    meeting_id: int
+    id: int
     created_at: datetime
     updated_at: datetime
 
@@ -67,12 +76,15 @@ class MeetingResponse(BaseModel):
     """Schema for meeting API responses with frontend field aliasing."""
     model_config = ConfigDict(from_attributes=True)
     
-    meetingId: int = Field(alias="meeting_id")
+    id: int
+    title: str
     meetingType: MeetingType = Field(alias="meeting_type")
     startDatetime: datetime = Field(alias="start_datetime")
     description: Optional[str]
     duration: int
     location: Optional[str]
+    sprintId: int = Field(alias="sprint_id")
+    projectId: int = Field(alias="project_id")
     createdAt: datetime = Field(alias="created_at")
     updatedAt: datetime = Field(alias="updated_at")
     

@@ -11,6 +11,7 @@ from scrumix.api.db.database import get_db
 from scrumix.api.utils.password import verify_password, get_password_hash
 from scrumix.api.utils.cookies import get_access_token_from_cookie, get_refresh_token_from_cookie
 from scrumix.api.schemas.user import TokenData
+from scrumix.api.crud.user import UserCRUD
 
 # JWT Bearer认证
 security = HTTPBearer(auto_error=False)  # Set auto_error=False to allow fallback to cookies
@@ -46,6 +47,11 @@ def verify_token(token: str) -> Optional[TokenData]:
         scopes: list = payload.get("scopes", [])
         
         if user_id is None:
+            return None
+        
+        # Check if token is expired
+        exp = payload.get("exp")
+        if exp and datetime.fromtimestamp(exp) < datetime.now():
             return None
         
         # Include additional fields for enhanced TokenData
@@ -203,8 +209,14 @@ async def get_current_user_from_cookie(
                 
         return VirtualUser(token_data)
 
-# Update the default get_current_user to use hybrid authentication
-get_current_user = get_current_user_hybrid
+# Create a wrapper for get_current_user that matches the expected signature
+async def get_current_user(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    db: Session = Depends(get_db)
+):
+    """Get current user - wrapper for get_current_user_hybrid"""
+    return await get_current_user_hybrid(request, credentials, db)
 
 async def get_current_active_user(current_user = Depends(get_current_user)):
     """获取当前活跃用户"""

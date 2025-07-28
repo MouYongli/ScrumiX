@@ -40,7 +40,7 @@ class TestModels:
             task = Task(
                 title="Test Task",
                 description="Test description",
-                status=TaskStatus.todo
+                status=TaskStatus.TODO
             )
             assert task.title == "Test Task"
         except Exception:

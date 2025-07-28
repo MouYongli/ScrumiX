@@ -1,6 +1,6 @@
 from typing import Optional, List
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_, func
+from sqlalchemy import and_, or_, func, String
 from datetime import datetime, timedelta
 
 from .base import CRUDBase
@@ -11,7 +11,20 @@ from ..schemas.meeting import MeetingCreate, MeetingUpdate
 class CRUDMeeting(CRUDBase[Meeting, MeetingCreate, MeetingUpdate]):
     """CRUD operations for Meeting."""
     
-    def get_multi_with_pagination(
+    def create(self, db: Session, *, obj_in: MeetingCreate) -> Meeting:
+        """Create a new meeting with sprint_id and project_id."""
+        obj_in_data = obj_in.model_dump(by_alias=True)
+        db_obj = self.model(**obj_in_data)
+        db.add(db_obj)
+        db.commit()
+        db.refresh(db_obj)
+        return db_obj
+    
+    def get_by_id(self, db: Session, meeting_id: int) -> Optional[Meeting]:
+        """Get a meeting by ID."""
+        return db.query(self.model).filter(self.model.id == meeting_id).first()
+    
+    def get_multi(
         self,
         db: Session,
         *,
@@ -22,7 +35,7 @@ class CRUDMeeting(CRUDBase[Meeting, MeetingCreate, MeetingUpdate]):
         upcoming_only: bool = False,
         date_from: Optional[datetime] = None,
         date_to: Optional[datetime] = None
-    ) -> tuple[List[Meeting], int]:
+    ) -> List[Meeting]:
         """Get multiple meetings with pagination and optional filtering."""
         query = db.query(self.model)
         
@@ -34,7 +47,8 @@ class CRUDMeeting(CRUDBase[Meeting, MeetingCreate, MeetingUpdate]):
         if search:
             search_filter = or_(
                 self.model.description.ilike(f"%{search}%"),
-                self.model.location.ilike(f"%{search}%")
+                self.model.location.ilike(f"%{search}%"),
+                self.model.title.ilike(f"%{search}%")
             )
             query = query.filter(search_filter)
         
@@ -48,13 +62,7 @@ class CRUDMeeting(CRUDBase[Meeting, MeetingCreate, MeetingUpdate]):
         if date_to:
             query = query.filter(self.model.start_datetime <= date_to)
         
-        # Get total count
-        total = query.count()
-        
-        # Apply pagination and ordering
-        meetings = query.order_by(self.model.start_datetime.asc()).offset(skip).limit(limit).all()
-        
-        return meetings, total
+        return query.order_by(self.model.start_datetime.asc()).offset(skip).limit(limit).all()
     
     def get_by_type(
         self,
@@ -74,15 +82,38 @@ class CRUDMeeting(CRUDBase[Meeting, MeetingCreate, MeetingUpdate]):
             .all()
         )
     
-    def get_upcoming_meetings(
+    def search(
         self,
         db: Session,
         *,
-        days_ahead: int = 7,
+        search_term: str,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[Meeting]:
+        """Search meetings by description and location."""
+        search_filter = or_(
+            self.model.description.ilike(f"%{search_term}%"),
+            self.model.location.ilike(f"%{search_term}%"),
+            self.model.title.ilike(f"%{search_term}%")
+        )
+        return (
+            db.query(self.model)
+            .filter(search_filter)
+            .order_by(self.model.start_datetime.asc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+    
+    def get_upcoming(
+        self,
+        db: Session,
+        *,
+        days: int = 7,
         limit: int = 100
     ) -> List[Meeting]:
         """Get upcoming meetings within specified days."""
-        end_date = datetime.now() + timedelta(days=days_ahead)
+        end_date = datetime.now() + timedelta(days=days)
         return (
             db.query(self.model)
             .filter(
@@ -96,65 +127,46 @@ class CRUDMeeting(CRUDBase[Meeting, MeetingCreate, MeetingUpdate]):
             .all()
         )
     
-    def get_today_meetings(self, db: Session) -> List[Meeting]:
+    def get_today(self, db: Session) -> List[Meeting]:
         """Get today's meetings."""
-        today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-        today_end = today_start + timedelta(days=1)
-        
+        today = datetime.now().date()
         return (
             db.query(self.model)
-            .filter(
-                and_(
-                    self.model.start_datetime >= today_start,
-                    self.model.start_datetime < today_end
-                )
-            )
+            .filter(func.date(self.model.start_datetime) == today)
             .order_by(self.model.start_datetime.asc())
             .all()
         )
     
-    def get_ongoing_meetings(self, db: Session) -> List[Meeting]:
-        """Get currently ongoing meetings."""
-        now = datetime.now()
-        return (
-            db.query(self.model)
-            .filter(
-                and_(
-                    self.model.start_datetime <= now,
-                    func.datetime(
-                        self.model.start_datetime, 
-                        '+' + func.cast(self.model.duration, db.String) + ' minutes'
-                    ) >= now
-                )
-            )
-            .order_by(self.model.start_datetime.asc())
-            .all()
-        )
-    
-    def search_meetings(
+    def get_ongoing(
         self,
         db: Session,
         *,
-        query: str,
         skip: int = 0,
         limit: int = 100
     ) -> List[Meeting]:
-        """Search meetings by description and location."""
-        search_filter = or_(
-            self.model.description.ilike(f"%{query}%"),
-            self.model.location.ilike(f"%{query}%")
-        )
+        """Get currently ongoing meetings."""
+        now = datetime.now()
         
-        return (
+        # Get all meetings and filter in Python for SQLite compatibility
+        all_meetings = (
             db.query(self.model)
-            .filter(search_filter)
+            .filter(self.model.start_datetime <= now)
             .order_by(self.model.start_datetime.asc())
             .offset(skip)
             .limit(limit)
             .all()
         )
+        
+        # Filter ongoing meetings in Python
+        ongoing_meetings = []
+        for meeting in all_meetings:
+            end_time = meeting.start_datetime + timedelta(minutes=meeting.duration)
+            if end_time >= now:
+                ongoing_meetings.append(meeting)
+        
+        return ongoing_meetings
     
-    def get_meetings_by_date_range(
+    def get_by_date_range(
         self,
         db: Session,
         *,
@@ -178,51 +190,46 @@ class CRUDMeeting(CRUDBase[Meeting, MeetingCreate, MeetingUpdate]):
             .all()
         )
     
-    def get_meeting_statistics(self, db: Session) -> dict:
+    def get_statistics(self, db: Session) -> dict:
         """Get meeting statistics by type and time periods."""
-        stats = {}
+        total_meetings = db.query(self.model).count()
         
-        # Count meetings by type
-        for meeting_type in MeetingType:
-            count = db.query(self.model).filter(self.model.meeting_type == meeting_type).count()
-            stats[meeting_type.value] = count
+        # Get meetings by type
+        meetings_by_type = (
+            db.query(self.model.meeting_type, func.count(self.model.id))
+            .group_by(self.model.meeting_type)
+            .all()
+        )
         
-        # Total meetings
-        stats["total"] = db.query(self.model).count()
+        # Calculate average duration
+        avg_duration = (
+            db.query(func.avg(self.model.duration))
+            .scalar()
+        )
         
-        # Upcoming meetings
-        stats["upcoming"] = db.query(self.model).filter(
-            self.model.start_datetime > datetime.now()
-        ).count()
-        
-        # Today's meetings
-        today_start = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-        today_end = today_start + timedelta(days=1)
-        stats["today"] = db.query(self.model).filter(
-            and_(
-                self.model.start_datetime >= today_start,
-                self.model.start_datetime < today_end
-            )
-        ).count()
-        
-        return stats
+        return {
+            "total_meetings": total_meetings,
+            "meetings_by_type": dict(meetings_by_type),
+            "average_duration_minutes": round(avg_duration or 0, 2)
+        }
     
-    def reschedule_meeting(
+    def reschedule(
         self,
         db: Session,
         *,
         meeting_id: int,
         new_start_datetime: datetime,
-        new_duration: Optional[int] = None
+        new_duration: int
     ) -> Optional[Meeting]:
         """Reschedule a meeting."""
-        meeting = db.query(self.model).filter(self.model.meeting_id == meeting_id).first()
-        if meeting:
-            meeting.start_datetime = new_start_datetime
-            if new_duration is not None:
-                meeting.duration = new_duration
-            db.commit()
-            db.refresh(meeting)
+        meeting = self.get_by_id(db, meeting_id=meeting_id)
+        if not meeting:
+            return None
+        
+        meeting.start_datetime = new_start_datetime
+        meeting.duration = new_duration
+        db.commit()
+        db.refresh(meeting)
         return meeting
 
 

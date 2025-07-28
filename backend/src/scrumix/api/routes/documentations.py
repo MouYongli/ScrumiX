@@ -87,10 +87,12 @@ def update_documentation(
     """
     try:
         documentation = documentation_crud.update_documentation(db, doc_id, documentation_update)
-        if not documentation:
+        if documentation is None:
             raise HTTPException(status_code=404, detail="Documentation not found")
         
         return DocumentationResponse.from_db_model(documentation)
+    except HTTPException:
+        raise  # Re-raise HTTPExceptions (like 404) without catching them
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:

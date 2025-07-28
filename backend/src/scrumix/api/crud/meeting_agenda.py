@@ -35,7 +35,7 @@ class CRUDMeetingAgenda(CRUDBase[MeetingAgenda, MeetingAgendaCreate, MeetingAgen
         total = query.count()
         
         # Apply pagination and ordering
-        agenda_items = query.order_by(self.model.agenda_id.asc()).offset(skip).limit(limit).all()
+        agenda_items = query.order_by(self.model.id.asc()).offset(skip).limit(limit).all()
         
         return agenda_items, total
     
@@ -51,7 +51,7 @@ class CRUDMeetingAgenda(CRUDBase[MeetingAgenda, MeetingAgendaCreate, MeetingAgen
         return (
             db.query(self.model)
             .filter(self.model.meeting_id == meeting_id)
-            .order_by(self.model.agenda_id.asc())
+            .order_by(self.model.id.asc())
             .offset(skip)
             .limit(limit)
             .all()
@@ -81,7 +81,7 @@ class CRUDMeetingAgenda(CRUDBase[MeetingAgenda, MeetingAgendaCreate, MeetingAgen
         
         return (
             db_query
-            .order_by(self.model.agenda_id.asc())
+            .order_by(self.model.id.asc())
             .offset(skip)
             .limit(limit)
             .all()
@@ -98,7 +98,7 @@ class CRUDMeetingAgenda(CRUDBase[MeetingAgenda, MeetingAgendaCreate, MeetingAgen
         return (
             db.query(self.model)
             .join(self.model.meeting)
-            .order_by(self.model.meeting_id.asc(), self.model.agenda_id.asc())
+            .order_by(self.model.meeting_id.asc(), self.model.id.asc())
             .offset(skip)
             .limit(limit)
             .all()
@@ -161,11 +161,12 @@ class CRUDMeetingAgenda(CRUDBase[MeetingAgenda, MeetingAgendaCreate, MeetingAgen
             db.query(self.model)
             .join(self.model.meeting)
             .filter(self.model.meeting.has(start_datetime__gt=datetime.now()))
-            .order_by(self.model.meeting_id.asc(), self.model.agenda_id.asc())
+            .order_by(self.model.meeting_id.asc(), self.model.id.asc())
             .offset(skip)
             .limit(limit)
             .all()
         )
 
 
-meeting_agenda = CRUDMeetingAgenda(MeetingAgenda) 
+meeting_agenda = CRUDMeetingAgenda(MeetingAgenda)
+meeting_agenda_crud = CRUDMeetingAgenda(MeetingAgenda) 

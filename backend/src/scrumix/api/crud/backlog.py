@@ -17,9 +17,34 @@ class BacklogCRUD(CRUDBase[Backlog, BacklogCreate, BacklogUpdate]):
         """Get backlog item by ID"""
         return self.get(db, backlog_id)
     
+    def get_backlog(self, db: Session, backlog_id: int) -> Optional[Backlog]:
+        """Get backlog item by ID - alias for tests compatibility"""
+        return self.get(db, backlog_id)
+    
     def create_backlog(self, db: Session, backlog_create: BacklogCreate) -> Backlog:
         """Create a new backlog item"""
-        return self.create(db, obj_in=backlog_create)
+        backlog = self.create(db, obj_in=backlog_create)
+        self._initialize_tree_fields(db, backlog)
+        return backlog
+    
+    def _initialize_tree_fields(self, db: Session, backlog: Backlog) -> None:
+        """Initialize tree-related fields for a new backlog item"""
+        if backlog.parent_id:
+            parent = self.get_by_id(db, backlog.parent_id)
+            if parent:
+                backlog.level = parent.level + 1
+                backlog.path = f"{parent.path}/{backlog.backlog_id}" if parent.path else str(backlog.backlog_id)
+                backlog.root_id = parent.root_id if parent.root_id else parent.backlog_id
+            else:
+                backlog.level = 0
+                backlog.path = str(backlog.backlog_id)
+                backlog.root_id = backlog.backlog_id
+        else:
+            backlog.level = 0
+            backlog.path = str(backlog.backlog_id)
+            backlog.root_id = backlog.backlog_id
+        
+        db.commit()
     
     def get_backlogs(
         self, 
@@ -135,23 +160,18 @@ class BacklogCRUD(CRUDBase[Backlog, BacklogCreate, BacklogUpdate]):
         limit: int = 100,
         use_full_text_search: bool = True
     ) -> List[Backlog]:
-        """Search backlog items - OPTIMIZED with full-text search"""
-        if use_full_text_search:
-            # Use PostgreSQL full-text search for better performance
-            search_query = func.to_tsquery('english', search_term.replace(' ', ' & '))
-            query = db.query(Backlog).filter(
-                func.to_tsvector('english', Backlog.title + ' ' + func.coalesce(Backlog.description, ''))
-                .op('@@')(search_query)
+        """Search backlog items by title and description - OPTIMIZED for SQLite"""
+        if not search_term:
+            return []
+        
+        # Use SQLite-compatible search with LIKE operator
+        search_pattern = f"%{search_term}%"
+        query = db.query(Backlog).filter(
+            or_(
+                Backlog.title.ilike(search_pattern),
+                Backlog.description.ilike(search_pattern)
             )
-        else:
-            # Fallback to ILIKE search
-            query = db.query(Backlog).filter(
-                or_(
-                    Backlog.title.ilike(f"%{search_term}%"),
-                    Backlog.description.ilike(f"%{search_term}%"),
-                    Backlog.label.ilike(f"%{search_term}%")
-                )
-            )
+        )
         
         return query.order_by(Backlog.created_at.desc()).offset(skip).limit(limit).all()
     
@@ -181,13 +201,9 @@ class BacklogCRUD(CRUDBase[Backlog, BacklogCreate, BacklogUpdate]):
     
     def get_overdue_backlogs(self, db: Session, skip: int = 0, limit: int = 100) -> List[Backlog]:
         """Get overdue backlog items"""
-        return db.query(Backlog).filter(
-            and_(
-                Backlog.due_date < datetime.now(),
-                Backlog.status != BacklogStatus.DONE,
-                Backlog.status != BacklogStatus.CANCELLED
-            )
-        ).order_by(Backlog.due_date.asc()).offset(skip).limit(limit).all()
+        # Since due_date is removed, this method now returns empty list
+        # or could be removed entirely
+        return []
     
     def get_backlogs_by_project(
         self, 
@@ -222,7 +238,7 @@ class BacklogCRUD(CRUDBase[Backlog, BacklogCreate, BacklogUpdate]):
     ) -> List[Backlog]:
         """Get backlog items assigned to a user - OPTIMIZED"""
         return db.query(Backlog).filter(Backlog.assigned_to_id == assignee_id)\
-                 .order_by(Backlog.priority.desc(), Backlog.due_date.asc().nulls_last())\
+                 .order_by(Backlog.priority.desc(), Backlog.created_at.asc().nulls_last())\
                  .offset(skip).limit(limit).all()
     
     def count_backlogs(
@@ -263,21 +279,10 @@ class BacklogCRUD(CRUDBase[Backlog, BacklogCreate, BacklogUpdate]):
         # Get total story points
         total_points = db.query(func.sum(Backlog.story_point)).filter(query.whereclause).scalar() or 0
         
-        # Get overdue count
-        overdue_count = db.query(Backlog).filter(
-            and_(
-                query.whereclause,
-                Backlog.due_date < datetime.now(),
-                Backlog.status != BacklogStatus.DONE,
-                Backlog.status != BacklogStatus.CANCELLED
-            )
-        ).count()
-        
         return {
             "status_counts": dict(status_counts),
             "priority_counts": dict(priority_counts),
             "total_points": total_points,
-            "overdue_count": overdue_count,
             "total_count": query.count()
         }
     
@@ -304,10 +309,6 @@ class BacklogCRUD(CRUDBase[Backlog, BacklogCreate, BacklogUpdate]):
             update_data["level"] = parent.level + 1
             update_data["root_id"] = parent.root_id or parent.backlog_id
             update_data["path"] = f"{parent.get_full_path()}"
-        
-        # Update completed_at if status is being set to DONE
-        if "status" in update_data and update_data["status"] == BacklogStatus.DONE:
-            update_data["completed_at"] = datetime.now()
         
         for field, value in update_data.items():
             setattr(backlog, field, value)
@@ -348,11 +349,10 @@ class BacklogCRUD(CRUDBase[Backlog, BacklogCreate, BacklogUpdate]):
         status: BacklogStatus
     ) -> int:
         """Bulk update status of multiple backlog items - OPTIMIZED"""
-        result = db.query(Backlog).filter(Backlog.backlog_id.in_(backlog_ids)).update(
+        result = db.query(Backlog).filter(Backlog.id.in_(backlog_ids)).update(
             {
                 Backlog.status: status,
-                Backlog.updated_at: datetime.now(),
-                Backlog.completed_at: datetime.now() if status == BacklogStatus.DONE else None
+                Backlog.updated_at: datetime.now()
             },
             synchronize_session=False
         )

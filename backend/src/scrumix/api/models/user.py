@@ -58,6 +58,7 @@ class User(Base):
     meetings = relationship("Meeting", secondary="user_meeting", back_populates="users", overlaps="user_meetings")
     user_documentations = relationship("UserDocumentation", back_populates="user", cascade="all, delete-orphan")
     documentations = relationship("Documentation", secondary="user_documentation", back_populates="users", overlaps="user_documentations")
+    meeting_notes = relationship("MeetingNote", back_populates="user", cascade="all, delete-orphan")
 
 class UserOAuth(Base):
     """OAuth账户关联表"""

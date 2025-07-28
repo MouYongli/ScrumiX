@@ -3,6 +3,7 @@ Comprehensive route tests for full CRUD operations
 """
 import pytest
 from fastapi import status
+from scrumix.api.models.backlog import BacklogPriority, BacklogStatus
 
 
 class TestBacklogRoutesComprehensive:
@@ -32,7 +33,7 @@ class TestBacklogRoutesComprehensive:
 
     def test_get_backlogs_with_status_filter(self, client, auth_headers, test_backlog):
         """Test GET /backlogs/ with status filter"""
-        response = client.get("/api/v1/backlogs/?status=in-progress", headers=auth_headers)
+        response = client.get("/api/v1/backlogs/?status=in_progress", headers=auth_headers)
         assert response.status_code == status.HTTP_200_OK
         
         data = response.json()
@@ -84,8 +85,8 @@ class TestBacklogRoutesComprehensive:
         update_data = {
             "title": "Updated Backlog Title",
             "description": "Updated description",
-            "status": "in_progress",
-            "priority": "high",
+            "status": BacklogStatus.IN_PROGRESS,
+            "priority": BacklogPriority.HIGH,
             "story_point": 5
         }
         
@@ -144,7 +145,7 @@ class TestBacklogRoutesComprehensive:
 
     def test_get_backlogs_by_status(self, client, auth_headers, test_backlog):
         """Test GET /backlogs/status/{status} - filter by status"""
-        response = client.get("/api/v1/backlogs/status/in-progress", headers=auth_headers)
+        response = client.get("/api/v1/backlogs/status/in_progress", headers=auth_headers)
         assert response.status_code == status.HTTP_200_OK
         
         data = response.json()
@@ -215,33 +216,33 @@ class TestSprintRoutesComprehensive:
         assert isinstance(data, list)
 
     def test_get_single_sprint(self, client, auth_headers, test_sprint):
-        """Test GET /sprints/{id} - get single sprint"""
-        sprint_id = test_sprint.sprint_id
+        """Test getting a single sprint"""
+        sprint_id = test_sprint.id
         response = client.get(f"/api/v1/sprints/{sprint_id}", headers=auth_headers)
         assert response.status_code == status.HTTP_200_OK
         
         data = response.json()
         assert data["id"] == sprint_id
-        assert data["sprint_name"] == test_sprint.sprint_name
+        assert data["sprintName"] == test_sprint.sprint_name
 
     def test_update_sprint(self, client, auth_headers, test_sprint):
-        """Test PUT /sprints/{id} - update sprint"""
-        sprint_id = test_sprint.sprint_id
+        """Test updating a sprint"""
+        sprint_id = test_sprint.id
         update_data = {
-            "sprint_name": "Updated Sprint Name",
-            "sprint_goal": "Updated goal"
+            "sprintName": "Updated Sprint",
+            "sprintGoal": "Updated goal"
         }
         
         response = client.put(f"/api/v1/sprints/{sprint_id}", json=update_data, headers=auth_headers)
         assert response.status_code == status.HTTP_200_OK
         
         data = response.json()
-        assert data["sprint_name"] == update_data["sprint_name"]
-        assert data["sprint_goal"] == update_data["sprint_goal"]
+        assert data["sprintName"] == update_data["sprintName"]
+        assert data["sprintGoal"] == update_data["sprintGoal"]
 
     def test_delete_sprint(self, client, auth_headers, test_sprint):
-        """Test DELETE /sprints/{id} - delete sprint"""
-        sprint_id = test_sprint.sprint_id
+        """Test deleting a sprint"""
+        sprint_id = test_sprint.id
         
         response = client.delete(f"/api/v1/sprints/{sprint_id}", headers=auth_headers)
         assert response.status_code == status.HTTP_200_OK
@@ -274,7 +275,7 @@ class TestTaskRoutesComprehensive:
         update_data = {
             "title": "Updated Task Title",
             "description": "Updated description",
-            "status": "in-progress"
+            "status": BacklogStatus.IN_PROGRESS
         }
         
         response = client.put(f"/api/v1/tasks/{task_id}", json=update_data, headers=auth_headers)

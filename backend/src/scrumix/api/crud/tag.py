@@ -34,25 +34,27 @@ class CRUDTag(CRUDBase[Tag, TagCreate, TagUpdate]):
         
         return tags, total
     
-    def get_by_title(self, db: Session, *, title: str) -> Optional[Tag]:
+    def get_by_title(self, db: Session, title: str) -> Optional[Tag]:
         """Get tag by title (case-insensitive)."""
         return db.query(self.model).filter(
             func.lower(self.model.title) == func.lower(title)
         ).first()
     
-    def get_or_create_by_title(self, db: Session, *, title: str) -> Tag:
+    def get_or_create_by_title(self, db: Session, title: str, tag_data: Optional[TagCreate] = None) -> Tag:
         """Get existing tag by title or create a new one."""
         tag = self.get_by_title(db=db, title=title)
         if tag:
             return tag
         
-        tag_create = TagCreate(title=title)
+        if tag_data:
+            tag_create = tag_data
+        else:
+            tag_create = TagCreate(title=title)
         return self.create(db=db, obj_in=tag_create)
     
     def search_tags(
         self,
         db: Session,
-        *,
         query: str,
         skip: int = 0,
         limit: int = 100
@@ -72,7 +74,6 @@ class CRUDTag(CRUDBase[Tag, TagCreate, TagUpdate]):
     def get_tags_starting_with(
         self,
         db: Session,
-        *,
         prefix: str,
         limit: int = 10
     ) -> List[Tag]:
@@ -101,7 +102,7 @@ class CRUDTag(CRUDBase[Tag, TagCreate, TagUpdate]):
             .all()
         )
     
-    def check_title_exists(self, db: Session, *, title: str, exclude_id: Optional[int] = None) -> bool:
+    def check_title_exists(self, db: Session, title: str, exclude_id: Optional[int] = None) -> bool:
         """Check if tag title already exists (case-insensitive)."""
         query = db.query(self.model).filter(
             func.lower(self.model.title) == func.lower(title)
@@ -112,5 +113,15 @@ class CRUDTag(CRUDBase[Tag, TagCreate, TagUpdate]):
         
         return query.first() is not None
 
+    def create(self, db: Session, *, obj_in: TagCreate) -> Tag:
+        """Create a new tag with title validation."""
+        # Check if title already exists
+        existing = self.get_by_title(db=db, title=obj_in.title)
+        if existing:
+            raise ValueError(f"Tag with title '{obj_in.title}' already exists")
+        
+        return super().create(db=db, obj_in=obj_in)
 
+
+# Create instance
 tag = CRUDTag(Tag) 

@@ -83,7 +83,41 @@ def db_session() -> Generator[Session, None, None]:
 @pytest.fixture(scope="function")
 def client(db_session: Session) -> Generator[TestClient, None, None]:
     """Create a test client with overridden database dependency"""
+    from scrumix.api.core.security import get_current_user_hybrid
+    from fastapi import Request
+    
+    # Override the database dependency
     app.dependency_overrides[get_db] = lambda: db_session
+    
+    # Override the authentication dependency to check for Authorization header
+    def mock_get_current_user(request: Request):
+        from scrumix.api.models.user import User, UserStatus
+        
+        # Check if Authorization header is present
+        auth_header = request.headers.get("Authorization")
+        if not auth_header or not auth_header.startswith("Bearer "):
+            from fastapi import HTTPException, status
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Not authenticated",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        
+        # Return mock user if authenticated
+        mock_user = User(
+            id=1,
+            email="test@example.com",
+            username="testuser",
+            full_name="Test User",
+            is_active=True,
+            is_verified=True,
+            is_superuser=False,
+            status=UserStatus.ACTIVE
+        )
+        return mock_user
+    
+    app.dependency_overrides[get_current_user_hybrid] = mock_get_current_user
+    
     test_client = TestClient(app)
     yield test_client
     app.dependency_overrides.clear()
@@ -219,17 +253,18 @@ def test_project(db_session):
     return project
 
 @pytest.fixture
-def test_sprint(db_session, test_project):
-    """Create a test sprint with all required fields."""
+def test_sprint(db_session):
+    """Create a test sprint."""
     from scrumix.api.models.sprint import Sprint, SprintStatus
+    from datetime import datetime, timedelta
+    
     sprint = Sprint(
         sprint_name="Test Sprint",
-        sprint_goal="A test sprint goal",
+        sprint_goal="Test sprint goal",
         start_date=datetime.now(),
         end_date=datetime.now() + timedelta(days=14),
         status=SprintStatus.PLANNING,
-        sprint_capacity=40,
-        project_id=test_project.id
+        project_id=1
     )
     db_session.add(sprint)
     db_session.commit()
@@ -255,13 +290,14 @@ def test_backlog(db_session, test_project):
 
 @pytest.fixture
 def test_task(db_session, test_sprint):
-    """Create a test task with all required fields."""
+    """Create a test task."""
     from scrumix.api.models.task import Task, TaskStatus
+    
     task = Task(
         title="Test Task",
         description="A test task",
-        status=TaskStatus.todo,
-        sprint_id=test_sprint.sprint_id
+        status=TaskStatus.TODO,
+        sprint_id=test_sprint.id
     )
     db_session.add(task)
     db_session.commit()
@@ -269,17 +305,20 @@ def test_task(db_session, test_sprint):
     return task
 
 @pytest.fixture
-def test_meeting(db_session, test_project, test_sprint):
-    """Create a test meeting with all required fields."""
+def test_meeting(db_session, test_sprint):
+    """Create a test meeting."""
     from scrumix.api.models.meeting import Meeting, MeetingType
+    from datetime import datetime, timedelta
+    
     meeting = Meeting(
+        title="Test Meeting",
         description="A test meeting",
-        meeting_type=MeetingType.STANDUP,
+        meeting_type=MeetingType.DAILY_STANDUP,
         start_datetime=datetime.now() + timedelta(hours=1),
         duration=60,
         location="Conference Room A",
-        sprint_id=test_sprint.sprint_id,
-        project_id=test_project.id
+        sprint_id=test_sprint.id,
+        project_id=1
     )
     db_session.add(meeting)
     db_session.commit()
@@ -293,7 +332,7 @@ def test_documentation(db_session, test_project):
     doc = Documentation(
         title="Test Documentation",
         description="Test content",
-        type=DocumentationType.GUIDE,
+        type=DocumentationType.USER_GUIDE,
         file_url="https://example.com/docs/test.pdf",
         project_id=test_project.id
     )
@@ -312,4 +351,52 @@ def test_tag(db_session):
     db_session.add(tag)
     db_session.commit()
     db_session.refresh(tag)
-    return tag 
+    return tag
+
+
+@pytest.fixture
+def test_meeting_action_item(db_session, test_meeting):
+    """Create a test meeting action item."""
+    from scrumix.api.models.meeting_action_item import MeetingActionItem
+    from datetime import datetime, timedelta
+    
+    action_item = MeetingActionItem(
+        title="Test Action Item",
+        due_date=datetime.now() + timedelta(days=7),
+        meeting_id=test_meeting.id
+    )
+    db_session.add(action_item)
+    db_session.commit()
+    db_session.refresh(action_item)
+    return action_item
+
+
+@pytest.fixture
+def test_meeting_agenda(db_session, test_meeting):
+    """Create a test meeting agenda item."""
+    from scrumix.api.models.meeting_agenda import MeetingAgenda
+    
+    agenda_item = MeetingAgenda(
+        title="Test Agenda Item",
+        meeting_id=test_meeting.id
+    )
+    db_session.add(agenda_item)
+    db_session.commit()
+    db_session.refresh(agenda_item)
+    return agenda_item
+
+
+@pytest.fixture
+def test_meeting_note(db_session, test_meeting, test_user):
+    """Create a test meeting note."""
+    from scrumix.api.models.meeting_note import MeetingNote
+    
+    note = MeetingNote(
+        content="Test meeting note content",
+        meeting_id=test_meeting.id,
+        user_id=test_user.id
+    )
+    db_session.add(note)
+    db_session.commit()
+    db_session.refresh(note)
+    return note 

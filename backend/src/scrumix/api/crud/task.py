@@ -10,6 +10,14 @@ from ..schemas.task import TaskCreate, TaskUpdate
 class CRUDTask(CRUDBase[Task, TaskCreate, TaskUpdate]):
     """CRUD operations for Task."""
     
+    def get_by_id(self, db: Session, task_id: int) -> Optional[Task]:
+        """Get task by ID."""
+        return self.get(db=db, id=task_id)
+    
+    def search(self, db: Session, search_term: str, skip: int = 0, limit: int = 100) -> List[Task]:
+        """Search tasks by title and description."""
+        return self.search_tasks(db, query=search_term, skip=skip, limit=limit)
+    
     def get_multi_with_pagination(
         self,
         db: Session,
@@ -54,6 +62,35 @@ class CRUDTask(CRUDBase[Task, TaskCreate, TaskUpdate]):
         return (
             db.query(self.model)
             .filter(self.model.status == status)
+            .order_by(self.model.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+    
+    def update_status(self, db: Session, task_id: int, status: TaskStatus) -> Optional[Task]:
+        """Update task status."""
+        task = self.get(db=db, id=task_id)
+        if not task:
+            return None
+        
+        task.status = status
+        db.commit()
+        db.refresh(task)
+        return task
+    
+    def get_by_sprint(
+        self,
+        db: Session,
+        *,
+        sprint_id: int,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[Task]:
+        """Get tasks by sprint ID."""
+        return (
+            db.query(self.model)
+            .filter(self.model.sprint_id == sprint_id)
             .order_by(self.model.created_at.desc())
             .offset(skip)
             .limit(limit)
@@ -110,21 +147,6 @@ class CRUDTask(CRUDBase[Task, TaskCreate, TaskUpdate]):
         stats["total"] = db.query(self.model).count()
         
         return stats
-    
-    def update_status(
-        self,
-        db: Session,
-        *,
-        task_id: int,
-        status: TaskStatus
-    ) -> Optional[Task]:
-        """Update task status."""
-        task = db.query(self.model).filter(self.model.task_id == task_id).first()
-        if task:
-            task.status = status
-            db.commit()
-            db.refresh(task)
-        return task
 
 
 # Create instance

@@ -160,6 +160,75 @@ class UserCRUD(CRUDBase[User, UserCreate, UserUpdate]):
         """Check if user is superuser"""
         return user.is_superuser
 
+    # Additional methods for session management
+    def create_session(self, db: Session, user_id: int, session_token: str, expires_at: Optional[datetime] = None, refresh_token: Optional[str] = None, user_agent: Optional[str] = None) -> UserSession:
+        """Create a new user session"""
+        if expires_at is None:
+            expires_at = datetime.now() + timedelta(days=30)
+        
+        session = UserSession(
+            user_id=user_id,
+            session_token=session_token,
+            user_agent=user_agent,
+            created_at=datetime.now(),
+            expires_at=expires_at
+        )
+        db.add(session)
+        db.commit()
+        db.refresh(session)
+        return session
+    
+    def get_by_session_token(self, db: Session, session_token: str) -> Optional[User]:
+        """Get user by session token"""
+        session = db.query(UserSession).filter(
+            UserSession.session_token == session_token,
+            UserSession.expires_at > datetime.now(),
+            UserSession.is_active == True
+        ).first()
+        
+        if session:
+            return self.get(db, session.user_id)
+        return None
+    
+    def update_activity(self, db: Session, user_id: int) -> bool:
+        """Update user's last activity timestamp"""
+        # Find active session for the user
+        session = db.query(UserSession).filter(
+            UserSession.user_id == user_id,
+            UserSession.is_active == True,
+            UserSession.expires_at > datetime.now()
+        ).first()
+        
+        if session:
+            session.last_activity_at = datetime.now()
+            db.commit()
+            return True
+        return False
+    
+    def deactivate_session(self, db: Session, session_token: str) -> bool:
+        """Deactivate a user session"""
+        session = db.query(UserSession).filter(
+            UserSession.session_token == session_token
+        ).first()
+        
+        if session:
+            session.is_active = False
+            session.deactivated_at = datetime.now()
+            db.commit()
+            return True
+        return False
+    
+    def cleanup_expired_sessions(self, db: Session) -> int:
+        """Clean up expired sessions"""
+        expired_sessions = db.query(UserSession).filter(
+            UserSession.expires_at < datetime.now()
+        )
+        expired_count = expired_sessions.count()
+        
+        expired_sessions.delete()
+        db.commit()
+        return expired_count
+
 class UserOAuthCRUD:
     def create_oauth_account(self, db: Session, user_id: int, provider: AuthProvider, 
                            provider_user_id: str, access_token: str, 
@@ -206,86 +275,69 @@ class UserOAuthCRUD:
         return True
 
 class UserSessionCRUD:
-    def create_session(self, db: Session, user_id: int, expires_at: datetime,
-                      user_agent: Optional[str] = None, ip_address: Optional[str] = None,
-                      device_info: Optional[str] = None) -> UserSession:
-        """创建用户会话"""
-        session_token = secrets.token_urlsafe(32)
-        refresh_token = secrets.token_urlsafe(32)
-        
+    def create_session(self, db: Session, user_id: int, session_token: str) -> UserSession:
+        """Create a new user session"""
+        from ..models.user import UserSession
         session = UserSession(
             user_id=user_id,
             session_token=session_token,
-            refresh_token=refresh_token,
-            user_agent=user_agent,
-            ip_address=ip_address,
-            device_info=device_info,
-            expires_at=expires_at
+            created_at=datetime.now(),
+            expires_at=datetime.now() + timedelta(days=30)
         )
-        
         db.add(session)
         db.commit()
         db.refresh(session)
         return session
     
-    def get_by_session_token(self, db: Session, session_token: str) -> Optional[UserSession]:
-        """根据会话token获取会话"""
-        return db.query(UserSession).filter(
-            and_(
-                UserSession.session_token == session_token,
-                UserSession.is_active == True,
-                UserSession.expires_at > datetime.now()
-            )
+    def get_by_session_token(self, db: Session, session_token: str) -> Optional[User]:
+        """Get user by session token"""
+        from ..models.user import UserSession
+        session = db.query(UserSession).filter(
+            UserSession.session_token == session_token,
+            UserSession.expires_at > datetime.now(),
+            UserSession.is_active == True
         ).first()
+        
+        if session:
+            return self.get(db, session.user_id)
+        return None
     
-    def get_by_refresh_token(self, db: Session, refresh_token: str) -> Optional[UserSession]:
-        """根据刷新token获取会话"""
-        return db.query(UserSession).filter(
-            and_(
-                UserSession.refresh_token == refresh_token,
-                UserSession.is_active == True,
-                UserSession.expires_at > datetime.now()
-            )
+    def update_activity(self, db: Session, user_id: int) -> Optional[User]:
+        """Update user's last activity timestamp"""
+        user = self.get(db, user_id)
+        if user:
+            user.last_activity_at = datetime.now()
+            db.commit()
+            db.refresh(user)
+        return user
+    
+    def deactivate_session(self, db: Session, session_token: str) -> bool:
+        """Deactivate a user session"""
+        from ..models.user import UserSession
+        session = db.query(UserSession).filter(
+            UserSession.session_token == session_token
         ).first()
-    
-    def update_activity(self, db: Session, session_id: int) -> bool:
-        """更新会话活动时间"""
-        session = db.query(UserSession).filter(UserSession.id == session_id).first()
-        if not session:
-            return False
         
-        session.last_activity_at = datetime.now()
-        db.commit()
-        return True
-    
-    def deactivate_session(self, db: Session, session_id: int) -> bool:
-        """停用会话"""
-        session = db.query(UserSession).filter(UserSession.id == session_id).first()
-        if not session:
-            return False
-        
-        session.is_active = False
-        db.commit()
-        return True
-    
-    def deactivate_user_sessions(self, db: Session, user_id: int) -> int:
-        """停用用户的所有会话"""
-        count = db.query(UserSession).filter(
-            and_(
-                UserSession.user_id == user_id,
-                UserSession.is_active == True
-            )
-        ).update({"is_active": False})
-        db.commit()
-        return count
+        if session:
+            session.is_active = False
+            session.deactivated_at = datetime.now()
+            db.commit()
+            return True
+        return False
     
     def cleanup_expired_sessions(self, db: Session) -> int:
-        """清理过期会话"""
-        count = db.query(UserSession).filter(
+        """Clean up expired sessions"""
+        from ..models.user import UserSession
+        expired_count = db.query(UserSession).filter(
             UserSession.expires_at < datetime.now()
-        ).update({"is_active": False})
+        ).count()
+        
+        db.query(UserSession).filter(
+            UserSession.expires_at < datetime.now()
+        ).delete()
+        
         db.commit()
-        return count
+        return expired_count
     
     def get_user_sessions(self, db: Session, user_id: int) -> List[UserSession]:
         """获取用户的所有活跃会话"""
@@ -297,7 +349,7 @@ class UserSessionCRUD:
             )
         ).order_by(UserSession.last_activity_at.desc()).all()
 
-# 实例化CRUD对象
+# Create instances
 user_crud = UserCRUD()
 oauth_crud = UserOAuthCRUD()
 session_crud = UserSessionCRUD() 

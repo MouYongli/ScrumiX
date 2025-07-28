@@ -144,7 +144,7 @@ def count_agenda_by_meeting(
     return {"meeting_id": meeting_id, "count": count}
 
 
-@router.post("/meeting/{meeting_id}/bulk", response_model=List[MeetingAgendaResponse])
+@router.post("/meeting/{meeting_id}/bulk", response_model=List[MeetingAgendaResponse], status_code=201)
 def bulk_create_agenda_items(
     meeting_id: int,
     agenda_titles: List[str],

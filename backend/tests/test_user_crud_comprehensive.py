@@ -74,7 +74,7 @@ class TestUserCRUDComprehensive:
         # Mock existing user found
         mock_db.query().filter().first.return_value = sample_user
         
-        with pytest.raises(ValueError, match="邮箱已被使用"):
+        with pytest.raises(ValueError, match="邮箱已被注册"):
             user_crud.create(mock_db, obj_in=user_create)
 
     def test_get_by_id_found(self, user_crud, mock_db, sample_user):
@@ -181,7 +181,7 @@ class TestUserCRUDComprehensive:
             
             user_crud.update_last_login(mock_db, 1)
             
-            assert sample_user.last_login is not None
+            assert sample_user.last_login_at is not None
             mock_db.commit.assert_called_once()
 
     def test_change_password_success(self, user_crud, mock_db, sample_user):
@@ -252,7 +252,7 @@ class TestUserCRUDComprehensive:
     def test_get_users_list(self, user_crud, mock_db):
         """Test get_users method"""
         mock_users = [MagicMock(), MagicMock()]
-        mock_db.query().order_by().offset().limit().all.return_value = mock_users
+        mock_db.query().offset().limit().all.return_value = mock_users
         
         result = user_crud.get_users(mock_db, skip=0, limit=10)
         
@@ -327,7 +327,11 @@ class TestUserCRUDComprehensive:
 
     def test_cleanup_expired_sessions(self, user_crud, mock_db):
         """Test cleanup_expired_sessions method"""
-        mock_db.query().filter().delete.return_value = 5  # 5 sessions deleted
+        # Mock the query chain to return a count of 5
+        mock_query = MagicMock()
+        mock_query.count.return_value = 5
+        mock_query.delete.return_value = 5
+        mock_db.query().filter.return_value = mock_query
         mock_db.commit = MagicMock()
         
         result = user_crud.cleanup_expired_sessions(mock_db)

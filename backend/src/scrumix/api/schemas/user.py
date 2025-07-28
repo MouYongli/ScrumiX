@@ -3,7 +3,7 @@
 """
 from typing import Optional, List, Union
 from datetime import datetime
-from pydantic import BaseModel, EmailStr, ConfigDict
+from pydantic import BaseModel, EmailStr, ConfigDict, Field
 from scrumix.api.models.user import AuthProvider, UserStatus
 
 class UserBase(BaseModel):
@@ -46,11 +46,11 @@ class UserResponse(UserBase):
     model_config = ConfigDict(from_attributes=True)
     
     id: int
-    is_active: bool
-    is_verified: bool
+    isActive: bool = Field(alias="is_active")
+    isVerified: bool = Field(alias="is_verified")
     status: UserStatus
-    created_at: datetime
-    last_login_at: Optional[datetime] = None
+    createdAt: datetime = Field(alias="created_at")
+    lastLoginAt: Optional[datetime] = Field(alias="last_login_at", default=None)
 
 class LoginRequest(BaseModel):
     """登录请求"""

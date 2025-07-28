@@ -1,7 +1,7 @@
 """
 Sprint-related database models
 """
-from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Enum as SQLEnum
+from sqlalchemy import Column, Integer, String, ForeignKey, DateTime, Enum as SQLEnum, Text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from enum import Enum
@@ -14,25 +14,32 @@ class SprintStatus(str, Enum):
     COMPLETED = "completed"
     CANCELLED = "cancelled"
 
-class Sprint(Base):
-    """Sprint main table"""
-    __tablename__ = "sprints"
 
-    sprint_id = Column(Integer, primary_key=True, index=True)
-    sprint_name = Column(String(255), nullable=False, index=True)
-    sprint_goal = Column(String(500), nullable=False, comment="Sprint goal describing what the team aims to achieve")
+class Sprint(Base):
+    """Sprint model for storing sprint information."""
+    
+    __tablename__ = "sprints"
+    
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    sprint_name = Column(String(100), nullable=False, index=True)
+    sprint_goal = Column(Text, nullable=True)
     start_date = Column(DateTime(timezone=True), nullable=False)
     end_date = Column(DateTime(timezone=True), nullable=False)
     status = Column(SQLEnum(SprintStatus), default=SprintStatus.PLANNING, nullable=False)
-    sprint_capacity = Column(Integer, nullable=False, default=0, comment="Sprint capacity in story points or hours")
+    sprint_capacity = Column(Integer, nullable=True, default=0)
+    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     
-    # System timestamps
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-    
-    # Foreign keys to project
-    project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True) 
-
-    # Relationship to project
+    # Relationships
     project = relationship("Project", back_populates="sprints")
     tasks = relationship("Task", back_populates="sprint", cascade="all, delete-orphan")
+    meetings = relationship("Meeting", back_populates="sprint", cascade="all, delete-orphan")
+    
+    @property
+    def sprint_id(self) -> int:
+        """Backward compatibility property for tests"""
+        return self.id
+    
+    def __repr__(self):
+        return f"<Sprint(id={self.id}, name='{self.sprint_name}', status='{self.status.value}')>"

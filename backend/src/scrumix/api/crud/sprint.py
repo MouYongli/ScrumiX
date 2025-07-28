@@ -29,7 +29,8 @@ class SprintCRUD(CRUDBase[Sprint, SprintCreate, SprintUpdate]):
             start_date=sprint_create.start_date,
             end_date=sprint_create.end_date,
             status=sprint_create.status,
-            sprint_capacity=sprint_create.sprint_capacity
+            sprint_capacity=sprint_create.sprint_capacity,
+            project_id=sprint_create.project_id
         )
         
         db.add(db_sprint)
@@ -40,33 +41,6 @@ class SprintCRUD(CRUDBase[Sprint, SprintCreate, SprintUpdate]):
     def get_by_id(self, db: Session, sprint_id: int) -> Optional[Sprint]:
         """Get sprint by ID with caching for better performance"""
         return self.get(db, sprint_id)
-    
-    def create_sprint(self, db: Session, sprint_create: SprintCreate) -> Sprint:
-        """Create a new sprint"""
-        # Validate sprint name uniqueness
-        existing_sprint = self.get_by_name(db, sprint_create.sprint_name)
-        if existing_sprint:
-            raise ValueError("Sprint with this name already exists")
-        
-        # Validate date range
-        if sprint_create.end_date <= sprint_create.start_date:
-            raise ValueError("End date must be after start date")
-        
-        # Create sprint object
-        db_sprint = Sprint(
-            sprint_name=sprint_create.sprint_name,
-            sprint_goal=sprint_create.sprint_goal,
-            start_date=sprint_create.start_date,
-            end_date=sprint_create.end_date,
-            status=sprint_create.status,
-            sprint_capacity=sprint_create.sprint_capacity,
-            project_id=sprint_create.project_id
-        )
-        
-        db.add(db_sprint)
-        db.commit()
-        db.refresh(db_sprint)
-        return db_sprint
     
     def get_by_name(self, db: Session, sprint_name: str) -> Optional[Sprint]:
         """Get sprint by name"""
@@ -104,7 +78,7 @@ class SprintCRUD(CRUDBase[Sprint, SprintCreate, SprintUpdate]):
         # Check if name is already in use (if being updated)
         if "sprint_name" in update_data and update_data["sprint_name"] != sprint.sprint_name:
             existing_sprint = self.get_by_name(db, update_data["sprint_name"])
-            if existing_sprint and existing_sprint.sprint_id != sprint_id:
+            if existing_sprint and existing_sprint.id != sprint_id:
                 raise ValueError("Sprint name already in use")
         
         # Validate date range if dates are being updated

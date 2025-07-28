@@ -133,7 +133,7 @@ def get_or_create_tag(
     current_user: User = Depends(get_current_user)
 ):
     """Get existing tag by title or create a new one."""
-    db_tag = tag.get_or_create_by_title(db=db, title=tag_in.title)
+    db_tag = tag.get_or_create_by_title(db=db, title=tag_in.title, tag_data=tag_in)
     return TagResponse.model_validate(db_tag)
 
 

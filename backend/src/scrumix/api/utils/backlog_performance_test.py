@@ -145,7 +145,7 @@ class BacklogPerformanceMonitor:
         # Check index usage for different query patterns
         query_patterns = [
             ("project_status", "SELECT * FROM backlogs WHERE project_id = 1 AND status = 'todo'"),
-            ("sprint_status", "SELECT * FROM backlogs WHERE sprint_id = 1 AND status = 'in-progress'"),
+            ("sprint_status", "SELECT * FROM backlogs WHERE sprint_id = 1 AND status = 'in_progress'"),
             ("priority_status", "SELECT * FROM backlogs WHERE priority = 'high' AND status = 'todo'"),
             ("full_text_search", "SELECT * FROM backlogs WHERE to_tsvector('english', title || ' ' || COALESCE(description, '')) @@ to_tsquery('english', 'user')"),
         ]

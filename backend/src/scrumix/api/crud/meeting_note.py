@@ -40,7 +40,7 @@ class CRUDMeetingNote(CRUDBase[MeetingNote, MeetingNoteCreate, MeetingNoteUpdate
         total = query.count()
         
         # Apply pagination and ordering
-        notes = query.order_by(self.model.note_id.asc()).offset(skip).limit(limit).all()
+        notes = query.order_by(self.model.id.asc()).offset(skip).limit(limit).all()
         
         return notes, total
     
@@ -62,7 +62,7 @@ class CRUDMeetingNote(CRUDBase[MeetingNote, MeetingNoteCreate, MeetingNoteUpdate
         
         return (
             query
-            .order_by(self.model.note_id.asc())
+            .order_by(self.model.id.asc())
             .offset(skip)
             .limit(limit)
             .all()
@@ -85,7 +85,7 @@ class CRUDMeetingNote(CRUDBase[MeetingNote, MeetingNoteCreate, MeetingNoteUpdate
                     self.model.parent_note_id.is_(None)
                 )
             )
-            .order_by(self.model.note_id.asc())
+            .order_by(self.model.id.asc())
             .offset(skip)
             .limit(limit)
             .all()
@@ -103,7 +103,7 @@ class CRUDMeetingNote(CRUDBase[MeetingNote, MeetingNoteCreate, MeetingNoteUpdate
         return (
             db.query(self.model)
             .filter(self.model.parent_note_id == parent_note_id)
-            .order_by(self.model.note_id.asc())
+            .order_by(self.model.id.asc())
             .offset(skip)
             .limit(limit)
             .all()
@@ -120,12 +120,12 @@ class CRUDMeetingNote(CRUDBase[MeetingNote, MeetingNoteCreate, MeetingNoteUpdate
         all_notes = (
             db.query(self.model)
             .filter(self.model.meeting_id == meeting_id)
-            .order_by(self.model.note_id.asc())
+            .order_by(self.model.id.asc())
             .all()
         )
         
         # Build hierarchical structure
-        note_dict = {note.note_id: note for note in all_notes}
+        note_dict = {note.id: note for note in all_notes}
         top_level_notes = []
         
         for note in all_notes:
@@ -178,7 +178,7 @@ class CRUDMeetingNote(CRUDBase[MeetingNote, MeetingNoteCreate, MeetingNoteUpdate
         
         return (
             db_query
-            .order_by(self.model.note_id.asc())
+            .order_by(self.model.id.asc())
             .offset(skip)
             .limit(limit)
             .all()
@@ -215,28 +215,76 @@ class CRUDMeetingNote(CRUDBase[MeetingNote, MeetingNoteCreate, MeetingNoteUpdate
         db.commit()
         return count
     
-    def get_note_thread(self, db: Session, *, note_id: int) -> List[MeetingNote]:
-        """Get the entire thread (parent and all children) for a note."""
-        note = self.get(db=db, id=note_id)
+    def get_meeting_notes_tree_by_meeting(
+        self,
+        db: Session,
+        meeting_id: int,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[MeetingNote]:
+        """Get meeting notes organized as tree structure by meeting ID."""
+        # Get root notes (no parent)
+        root_notes = (
+            db.query(self.model)
+            .filter(
+                and_(
+                    self.model.meeting_id == meeting_id,
+                    self.model.parent_note_id.is_(None)
+                )
+            )
+            .order_by(self.model.created_at.asc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+        
+        return root_notes
+    
+    def get_note_children(
+        self,
+        db: Session,
+        note_id: int,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[MeetingNote]:
+        """Get children of a specific note."""
+        return (
+            db.query(self.model)
+            .filter(self.model.parent_note_id == note_id)
+            .order_by(self.model.created_at.asc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+    
+    def get_note_thread(
+        self,
+        db: Session,
+        note_id: int
+    ) -> List[MeetingNote]:
+        """Get the full thread of a note (all parents and children)."""
+        note = self.get(db, note_id)
         if not note:
             return []
         
         # Find the root note
         root_note = note
-        while root_note.parent_note_id is not None:
-            root_note = self.get(db=db, id=root_note.parent_note_id)
+        while root_note.parent_note_id:
+            root_note = self.get(db, root_note.parent_note_id)
             if not root_note:
                 break
         
-        # Get all notes in the thread
-        def get_all_children(parent_note):
-            children = self.get_child_notes(db=db, parent_note_id=parent_note.note_id, limit=1000)
-            result = [parent_note]
+        # Get all notes in this thread
+        def get_descendants(note_obj):
+            children = self.get_note_children(db, note_obj.id)
+            result = [note_obj]
             for child in children:
-                result.extend(get_all_children(child))
+                result.extend(get_descendants(child))
             return result
         
-        return get_all_children(root_note) if root_note else []
+        return get_descendants(root_note) if root_note else []
 
 
-meeting_note = CRUDMeetingNote(MeetingNote) 
+# Create instance
+meeting_note = CRUDMeetingNote(MeetingNote)
+meeting_note_crud = CRUDMeetingNote(MeetingNote) 

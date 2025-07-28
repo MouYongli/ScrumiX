@@ -51,7 +51,7 @@ class TestBacklogEndpoints:
 
     def test_get_backlogs_with_status_filter(self, client, auth_headers):
         """Test getting backlogs with status filter"""
-        response = client.get("/api/v1/backlogs/?status=to-do", headers=auth_headers)
+        response = client.get("/api/v1/backlogs/?status=todo", headers=auth_headers)
         assert response.status_code == status.HTTP_200_OK
         
         data = response.json()
@@ -60,8 +60,7 @@ class TestBacklogEndpoints:
     def test_get_backlogs_with_invalid_status(self, client, auth_headers):
         """Test getting backlogs with invalid status"""
         response = client.get("/api/v1/backlogs/?status=invalid", headers=auth_headers)
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert "Invalid status" in response.json()["detail"]
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
     def test_get_backlogs_with_priority_filter(self, client, auth_headers):
         """Test getting backlogs with priority filter"""
@@ -74,8 +73,7 @@ class TestBacklogEndpoints:
     def test_get_backlogs_with_invalid_priority(self, client, auth_headers):
         """Test getting backlogs with invalid priority"""
         response = client.get("/api/v1/backlogs/?priority=invalid", headers=auth_headers)
-        assert response.status_code == status.HTTP_400_BAD_REQUEST
-        assert "Invalid priority" in response.json()["detail"]
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
 
     def test_get_backlogs_with_search(self, client, auth_headers):
         """Test getting backlogs with search"""
@@ -189,7 +187,7 @@ class TestBacklogEndpoints:
         update_data = {
             "title": "Updated Backlog Title",
             "description": "Updated description",
-            "status": "in-progress"
+            "status": "in_progress"  # Correct enum value
         }
         
         response = client.put(f"/api/v1/backlogs/{backlog.backlog_id}", json=update_data, headers=auth_headers)
@@ -236,8 +234,7 @@ class TestBacklogEndpoints:
         db_session.commit()
         
         response = client.delete(f"/api/v1/backlogs/{backlog.backlog_id}", headers=auth_headers)
-        assert response.status_code == status.HTTP_200_OK
-        assert response.json()["message"] == "Backlog item deleted successfully"
+        assert response.status_code == status.HTTP_204_NO_CONTENT
 
     def test_delete_backlog_not_found(self, client, auth_headers):
         """Test deleting non-existent backlog"""
@@ -393,8 +390,8 @@ class TestBacklogCRUD:
         
         # Create some backlogs to search
         backlog_data_1 = BacklogCreate(
-            title="Searchable Backlog One",
-            description="A backlog with searchable content",
+            title="Unique Backlog One",
+            description="A backlog with unique content",
             status=BacklogStatus.TODO,
             priority=BacklogPriority.MEDIUM,
             project_id=test_project.id
@@ -402,8 +399,8 @@ class TestBacklogCRUD:
         backlog_crud.create(db_session, obj_in=backlog_data_1)
         
         backlog_data_2 = BacklogCreate(
-            title="Another Backlog",
-            description="Another searchable backlog",
+            title="Different Backlog",
+            description="A completely different backlog",
             status=BacklogStatus.TODO,
             priority=BacklogPriority.MEDIUM,
             project_id=test_project.id
@@ -411,14 +408,14 @@ class TestBacklogCRUD:
         backlog_crud.create(db_session, obj_in=backlog_data_2)
         
         # Search for backlogs
-        auth_backlogs = backlog_crud.search_backlogs(db_session, "Authentication")
-        assert len(auth_backlogs) == 1
-        assert "Authentication" in auth_backlogs[0].title
+        unique_backlogs = backlog_crud.search_backlogs(db_session, "Unique")
+        assert len(unique_backlogs) == 1
+        assert "Unique" in unique_backlogs[0].title
         
-        # Search for "Database"
-        db_backlogs = backlog_crud.search_backlogs(db_session, "Database")
-        assert len(db_backlogs) == 1
-        assert "Database" in db_backlogs[0].title
+        # Search for "Different"
+        different_backlogs = backlog_crud.search_backlogs(db_session, "Different")
+        assert len(different_backlogs) == 1
+        assert "Different" in different_backlogs[0].title
 
     def test_get_root_backlogs(self, db_session, test_project):
         """Test getting root backlogs"""
@@ -473,7 +470,7 @@ class TestBacklogCRUD:
             priority=BacklogPriority.HIGH
         )
         
-        updated_backlog = backlog_crud.update_backlog(db_session, created_backlog, update_data)
+        updated_backlog = backlog_crud.update_backlog(db_session, created_backlog.backlog_id, update_data)
         assert updated_backlog.title == update_data.title
         assert updated_backlog.description == update_data.description
         assert updated_backlog.status == update_data.status

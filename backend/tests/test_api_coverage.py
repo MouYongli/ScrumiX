@@ -168,7 +168,7 @@ class TestModelCoverage:
         from scrumix.api.models.documentation import Documentation
         doc = Documentation(
             title="Test Model Doc",
-            type="api",
+            type=DocumentationType.API_DOC,
             file_url="http://example.com/doc",
             project_id=test_project.id
         )
@@ -215,19 +215,18 @@ class TestSchemaCoverage:
         task_data = {
             "title": "Test Task",
             "description": "A test task",
-            "status": TaskStatus.todo
+            "status": TaskStatus.TODO
         }
         
         task_create = TaskCreate(**task_data)
         assert task_create.title == "Test Task"
-        assert task_create.status == TaskStatus.todo
+        assert task_create.status == TaskStatus.TODO
     
     def test_tag_schema_validation(self):
         """Test Tag schema validation"""
         tag_data = {
             "title": "Test Tag",
-            "description": "A test tag",
-            "color": "#FF5733"
+            "description": "A test tag"
         }
         
         tag_create = TagCreate(**tag_data)
@@ -236,29 +235,31 @@ class TestSchemaCoverage:
     def test_sprint_schema_validation(self):
         """Test Sprint schema validation"""
         sprint_data = {
-            "sprint_name": "Test Sprint",
-            "sprint_goal": "Test Goal",
-            "start_date": datetime.now(),
-            "end_date": datetime.now() + timedelta(days=14),
+            "sprintName": "Sprint 1",
+            "sprintGoal": "Complete user stories 1-5",
+            "startDate": datetime.now(),
+            "endDate": datetime.now() + timedelta(days=14),
             "status": SprintStatus.PLANNING,
-            "sprint_capacity": 100
+            "sprintCapacity": 100,
+            "projectId": 1
         }
         
         sprint_create = SprintCreate(**sprint_data)
-        assert sprint_create.sprint_name == "Test Sprint"
+        assert sprint_create.sprint_name == "Sprint 1"
     
     def test_documentation_schema_validation(self):
         """Test Documentation schema validation"""
         doc_data = {
             "title": "Test Doc",
-            "type": DocumentationType.API,
+            "type": DocumentationType.API_DOC,
             "description": "Test description",
-            "file_url": "https://example.com/doc.pdf"
+            "file_url": "https://example.com/doc.pdf",
+            "project_id": 1
         }
         
         doc_create = DocumentationCreate(**doc_data)
         assert doc_create.title == "Test Doc"
-        assert doc_create.type == DocumentationType.API
+        assert doc_create.type == DocumentationType.API_DOC
 
 
 class TestCRUDOperations:
@@ -300,7 +301,7 @@ class TestCRUDOperations:
     def test_tag_crud_specific_operations(self, db_session):
         """Test Tag-specific CRUD operations"""
         # Test create
-        tag_data = TagCreate(title="Unique Tag", description="A unique tag", color="#FF5733")
+        tag_data = TagCreate(title="Unique Tag", description="A unique tag")
         created_tag = tag.create(db=db_session, obj_in=tag_data)
         assert created_tag.title == "Unique Tag"
         
@@ -408,17 +409,16 @@ class TestEnumCoverage:
         from scrumix.api.models.project import ProjectStatus
         assert ProjectStatus.ACTIVE.value == "active"
         assert ProjectStatus.PLANNING == "planning"
-        assert ProjectStatus.ON_HOLD == "on-hold"
+        assert ProjectStatus.ON_HOLD == "on_hold"
         assert ProjectStatus.COMPLETED == "completed"
     
     def test_task_status_enum(self):
         """Test TaskStatus enum"""
         from scrumix.api.models.task import TaskStatus
-        assert TaskStatus.todo.value == "todo"
-        assert TaskStatus.in_progress.value == "in-progress"
-        assert TaskStatus.in_review.value == "in-review"
-        assert TaskStatus.done.value == "done"
-        assert TaskStatus.cancelled.value == "cancelled"
+        assert TaskStatus.TODO.value == "todo"
+        assert TaskStatus.IN_PROGRESS.value == "in_progress"
+        assert TaskStatus.DONE.value == "done"
+        assert TaskStatus.CANCELLED.value == "cancelled"
     
     def test_sprint_status_enum(self):
         """Test SprintStatus enum"""
@@ -430,11 +430,12 @@ class TestEnumCoverage:
     
     def test_documentation_type_enum(self):
         """Test DocumentationType enum"""
-        assert DocumentationType.REQUIREMENTS == "requirements"
-        assert DocumentationType.DESIGN == "design"
-        assert DocumentationType.API == "api"
-        assert DocumentationType.USER_GUIDE == "user-guide"
-        assert DocumentationType.TECHNICAL == "technical" 
+        assert DocumentationType.REQUIREMENT == "requirement"
+        assert DocumentationType.DESIGN_DOC == "design_doc"
+        assert DocumentationType.API_DOC == "api_doc"
+        assert DocumentationType.USER_GUIDE == "user_guide"
+        assert DocumentationType.ARCHITECTURE == "architecture"
+        assert DocumentationType.OTHER == "other" 
 
 
 class DummyModelNoId(Base):

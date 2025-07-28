@@ -79,7 +79,11 @@ def create_meeting_note(
                 detail="Parent note must belong to the same meeting"
             )
     
-    db_note = meeting_note.create(db=db, obj_in=note_in)
+    # Set the user_id from the current user
+    note_data = note_in.model_dump()
+    note_data["user_id"] = current_user.id
+    
+    db_note = meeting_note.create(db=db, obj_in=note_data)
     return MeetingNoteResponse.model_validate(db_note)
 
 
@@ -227,12 +231,14 @@ def create_note_reply(
         raise HTTPException(status_code=404, detail="Parent note not found")
     
     try:
-        reply_note = meeting_note.create_reply(
-            db=db,
-            parent_note_id=note_id,
-            content=content,
-            meeting_id=parent_note.meeting_id
-        )
+        # Create the reply note with user_id
+        note_data = {
+            "meeting_id": parent_note.meeting_id,
+            "content": content,
+            "parent_note_id": note_id,
+            "user_id": current_user.id
+        }
+        reply_note = meeting_note.create(db=db, obj_in=note_data)
         return MeetingNoteResponse.model_validate(reply_note)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))

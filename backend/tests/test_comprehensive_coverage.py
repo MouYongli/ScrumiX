@@ -125,19 +125,18 @@ class TestSchemaValidation:
         task_data = {
             "title": "Test Task",
             "description": "A test task",
-            "status": TaskStatus.todo
+            "status": TaskStatus.TODO
         }
         
         task_create = TaskCreate(**task_data)
         assert task_create.title == "Test Task"
-        assert task_create.status == TaskStatus.todo
+        assert task_create.status == TaskStatus.TODO
     
     def test_tag_schema_validation(self):
         """Test Tag schema validation"""
         tag_data = {
             "title": "Test Tag",
-            "description": "A test tag",
-            "color": "#FF5733"
+            "description": "A test tag"
         }
         
         tag_create = TagCreate(**tag_data)
@@ -194,13 +193,13 @@ class TestEnumValues:
         assert ProjectStatus.PLANNING.value == "planning"
         assert ProjectStatus.ACTIVE.value == "active"
         assert ProjectStatus.COMPLETED.value == "completed"
-        assert ProjectStatus.ON_HOLD.value == "on-hold"  # Correct enum value
+        assert ProjectStatus.ON_HOLD.value == "on_hold"  # Correct enum value
     
     def test_task_enums(self):
         """Test task-related enums"""
-        assert TaskStatus.todo.value == "todo"
-        assert TaskStatus.in_progress.value == "in-progress"
-        assert TaskStatus.done.value == "done"
+        assert TaskStatus.TODO.value == "todo"
+        assert TaskStatus.IN_PROGRESS.value == "in_progress"
+        assert TaskStatus.DONE.value == "done"
     
     def test_sprint_enums(self):
         """Test sprint-related enums"""
@@ -211,7 +210,7 @@ class TestEnumValues:
     
     def test_documentation_enums(self):
         """Test documentation-related enums"""
-        assert DocumentationType.REQUIREMENTS.value == "requirements"  # Correct enum value
-        assert DocumentationType.DESIGN.value == "design"
-        assert DocumentationType.USER_GUIDE.value == "user-guide"  # Correct enum value
-        assert DocumentationType.API.value == "api"  # Correct enum value 
+        assert DocumentationType.REQUIREMENT.value == "requirement"  # Correct enum value
+        assert DocumentationType.DESIGN_DOC.value == "design_doc"
+        assert DocumentationType.USER_GUIDE.value == "user_guide"  # Correct enum value
+        assert DocumentationType.API_DOC.value == "api_doc"  # Correct enum value 

@@ -52,8 +52,7 @@ class TestTagEndpoints:
         """Test successful tag creation"""
         tag_data = {
             "title": "Test Tag",
-            "description": "A test tag",
-            "color": "#FF5733"
+            "description": "A test tag"
         }
         
         response = client.post("/api/v1/tags/", json=tag_data, headers=auth_headers)
@@ -62,7 +61,6 @@ class TestTagEndpoints:
         data = response.json()
         assert data["title"] == tag_data["title"]
         assert data["description"] == tag_data["description"]
-        assert data["color"] == tag_data["color"]
         assert "id" in data
 
     def test_create_tag_duplicate_title(self, client, auth_headers, db_session):
@@ -70,8 +68,7 @@ class TestTagEndpoints:
         # Create first tag
         tag_data = {
             "title": "Duplicate Tag",
-            "description": "First tag",
-            "color": "#FF5733"
+            "description": "First tag"
         }
         
         response1 = client.post("/api/v1/tags/", json=tag_data, headers=auth_headers)
@@ -86,8 +83,7 @@ class TestTagEndpoints:
         """Test tag creation with invalid data"""
         tag_data = {
             "title": "",  # Empty title
-            "description": "A test tag",
-            "color": "#FF5733"
+            "description": "A test tag"
         }
         
         response = client.post("/api/v1/tags/", json=tag_data, headers=auth_headers)
@@ -97,8 +93,7 @@ class TestTagEndpoints:
         """Test tag creation without authentication"""
         tag_data = {
             "title": "Test Tag",
-            "description": "A test tag",
-            "color": "#FF5733"
+            "description": "A test tag"
         }
         
         response = client.post("/api/v1/tags/", json=tag_data)
@@ -109,8 +104,7 @@ class TestTagEndpoints:
         # Create a tag first
         tag_data = {
             "title": "Test Tag for Get",
-            "description": "A test tag for getting",
-            "color": "#FF5733"
+            "description": "A test tag for getting"
         }
         
         create_response = client.post("/api/v1/tags/", json=tag_data, headers=auth_headers)
@@ -142,8 +136,7 @@ class TestTagEndpoints:
         # Create a tag first
         tag_data = {
             "title": "Test Tag for Update",
-            "description": "A test tag for updating",
-            "color": "#FF5733"
+            "description": "A test tag for updating"
         }
         
         create_response = client.post("/api/v1/tags/", json=tag_data, headers=auth_headers)
@@ -154,8 +147,7 @@ class TestTagEndpoints:
         # Update the tag
         update_data = {
             "title": "Updated Tag Title",
-            "description": "Updated description",
-            "color": "#33FF57"
+            "description": "Updated description"
         }
         
         response = client.put(f"/api/v1/tags/{tag_id}", json=update_data, headers=auth_headers)
@@ -164,7 +156,6 @@ class TestTagEndpoints:
         data = response.json()
         assert data["title"] == update_data["title"]
         assert data["description"] == update_data["description"]
-        assert data["color"] == update_data["color"]
 
     def test_update_tag_not_found(self, client, auth_headers):
         """Test updating non-existent tag"""
@@ -191,8 +182,7 @@ class TestTagEndpoints:
         # Create a tag first
         tag_data = {
             "title": "Test Tag for Delete",
-            "description": "A test tag for deletion",
-            "color": "#FF5733"
+            "description": "A test tag for deletion"
         }
         
         create_response = client.post("/api/v1/tags/", json=tag_data, headers=auth_headers)
@@ -220,8 +210,7 @@ class TestTagEndpoints:
         # Create a tag first
         tag_data = {
             "title": "Test Tag Title",
-            "description": "A test tag",
-            "color": "#FF5733"
+            "description": "A test tag"
         }
         
         create_response = client.post("/api/v1/tags/", json=tag_data, headers=auth_headers)
@@ -245,8 +234,7 @@ class TestTagEndpoints:
         # Create a tag first
         tag_data = {
             "title": "Existing Tag",
-            "description": "An existing tag",
-            "color": "#FF5733"
+            "description": "An existing tag"
         }
         
         create_response = client.post("/api/v1/tags/", json=tag_data, headers=auth_headers)
@@ -263,8 +251,7 @@ class TestTagEndpoints:
         """Test get or create with new tag"""
         tag_data = {
             "title": "New Tag",
-            "description": "A new tag",
-            "color": "#FF5733"
+            "description": "A new tag"
         }
         
         response = client.post("/api/v1/tags/get-or-create", json=tag_data, headers=auth_headers)
@@ -333,14 +320,12 @@ class TestTagCRUD:
         
         tag_data = TagCreate(
             title="Test Tag",
-            description="A test tag",
-            color="#FF5733"
+            description="A test tag"
         )
         
         tag_obj = tag.create(db=db_session, obj_in=tag_data)
         assert tag_obj.title == tag_data.title
         assert tag_obj.description == tag_data.description
-        assert tag_obj.color == tag_data.color
 
     def test_create_tag_duplicate_title(self, db_session):
         """Test tag creation with duplicate title"""
@@ -349,8 +334,7 @@ class TestTagCRUD:
         
         tag_data = TagCreate(
             title="Duplicate Tag",
-            description="A test tag",
-            color="#FF5733"
+            description="A test tag"
         )
         
         # Create first tag
@@ -367,8 +351,7 @@ class TestTagCRUD:
         
         tag_data = TagCreate(
             title="Test Tag",
-            description="A test tag",
-            color="#FF5733"
+            description="A test tag"
         )
         
         created_tag = tag.create(db=db_session, obj_in=tag_data)
@@ -386,7 +369,6 @@ class TestTagCRUD:
         tag_data = TagCreate(
             title="Test Tag Title",
             description="A test tag",
-            color="#FF5733"
         )
         
         created_tag = tag.create(db=db_session, obj_in=tag_data)
@@ -406,7 +388,6 @@ class TestTagCRUD:
             tag_data = TagCreate(
                 title=f"Test Tag {i}",
                 description=f"A test tag {i}",
-                color="#FF5733"
             )
             tag.create(db=db_session, obj_in=tag_data)
         
@@ -424,8 +405,7 @@ class TestTagCRUD:
         for title in tag_titles:
             tag_data = TagCreate(
                 title=title,
-                description="A test tag",
-                color="#FF5733"
+                description="A test tag"
             )
             tag.create(db=db_session, obj_in=tag_data)
         
@@ -443,8 +423,7 @@ class TestTagCRUD:
         for title in tag_titles:
             tag_data = TagCreate(
                 title=title,
-                description="A test tag",
-                color="#FF5733"
+                description="A test tag"
             )
             tag.create(db=db_session, obj_in=tag_data)
         
@@ -461,7 +440,6 @@ class TestTagCRUD:
         tag_data = TagCreate(
             title="Test Tag",
             description="A test tag",
-            color="#FF5733"
         )
         
         created_tag = tag.create(db=db_session, obj_in=tag_data)
@@ -469,13 +447,12 @@ class TestTagCRUD:
         update_data = TagUpdate(
             title="Updated Tag",
             description="Updated description",
-            color="#33FF57"
+
         )
         
         updated_tag = tag.update(db=db_session, db_obj=created_tag, obj_in=update_data)
         assert updated_tag.title == update_data.title
         assert updated_tag.description == update_data.description
-        assert updated_tag.color == update_data.color
 
     def test_delete_tag(self, db_session):
         """Test deleting tag"""
@@ -485,7 +462,6 @@ class TestTagCRUD:
         tag_data = TagCreate(
             title="Test Tag",
             description="A test tag",
-            color="#FF5733"
         )
         
         created_tag = tag.create(db=db_session, obj_in=tag_data)
@@ -505,7 +481,6 @@ class TestTagCRUD:
         tag_data = TagCreate(
             title="Test Tag",
             description="A test tag",
-            color="#FF5733"
         )
         
         tag.create(db=db_session, obj_in=tag_data)
@@ -522,7 +497,6 @@ class TestTagCRUD:
         tag_data = TagCreate(
             title="Test Tag",
             description="A test tag",
-            color="#FF5733"
         )
         
         # Create tag
