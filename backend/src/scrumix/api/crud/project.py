@@ -73,7 +73,7 @@ class ProjectCRUD(CRUDBase[Project, ProjectCreate, ProjectUpdate]):
         # Validate dates
         start_date = update_data.get("start_date", project.start_date)
         end_date = update_data.get("end_date", project.end_date)
-        if start_date >= end_date:
+        if start_date and end_date and start_date >= end_date:
             raise ValueError("End date must be after start date")
         
         # Check if project name is already in use

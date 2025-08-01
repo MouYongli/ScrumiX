@@ -11,6 +11,7 @@ class TaskBase(BaseModel):
     description: Optional[str] = Field(None, description="Task description")
     status: TaskStatus = Field(TaskStatus.TODO, description="Task status")
     priority: TaskPriority = Field(TaskPriority.MEDIUM, description="Task priority")
+    story_point: Optional[int] = Field(None, ge=0, description="Story points for estimation (must be non-negative)")
     sprint_id: Optional[int] = Field(None, gt=0, description="ID of the sprint this task belongs to")
 
 
@@ -27,6 +28,7 @@ class TaskUpdate(BaseModel):
     description: Optional[str] = Field(None, description="Task description")
     status: Optional[TaskStatus] = Field(None, description="Task status")
     priority: Optional[TaskPriority] = Field(None, description="Task priority")
+    story_point: Optional[int] = Field(None, ge=0, description="Story points for estimation (must be non-negative)")
 
 
 class TaskInDB(TaskBase):
@@ -47,6 +49,7 @@ class TaskResponse(BaseModel):
     description: Optional[str]
     status: TaskStatus
     priority: TaskPriority
+    story_point: Optional[int]
     sprint_id: Optional[int]
     created_at: datetime
     updated_at: datetime

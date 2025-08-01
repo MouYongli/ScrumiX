@@ -4,7 +4,7 @@ Backlog-related Pydantic schemas
 from typing import Optional, List
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
-from scrumix.api.models.backlog import BacklogStatus, BacklogPriority, BacklogType
+from scrumix.api.models.backlog import Backlog, BacklogStatus, BacklogPriority, BacklogType
 
 
 class BacklogBase(BaseModel):
@@ -12,7 +12,7 @@ class BacklogBase(BaseModel):
     title: str
     description: Optional[str] = None
     status: BacklogStatus = BacklogStatus.TODO
-    story_point: Optional[int] = Field(default=None, description="Story points for estimation")
+    story_point: Optional[int] = Field(default=None, ge=0, description="Story points for estimation (must be non-negative)")
     priority: BacklogPriority = BacklogPriority.MEDIUM
     label: Optional[str] = None
     item_type: BacklogType = BacklogType.STORY
@@ -34,7 +34,7 @@ class BacklogUpdate(BaseModel):
     title: Optional[str] = None
     description: Optional[str] = None
     status: Optional[BacklogStatus] = None
-    story_point: Optional[int] = Field(default=None, description="Story points for estimation")
+    story_point: Optional[int] = Field(default=None, ge=0, description="Story points for estimation (must be non-negative)")
     priority: Optional[BacklogPriority] = None
     label: Optional[str] = None
     item_type: Optional[BacklogType] = None

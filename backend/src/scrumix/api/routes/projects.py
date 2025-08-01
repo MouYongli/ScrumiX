@@ -114,13 +114,41 @@ async def get_project(
             detail="Project not found"
         )
     
+    # Calculate project statistics from relationships
+    # 1. Count project members
+    members_count = len(project.user_projects)
+    
+    # 2. Count tasks and story points across all project sprints
+    tasks_total = 0
+    tasks_completed = 0
+    story_points_total = 0
+    story_points_completed = 0
+    
+    for sprint in project.sprints:
+        for task in sprint.tasks:
+            tasks_total += 1
+            story_points = task.story_point or 0
+            story_points_total += story_points
+            
+            if task.status.value == "done":
+                tasks_completed += 1
+                story_points_completed += story_points
+    
+    # 3. Calculate progress percentage (prefer story points over task count)
+    if story_points_total > 0:
+        progress = int((story_points_completed / story_points_total * 100))
+    elif tasks_total > 0:
+        progress = int((tasks_completed / tasks_total * 100))
+    else:
+        progress = 0
+    
     # Convert to response format
     project_response = ProjectResponse.from_db_model(
         project=project,
-        progress=0,  # TODO: Calculate from actual relationships
-        members=1,   # TODO: Calculate from actual relationships
-        tasks_completed=0,  # TODO: Calculate from actual relationships
-        tasks_total=0       # TODO: Calculate from actual relationships
+        progress=progress,
+        members=members_count,
+        tasks_completed=tasks_completed,
+        tasks_total=tasks_total
     )
     
     return project_response
@@ -141,20 +169,48 @@ async def update_project(
                 detail="Project not found"
             )
         
+        # Calculate project statistics from relationships (same as in get_project)
+        # 1. Count project members
+        members_count = len(updated_project.user_projects)
+        
+        # 2. Count tasks and story points across all project sprints
+        tasks_total = 0
+        tasks_completed = 0
+        story_points_total = 0
+        story_points_completed = 0
+        
+        for sprint in updated_project.sprints:
+            for task in sprint.tasks:
+                tasks_total += 1
+                story_points = task.story_point or 0
+                story_points_total += story_points
+                
+                if task.status.value == "done":
+                    tasks_completed += 1
+                    story_points_completed += story_points
+        
+        # 3. Calculate progress percentage (prefer story points over task count)
+        if story_points_total > 0:
+            progress = int((story_points_completed / story_points_total * 100))
+        elif tasks_total > 0:
+            progress = int((tasks_completed / tasks_total * 100))
+        else:
+            progress = 0
+        
         # Convert to response format
         project_response = ProjectResponse.from_db_model(
             project=updated_project,
-            progress=0,  # TODO: Calculate from actual relationships
-            members=1,   # TODO: Calculate from actual relationships
-            tasks_completed=0,  # TODO: Calculate from actual relationships
-            tasks_total=0       # TODO: Calculate from actual relationships
+            progress=progress,
+            members=members_count,
+            tasks_completed=tasks_completed,
+            tasks_total=tasks_total
         )
         
         return project_response
         
     except ValueError as e:
         raise HTTPException(
-            status_code=fastapi_status.HTTP_400_BAD_REQUEST,
+            status_code=fastapi_status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=str(e)
         )
 
