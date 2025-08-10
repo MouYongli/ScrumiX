@@ -48,5 +48,5 @@ app.include_router(api_router, prefix=settings.API_V1_STR)
 
 @app.get("/health")
 async def health_check():
-    """健康检查端点"""
+    """Health check endpoint"""
     return {"status": "ok", "message": "ScrumiX API is running"}

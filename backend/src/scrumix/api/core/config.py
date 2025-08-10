@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     SECRET_KEY: str = os.environ.get("SECRET_KEY", "changeme")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days
+    DATABASE_URL: str = os.environ.get("DATABASE_URL", "sqlite:///./test.db")
     
     # Environment Configuration
     ENVIRONMENT: str = os.environ.get("ENVIRONMENT", "development")
@@ -68,6 +69,7 @@ class Settings(BaseSettings):
     KEYCLOAK_CLIENT_ID: str = os.environ.get("KEYCLOAK_CLIENT_ID", "scrumix-client")
     KEYCLOAK_CLIENT_SECRET: str = os.environ.get("KEYCLOAK_CLIENT_SECRET", "")
     KEYCLOAK_AUTH_URL: str = os.environ.get("KEYCLOAK_AUTH_URL", "http://localhost:8080/realms/scrumix-app/protocol/openid-connect/token")
+    KEYCLOAK_REDIRECT_URI: str = os.environ.get("KEYCLOAK_REDIRECT_URI", "http://localhost:3000/auth/callback")
     
     # OAuth URLs
     @property
@@ -89,6 +91,11 @@ class Settings(BaseSettings):
         if isinstance(v, str):
             return v
         
+        # Check if DATABASE_URL is explicitly set (e.g., for testing)
+        database_url = os.environ.get("DATABASE_URL")
+        if database_url:
+            return database_url
+            
         data = info.data or {}
 
         user = data.get("POSTGRES_USER") or "admin"

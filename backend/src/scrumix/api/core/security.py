@@ -1,4 +1,4 @@
-# 安全相关，如认证加密
+# Security-related, such as authentication and encryption
 from jose import JWTError, jwt
 from datetime import datetime, timedelta
 from typing import Optional, Union, Any
@@ -11,12 +11,13 @@ from scrumix.api.db.database import get_db
 from scrumix.api.utils.password import verify_password, get_password_hash
 from scrumix.api.utils.cookies import get_access_token_from_cookie, get_refresh_token_from_cookie
 from scrumix.api.schemas.user import TokenData
+from scrumix.api.crud.user import UserCRUD
 
-# JWT Bearer认证
+# JWT Bearer authentication
 security = HTTPBearer(auto_error=False)  # Set auto_error=False to allow fallback to cookies
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
-    """创建JWT访问令牌"""
+    """Create JWT access token"""
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.now() + expires_delta
@@ -27,18 +28,18 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     return encoded_jwt
 
 def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None):
-    """创建刷新令牌"""
+    """Create refresh token"""
     to_encode = data.copy()
     if expires_delta:
         expire = datetime.now() + expires_delta
     else:
-        expire = datetime.now() + timedelta(days=7)  # 7天过期
+        expire = datetime.now() + timedelta(days=7)  # Expires in 7 days
     to_encode.update({"exp": expire, "type": "refresh"})
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm="HS256")
     return encoded_jwt
 
 def verify_token(token: str) -> Optional[TokenData]:
-    """验证JWT token"""
+    """Verify JWT token"""
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
         user_id: Union[int, str] = payload.get("sub")
@@ -46,6 +47,11 @@ def verify_token(token: str) -> Optional[TokenData]:
         scopes: list = payload.get("scopes", [])
         
         if user_id is None:
+            return None
+        
+        # Check if token is expired
+        exp = payload.get("exp")
+        if exp and datetime.fromtimestamp(exp) < datetime.now():
             return None
         
         # Include additional fields for enhanced TokenData
@@ -203,17 +209,23 @@ async def get_current_user_from_cookie(
                 
         return VirtualUser(token_data)
 
-# Update the default get_current_user to use hybrid authentication
-get_current_user = get_current_user_hybrid
+# Create a wrapper for get_current_user that matches the expected signature
+async def get_current_user(
+    request: Request,
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security),
+    db: Session = Depends(get_db)
+):
+    """Get current user - wrapper for get_current_user_hybrid"""
+    return await get_current_user_hybrid(request, credentials, db)
 
 async def get_current_active_user(current_user = Depends(get_current_user)):
-    """获取当前活跃用户"""
+    """Get current active user"""
     if not current_user.is_active:
         raise HTTPException(status_code=400, detail="Inactive user")
     return current_user
 
 async def get_current_superuser(current_user = Depends(get_current_user)):
-    """获取当前超级用户"""
+    """Get current superuser"""
     if not current_user.is_superuser:
         raise HTTPException(
             status_code=400, detail="The user doesn't have enough privileges"
@@ -221,41 +233,53 @@ async def get_current_superuser(current_user = Depends(get_current_user)):
     return current_user
 
 def create_email_verification_token(email: str) -> str:
-    """创建邮箱验证token"""
+    """Create email verification token"""
     data = {"sub": email, "type": "email_verification"}
-    expire = datetime.now() + timedelta(hours=24)  # 24小时过期
+    expire = datetime.now() + timedelta(hours=24)  # Expires in 24 hours
     data.update({"exp": expire})
     return jwt.encode(data, settings.SECRET_KEY, algorithm="HS256")
 
 def verify_email_verification_token(token: str) -> Optional[str]:
-    """验证邮箱验证token"""
+    """Verify email verification token"""
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
         email: str = payload.get("sub")
         token_type: str = payload.get("type")
+        exp: int = payload.get("exp")
         
         if email is None or token_type != "email_verification":
             return None
+        
+        # Check if token is expired
+        if exp and datetime.fromtimestamp(exp) < datetime.now():
+            return None
+            
         return email
     except JWTError:
         return None
 
 def create_password_reset_token(email: str) -> str:
-    """创建密码重置token"""
+    """Create password reset token"""
     data = {"sub": email, "type": "password_reset"}
-    expire = datetime.now() + timedelta(hours=1)  # 1小时过期
+    expire = datetime.now() + timedelta(hours=1)  # Expires in 1 hour
     data.update({"exp": expire})
     return jwt.encode(data, settings.SECRET_KEY, algorithm="HS256")
 
 def verify_password_reset_token(token: str) -> Optional[str]:
-    """验证密码重置token"""
+    """Verify password reset token"""
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
         email: str = payload.get("sub")
         token_type: str = payload.get("type")
+        exp: int = payload.get("exp")
         
         if email is None or token_type != "password_reset":
             return None
+        
+        # Check if token is expired
+        if exp and datetime.fromtimestamp(exp) < datetime.now():
+            return None
+            
         return email
     except JWTError:
         return None 

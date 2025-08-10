@@ -1,5 +1,5 @@
 """
-用户管理相关的API路由
+User management related API routes
 """
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
@@ -16,7 +16,7 @@ router = APIRouter()
 
 @router.get("/me", response_model=UserResponse)
 async def get_current_user_profile(current_user = Depends(get_current_user)):
-    """获取当前用户资料"""
+    """Get current user profile"""
     return current_user
 
 @router.put("/me", response_model=UserResponse)
@@ -25,7 +25,7 @@ async def update_current_user_profile(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """更新当前用户资料"""
+    """Update current user profile"""
     try:
         updated_user = user_crud.update_user(db, current_user.id, user_update)
         if not updated_user:
@@ -45,7 +45,7 @@ async def get_current_user_sessions(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """获取当前用户的所有会话"""
+    """Get all sessions for current user"""
     sessions = session_crud.get_user_sessions(db, current_user.id)
     return sessions
 
@@ -55,7 +55,7 @@ async def revoke_user_session(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """撤销指定会话"""
+    """Revoke specified session"""
     success = session_crud.deactivate_session(db, session_id)
     if not success:
         raise HTTPException(
@@ -69,11 +69,11 @@ async def revoke_all_user_sessions(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """撤销当前用户的所有会话"""
+    """Revoke all sessions for current user"""
     count = session_crud.deactivate_user_sessions(db, current_user.id)
     return {"message": f"Revoked {count} sessions"}
 
-# 管理员相关路由
+# Admin related routes
 @router.get("/", response_model=List[UserResponse])
 async def get_users(
     skip: int = 0,
@@ -81,7 +81,7 @@ async def get_users(
     current_user = Depends(get_current_superuser),
     db: Session = Depends(get_db)
 ):
-    """获取用户列表（管理员）"""
+    """Get user list (admin)"""
     users = user_crud.get_users(db, skip=skip, limit=limit)
     return users
 
@@ -91,7 +91,7 @@ async def get_user_by_id(
     current_user = Depends(get_current_superuser),
     db: Session = Depends(get_db)
 ):
-    """根据ID获取用户（管理员）"""
+    """Get user by ID (admin)"""
     user = user_crud.get_by_id(db, user_id)
     if not user:
         raise HTTPException(
@@ -107,7 +107,7 @@ async def update_user_by_id(
     current_user = Depends(get_current_superuser),
     db: Session = Depends(get_db)
 ):
-    """更新用户信息（管理员）"""
+    """Update user information (admin)"""
     try:
         updated_user = user_crud.update_user(db, user_id, user_update)
         if not updated_user:
@@ -128,7 +128,7 @@ async def deactivate_user(
     current_user = Depends(get_current_superuser),
     db: Session = Depends(get_db)
 ):
-    """停用用户（管理员）"""
+    """Deactivate user (admin)"""
     success = user_crud.deactivate_user(db, user_id)
     if not success:
         raise HTTPException(
@@ -136,7 +136,7 @@ async def deactivate_user(
             detail="User not found"
         )
     
-    # 停用用户的所有会话
+    # Deactivate all user sessions
     session_crud.deactivate_user_sessions(db, user_id)
     
     return {"message": "User deactivated successfully"}
@@ -147,11 +147,30 @@ async def verify_user(
     current_user = Depends(get_current_superuser),
     db: Session = Depends(get_db)
 ):
-    """验证用户邮箱（管理员）"""
+    """Verify user email (admin)"""
     success = user_crud.verify_user(db, user_id)
     if not success:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
-    return {"message": "User verified successfully"} 
+    return {"message": "User verified successfully"}
+
+@router.delete("/{user_id}")
+async def delete_user(
+    user_id: int,
+    current_user = Depends(get_current_superuser),
+    db: Session = Depends(get_db)
+):
+    """Delete user (admin)"""
+    success = user_crud.delete_user(db, user_id)
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+    
+    # Delete all user sessions
+    session_crud.deactivate_user_sessions(db, user_id)
+    
+    return {"message": "User deleted successfully"} 

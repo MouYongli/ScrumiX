@@ -1,9 +1,9 @@
-# LLM 基类
+# LLM base class
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List, Optional
 
 class BaseLLM(ABC):
-    """LLM基类"""
+    """LLM base class"""
     
     def __init__(self, model_name: str, api_key: str = None):
         self.model_name = model_name
@@ -17,7 +17,7 @@ class BaseLLM(ABC):
         temperature: float = 0.7,
         **kwargs
     ) -> str:
-        """生成文本"""
+        """Generate text"""
         pass
     
     @abstractmethod
@@ -28,5 +28,5 @@ class BaseLLM(ABC):
         temperature: float = 0.7,
         **kwargs
     ) -> str:
-        """对话生成"""
+        """Conversation generation"""
         pass 

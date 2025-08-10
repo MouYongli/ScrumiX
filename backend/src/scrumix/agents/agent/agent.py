@@ -1,9 +1,9 @@
-# 代理基类
+# Agent base class
 from abc import ABC, abstractmethod
 from typing import Any, Dict, List
 
 class BaseAgent(ABC):
-    """代理基类"""
+    """Agent base class"""
     
     def __init__(self, name: str, description: str = ""):
         self.name = name
@@ -13,13 +13,13 @@ class BaseAgent(ABC):
     
     @abstractmethod
     async def execute(self, task: str, context: Dict[str, Any] = None) -> Any:
-        """执行任务"""
+        """Execute task"""
         pass
     
     def add_tool(self, tool):
-        """添加工具"""
+        """Add tool"""
         self.tools.append(tool)
     
     def set_memory(self, memory):
-        """设置记忆"""
+        """Set memory"""
         self.memory = memory 
