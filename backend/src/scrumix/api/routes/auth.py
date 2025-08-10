@@ -286,8 +286,8 @@ async def keycloak_callback(
     }
     
     # Debug logging for Keycloak user data
-    print(f"🔐 Keycloak user_info received: {user_info}")
-    print(f"📝 Mapped user_data: {user_data}")
+    print(f" Keycloak user_info received: {user_info}")
+    print(f" Mapped user_data: {user_data}")
     
     # Create internal JWT token for unified authentication architecture - Include full user data
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)

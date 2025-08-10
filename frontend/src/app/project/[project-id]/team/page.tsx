@@ -5,29 +5,22 @@ import Link from 'next/link';
 import { 
   Plus, Search, Filter, Mail, Phone, MapPin, Edit2, Trash2, 
   FolderOpen, Users, Crown, Shield, Code, Settings, MoreHorizontal,
-  Calendar, Clock, CheckCircle2, UserPlus, MessageSquare, Star
+  Calendar, Clock, CheckCircle2, UserPlus, MessageSquare, Star, Loader2, AlertCircle
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
 import FavoriteButton from '@/components/common/FavoriteButton';
+import { useProjectTeamMembers } from '@/hooks/useUsers';
+import { useProject } from '@/hooks/useProjects';
+import type { TeamMember } from '@/types/api';
 
-interface TeamMember {
-  id: string;
-  name: string;
-  email: string;
-  role: 'product_owner' | 'scrum_master' | 'developer' | 'designer' | 'tester' | 'analyst';
-  avatar?: string;
-  phone?: string;
-  location?: string;
-  joinedAt: string;
-  isAdmin: boolean;
-}
+// Use TeamMember from API types
+// (already imported from '@/types/api')
 
 interface ProjectTeamProps {
   params: Promise<{ 'project-id': string }>;
 }
 
-// Mock team data
-const mockTeamMembers: TeamMember[] = [
+// Mock data removed - now using API integration
   {
     id: '1',
     name: 'John Smith',
@@ -88,7 +81,18 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
   const resolvedParams = React.use(params);
   const projectId = resolvedParams['project-id'];
 
-  const [teamMembers, setTeamMembers] = useState<TeamMember[]>(mockTeamMembers);
+  // API hooks
+  const { project, isLoading: projectLoading, error: projectError } = useProject(projectId);
+  const { 
+    teamMembers, 
+    isLoading: teamLoading, 
+    error: teamError, 
+    addMember, 
+    removeMember, 
+    updateMemberRole 
+  } = useProjectTeamMembers(projectId);
+
+  // Local state
   const [searchTerm, setSearchTerm] = useState('');
   const [filterRole, setFilterRole] = useState<string>('all');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
