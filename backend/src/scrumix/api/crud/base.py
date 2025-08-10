@@ -1,4 +1,4 @@
-# CRUD 基类
+# CRUD base class
 from typing import Any, Dict, Generic, List, Optional, Type, TypeVar, Union
 from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel
@@ -13,8 +13,8 @@ UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
 class CRUDBase(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
     def __init__(self, model: Type[ModelType]):
         """
-        CRUD基类，包含默认的CRUD操作
-        * `model`: SQLAlchemy模型类
+        CRUD base class with default CRUD operations
+        * `model`: SQLAlchemy model class
         """
         self.model = model
         # Automatically detect the primary key column name

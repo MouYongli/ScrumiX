@@ -1,5 +1,5 @@
 """
-用户相关的Pydantic schemas
+User-related Pydantic schemas
 """
 from typing import Optional, List, Union
 from datetime import datetime
@@ -7,7 +7,7 @@ from pydantic import BaseModel, EmailStr, ConfigDict, Field
 from scrumix.api.models.user import AuthProvider, UserStatus
 
 class UserBase(BaseModel):
-    """用户基础信息"""
+    """User basic information"""
     email: EmailStr
     username: Optional[str] = None
     full_name: Optional[str] = None
@@ -16,11 +16,11 @@ class UserBase(BaseModel):
     language: str = "zh-CN"
 
 class UserCreate(UserBase):
-    """创建用户"""
-    password: Optional[str] = None  # 本地注册时必须，OAuth注册时可选
+    """Create user"""
+    password: Optional[str] = None  # Required for local registration, optional for OAuth registration
 
 class UserUpdate(BaseModel):
-    """更新用户信息"""
+    """Update user information"""
     email: Optional[EmailStr] = None
     username: Optional[str] = None
     full_name: Optional[str] = None
@@ -29,7 +29,7 @@ class UserUpdate(BaseModel):
     language: Optional[str] = None
 
 class UserInDB(UserBase):
-    """数据库中的用户信息"""
+    """User information in database"""
     model_config = ConfigDict(from_attributes=True)
     
     id: int
@@ -42,7 +42,7 @@ class UserInDB(UserBase):
     last_login_at: Optional[datetime] = None
 
 class UserResponse(UserBase):
-    """返回给前端的用户信息"""
+    """User information returned to frontend"""
     model_config = ConfigDict(from_attributes=True)
     
     id: int
@@ -53,13 +53,13 @@ class UserResponse(UserBase):
     lastLoginAt: Optional[datetime] = Field(alias="last_login_at", default=None)
 
 class LoginRequest(BaseModel):
-    """登录请求"""
+    """Login request"""
     email: EmailStr
     password: str
     remember_me: bool = False
 
 class LoginResponse(BaseModel):
-    """登录响应"""
+    """Login response"""
     access_token: str
     refresh_token: Optional[str] = None
     token_type: str = "bearer"
@@ -67,7 +67,7 @@ class LoginResponse(BaseModel):
     user: UserResponse
 
 class TokenData(BaseModel):
-    """Token数据"""
+    """Token data"""
     user_id: Optional[Union[int, str]] = None
     email: Optional[str] = None
     scopes: List[str] = []
@@ -77,13 +77,13 @@ class TokenData(BaseModel):
     provider: Optional[str] = None
 
 class OAuthTokenRequest(BaseModel):
-    """OAuth Token请求"""
+    """OAuth Token request"""
     code: str
     state: Optional[str] = None
     redirect_uri: str
 
 class OAuthTokenResponse(BaseModel):
-    """OAuth Token响应"""
+    """OAuth Token response"""
     access_token: str
     refresh_token: Optional[str] = None
     token_type: str = "bearer"
@@ -92,21 +92,21 @@ class OAuthTokenResponse(BaseModel):
     is_new_user: bool = False
 
 class PasswordResetRequest(BaseModel):
-    """密码重置请求"""
+    """Password reset request"""
     email: EmailStr
 
 class PasswordResetConfirm(BaseModel):
-    """密码重置确认"""
+    """Password reset confirmation"""
     token: str
     new_password: str
 
 class ChangePasswordRequest(BaseModel):
-    """修改密码请求"""
+    """Change password request"""
     current_password: str
     new_password: str
 
 class UserSessionResponse(BaseModel):
-    """用户会话响应"""
+    """User session response"""
     model_config = ConfigDict(from_attributes=True)
     
     id: int

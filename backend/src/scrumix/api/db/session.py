@@ -1,4 +1,4 @@
-# Session 管理
+# Session management
 from .database import SessionLocal, get_db
 
 # Re-export get_db for consistency

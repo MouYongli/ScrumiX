@@ -1,11 +1,11 @@
-# 数据库连接和初始化
+# Database connection and initialization
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from scrumix.api.db.base import Base
 from scrumix.api.core.config import settings
 import os
 
-# 创建数据库引擎
+# Create database engine
 def get_database_url():
     """Get database URL with fallback to SQLite for testing"""
     if hasattr(settings, 'SQLALCHEMY_DATABASE_URI') and settings.SQLALCHEMY_DATABASE_URI:
@@ -15,13 +15,13 @@ def get_database_url():
     database_url = os.environ.get("DATABASE_URL", "sqlite:///./test.db")
     return database_url
 
-# 创建数据库引擎
+# Create database engine
 engine = create_engine(get_database_url())
 
-# 创建SessionLocal类
+# Create SessionLocal class
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
-# 获取数据库会话
+# Get database session
 def get_db():
     if SessionLocal is None:
         raise RuntimeError("Database not initialized. SessionLocal is None.")
@@ -31,7 +31,7 @@ def get_db():
     finally:
         db.close()
 
-# 创建数据库表
+# Create database tables
 def create_tables():
     Base.metadata.create_all(bind=engine)
 

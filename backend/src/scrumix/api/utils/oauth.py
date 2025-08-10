@@ -1,5 +1,5 @@
 """
-OAuth相关工具函数
+OAuth related utility functions
 """
 import httpx
 import json
@@ -17,22 +17,22 @@ class KeycloakOAuth:
         
     @property
     def authorization_url(self) -> str:
-        """获取授权URL"""
+        """Get authorization URL"""
         return f"{self.server_url}/realms/{self.realm}/protocol/openid-connect/auth"
     
     @property
     def token_url(self) -> str:
-        """获取token URL"""
+        """Get token URL"""
         return f"{self.server_url}/realms/{self.realm}/protocol/openid-connect/token"
     
     @property
     def userinfo_url(self) -> str:
-        """获取用户信息URL"""
+        """Get user info URL"""
         return f"{self.server_url}/realms/{self.realm}/protocol/openid-connect/userinfo"
     
     def get_authorization_url(self, redirect_uri: str, state: Optional[str] = None, 
                             scope: str = "openid email profile") -> str:
-        """生成授权URL"""
+        """Generate authorization URL"""
         params = {
             "client_id": self.client_id,
             "response_type": "code",
@@ -46,7 +46,7 @@ class KeycloakOAuth:
         return f"{self.authorization_url}?{urlencode(params)}"
     
     async def exchange_code_for_token(self, code: str, redirect_uri: str) -> Optional[Dict[str, Any]]:
-        """用授权码换取access token"""
+        """Exchange authorization code for access token"""
         data = {
             "grant_type": "authorization_code",
             "client_id": self.client_id,
@@ -69,7 +69,7 @@ class KeycloakOAuth:
                 return None
     
     async def refresh_access_token(self, refresh_token: str) -> Optional[Dict[str, Any]]:
-        """刷新access token"""
+        """Refresh access token"""
         data = {
             "grant_type": "refresh_token",
             "client_id": self.client_id,
@@ -91,7 +91,7 @@ class KeycloakOAuth:
                 return None
     
     async def get_user_info(self, access_token: str) -> Optional[Dict[str, Any]]:
-        """获取用户信息"""
+        """Get user information"""
         headers = {"Authorization": f"Bearer {access_token}"}
         
         async with httpx.AsyncClient() as client:
@@ -107,12 +107,12 @@ class KeycloakOAuth:
                 return None
     
     async def validate_token(self, access_token: str) -> bool:
-        """验证token是否有效"""
+        """Verify if token is valid"""
         user_info = await self.get_user_info(access_token)
         return user_info is not None
     
     async def revoke_token(self, token: str, token_type: str = "access_token") -> bool:
-        """撤销token"""
+        """Revoke token"""
         data = {
             "client_id": self.client_id,
             "client_secret": self.client_secret,
@@ -134,5 +134,5 @@ class KeycloakOAuth:
                 print(f"Error revoking token: {e}")
                 return False
 
-# 实例化OAuth客户端
+# Instantiate OAuth client
 keycloak_oauth = KeycloakOAuth() 

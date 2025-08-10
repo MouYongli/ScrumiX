@@ -1,5 +1,5 @@
 """
-用户相关的CRUD操作
+User-related CRUD operations
 """
 from typing import Optional, List
 from datetime import datetime, timedelta
@@ -19,15 +19,15 @@ class UserCRUD(CRUDBase[User, UserCreate, UserUpdate]):
     
     def create(self, db: Session, *, obj_in: UserCreate) -> User:
         """Create a new user with proper validation"""
-        # 检查邮箱是否已存在
+        # Check if email already exists
         if self.get_by_email(db, obj_in.email):
-            raise ValueError("邮箱已被注册")
+            raise ValueError("Email already registered")
         
-        # 检查用户名是否已存在
+        # Check if username already exists
         if obj_in.username and self.get_by_username(db, obj_in.username):
-            raise ValueError("用户名已被使用")
+            raise ValueError("Username already taken")
         
-        # 创建用户对象
+        # Create user object
         db_user = User(
             email=obj_in.email,
             username=obj_in.username,
@@ -36,7 +36,7 @@ class UserCRUD(CRUDBase[User, UserCreate, UserUpdate]):
             timezone=obj_in.timezone,
             language=obj_in.language,
             hashed_password=get_password_hash(obj_in.password) if obj_in.password else None,
-            is_verified=False  # 需要邮箱验证
+            is_verified=False  # Requires email verification
         )
         
         db.add(db_user)
@@ -49,19 +49,19 @@ class UserCRUD(CRUDBase[User, UserCreate, UserUpdate]):
         return self.create(db, obj_in=user_create)
     
     def get_by_id(self, db: Session, user_id: int) -> Optional[User]:
-        """根据ID获取用户"""
+        """Get user by ID"""
         return self.get(db, user_id)
     
     def get_by_email(self, db: Session, email: str) -> Optional[User]:
-        """根据邮箱获取用户"""
+        """Get user by email"""
         return db.query(User).filter(User.email == email).first()
     
     def get_by_username(self, db: Session, username: str) -> Optional[User]:
-        """根据用户名获取用户"""
+        """Get user by username"""
         return db.query(User).filter(User.username == username).first()
     
     def authenticate(self, db: Session, email: str, password: str) -> Optional[User]:
-        """验证用户登录"""
+        """Verify user login"""
         user = self.get_by_email(db, email)
         if not user:
             return None
@@ -72,24 +72,24 @@ class UserCRUD(CRUDBase[User, UserCreate, UserUpdate]):
         return user
     
     def update_user(self, db: Session, user_id: int, user_update: UserUpdate) -> Optional[User]:
-        """更新用户信息"""
+        """Update user information"""
         user = self.get_by_id(db, user_id)
         if not user:
             return None
         
         update_data = user_update.model_dump(exclude_unset=True)
         
-        # 检查用户名是否已被使用
+        # Check if username is already taken
         if "username" in update_data and update_data["username"]:
             existing_user = self.get_by_username(db, update_data["username"])
             if existing_user and existing_user.id != user_id:
-                raise ValueError("用户名已被使用")
+                raise ValueError("Username already taken")
         
-        # 检查邮箱是否已被使用
+        # Check if email is already taken
         if "email" in update_data:
             existing_user = self.get_by_email(db, update_data["email"])
             if existing_user and existing_user.id != user_id:
-                raise ValueError("邮箱已被使用")
+                raise ValueError("Email already taken")
         
         for field, value in update_data.items():
             setattr(user, field, value)
@@ -99,14 +99,14 @@ class UserCRUD(CRUDBase[User, UserCreate, UserUpdate]):
         return user
     
     def update_last_login(self, db: Session, user_id: int) -> None:
-        """更新最后登录时间"""
+        """Update last login time"""
         user = self.get_by_id(db, user_id)
         if user:
             user.last_login_at = datetime.now()
             db.commit()
     
     def change_password(self, db: Session, user_id: int, current_password: str, new_password: str) -> bool:
-        """修改密码"""
+        """Change password"""
         user = self.get_by_id(db, user_id)
         if not user or not user.hashed_password:
             return False
@@ -119,7 +119,7 @@ class UserCRUD(CRUDBase[User, UserCreate, UserUpdate]):
         return True
     
     def reset_password(self, db: Session, user_id: int, new_password: str) -> bool:
-        """重置密码（管理员操作或忘记密码）"""
+        """Reset password (admin operation or forgot password)"""
         user = self.get_by_id(db, user_id)
         if not user:
             return False
@@ -129,7 +129,7 @@ class UserCRUD(CRUDBase[User, UserCreate, UserUpdate]):
         return True
     
     def verify_user(self, db: Session, user_id: int) -> bool:
-        """验证用户邮箱"""
+        """Verify user email"""
         user = self.get_by_id(db, user_id)
         if not user:
             return False
@@ -139,7 +139,7 @@ class UserCRUD(CRUDBase[User, UserCreate, UserUpdate]):
         return True
     
     def deactivate_user(self, db: Session, user_id: int) -> bool:
-        """停用用户"""
+        """Deactivate user"""
         user = self.get_by_id(db, user_id)
         if not user:
             return False
@@ -150,7 +150,7 @@ class UserCRUD(CRUDBase[User, UserCreate, UserUpdate]):
         return True
     
     def delete_user(self, db: Session, user_id: int) -> bool:
-        """删除用户"""
+        """Delete user"""
         user = self.get_by_id(db, user_id)
         if not user:
             return False
@@ -160,7 +160,7 @@ class UserCRUD(CRUDBase[User, UserCreate, UserUpdate]):
         return True
     
     def get_users(self, db: Session, skip: int = 0, limit: int = 100) -> List[User]:
-        """获取用户列表"""
+        """Get user list"""
         return db.query(User).offset(skip).limit(limit).all()
     
     def is_active(self, user: User) -> bool:
@@ -245,7 +245,7 @@ class UserOAuthCRUD:
                            provider_user_id: str, access_token: str, 
                            refresh_token: Optional[str] = None, 
                            raw_data: Optional[dict] = None) -> UserOAuth:
-        """创建OAuth账户关联"""
+        """Create OAuth account association"""
         oauth_account = UserOAuth(
             user_id=user_id,
             provider=provider,
@@ -261,7 +261,7 @@ class UserOAuthCRUD:
         return oauth_account
     
     def get_by_provider_user_id(self, db: Session, provider: AuthProvider, provider_user_id: str) -> Optional[UserOAuth]:
-        """根据OAuth提供商和用户ID获取账户"""
+        """Get account by OAuth provider and user ID"""
         return db.query(UserOAuth).filter(
             and_(
                 UserOAuth.provider == provider,
@@ -271,7 +271,7 @@ class UserOAuthCRUD:
     
     def update_oauth_tokens(self, db: Session, oauth_id: int, access_token: str, 
                           refresh_token: Optional[str] = None, expires_at: Optional[datetime] = None) -> bool:
-        """更新OAuth tokens"""
+        """Update OAuth tokens"""
         oauth_account = db.query(UserOAuth).filter(UserOAuth.id == oauth_id).first()
         if not oauth_account:
             return False
@@ -351,7 +351,7 @@ class UserSessionCRUD:
         return expired_count
     
     def get_user_sessions(self, db: Session, user_id: int) -> List[UserSession]:
-        """获取用户的所有活跃会话"""
+        """Get all active sessions for user"""
         return db.query(UserSession).filter(
             and_(
                 UserSession.user_id == user_id,

@@ -1,5 +1,5 @@
 """
-认证相关的API路由
+Authentication-related API routes
 """
 from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from fastapi.security import OAuth2PasswordRequestForm
@@ -32,9 +32,9 @@ from scrumix.api.core.config import settings
 
 router = APIRouter()
 
-@router.post("/register", response_model=UserResponse)
+@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(user_create: UserCreate, db: Session = Depends(get_db)):
-    """用户注册"""
+    """User registration"""
     if not user_create.password:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -44,7 +44,7 @@ async def register(user_create: UserCreate, db: Session = Depends(get_db)):
     try:
         user = user_crud.create_user(db, user_create)
         
-        # 发送邮箱验证邮件（这里需要实现邮件服务）
+        # Send email verification (email service needs to be implemented here)
         # verification_token = create_email_verification_token(user.email)
         # send_verification_email(user.email, verification_token)
         
@@ -77,10 +77,16 @@ async def login(
             detail="Inactive user"
         )
     
-    # 创建访问令牌
+    # Create access token
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": str(user.id), "email": user.email}, 
+        data={
+            "sub": str(user.id), 
+            "email": user.email,
+            "username": user.username,
+            "full_name": user.full_name,
+            "provider": "local"
+        }, 
         expires_delta=access_token_expires
     )
     
@@ -91,11 +97,17 @@ async def login(
         expires_delta=access_token_expires
     )
     
-    # 创建刷新令牌（如果选择了记住我）
+    # Create refresh token (if remember me is selected)
     refresh_token = None
     if login_data.remember_me:
         refresh_token = create_refresh_token(
-            data={"sub": str(user.id), "email": user.email}
+            data={
+                "sub": str(user.id), 
+                "email": user.email,
+                "username": user.username,
+                "full_name": user.full_name,
+                "provider": "local"
+            }
         )
         # Set refresh token as secure HTTP-only cookie
         set_refresh_token_cookie(
@@ -104,20 +116,20 @@ async def login(
             expires_delta=timedelta(days=7)
         )
     
-    # 创建会话记录
+    # Create session record
     session_expires = datetime.now() + access_token_expires
     if login_data.remember_me:
         session_expires = datetime.now() + timedelta(days=7)
     
+    # Generate session token
+    session_token = secrets.token_urlsafe(32)
     session = session_crud.create_session(
         db,
         user.id,
-        session_expires,
-        user_agent=request.headers.get("User-Agent"),
-        ip_address=request.client.host
+        session_token
     )
     
-    # 更新最后登录时间
+    # Update last login time
     user_crud.update_last_login(db, user.id)
     
     return LoginResponse(
@@ -135,7 +147,7 @@ async def logout(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """用户登出 - Enhanced with secure cookie clearing for all auth methods"""
+    """User logout - Enhanced with secure cookie clearing for all auth methods"""
     # Clear all authentication cookies (both internal and Keycloak)
     clear_auth_cookies(response)
     
@@ -166,12 +178,12 @@ async def logout(
 
 @router.get("/oauth/keycloak/authorize")
 async def keycloak_authorize(origin: str = "login"):
-    """获取Keycloak OAuth授权URL"""
-    # 后端callback的redirect_uri
+    """Get Keycloak OAuth authorization URL"""
+    # Backend callback redirect_uri
     redirect_uri = f"{settings.BACKEND_URL}/api/v1/auth/oauth/keycloak/callback"
-    # 生成基础状态令牌
+    # Generate base state token
     base_state = secrets.token_urlsafe(32)
-    # 将origin编码到状态中：{base_state}:{origin}
+    # Encode origin into state: {base_state}:{origin}
     encoded_state = f"{base_state}:{origin}"
     
     authorization_url = keycloak_oauth.get_authorization_url(
@@ -191,23 +203,23 @@ async def keycloak_callback_get(
     error: str = None,
     error_description: str = None
 ):
-    """处理Keycloak OAuth GET回调（Keycloak重定向到这里）- 简化版本，不存储到数据库"""
+    """Handle Keycloak OAuth GET callback (Keycloak redirects here) - Simplified version, not stored in database"""
     frontend_url = settings.FRONTEND_URL or "http://localhost:3000"
     
-    # 解码状态以获取origin信息
-    origin = "login"  # 默认为login
+    # Decode state to get origin information
+    origin = "login"  # Default to login
     if state and ":" in state:
         try:
             base_state, origin = state.split(":", 1)
         except ValueError:
-            # 如果解析失败，使用原始state和默认origin
+            # If parsing fails, use original state and default origin
             pass
     
-    # 根据origin确定重定向页面
+    # Determine redirect page based on origin
     redirect_page = "/auth/signup" if origin == "signup" else "/auth/login"
     
     try:
-        # 检查是否有错误
+        # Check for errors
         if error:
             error_msg = error_description or f"OAuth error: {error}"
             return RedirectResponse(
@@ -215,14 +227,14 @@ async def keycloak_callback_get(
                 status_code=302
             )
         
-        # 检查必需的参数
+        # Check required parameters
         if not code or not state:
             return RedirectResponse(
                 url=f"{frontend_url}{redirect_page}?error=Missing authorization code or state",
                 status_code=302
             )
         
-        # 直接重定向到前端，让前端处理token交换
+        # Redirect directly to frontend, let frontend handle token exchange
         return RedirectResponse(
             url=f"{frontend_url}{redirect_page}?code={code}&state={state}",
             status_code=302
@@ -241,8 +253,8 @@ async def keycloak_callback(
     request: Request,
     response: Response
 ):
-    """处理Keycloak OAuth回调 - Enhanced with secure cookie support"""
-    # 用授权码换取access token
+    """Handle Keycloak OAuth callback - Enhanced with secure cookie support"""
+    # Exchange authorization code for access token
     token_data = await keycloak_oauth.exchange_code_for_token(
         oauth_request.code, 
         oauth_request.redirect_uri
@@ -254,7 +266,7 @@ async def keycloak_callback(
             detail="Failed to exchange code for token"
         )
     
-    # 获取用户信息
+    # Get user information
     user_info = await keycloak_oauth.get_user_info(token_data["access_token"])
     if not user_info:
         raise HTTPException(
@@ -262,9 +274,9 @@ async def keycloak_callback(
             detail="Failed to get user info from Keycloak"
         )
     
-    # 构建用户数据
+    # Build user data
     user_data = {
-        "id": user_info["sub"],  # 使用Keycloak的subject ID
+        "id": user_info["sub"],  # Use Keycloak's subject ID
         "email": user_info["email"],
         "full_name": user_info.get("name"),
         "username": user_info.get("preferred_username"),
@@ -277,7 +289,7 @@ async def keycloak_callback(
     print(f"🔐 Keycloak user_info received: {user_info}")
     print(f"📝 Mapped user_data: {user_data}")
     
-    # 创建内部JWT token用于统一认证架构 - Include full user data
+    # Create internal JWT token for unified authentication architecture - Include full user data
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     internal_access_token = create_access_token(
         data={
@@ -291,15 +303,15 @@ async def keycloak_callback(
         expires_delta=access_token_expires
     )
     
-    # 设置安全的HTTP-only cookies
-    # 1. 内部访问令牌cookie (用于统一认证)
+    # Set secure HTTP-only cookies
+    # 1. Internal access token cookie (for unified authentication)
     set_access_token_cookie(
         response,
         internal_access_token,
         expires_delta=access_token_expires
     )
     
-    # 2. Keycloak访问令牌cookie (用于直接与Keycloak API通信)
+    # 2. Keycloak access token cookie (for direct communication with Keycloak API)
     keycloak_expires = timedelta(seconds=token_data.get("expires_in", 3600))
     set_session_cookie(
         response,
@@ -309,27 +321,27 @@ async def keycloak_callback(
         httponly=True
     )
     
-    # 3. Keycloak刷新令牌cookie (如果可用)
+    # 3. Keycloak refresh token cookie (if available)
     if token_data.get("refresh_token"):
         set_session_cookie(
             response,
             "keycloak_refresh_token",
             token_data["refresh_token"],
-            expires_delta=timedelta(days=30),  # Keycloak refresh tokens通常持续更长时间
+            expires_delta=timedelta(days=30),  # Keycloak refresh tokens typically last longer
             httponly=True
         )
     
-    # 返回安全响应 - 不在响应体中暴露敏感tokens
+    # Return secure response - do not expose sensitive tokens in response body
     return {
-        "access_token": internal_access_token,  # 我们的内部token (向后兼容)
+        "access_token": internal_access_token,  # Our internal token (backward compatible)
         "token_type": "bearer",
         "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         "user": user_data,
         "provider": "keycloak",
-        "auth_method": "cookie",  # 指示使用cookie认证
-        # 移除敏感的Keycloak tokens从响应体
-        # "keycloak_access_token": token_data["access_token"],  # 现在在cookie中
-        # "keycloak_refresh_token": token_data.get("refresh_token"),  # 现在在cookie中
+        "auth_method": "cookie",  # Indicates using cookie authentication
+        # Remove sensitive Keycloak tokens from response body
+        # "keycloak_access_token": token_data["access_token"],  # Now in cookie
+        # "keycloak_refresh_token": token_data.get("refresh_token"),  # Now in cookie
         "keycloak_expires_in": token_data.get("expires_in", 3600)
     }
 
@@ -339,7 +351,7 @@ async def refresh_token(
     response: Response,
     db: Session = Depends(get_db)
 ):
-    """刷新访问令牌 - Using refresh token from secure cookie"""
+    """Refresh access token - Using refresh token from secure cookie"""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate refresh token",
@@ -367,7 +379,13 @@ async def refresh_token(
     # Create new access token
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     new_access_token = create_access_token(
-        data={"sub": str(user.id), "email": user.email},
+        data={
+            "sub": str(user.id), 
+            "email": user.email,
+            "username": user.username,
+            "full_name": user.full_name,
+            "provider": "local"
+        },
         expires_delta=access_token_expires
     )
     
@@ -391,30 +409,30 @@ async def refresh_keycloak_token(
     request: Request,
     response: Response
 ):
-    """刷新Keycloak令牌 - Using Keycloak refresh token from secure cookie"""
+    """Refresh Keycloak token - Using Keycloak refresh token from secure cookie"""
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Could not validate Keycloak refresh token",
         headers={"WWW-Authenticate": "Bearer"},
     )
     
-    # 从cookie获取Keycloak refresh token
+    # Get Keycloak refresh token from cookie
     keycloak_refresh_token = get_session_cookie(request, "keycloak_refresh_token")
     if not keycloak_refresh_token:
         raise credentials_exception
     
     try:
-        # 使用Keycloak refresh token获取新的access token
+        # Use Keycloak refresh token to get new access token
         token_data = await keycloak_oauth.refresh_access_token(keycloak_refresh_token)
         if not token_data:
             raise credentials_exception
         
-        # 获取用户信息 (验证新token有效性)
+        # Get user information (verify new token validity)
         user_info = await keycloak_oauth.get_user_info(token_data["access_token"])
         if not user_info:
             raise credentials_exception
         
-        # 构建用户数据
+        # Build user data
         user_data = {
             "id": user_info["sub"],
             "email": user_info["email"],
@@ -425,7 +443,7 @@ async def refresh_keycloak_token(
             "provider": "keycloak"
         }
         
-        # 创建新的内部JWT token - Include full user data
+        # Create new internal JWT token - Include full user data
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         new_internal_token = create_access_token(
             data={
@@ -439,15 +457,15 @@ async def refresh_keycloak_token(
             expires_delta=access_token_expires
         )
         
-        # 更新安全cookies
-        # 1. 更新内部访问令牌
+        # Update secure cookies
+        # 1. Update internal access token
         set_access_token_cookie(
             response,
             new_internal_token,
             expires_delta=access_token_expires
         )
         
-        # 2. 更新Keycloak访问令牌
+        # 2. Update Keycloak access token
         keycloak_expires = timedelta(seconds=token_data.get("expires_in", 3600))
         set_session_cookie(
             response,
@@ -457,7 +475,7 @@ async def refresh_keycloak_token(
             httponly=True
         )
         
-        # 3. 如果获得新的refresh token，也更新它
+        # 3. If new refresh token is obtained, also update it
         if token_data.get("refresh_token"):
             set_session_cookie(
                 response,
@@ -486,7 +504,7 @@ async def change_password(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """修改密码"""
+    """Change password"""
     success = user_crud.change_password(
         db,
         current_user.id,
@@ -500,7 +518,7 @@ async def change_password(
             detail="Invalid current password"
         )
     
-    # 停用所有会话，强制重新登录
+    # Deactivate all sessions, force re-login
     session_crud.deactivate_user_sessions(db, current_user.id)
     
     return {"message": "Password changed successfully"}
@@ -510,14 +528,14 @@ async def request_password_reset(
     reset_request: PasswordResetRequest,
     db: Session = Depends(get_db)
 ):
-    """请求密码重置"""
+    """Request password reset"""
     user = user_crud.get_by_email(db, reset_request.email)
     if user:
-        # 创建重置令牌并发送邮件
+        # Create reset token and send email
         reset_token = create_password_reset_token(user.email)
         # send_password_reset_email(user.email, reset_token)
     
-    # 无论用户是否存在都返回成功，避免邮箱枚举攻击
+    # Always return success regardless of whether user exists, avoid email enumeration attacks
     return {"message": "If the email exists, a password reset link has been sent"}
 
 @router.post("/password/reset/confirm")
@@ -525,7 +543,7 @@ async def confirm_password_reset(
     reset_data: PasswordResetConfirm,
     db: Session = Depends(get_db)
 ):
-    """确认密码重置"""
+    """Confirm password reset"""
     email = verify_password_reset_token(reset_data.token)
     if not email:
         raise HTTPException(
@@ -540,10 +558,10 @@ async def confirm_password_reset(
             detail="User not found"
         )
     
-    # 重置密码
+    # Reset password
     user_crud.reset_password(db, user.id, reset_data.new_password)
     
-    # 停用所有会话
+    # Deactivate all sessions
     session_crud.deactivate_user_sessions(db, user.id)
     
     return {"message": "Password reset successfully"}
@@ -552,7 +570,7 @@ async def confirm_password_reset(
 async def get_current_user_info(
     current_user = Depends(get_current_user)
 ):
-    """获取当前用户信息 - Works with both header and cookie authentication"""
+    """Get current user information - Works with both header and cookie authentication"""
     return current_user
 
 @router.get("/verify")
@@ -560,7 +578,7 @@ async def verify_authentication(
     request: Request,
     current_user = Depends(get_current_user)
 ):
-    """验证用户认证状态 - Test endpoint for cookie authentication"""
+    """Verify user authentication status - Test endpoint for cookie authentication"""
     return {
         "authenticated": True,
         "user_id": current_user.id,
