@@ -6,21 +6,79 @@ import {
   Plus, Search, Filter, Edit2, Trash2, FolderOpen, 
   Zap, Play, Square, Calendar, Target, TrendingUp,
   Clock, Users, CheckCircle, AlertCircle, MoreHorizontal,
-  X, ChevronDown, BarChart3, ArrowRight, Loader2
+  X, ChevronDown, BarChart3, ArrowRight
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
-import { useSprints } from '@/hooks/useSprints';
-import { useProject } from '@/hooks/useProjects';
-import type { SprintUI } from '@/types/api';
 
 
-// Use SprintUI from API types
-type Sprint = SprintUI;
+interface Sprint {
+  id: string;
+  name: string;
+  goal: string;
+  status: 'planning' | 'active' | 'completed' | 'cancelled';
+  startDate: string;
+  endDate: string;
+  capacity: number; // story points
+  totalStoryPoints: number;
+  completedStoryPoints: number;
+  totalStories: number;
+  completedStories: number;
+  teamMembers: string[];
+  createdAt: string;
+}
 
 interface ProjectSprintsProps {
   params: Promise<{ 'project-id': string }>;
 }
 
+// Mock sprint data
+const mockSprints: Sprint[] = [
+  {
+    id: '1',
+    name: 'Sprint 1 - Authentication Foundation',
+    goal: 'Implement core user authentication system and basic user management features',
+    status: 'completed',
+    startDate: '2025-06-15',
+    endDate: '2025-07-05',
+    capacity: 40,
+    totalStoryPoints: 38,
+    completedStoryPoints: 38,
+    totalStories: 8,
+    completedStories: 8,
+    teamMembers: ['Sarah Johnson', 'Mike Chen', 'Emily Rodriguez'],
+    createdAt: '2025-06-15',
+  },
+  {
+    id: '2',
+    name: 'Sprint 2 - E-commerce Core',
+    goal: 'Build shopping cart, product catalog, and basic checkout functionality',
+    status: 'active',
+    startDate: '2025-07-15',
+    endDate: '2025-07-29',
+    capacity: 45,
+    totalStoryPoints: 42,
+    completedStoryPoints: 28,
+    totalStories: 10,
+    completedStories: 6,
+    teamMembers: ['Sarah Johnson', 'Mike Chen', 'Emily Rodriguez', 'David Park'],
+    createdAt: '2024-02-25',
+  },
+  {
+    id: '3',
+    name: 'Sprint 3 - Payment Integration',
+    goal: 'Integrate payment gateway and complete order processing workflow',
+    status: 'planning',
+    startDate: '2025-07-30',
+    endDate: '2025-08-13',
+    capacity: 50,
+    totalStoryPoints: 0,
+    completedStoryPoints: 0,
+    totalStories: 0,
+    completedStories: 0,
+    teamMembers: ['Sarah Johnson', 'Mike Chen', 'Emily Rodriguez', 'David Park'],
+    createdAt: '2024-03-01',
+  },
+];
 
 // Add CreateSprintModal component
 const CreateSprintModal: React.FC<{
@@ -580,20 +638,7 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
   const resolvedParams = React.use(params);
   const projectId = resolvedParams['project-id'];
 
-  // API hooks
-  const { project, isLoading: projectLoading, error: projectError } = useProject(projectId);
-  const { 
-    sprints, 
-    isLoading: sprintsLoading, 
-    error: sprintsError, 
-    createSprint, 
-    updateSprint, 
-    deleteSprint,
-    startSprint,
-    completeSprint 
-  } = useSprints(projectId);
-
-  // Local state
+  const [sprints, setSprints] = useState<Sprint[]>(mockSprints);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);

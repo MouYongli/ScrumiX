@@ -1,29 +1,114 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, User, Calendar, Flag, MoreHorizontal, Filter, Search, FolderOpen, Kanban, X, ChevronDown, Clock, CalendarDays, LayoutGrid, Loader2, AlertCircle } from 'lucide-react';
+import { Plus, User, Calendar, Flag, MoreHorizontal, Filter, Search, FolderOpen, Kanban, X, ChevronDown, Clock, CalendarDays, LayoutGrid } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
-import { useSprintTasks } from '@/hooks/useTasks';
-import { useProject } from '@/hooks/useProjects';
-import { useActiveSprint } from '@/hooks/useSprints';
-import type { TaskUI, TaskStatus } from '@/types/api';
 import 'vis-timeline/styles/vis-timeline-graph2d.css';
 
-// Use TaskUI from API types
-type Task = TaskUI;
+interface Task {
+  id: string;
+  title: string;
+  description: string;
+  assignees: string[];
+  priority: 'low' | 'medium' | 'high' | 'urgent';
+  storyPoints: number;
+  status: 'todo' | 'in-progress' | 'review' | 'done';
+  labels: string[];
+  dueDate?: string;
+  epic?: string;
+  sprintId?: string;
+}
 
 interface Column {
-  id: TaskStatus;
+  id: string;
   title: string;
   tasks: Task[];
   color: string;
   limit?: number;
 }
 
+const mockTasks: Task[] = [
+  {
+    id: '1',
+    title: 'User Login Page Design',
+    description: 'Design user-friendly login interface with form validation and error handling',
+    assignees: ['John Smith'],
+    priority: 'high',
+    storyPoints: 5,
+    status: 'todo',
+    labels: ['UI/UX', 'Frontend'],
+    dueDate: '2024-03-20',
+    epic: 'User Authentication System',
+    sprintId: '1',
+  },
+  {
+    id: '2',
+    title: 'Password Reset Feature Development',
+    description: 'Implement email verification password reset flow',
+    assignees: ['Sarah Johnson'],
+    priority: 'medium',
+    storyPoints: 8,
+    status: 'in-progress',
+    labels: ['Backend', 'API'],
+    dueDate: '2024-03-25',
+    epic: 'User Authentication System',
+    sprintId: '1',
+  },
+  {
+    id: '3',
+    title: 'Product List Page Optimization',
+    description: 'Optimize product list loading performance and user experience',
+    assignees: ['Mike Chen'],
+    priority: 'medium',
+    storyPoints: 3,
+    status: 'review',
+    labels: ['Frontend', 'Performance'],
+    dueDate: '2024-03-18',
+    epic: 'Product Management',
+    sprintId: '1',
+  },
+  {
+    id: '4',
+    title: 'Payment API Integration',
+    description: 'Integrate third-party payment platform API',
+    assignees: ['Emily Rodriguez'],
+    priority: 'urgent',
+    storyPoints: 13,
+    status: 'done',
+    labels: ['Backend', 'Payment'],
+    epic: 'Order System',
+    sprintId: '1',
+  },
+  {
+    id: '5',
+    title: 'Shopping Cart Testing',
+    description: 'Write unit tests and integration tests',
+    assignees: ['David Park'],
+    priority: 'low',
+    storyPoints: 2,
+    status: 'todo',
+    labels: ['Testing'],
+    dueDate: '2024-03-30',
+    epic: 'Shopping System',
+    sprintId: '1',
+  },
+  {
+    id: '6',
+    title: 'Database Performance Optimization',
+    description: 'Optimize product query SQL and add indexes',
+    assignees: ['Sarah Johnson', 'Mike Chen'],
+    priority: 'high',
+    storyPoints: 5,
+    status: 'in-progress',
+    labels: ['Backend', 'Database'],
+    epic: 'Performance Optimization',
+    sprintId: '1',
+  },
+];
 
 const columns: Column[] = [
   { id: 'todo', title: 'To Do', color: 'bg-gray-100 dark:bg-gray-700', tasks: [] },
-  { id: 'in_progress', title: 'In Progress', color: 'bg-blue-100 dark:bg-blue-900/20', tasks: [] },
+  { id: 'in-progress', title: 'In Progress', color: 'bg-blue-100 dark:bg-blue-900/20', tasks: [] },
   { id: 'review', title: 'Awaiting Review', color: 'bg-yellow-100 dark:bg-yellow-900/20', tasks: [] },
   { id: 'done', title: 'Completed', color: 'bg-green-100 dark:bg-green-900/20', tasks: [] },
 ];
@@ -208,7 +293,7 @@ const TimelineView: React.FC<{
             const startDate = new Date(task.dueDate!);
             // Create end date based on story points (1 point = 1 day)
             const endDate = new Date(startDate);
-            endDate.setDate(startDate.getDate() + (task.story_point || 1));
+            endDate.setDate(startDate.getDate() + (task.storyPoints || 1));
 
             items.add({
               id: task.id,
@@ -218,7 +303,7 @@ const TimelineView: React.FC<{
                   <div class="story-timeline-title">${task.title}</div>
                   <div class="story-timeline-meta">
                     <span class="story-priority">${getPriorityIcon(task.priority)} ${task.priority.toUpperCase()}</span>
-                    <span class="story-points">${task.story_point}SP</span>
+                    <span class="story-points">${task.storyPoints}SP</span>
                     <span class="story-assignees">${task.assignees.join(', ') || 'Unassigned'}</span>
                   </div>
                   ${task.labels.length > 0 ? `
@@ -826,7 +911,7 @@ const CalendarView: React.FC<{
                       key={task.id}
                       className={`text-xs p-1 rounded truncate ${
                         task.status === 'done' ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400' :
-                        task.status === 'in_progress' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400' :
+                        task.status === 'in-progress' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400' :
                         task.status === 'review' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400' :
                         'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
                       }`}
@@ -970,7 +1055,7 @@ const KanbanView: React.FC<{
                     <span className={`px-2 py-1 rounded-full ${getPriorityColor(task.priority)}`}>
                       {getPriorityIcon(task.priority)} {task.priority.toUpperCase()}
                     </span>
-                    <span className="font-medium">{task.story_point}SP</span>
+                    <span className="font-medium">{task.storyPoints}SP</span>
                   </div>
                 </div>
 
@@ -1074,11 +1159,9 @@ const CreateTaskModal: React.FC<{
       assignees: formData.assignees,
       priority: formData.priority,
       status: formData.status,
-      story_point: 1, // Default story points
+      storyPoints: 1, // Default story points
       labels: formData.labels,
-      sprintId: '1', // Default sprint ID
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
+      sprintId: '1' // Default sprint ID
     });
     
     // Reset form
@@ -1407,7 +1490,7 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ params }) => {
 
   const filteredTasks = tasks.filter(task => {
     const matchesSearch = task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         (task.description || '').toLowerCase().includes(searchTerm.toLowerCase());
+                         task.description.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesAssignee = !selectedAssignee || task.assignees.includes(selectedAssignee);
     const matchesPriority = !selectedPriority || task.priority === selectedPriority;
     

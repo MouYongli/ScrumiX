@@ -4,84 +4,179 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { 
   Plus, Search, Filter, ArrowUpDown, Edit2, Trash2, 
-  FolderOpen, ListTodo, ChevronDown, ChevronRight, AlertCircle, Calendar, Clock, Loader2
+  FolderOpen, ListTodo, ChevronDown, ChevronRight, AlertCircle, Calendar, Clock
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
 import BacklogItemModal from '@/components/common/BacklogItemModal';
-import { useBacklogItems } from '@/hooks/useBacklog';
-import { useProject } from '@/hooks/useProjects';
-import type { BacklogItemUI } from '@/types/api';
 
-// Use BacklogItemUI from API types
-type BacklogItem = BacklogItemUI;
-
-// Interface for the modal component (keeping legacy field names for compatibility)
-interface ModalBacklogItem {
+interface BacklogItem {
   id: string;
   title: string;
   description: string;
   acceptanceCriteria: string[];
-  priority: 'critical' | 'high' | 'medium' | 'low';
-  status: 'todo' | 'in_progress' | 'in_review' | 'done' | 'cancelled';
+  priority: 'high' | 'medium' | 'low';
+  status: 'new' | 'ready' | 'in-progress' | 'done' | 'blocked';
   storyPoints: number;
   createdAt: string;
   lastUpdated: string;
   assignee?: string;
-  labels: string[];
-  parentId?: string;
-  type: 'epic' | 'story' | 'task' | 'bug' | 'feature' | 'improvement';
-  hierarchyLevel: number;
+  labels: ('epic' | 'user-story' | 'bug' | 'enhancement')[];
+  parentId?: string; // Reference to parent item (epic for user stories)
+  type: 'epic' | 'user-story' | 'bug' | 'enhancement';
+  hierarchyLevel: number; // 0 for epics, 1 for user stories
 }
 
 interface ProjectBacklogProps {
   params: Promise<{ 'project-id': string }>;
 }
 
-// Mock data removed - now using API integration
+// Enhanced mock backlog data with hierarchical structure
+const mockBacklogItems: BacklogItem[] = [
+  // Epic: User Authentication System
+  {
+    id: '001',
+    title: 'User Authentication System',
+    description: 'As a product owner, I want a comprehensive authentication system so that users can securely access the application.',
+    acceptanceCriteria: [
+      'Multiple OAuth providers supported',
+      'Security best practices implemented',
+      'User session management included',
+      'Password recovery functionality available'
+    ],
+    priority: 'high',
+    status: 'in-progress',
+    storyPoints: 0, // Epics typically don't have story points
+    createdAt: '2024-03-10',
+    lastUpdated: '2024-03-15',
+    assignee: 'John Smith',
+    labels: ['epic'],
+    type: 'epic',
+    hierarchyLevel: 0,
+  },
+  // User Story 1: Login with Google OAuth (child of Epic 001)
+  {
+    id: '002',
+    title: 'Login with Google OAuth',
+    description: 'As a user, I want to log in using my Google account so that I can quickly access the system without creating a new password.',
+    acceptanceCriteria: [
+      'Google OAuth integration works correctly',
+      'User profile information is retrieved from Google',
+      'Account linking works for existing users',
+      'Error handling for failed OAuth attempts'
+    ],
+    priority: 'high',
+    status: 'ready',
+    storyPoints: 5,
+    createdAt: '2024-03-11',
+    lastUpdated: '2024-03-16',
+    assignee: 'Jane Doe',
+    labels: ['user-story'],
+    parentId: '001',
+    type: 'user-story',
+    hierarchyLevel: 1,
+  },
+  // User Story 2: OAuth UI Implementation (child of Epic 001)
+  
+  // User Story 2: Login with GitHub OAuth (child of Epic 001)
+  {
+    id: '003',
+    title: 'Login with GitHub OAuth',
+    description: 'As a developer, I want to log in using my GitHub account so that I can access the system using my preferred developer platform.',
+    acceptanceCriteria: [
+      'GitHub OAuth integration works correctly',
+      'Developer profile information is retrieved',
+      'Repository access permissions are handled',
+      'Fallback authentication available'
+    ],
+    priority: 'medium',
+    status: 'new',
+    storyPoints: 5,
+    createdAt: '2024-03-12',
+    lastUpdated: '2024-03-15',
+    assignee: 'Alex Chen',
+    labels: ['user-story'],
+    parentId: '001',
+    type: 'user-story',
+    hierarchyLevel: 1,
+  },
+  // User Story 3: Password Reset via Email (child of Epic 001)
+  {
+    id: '004',
+    title: 'Password Reset via Email',
+    description: 'As a user, I want to reset my password via email so that I can regain access to my account if I forget my credentials.',
+    acceptanceCriteria: [
+      'Email reset link is secure and time-limited',
+      'Password complexity requirements enforced',
+      'User receives confirmation email',
+      'Old sessions are invalidated on password change'
+    ],
+    priority: 'medium',
+    status: 'ready',
+    storyPoints: 3,
+    createdAt: '2024-03-13',
+    lastUpdated: '2024-03-16',
+    assignee: 'Emma Davis',
+    labels: ['user-story'],
+    parentId: '001',
+    type: 'user-story',
+    hierarchyLevel: 1,
+  },
+  // Standalone Epic
+  {
+    id: '005',
+    title: 'E-commerce Shopping Features',
+    description: 'As a business owner, I want comprehensive shopping features so that customers can easily browse and purchase products.',
+    acceptanceCriteria: [
+      'Shopping cart functionality',
+      'Product catalog management',
+      'Payment processing integration',
+      'Order management system'
+    ],
+    priority: 'high',
+    status: 'new',
+    storyPoints: 0,
+    createdAt: '2024-03-09',
+    lastUpdated: '2024-03-16',
+    assignee: 'Product Team',
+    labels: ['epic'],
+    type: 'epic',
+    hierarchyLevel: 0,
+  },
+  // Standalone Bug
+  {
+    id: '006',
+    title: 'Fix Search Performance Issue',
+    description: 'Searching for products is slow',
+    acceptanceCriteria: [
+      'Search results load within 2 seconds',
+      'Auto-complete suggestions work properly',
+      'Search handles special characters correctly',
+      'No memory leaks in search functionality'
+    ],
+    priority: 'medium',
+    status: 'new',
+    storyPoints: 5,
+    createdAt: '2024-03-08',
+    lastUpdated: '2024-03-12',
+    labels: ['bug'],
+    type: 'bug',
+    hierarchyLevel: 0,
+  },
+];
 
 const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
   const resolvedParams = React.use(params);
   const projectId = resolvedParams['project-id'];
 
-  // API hooks
-  const { project, isLoading: projectLoading, error: projectError } = useProject(projectId);
-  const { 
-    backlogItems, 
-    isLoading: backlogLoading, 
-    error: backlogError, 
-    createBacklogItem, 
-    updateBacklogItem, 
-    deleteBacklogItem,
-    moveToSprint 
-  } = useBacklogItems(projectId);
-
-  // Local state
+  const [backlogItems, setBacklogItems] = useState<BacklogItem[]>(mockBacklogItems);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterPriority, setFilterPriority] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterLabel, setFilterLabel] = useState<string>('all');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState<ModalBacklogItem | null>(null);
+  const [editingItem, setEditingItem] = useState<BacklogItem | null>(null);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [collapsedHierarchy, setCollapsedHierarchy] = useState<Set<string>>(new Set());
-
-  // Transform BacklogItem to ModalBacklogItem for editing
-  const transformToModalItem = (item: BacklogItem): ModalBacklogItem => ({
-    id: item.id,
-    title: item.title,
-    description: item.description || '',
-    acceptanceCriteria: item.acceptanceCriteria,
-    priority: item.priority,
-    status: item.status,
-    storyPoints: item.storyPoints,
-    createdAt: item.createdAt,
-    lastUpdated: item.lastUpdated,
-    assignee: item.assignee,
-    labels: item.labels,
-    parentId: item.parentId,
-    type: item.type,
-    hierarchyLevel: item.hierarchyLevel,
-  });
 
   // Breadcrumb navigation
   const breadcrumbItems = [
@@ -135,7 +230,7 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
 
   const filteredItems = backlogItems.filter(item => {
     const matchesSearch = item.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         (item.description || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         item.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          item.acceptanceCriteria.some(criteria => criteria.toLowerCase().includes(searchTerm.toLowerCase()));
     const matchesPriority = filterPriority === 'all' || item.priority === filterPriority;
     const matchesStatus = filterStatus === 'all' || item.status === filterStatus;
@@ -146,53 +241,34 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
   const hierarchyItems = buildHierarchy(filteredItems);
   const displayItems = flattenHierarchy(hierarchyItems);
 
-  const handleAddItem = async (newItem: Omit<ModalBacklogItem, 'id' | 'createdAt' | 'lastUpdated'>) => {
-    try {
-      const createData = {
-        title: newItem.title,
-        description: newItem.description,
-        priority: newItem.priority as any, // Convert to backend type
-        status: newItem.status,
-        story_point: newItem.storyPoints,
-        item_type: newItem.type,
-        level: newItem.hierarchyLevel || 0,
-        project_id: parseInt(projectId),
-        parent_id: newItem.parentId ? parseInt(newItem.parentId) : undefined,
-      };
-      
-      await createBacklogItem(createData);
+  const handleAddItem = (newItem: Omit<BacklogItem, 'id' | 'createdAt' | 'lastUpdated'>) => {
+    const now = new Date().toISOString().split('T')[0];
+    const item: BacklogItem = {
+      ...newItem,
+      id: (backlogItems.length + 1).toString().padStart(3, '0'),
+      createdAt: now,
+      lastUpdated: now,
+      type: newItem.type || 'user-story',
+      hierarchyLevel: newItem.hierarchyLevel || 0,
+    };
+    setBacklogItems([...backlogItems, item]);
     setIsAddModalOpen(false);
-    } catch (error) {
-      console.error('Failed to create backlog item:', error);
-    }
   };
 
-  const handleEditItem = async (editedItem: ModalBacklogItem) => {
-    try {
-      const updateData = {
-        title: editedItem.title,
-        description: editedItem.description,
-        priority: editedItem.priority as any,
-        status: editedItem.status,
-        story_point: editedItem.storyPoints,
-        item_type: editedItem.type,
-        level: editedItem.hierarchyLevel,
-      };
-      
-      await updateBacklogItem(editedItem.id, updateData);
+  const handleEditItem = (editedItem: BacklogItem) => {
+    const updatedItem = {
+      ...editedItem,
+      lastUpdated: new Date().toISOString().split('T')[0],
+    };
+    setBacklogItems(backlogItems.map(item => 
+      item.id === editedItem.id ? updatedItem : item
+    ));
     setEditingItem(null);
-    } catch (error) {
-      console.error('Failed to update backlog item:', error);
-    }
   };
 
-  const handleDeleteItem = async (id: string) => {
+  const handleDeleteItem = (id: string) => {
     if (window.confirm('Are you sure you want to delete this PBI? This action cannot be undone.')) {
-      try {
-        await deleteBacklogItem(id);
-      } catch (error) {
-        console.error('Failed to delete backlog item:', error);
-      }
+      setBacklogItems(backlogItems.filter(item => item.id !== id));
     }
   };
 
@@ -218,7 +294,6 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
 
   const getPriorityColor = (priority: string) => {
     switch (priority) {
-      case 'critical': return 'text-red-800 bg-red-100 dark:bg-red-900/30 border-red-300 dark:border-red-700';
       case 'high': return 'text-red-600 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800';
       case 'medium': return 'text-yellow-600 bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800';
       case 'low': return 'text-green-600 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800';
@@ -228,11 +303,11 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
 
   const getStatusColor = (status: string) => {
     switch (status) {
-      case 'todo': return 'text-blue-600 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800';
-      case 'in_progress': return 'text-orange-600 bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800';
-      case 'in_review': return 'text-purple-600 bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800';
+      case 'new': return 'text-blue-600 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800';
+      case 'ready': return 'text-purple-600 bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800';
+      case 'in-progress': return 'text-orange-600 bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800';
       case 'done': return 'text-green-600 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800';
-      case 'cancelled': return 'text-red-600 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800';
+      case 'blocked': return 'text-red-600 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800';
       default: return 'text-gray-600 bg-gray-50 dark:bg-gray-900/20 border-gray-200 dark:border-gray-800';
     }
   };
@@ -240,51 +315,12 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
   const getLabelColor = (label: string) => {
     switch (label) {
       case 'epic': return 'bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-900/20 dark:text-purple-300 dark:border-purple-800';
-      case 'story': return 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-800';
-      case 'task': return 'bg-indigo-100 text-indigo-800 border-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-300 dark:border-indigo-800';
+      case 'user-story': return 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-800';
       case 'bug': return 'bg-red-100 text-red-800 border-red-200 dark:bg-red-900/20 dark:text-red-300 dark:border-red-800';
-      case 'feature': return 'bg-green-100 text-green-800 border-green-200 dark:bg-green-900/20 dark:text-green-300 dark:border-green-800';
-      case 'improvement': return 'bg-yellow-100 text-yellow-800 border-yellow-200 dark:bg-yellow-900/20 dark:text-yellow-300 dark:border-yellow-800';
+      case 'enhancement': return 'bg-green-100 text-green-800 border-green-200 dark:bg-green-900/20 dark:text-green-300 dark:border-green-800';
       default: return 'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-900/20 dark:text-gray-300 dark:border-gray-800';
     }
   };
-
-  // Loading state
-  if (backlogLoading || projectLoading) {
-    return (
-      <div className="space-y-8">
-        <Breadcrumb items={breadcrumbItems} />
-        <div className="flex justify-center items-center py-20">
-          <Loader2 className="w-8 h-8 animate-spin text-blue-600" />
-          <span className="ml-2 text-gray-600 dark:text-gray-400">Loading backlog...</span>
-        </div>
-      </div>
-    );
-  }
-
-  // Error state
-  if (backlogError || projectError) {
-    return (
-      <div className="space-y-8">
-        <Breadcrumb items={breadcrumbItems} />
-        <div className="flex flex-col items-center py-20">
-          <AlertCircle className="w-12 h-12 text-red-500 mb-4" />
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-            Failed to load backlog
-          </h3>
-          <p className="text-gray-600 dark:text-gray-400 mb-4 text-center">
-            {backlogError || projectError}
-          </p>
-          <button
-            onClick={() => window.location.reload()}
-            className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-          >
-            Try Again
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="space-y-8">
@@ -325,7 +361,7 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
         </div>
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
           <div className="text-2xl font-bold text-orange-600 dark:text-orange-400">
-            {backlogItems.filter(item => item.status === 'in_progress').length}
+            {backlogItems.filter(item => item.status === 'in-progress').length}
           </div>
           <div className="text-sm text-gray-600 dark:text-gray-400">In Progress</div>
         </div>
@@ -360,7 +396,6 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
               className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             >
               <option value="all">All Priorities</option>
-              <option value="critical">Critical Priority</option>
               <option value="high">High Priority</option>
               <option value="medium">Medium Priority</option>
               <option value="low">Low Priority</option>
@@ -372,11 +407,11 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
               className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
             >
               <option value="all">All Statuses</option>
-              <option value="todo">Todo</option>
-              <option value="in_progress">In Progress</option>
-              <option value="in_review">In Review</option>
+              <option value="new">New</option>
+              <option value="ready">Ready</option>
+              <option value="in-progress">In Progress</option>
               <option value="done">Done</option>
-              <option value="cancelled">Cancelled</option>
+              <option value="blocked">Blocked</option>
             </select>
 
             <select
@@ -386,11 +421,9 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
             >
               <option value="all">All Labels</option>
               <option value="epic">Epic</option>
-              <option value="story">Story</option>
-              <option value="task">Task</option>
+              <option value="user-story">User Story</option>
               <option value="bug">Bug</option>
-              <option value="feature">Feature</option>
-              <option value="improvement">Improvement</option>
+              <option value="enhancement">Enhancement</option>
             </select>
           </div>
         </div>
@@ -407,7 +440,7 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
             key={item.id} 
             className={`bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6 ${
               item.hierarchyLevel > 0 ? `ml-8 border-l-4 ${
-                item.type === 'story' ? 'border-l-blue-300' : 
+                item.type === 'user-story' ? 'border-l-blue-300' : 
                 'border-l-gray-300'
               }` : ''
             }`}
@@ -433,7 +466,7 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
                     )}
                     <span className={`text-sm font-mono text-gray-500 dark:text-gray-400 px-2 py-1 rounded ${
                       item.type === 'epic' ? 'bg-purple-100 dark:bg-purple-900/20' :
-                      item.type === 'story' ? 'bg-blue-100 dark:bg-blue-900/20' :
+                      item.type === 'user-story' ? 'bg-blue-100 dark:bg-blue-900/20' :
                       'bg-gray-100 dark:bg-gray-700'
                     }`}>
                       {item.type === 'epic' ? 'EPIC' : 'PBI'}-{item.id}
@@ -517,7 +550,7 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
               {/* Actions */}
               <div className="flex gap-2 ml-4">
                 <button
-                  onClick={() => setEditingItem(transformToModalItem(item))}
+                  onClick={() => setEditingItem(item)}
                   className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
                   title="Edit PBI"
                 >
@@ -565,20 +598,14 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
           setIsAddModalOpen(false);
           setEditingItem(null);
         }}
-        onSubmit={(item: any) => {
+        onSubmit={(item) => {
           if (editingItem) {
-            handleEditItem({ 
-              ...editingItem, 
-              ...item, 
-              id: editingItem.id, 
-              createdAt: editingItem.createdAt, 
-              lastUpdated: editingItem.lastUpdated 
-            } as ModalBacklogItem);
+            handleEditItem({ ...item, id: editingItem.id, createdAt: editingItem.createdAt, lastUpdated: editingItem.lastUpdated });
           } else {
-            handleAddItem(item as ModalBacklogItem);
+            handleAddItem(item);
           }
         }}
-        editingItem={editingItem as any}
+        editingItem={editingItem}
       />
     </div>
   );
