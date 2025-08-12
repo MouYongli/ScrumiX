@@ -1,155 +1,157 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { 
   Calendar, Users, CheckCircle2, Clock, Plus, ExternalLink, ArrowRight, Target, BarChart3
 } from 'lucide-react';
-
-interface Task {
-  id: number;
-  title: string;
-  priority: 'low' | 'medium' | 'high';
-}
-
-interface TodoTask extends Task {
-  dueDate: string;
-}
-
-interface InProgressTask extends Task {
-  assignedTo: string;
-  startedDate: string;
-}
-
-interface Meeting {
-  id: number;
-  title: string;
-  date: string;
-  time: string;
-  participants: number;
-}
-
-interface Project {
-  id: string;
-  name: string;
-  description: string;
-  role: string;
-  status: string;
-  color: string;
-  progress: number;
-  members: number;
-  todoTasks: TodoTask[];
-  inProgressTasks: InProgressTask[];
-  upcomingMeetings: Meeting[];
-}
-
-// Mock data for projects
-const projects: Project[] = [
-  {
-    id: '1',
-    name: 'E-commerce Platform Rebuild',
-    description: 'Modern e-commerce platform based on React',
-    role: 'Product Owner',
-    status: 'active',
-    color: 'bg-blue-500',
-    progress: 32,
-    members: 8,
-    todoTasks: [
-      {
-        id: 1,
-        title: 'Design user authentication flow',
-        dueDate: '2024-01-16',
-        priority: 'medium',
-      },
-      {
-        id: 2,
-        title: 'Setup database migrations',
-        dueDate: '2024-01-16',
-        priority: 'medium',
-      },
-    ] as TodoTask[],
-    inProgressTasks: [
-      {
-        id: 3,
-        title: 'Implement payment gateway integration',
-        assignedTo: 'You',
-        startedDate: '2024-01-08',
-        priority: 'high'
-      },
-      {
-        id: 4,
-        title: 'State responsive product catalog',
-        assignedTo: 'You',
-        startedDate: '2024-01-12',
-        priority: 'medium'
-      },
-    ] as InProgressTask[],
-    upcomingMeetings: [
-      {
-        id: 1,
-        title: 'Sprint Planning',
-        date: '2024-01-16',
-        time: '4 hr',
-        participants: 6,
-      },
-      {
-        id: 2,
-        title: 'Daily Standup',
-        date: '2024-01-16',
-        time: '± 5',
-        participants: 4,
-      },
-    ],
-  },
-  {
-    id: '2',
-    name: 'Mobile App Development',
-    description: 'Cross-platform mobile application project',
-    role: 'Scrum Master',
-    status: 'active',
-    color: 'bg-green-500',
-    progress: 65,
-    members: 5,
-    todoTasks: [
-      {
-        id: 5,
-        title: 'Design onboarding screens',
-        dueDate: '2024-01-17',
-        priority: 'high',
-      },
-    ] as TodoTask[],
-    inProgressTasks: [
-      {
-        id: 7,
-        title: 'User profile management',
-        assignedTo: 'You',
-        startedDate: '2024-01-11',
-        priority: 'medium'
-      },
-    ] as InProgressTask[],
-    upcomingMeetings: [],
-  },
-];
+import { api } from '@/utils/api';
+import { TaskStatus, TaskPriority, ProjectStatus, MeetingType } from '@/types/enums';
+import { User, ProjectWithDetails, Sprint } from '@/types/domain';
+import { 
+  mapApiUserToDomain, 
+  mapApiTaskToDomain, 
+  mapApiMeetingToDomain, 
+  mapApiProjectToDomain,
+  mapApiSprintToDomain,
+  createProjectWithDetails 
+} from '@/utils/mappers';
 
 const MyWorkspacePage = () => {
-  const getStatusBadge = (status: string) => {
-    return (
-      <span className="px-3 py-1 text-xs font-medium rounded-md bg-green-600 text-white">
-        Active
-      </span>
-    );
-  };
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [projects, setProjects] = useState<ProjectWithDetails[]>([]);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
 
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'high':
-        return 'bg-red-500 text-white';
-      case 'medium':
-        return 'bg-orange-500 text-white';
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+
+        // First fetch current user
+        const userResponse = await api.auth.getCurrentUser();
+        if (userResponse.error) throw new Error(userResponse.error);
+        const currentUser = mapApiUserToDomain(userResponse.data);
+        setCurrentUser(currentUser);
+
+        // Fetch all data concurrently for better performance
+        const [projectsResponse, sprintsResponse, tasksResponse, meetingsResponse] = await Promise.all([
+          api.projects.getAll(),
+          api.sprints.getAll(),
+          api.tasks.getAll({ limit: 1000 }),
+          api.meetings.getUpcoming(7)
+        ]);
+
+        if (projectsResponse.error) throw new Error(projectsResponse.error);
+        if (sprintsResponse.error) throw new Error(sprintsResponse.error);
+
+        // Map data to domain models
+        const projects = projectsResponse.data.map(mapApiProjectToDomain);
+        const sprints = sprintsResponse.error ? [] : sprintsResponse.data.map(mapApiSprintToDomain);
+        const allTasks = tasksResponse.error ? [] : tasksResponse.data.tasks.map(mapApiTaskToDomain);
+        const allMeetings = meetingsResponse.error ? [] : meetingsResponse.data.map(mapApiMeetingToDomain);
+
+        // Create sprint-to-project mapping
+        const sprintToProject = new Map<number, number>();
+        sprints.forEach(sprint => sprintToProject.set(sprint.id, sprint.projectId));
+
+        // Create projects with properly scoped tasks and meetings
+        const projectsWithDetails = projects.map(project => {
+          // Filter tasks by project (via sprint relationship)
+          const projectTasks = allTasks.filter(task => 
+            sprintToProject.get(task.sprintId) === project.id
+          );
+
+          // Filter tasks to only show assigned to current user (if assignedUsers exists)
+          const userTasks = projectTasks.filter(task =>
+            task.assignedUsers.length === 0 || // Show unassigned tasks
+            task.assignedUsers.some(user => user.id === currentUser.id)
+          );
+
+          // Filter meetings by project
+          const projectMeetings = allMeetings.filter(meeting => 
+            meeting.projectId === project.id
+          );
+
+          return createProjectWithDetails(project, userTasks, projectMeetings);
+        });
+
+        setProjects(projectsWithDetails);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load workspace data');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, []);
+
+  const getStatusBadge = (status: ProjectStatus) => {
+    switch (status) {
+      case ProjectStatus.ACTIVE:
+        return (
+          <span className="px-3 py-1 text-xs font-medium rounded-md bg-green-600 text-white">
+            Active
+          </span>
+        );
+      case ProjectStatus.PLANNING:
+        return (
+          <span className="px-3 py-1 text-xs font-medium rounded-md bg-blue-600 text-white">
+            Planning
+          </span>
+        );
+      case ProjectStatus.COMPLETED:
+        return (
+          <span className="px-3 py-1 text-xs font-medium rounded-md bg-gray-600 text-white">
+            Completed
+          </span>
+        );
+      case ProjectStatus.ON_HOLD:
+        return (
+          <span className="px-3 py-1 text-xs font-medium rounded-md bg-yellow-600 text-white">
+            On Hold
+          </span>
+        );
       default:
-        return 'bg-gray-500 text-white';
+        return (
+          <span className="px-3 py-1 text-xs font-medium rounded-md bg-red-600 text-white">
+            Cancelled
+          </span>
+        );
     }
   };
+
+
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white p-8 flex items-center justify-center">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 dark:border-white mx-auto"></div>
+          <p className="mt-4">Loading workspace...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white p-8 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-red-500 text-xl mb-4">Error loading workspace</div>
+          <p className="text-gray-600 dark:text-gray-400">{error}</p>
+          <button 
+            onClick={() => window.location.reload()}
+            className="mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 transition-colors"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white p-8">
@@ -174,7 +176,7 @@ const MyWorkspacePage = () => {
               {/* Project Header */}
               <div className="flex items-start justify-between mb-6">
                 <div className="flex items-start gap-4">
-                  <div className={`w-3 h-3 ${project.color} rounded-sm mt-2`}></div>
+                  <div className={`w-3 h-3 ${project.color || 'bg-blue-500'} rounded-sm mt-2`}></div>
                   <div className="flex-1">
                     <div className="flex items-center gap-3">
                       <Link 
@@ -185,14 +187,14 @@ const MyWorkspacePage = () => {
                       </Link>
                       <div className="flex items-center gap-2 text-gray-600 dark:text-gray-400">
                         <Users className="w-4 h-4" />
-                        <span className="text-sm">{project.members}</span>
+                        <span className="text-sm">{project.memberCount || 0}</span>
                       </div>
                     </div>
                     <p className="text-gray-600 dark:text-gray-400 text-base mt-1 mb-2">
                       {project.description}
                     </p>
                     <p className="text-gray-500 dark:text-gray-500 text-base">
-                      Role: {project.role}
+                      Role: {project.role || 'Member'}
                     </p>
                   </div>
                 </div>
@@ -222,24 +224,26 @@ const MyWorkspacePage = () => {
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-sm font-medium text-gray-900 dark:text-white">Todo</h3>
                     <span className="text-xs text-gray-600 dark:text-gray-400">
-                      {project.todoTasks.length} tasks
+                      {project.tasks.filter(t => t.status === TaskStatus.TODO).length} tasks
                     </span>
                   </div>
                   <div className="space-y-3">
-                    {project.todoTasks.map((task) => (
-                      <div key={task.id} className="space-y-2 bg-white dark:bg-gray-600 rounded-lg p-3 shadow-sm">
-                        <p className="text-sm text-gray-900 dark:text-gray-100 leading-relaxed">
-                          {task.title}
-                        </p>
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs text-gray-600 dark:text-gray-400">
-                            Due: {task.dueDate}
-                          </span>
-                          <span className={`px-2 py-1 text-xs rounded ${getPriorityColor(task.priority)}`}>
-                            {task.priority}
-                          </span>
+                    {project.tasks
+                      .filter(task => task.status === TaskStatus.TODO)
+                      .map((task) => (
+                        <div key={task.id} className="space-y-2 bg-white dark:bg-gray-600 rounded-lg p-3 shadow-sm">
+                          <p className="text-sm text-gray-900 dark:text-gray-100 leading-relaxed">
+                            {task.title}
+                          </p>
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs text-gray-600 dark:text-gray-400">
+                              Created: {task.createdAt.toLocaleDateString()}
+                            </span>
+                            <span className={`px-2 py-1 text-xs rounded ${task.priorityColor}`}>
+                              {task.priority}
+                            </span>
+                          </div>
                         </div>
-                      </div>
                     ))}
                   </div>
                 </div>
@@ -249,26 +253,33 @@ const MyWorkspacePage = () => {
                   <div className="flex items-center justify-between mb-4">
                     <h3 className="text-sm font-medium text-gray-900 dark:text-white">In Progress</h3>
                     <span className="text-xs text-gray-600 dark:text-gray-400">
-                      {project.inProgressTasks.length} task{project.inProgressTasks.length !== 1 ? 's' : ''}
+                      {project.tasks.filter(t => t.status === TaskStatus.IN_PROGRESS).length} tasks
                     </span>
                   </div>
                   <div className="space-y-3">
-                    {project.inProgressTasks.map((task) => (
-                      <div key={task.id} className="space-y-2 bg-white dark:bg-gray-600 rounded-lg p-3 shadow-sm">
-                        <p className="text-sm text-gray-900 dark:text-gray-100 leading-relaxed">
-                          {task.title}
-                        </p>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span className="text-xs text-gray-600 dark:text-gray-400">
-                              Start {task.startedDate}
+                    {project.tasks
+                      .filter(task => task.status === TaskStatus.IN_PROGRESS)
+                      .map((task) => (
+                        <div key={task.id} className="space-y-2 bg-white dark:bg-gray-600 rounded-lg p-3 shadow-sm">
+                          <p className="text-sm text-gray-900 dark:text-gray-100 leading-relaxed">
+                            {task.title}
+                          </p>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <span className="text-xs text-gray-600 dark:text-gray-400">
+                                Updated: {task.updatedAt.toLocaleDateString()}
+                              </span>
+                              {task.assignedUsers.length > 0 && (
+                                <span className="text-xs text-gray-600 dark:text-gray-400">
+                                  • {task.assignedUsers[0].displayName}
+                                </span>
+                              )}
+                            </div>
+                            <span className={`px-2 py-1 text-xs rounded ${task.priorityColor}`}>
+                              {task.priority}
                             </span>
                           </div>
-                          <span className={`px-2 py-1 text-xs rounded ${getPriorityColor(task.priority)}`}>
-                            {task.priority}
-                          </span>
                         </div>
-                      </div>
                     ))}
                   </div>
                 </div>
@@ -285,17 +296,22 @@ const MyWorkspacePage = () => {
                     {project.upcomingMeetings.length > 0 ? (
                       project.upcomingMeetings.map((meeting) => (
                         <div key={meeting.id} className="space-y-2 bg-white dark:bg-gray-600 rounded-lg p-3 shadow-sm">
-                          <p className="text-sm text-gray-900 dark:text-gray-100 leading-relaxed">
-                            {meeting.title}
-                          </p>
+                          <div className="flex items-center gap-2">
+                            <p className="text-sm text-gray-900 dark:text-gray-100 leading-relaxed flex-1">
+                              {meeting.title}
+                            </p>
+                            <span className="text-xs text-gray-500 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
+                              {meeting.meetingTypeDisplay}
+                            </span>
+                          </div>
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400">
                               <Calendar className="w-3 h-3" />
-                              <span>{meeting.date}</span>
-                              <span>• {meeting.participants}</span>
+                              <span>{meeting.startDateTime.toLocaleDateString()}</span>
+                              <span>• {meeting.participants.length} participants</span>
                             </div>
                             <span className="text-xs text-gray-600 dark:text-gray-400">
-                              {meeting.time}
+                              {meeting.displayDuration}
                             </span>
                           </div>
                         </div>
@@ -318,4 +334,4 @@ const MyWorkspacePage = () => {
   );
 };
 
-export default MyWorkspacePage; 
+export default MyWorkspacePage;
