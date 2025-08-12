@@ -29,7 +29,8 @@ async function jsonFetch<T>(endpoint: string, options?: RequestInit): Promise<Ap
 
 export const api = {
   auth: {
-    getCurrentUser: () => jsonFetch<ApiUser>('/api/v1/users/me'),
+    getCurrentUser: () => jsonFetch<ApiUser>('/api/v1/users/me'), // User profile endpoint
+    verifyAuth: () => jsonFetch<ApiUser>('/api/v1/auth/me'), // Auth verification endpoint
   },
   
   projects: {

@@ -3,6 +3,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from scrumix.api.db.base import Base
 from scrumix.api.core.config import settings
+from scrumix.api.db.models import *  # Import all models
 import os
 
 # Create database engine

@@ -250,7 +250,23 @@ src/
 - Use TypeScript exhaustiveness checking with `never` type
 - Prefer composition over inheritance
 - Keep components focused and single-purpose
-description:
-globs:
-alwaysApply: false
+- Do not use emojis in comments, or console logs
+- Use descriptive text instead of emojis for status indicators
+description: Frontend development guidelines for the ScrumiX project
+globs: ["frontend/**/*"]
+alwaysApply: true
+
+## No Emoji Policy
+
+- Do not use emojis anywhere in the codebase:
+  - No emojis in code or JSX
+  - No emojis in comments
+  - No emojis in console.log statements
+  - No emojis in documentation files
+  - No emojis in commit messages
+- Instead use:
+  - SVG icons for UI elements
+  - Text-based status indicators
+  - Descriptive log prefixes (e.g., "[Auth]", "[Error]")
+  - Clear text descriptions in documentation
 ---

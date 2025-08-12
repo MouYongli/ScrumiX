@@ -200,9 +200,11 @@ export const UserInfo: React.FC = () => {
         <p className="text-sm text-gray-500 dark:text-gray-400">
           {user.email}
         </p>
-        <p className="text-xs text-gray-400 dark:text-gray-500">
-          via {user.provider}
-        </p>
+        {user.provider && (
+          <p className="text-xs text-gray-400 dark:text-gray-500">
+            via {user.provider}
+          </p>
+        )}
       </div>
       <button
         onClick={handleLogout}

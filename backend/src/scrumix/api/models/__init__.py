@@ -3,6 +3,7 @@ Database models initialization
 """
 from .user import User, UserOAuth, UserSession
 from .project import Project, ProjectStatus
+from .user_project import UserProject, UserProjectRole
 from .backlog import Backlog, BacklogStatus, BacklogPriority
 from .documentation import Documentation, DocumentationType
 from .sprint import Sprint, SprintStatus

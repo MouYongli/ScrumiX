@@ -101,18 +101,15 @@ class Settings(BaseSettings):
         user = data.get("POSTGRES_USER") or "admin"
         password = data.get("POSTGRES_PASSWORD") or "postgres"
         host = data.get("POSTGRES_SERVER") or "localhost"
-        port = data.get("POSTGRES_PORT") or "5432"
+        port = "53584"  # Use the dynamic port from Docker
         db = data.get("POSTGRES_DB") or "scrumix"
-
-        if isinstance(port, str):
-            port = int(port)
         
         return PostgresDsn.build(
             scheme="postgresql",
             username=user,
             password=password,
             host=host,
-            port=port,
+            port=int(port),
             path=f"{db or ''}",
         )
 

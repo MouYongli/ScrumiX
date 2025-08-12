@@ -76,7 +76,7 @@ const LoginPage = () => {
     setIsLoading(true);
     
     try {
-      // Use REAL authentication instead of mock
+      // Call backend authentication API
       const { login } = await import('../../../utils/auth');
       
       const loginData = await login(
@@ -85,7 +85,7 @@ const LoginPage = () => {
         formData.rememberMe
       );
       
-      console.log('Real login successful:', loginData.user);
+      console.log('Backend login successful:', loginData.user);
       console.log('Auth method:', loginData.auth_method || 'cookie');
       
       // Redirect to workspace
@@ -191,19 +191,25 @@ const LoginPage = () => {
             <div className="space-y-4">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
-                  ✓
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+                  </svg>
                 </div>
                 <span>Visual Scrum board management</span>
               </div>
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
-                  ✓
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+                  </svg>
                 </div>
                 <span>Real-time team collaboration and communication</span>
               </div>
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
-                  ✓
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+                  </svg>
                 </div>
                 <span>Detailed project data analysis</span>
               </div>
@@ -241,7 +247,9 @@ const LoginPage = () => {
               onClick={() => handleSocialLogin('google')}
               className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
             >
-              <span className="text-lg">🔍</span>
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12.545,10.239v3.821h5.445c-0.712,2.315-2.647,3.972-5.445,3.972c-3.332,0-6.033-2.701-6.033-6.032s2.701-6.032,6.033-6.032c1.498,0,2.866,0.549,3.921,1.453l2.814-2.814C17.503,2.988,15.139,2,12.545,2C7.021,2,2.543,6.477,2.543,12s4.478,10,10.002,10c8.396,0,10.249-7.85,9.426-11.748L12.545,10.239z"/>
+              </svg>
               <span className="text-gray-700 dark:text-gray-300">Sign in with Google</span>
             </button>
             <button

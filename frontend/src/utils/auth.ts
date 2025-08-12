@@ -3,13 +3,20 @@
  */
 
 export interface User {
-  id: string;
+  id: number | string; // Support both local users (int) and Keycloak users (string)
   email: string;
   full_name?: string;
   username?: string;
   avatar_url?: string;
-  is_verified: boolean;
-  provider: string;
+  timezone?: string;
+  language?: string;
+  isActive?: boolean; // Backend returns isActive
+  isVerified?: boolean; // Backend returns isVerified  
+  is_verified?: boolean; // Keep backward compatibility
+  status?: string;
+  createdAt?: string;
+  lastLoginAt?: string;
+  provider?: string;
 }
 
 export interface LoginRequest {
@@ -30,15 +37,16 @@ export interface LoginResponse {
 
 /**
  * Set whether to use mock authentication (for development without database)
+ * NOTE: Now forcing real authentication to use the actual backend database
  */
-const USE_MOCK_AUTH = process.env.NODE_ENV === 'development' && !process.env.NEXT_PUBLIC_USE_REAL_AUTH;
+const USE_MOCK_AUTH = false; // Force real authentication to use backend database
 
 // Log authentication mode for debugging
 if (typeof window !== 'undefined') {
-  console.log(`🔐 Authentication Mode: ${USE_MOCK_AUTH ? 'MOCK (No Database Required)' : 'REAL (Database Required)'}`);
+  console.log(`[Auth] Mode: ${USE_MOCK_AUTH ? 'MOCK (No Database Required)' : 'REAL (Database Required)'}`);
   if (USE_MOCK_AUTH) {
-    console.log('💡 To use real authentication, set NEXT_PUBLIC_USE_REAL_AUTH=true in your .env.local file');
-    console.log('🔑 Keycloak authentication will work in hybrid mode (real backend + mock tokens)');
+    console.log('[Auth] To use real authentication, set NEXT_PUBLIC_USE_REAL_AUTH=true in your .env.local file');
+    console.log('[Auth] Keycloak authentication will work in hybrid mode (real backend + mock tokens)');
   }
 }
 
@@ -244,10 +252,10 @@ export const isAuthenticated = async (): Promise<boolean> => {
           const serverUser = await response.json();
           // Update local storage with fresh server data
           setCurrentUser(serverUser);
-          console.log('✅ Keycloak authentication verified with server:', serverUser);
+          console.log('[Auth] Keycloak authentication verified with server:', serverUser);
           return true;
         } else {
-          console.log('❌ Keycloak server verification failed');
+          console.log('[Auth] Keycloak server verification failed');
         }
       } catch (error) {
         console.error('Keycloak auth verification failed:', error);
@@ -542,8 +550,8 @@ export const loginWithKeycloak = async (
   const loginData: LoginResponse = await response.json();
   
   // Debug logging for Keycloak user data
-  console.log('🔐 Keycloak loginData received:', loginData);
-  console.log('👤 User data to store:', loginData.user);
+  console.log('[Auth] Keycloak loginData received:', loginData);
+  console.log('[Auth] User data to store:', loginData.user);
   
   // Store user data and set auth provider (works in both mock and real mode)
   setCurrentUser(loginData.user);
@@ -555,7 +563,7 @@ export const loginWithKeycloak = async (
     localStorage.setItem('mock_auth_expires', (Date.now() + (30 * 60 * 1000)).toString()); // 30 min
     localStorage.setItem('mock_refresh_token', 'keycloak-refresh-' + Date.now());
     localStorage.setItem('mock_refresh_expires', (Date.now() + (7 * 24 * 60 * 60 * 1000)).toString()); // 7 days
-    console.log('🔄 Mock mode detected: Set mock tokens for Keycloak session');
+    console.log('[Auth] Mock mode detected: Set mock tokens for Keycloak session');
   }
   
   return loginData;

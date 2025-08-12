@@ -1,15 +1,33 @@
-from sqlalchemy import Column, Integer, DateTime, ForeignKey
-from sqlalchemy.orm import relationship
+"""
+User-Task association model
+"""
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum as SQLEnum
 from sqlalchemy.sql import func
+from enum import Enum
+from sqlalchemy.orm import relationship
 
-from ..db.base import Base
+from scrumix.api.db.base import Base
+
+class UserTaskRole(str, Enum):
+    """User role in task enumeration"""
+    ASSIGNEE = "assignee"
+    REVIEWER = "reviewer"
+    WATCHER = "watcher"
 
 class UserTask(Base):
+    """Association table for User-Task many-to-many relationship"""
     __tablename__ = "user_task"
-    user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
-    task_id = Column(Integer, ForeignKey("tasks.id"), primary_key=True)
-    added_by = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    task_id = Column(Integer, ForeignKey("tasks.id"), nullable=False)
+    role = Column(SQLEnum(UserTaskRole), nullable=False, default=UserTaskRole.ASSIGNEE)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relationships
-    user = relationship("User", back_populates="user_tasks", overlaps="tasks,users")
-    task = relationship("Task", back_populates="user_tasks", overlaps="tasks,users") 
+    user = relationship("User", back_populates="user_tasks")
+    task = relationship("Task", back_populates="user_tasks")
+
+    def __repr__(self):
+        return f"<UserTask(user_id={self.user_id}, task_id={self.task_id}, role='{self.role.value}')>"

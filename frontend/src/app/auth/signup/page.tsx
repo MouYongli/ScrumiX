@@ -139,7 +139,7 @@ const SignupPage = () => {
     setIsLoading(true);
     
     try {
-      //  Use REAL registration instead of mock
+      // Call backend registration API
       const { register } = await import('../../../utils/auth');
       
       const user = await register({
@@ -173,14 +173,11 @@ const SignupPage = () => {
     setErrors({});
 
     try {
-      // Get authorization URL from backend with signup origin
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/auth/oauth/keycloak/authorize?origin=signup`);
+      // Import the auth function for consistency
+      const { getKeycloakAuthUrl } = await import('../../../utils/auth');
       
-      if (!response.ok) {
-        throw new Error('Failed to get authorization URL');
-      }
-
-      const data = await response.json();
+      // Get authorization URL using the auth utility
+      const data = await getKeycloakAuthUrl('signup');
       
       // Store state in localStorage for verification
       localStorage.setItem('oauth_state', data.state);
@@ -287,7 +284,9 @@ const SignupPage = () => {
               onClick={() => handleSocialSignup('google')}
               className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
             >
-              <span className="text-lg">🔍</span>
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12.545,10.239v3.821h5.445c-0.712,2.315-2.647,3.972-5.445,3.972c-3.332,0-6.033-2.701-6.033-6.032s2.701-6.032,6.033-6.032c1.498,0,2.866,0.549,3.921,1.453l2.814-2.814C17.503,2.988,15.139,2,12.545,2C7.021,2,2.543,6.477,2.543,12s4.478,10,10.002,10c8.396,0,10.249-7.85,9.426-11.748L12.545,10.239z"/>
+              </svg>
               <span className="text-gray-700 dark:text-gray-300">Sign up with Google</span>
             </button>
             <button
