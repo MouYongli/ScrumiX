@@ -1,28 +1,24 @@
 import React, { useEffect, useState } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
 
-interface BacklogItem {
-  id: string;
+import { BacklogPriority, BacklogStatus, BacklogType } from '@/types/api';
+
+interface BacklogFormData {
   title: string;
   description: string;
   acceptanceCriteria: string[];
-  priority: 'high' | 'medium' | 'low';
-  status: 'new' | 'ready' | 'in-progress' | 'done' | 'blocked';
-  storyPoints: number;
-  createdAt: string;
-  lastUpdated: string;
-  assignee?: string;
-  labels: ('epic' | 'user-story' | 'bug' | 'enhancement')[];
-  parentId?: string;
-  type: 'epic' | 'user-story' | 'bug' | 'enhancement';
-  hierarchyLevel: number;
+  priority: BacklogPriority;
+  status: BacklogStatus;
+  story_point: number;
+  parent_id?: number;
+  item_type: BacklogType;
 }
 
 interface BacklogItemModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (item: Omit<BacklogItem, 'id' | 'createdAt' | 'lastUpdated'>) => void;
-  editingItem?: BacklogItem | null;
+  onSubmit: (item: BacklogFormData) => void;
+  editingItem?: (BacklogFormData & { id?: number }) | null;
 }
 
 const BacklogItemModal: React.FC<BacklogItemModalProps> = ({
@@ -31,37 +27,30 @@ const BacklogItemModal: React.FC<BacklogItemModalProps> = ({
   onSubmit,
   editingItem
 }) => {
-  const [formData, setFormData] = useState<Omit<BacklogItem, 'id' | 'createdAt' | 'lastUpdated'>>({
+  const [formData, setFormData] = useState<BacklogFormData>({
     title: '',
     description: '',
     acceptanceCriteria: [''],
-    priority: 'medium',
-    status: 'new',
-    storyPoints: 0,
-    assignee: '',
-    labels: [],
-    parentId: undefined,
-    type: 'user-story',
-    hierarchyLevel: 1
+    priority: BacklogPriority.MEDIUM,
+    status: BacklogStatus.TODO,
+    story_point: 0,
+    parent_id: undefined,
+    item_type: BacklogType.STORY
   });
 
   useEffect(() => {
     if (editingItem) {
-      const { id, createdAt, lastUpdated, ...rest } = editingItem;
-      setFormData(rest);
+      setFormData(editingItem);
     } else {
       setFormData({
         title: '',
         description: '',
         acceptanceCriteria: [''],
-        priority: 'medium',
-        status: 'new',
-        storyPoints: 0,
-        assignee: '',
-        labels: [],
-        parentId: undefined,
-        type: 'user-story',
-        hierarchyLevel: 1
+        priority: BacklogPriority.MEDIUM,
+        status: BacklogStatus.TODO,
+        story_point: 0,
+        parent_id: undefined,
+        item_type: BacklogType.STORY
       });
     }
   }, [editingItem]);
@@ -69,32 +58,12 @@ const BacklogItemModal: React.FC<BacklogItemModalProps> = ({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Determine type based on selected labels
-    let itemType: 'epic' | 'user-story' | 'bug' | 'enhancement' = 'user-story';
-    let hierarchyLevel = 1;
-    
-    if (formData.labels.includes('epic')) {
-      itemType = 'epic';
-      hierarchyLevel = 0;
-    } else if (formData.labels.includes('bug')) {
-      itemType = 'bug';
-      hierarchyLevel = 0;
-    } else if (formData.labels.includes('enhancement')) {
-      itemType = 'enhancement';
-      hierarchyLevel = 0;
-    } else if (formData.labels.includes('user-story')) {
-      itemType = 'user-story';
-      hierarchyLevel = 1;
-    }
-    
-    // Filter out empty acceptance criteria and add computed fields
+    // Filter out empty acceptance criteria
     const filteredData = {
       ...formData,
       acceptanceCriteria: formData.acceptanceCriteria.filter(criteria => criteria.trim() !== ''),
-      type: itemType,
-      hierarchyLevel: hierarchyLevel,
       // Clear parent if epic (since epics can't have parents)
-      parentId: itemType === 'epic' ? undefined : formData.parentId
+      parent_id: formData.item_type === BacklogType.EPIC ? undefined : formData.parent_id
     };
     
     onSubmit(filteredData);
@@ -124,20 +93,7 @@ const BacklogItemModal: React.FC<BacklogItemModalProps> = ({
     });
   };
 
-  const toggleLabel = (label: 'epic' | 'user-story' | 'bug' | 'enhancement') => {
-    const newLabels = formData.labels.includes(label)
-      ? formData.labels.filter(l => l !== label)
-      : [...formData.labels, label];
-    
-    // Clear parent if epic is selected (epics can't have parents)
-    const newParentId = newLabels.includes('epic') ? undefined : formData.parentId;
-    
-    setFormData({ 
-      ...formData, 
-      labels: newLabels,
-      parentId: newParentId
-    });
-  };
+
 
   const getLabelColor = (label: string) => {
     switch (label) {
@@ -156,7 +112,7 @@ const BacklogItemModal: React.FC<BacklogItemModalProps> = ({
       <div className="bg-white dark:bg-gray-800 rounded-lg w-full max-w-4xl mx-4 max-h-[90vh] overflow-y-auto">
         <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700">
           <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
-            {editingItem ? `Edit PBI-${editingItem.id.padStart(3, '0')}` : 'Add New Product Backlog Item'}
+            {editingItem && editingItem.id ? `Edit PBI-${editingItem.id.toString().padStart(3, '0')}` : 'Add New Product Backlog Item'}
           </h2>
           <button
             onClick={onClose}
@@ -236,27 +192,23 @@ const BacklogItemModal: React.FC<BacklogItemModalProps> = ({
             </div>
           </div>
 
-          {/* Labels */}
+          {/* Item Type */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Labels
+              Item Type *
             </label>
-            <div className="flex flex-wrap gap-2">
-              {(['epic', 'user-story', 'bug', 'enhancement'] as const).map((label) => (
-                <button
-                  key={label}
-                  type="button"
-                  onClick={() => toggleLabel(label)}
-                  className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                    formData.labels.includes(label)
-                      ? getLabelColor(label)
-                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-400 dark:hover:bg-gray-600'
-                  }`}
-                >
-                  {label.split('-').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
-                </button>
-              ))}
-            </div>
+                         <select
+               value={formData.item_type}
+               onChange={(e) => setFormData({ ...formData, item_type: e.target.value as BacklogType })}
+               className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+             >
+               <option value={BacklogType.EPIC}>Epic</option>
+               <option value={BacklogType.STORY}>Story</option>
+               <option value={BacklogType.TASK}>Task</option>
+               <option value={BacklogType.BUG}>Bug</option>
+               <option value={BacklogType.FEATURE}>Feature</option>
+               <option value={BacklogType.IMPROVEMENT}>Improvement</option>
+             </select>
           </div>
 
           {/* Parent Item Selection */}
@@ -264,18 +216,18 @@ const BacklogItemModal: React.FC<BacklogItemModalProps> = ({
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Parent Item
             </label>
-                          <select
-                value={formData.parentId || ''}
-                onChange={(e) => setFormData({ ...formData, parentId: e.target.value || undefined })}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                disabled={formData.labels.includes('epic')}
-              >
-                <option value="">None (Root Level)</option>
-                {/* Available parent items - typically Epics that can have User Stories as children */}
-                <option value="001">EPIC-001 - User Authentication System</option>
-                <option value="005">EPIC-005 - E-commerce Shopping Features</option>
-              </select>
-            {formData.labels.includes('epic') && (
+            <select
+              value={formData.parent_id || ''}
+              onChange={(e) => setFormData({ ...formData, parent_id: e.target.value ? parseInt(e.target.value) : undefined })}
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              disabled={formData.item_type === BacklogType.EPIC}
+            >
+              <option value="">None (Root Level)</option>
+              {/* Available parent items - typically Epics that can have User Stories as children */}
+              <option value="1">EPIC-001 - User Authentication System</option>
+              <option value="5">EPIC-005 - E-commerce Shopping Features</option>
+            </select>
+            {formData.item_type === BacklogType.EPIC && (
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                 Epics cannot have parent items
               </p>
@@ -290,12 +242,12 @@ const BacklogItemModal: React.FC<BacklogItemModalProps> = ({
               </label>
               <select
                 value={formData.priority}
-                onChange={(e) => setFormData({ ...formData, priority: e.target.value as 'high' | 'medium' | 'low' })}
+                onChange={(e) => setFormData({ ...formData, priority: e.target.value as BacklogPriority })}
                 className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               >
-                <option value="high">High</option>
-                <option value="medium">Medium</option>
-                <option value="low">Low</option>
+                <option value={BacklogPriority.HIGH}>High</option>
+                <option value={BacklogPriority.MEDIUM}>Medium</option>
+                <option value={BacklogPriority.LOW}>Low</option>
               </select>
             </div>
 
@@ -303,49 +255,34 @@ const BacklogItemModal: React.FC<BacklogItemModalProps> = ({
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Status *
               </label>
-              <select
-                value={formData.status}
-                onChange={(e) => setFormData({ ...formData, status: e.target.value as 'new' | 'ready' | 'in-progress' | 'done' | 'blocked' })}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              >
-                <option value="new">New</option>
-                <option value="ready">Ready</option>
-                <option value="in-progress">In Progress</option>
-                <option value="done">Done</option>
-                <option value="blocked">Blocked</option>
-              </select>
+                           <select
+               value={formData.status}
+               onChange={(e) => setFormData({ ...formData, status: e.target.value as BacklogStatus })}
+               className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+             >
+               <option value={BacklogStatus.TODO}>Todo</option>
+               <option value={BacklogStatus.IN_PROGRESS}>In Progress</option>
+               <option value={BacklogStatus.IN_REVIEW}>In Review</option>
+               <option value={BacklogStatus.DONE}>Done</option>
+               <option value={BacklogStatus.CANCELLED}>Cancelled</option>
+             </select>
             </div>
           </div>
 
-          {/* Story Points and Assignee */}
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Story Points
-              </label>
-              <input
-                type="number"
-                min="0"
-                max="100"
-                value={formData.storyPoints}
-                onChange={(e) => setFormData({ ...formData, storyPoints: parseInt(e.target.value) || 0 })}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                placeholder="Effort estimation"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Assignee
-              </label>
-              <input
-                type="text"
-                value={formData.assignee || ''}
-                onChange={(e) => setFormData({ ...formData, assignee: e.target.value })}
-                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                placeholder="Team member (optional)"
-              />
-            </div>
+          {/* Story Points */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Story Points
+            </label>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              value={formData.story_point}
+              onChange={(e) => setFormData({ ...formData, story_point: parseInt(e.target.value) || 0 })}
+              className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              placeholder="Effort estimation"
+            />
           </div>
 
           {/* Form Actions */}

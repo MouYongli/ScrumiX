@@ -287,7 +287,7 @@ const ProjectsPage = () => {
   const [error, setError] = useState<string | null>(null);
   const [projects, setProjects] = useState<Project[]>([]);
 
-  // Fetch projects when search term or status changes
+  // Fetch projects on initial load only
   useEffect(() => {
     const fetchProjects = async () => {
       setIsLoading(true);
@@ -316,7 +316,7 @@ const ProjectsPage = () => {
     };
 
     fetchProjects();
-  }, [searchTerm, selectedStatus]);
+  }, []); // Empty dependency array - only run once on mount
 
 
 

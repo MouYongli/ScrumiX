@@ -5,6 +5,7 @@ from typing import Optional, List
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 from scrumix.api.models.backlog import Backlog, BacklogStatus, BacklogPriority, BacklogType
+from scrumix.api.schemas.acceptance_criteria import AcceptanceCriteriaResponse
 
 
 class BacklogBase(BaseModel):
@@ -72,6 +73,9 @@ class BacklogResponse(BaseModel):
     children: Optional[List["BacklogResponse"]] = None
     parent_title: Optional[str] = None  # Title of parent item for display
     
+    # Acceptance criteria
+    acceptance_criteria: Optional[List["AcceptanceCriteriaResponse"]] = None
+    
     @classmethod
     def from_db_model(cls, backlog: "Backlog", children: Optional[List["Backlog"]] = None,
                      parent_title: Optional[str] = None) -> "BacklogResponse":
@@ -79,6 +83,22 @@ class BacklogResponse(BaseModel):
         children_responses = []
         if children:
             children_responses = [cls.from_db_model(child) for child in children]
+        
+        # Convert acceptance criteria to response format
+        acceptance_criteria_responses = []
+        if hasattr(backlog, 'acceptance_criteria') and backlog.acceptance_criteria:
+            acceptance_criteria_responses = [
+                AcceptanceCriteriaResponse(
+                    id=criteria.id,
+                    backlog_id=criteria.backlog_id,
+                    title=criteria.title,
+                    description=criteria.description,
+                    is_met=criteria.is_met,
+                    created_at=criteria.created_at,
+                    updated_at=criteria.updated_at
+                )
+                for criteria in backlog.acceptance_criteria
+            ]
         
         return cls(
             id=backlog.id,
@@ -94,7 +114,8 @@ class BacklogResponse(BaseModel):
             created_at=backlog.created_at,
             updated_at=backlog.updated_at,
             children=children_responses if children_responses else None,
-            parent_title=parent_title
+            parent_title=parent_title,
+            acceptance_criteria=acceptance_criteria_responses if acceptance_criteria_responses else None
         )
 
 

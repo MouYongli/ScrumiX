@@ -107,3 +107,55 @@ export interface ApiSprint {
   createdAt: string;
   updatedAt: string;
 }
+
+// Backlog API types
+export interface ApiAcceptanceCriteria {
+  id: number;
+  backlog_id: number;
+  title: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ApiBacklog {
+  id: number;
+  title: string;
+  description: string;
+  priority: BacklogPriority;
+  status: BacklogStatus;
+  story_point: number;
+  created_at: string;
+  updated_at: string;
+  project_id: number;
+  sprint_id?: number;
+  parent_id?: number;
+  item_type: BacklogType;
+  level: number;
+  path: string;
+  root_id: number;
+  acceptance_criteria: ApiAcceptanceCriteria[];
+}
+
+export enum BacklogStatus {
+  TODO = 'todo',
+  IN_PROGRESS = 'in_progress',
+  IN_REVIEW = 'in_review',
+  DONE = 'done',
+  CANCELLED = 'cancelled'
+}
+
+export enum BacklogPriority {
+  CRITICAL = 'critical',
+  HIGH = 'high',
+  MEDIUM = 'medium',
+  LOW = 'low'
+}
+
+export enum BacklogType {
+  EPIC = 'epic',
+  STORY = 'story',
+  TASK = 'task',
+  BUG = 'bug',
+  FEATURE = 'feature',
+  IMPROVEMENT = 'improvement'
+}

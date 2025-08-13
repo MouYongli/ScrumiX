@@ -58,7 +58,8 @@ class BacklogCRUD(CRUDBase[Backlog, BacklogCreate, BacklogUpdate]):
         sprint_id: Optional[int] = None,
         assignee_id: Optional[int] = None,
         root_only: bool = False,
-        include_children: bool = False
+        include_children: bool = False,
+        include_acceptance_criteria: bool = False
     ) -> List[Backlog]:
         """Get list of backlog items with optimized filtering"""
         query = db.query(Backlog)
@@ -89,6 +90,10 @@ class BacklogCRUD(CRUDBase[Backlog, BacklogCreate, BacklogUpdate]):
         # Include children if requested
         if include_children:
             query = query.options(joinedload(Backlog.children))
+        
+        # Include acceptance criteria if requested
+        if include_acceptance_criteria:
+            query = query.options(joinedload(Backlog.acceptance_criteria))
         
         return query.order_by(Backlog.created_at.desc()).offset(skip).limit(limit).all()
     

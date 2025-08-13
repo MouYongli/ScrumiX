@@ -1,6 +1,6 @@
 import { TaskStatus, ProjectStatus } from '@/types/enums';
 import { 
-  ApiUser, ApiTask, ApiMeeting, ApiProject, ApiSprint,
+  ApiUser, ApiTask, ApiMeeting, ApiProject, ApiSprint, ApiBacklog, ApiAcceptanceCriteria,
   TaskListResponse, MeetingListResponse, ApiError, ScrumRole
 } from '@/types/api';
 import { authenticatedFetch } from '@/utils/auth';
@@ -17,6 +17,12 @@ async function jsonFetch<T>(endpoint: string, options?: RequestInit): Promise<Ap
       const error: ApiError = await response.json().catch(() => ({ detail: 'Request failed' }));
       throw new Error(error.detail || 'An error occurred');
     }
+    
+    // Handle 204 No Content responses (common for DELETE operations)
+    if (response.status === 204) {
+      return { data: null as T };
+    }
+    
     const data = await response.json();
     return { data };
   } catch (error) {
@@ -27,21 +33,76 @@ async function jsonFetch<T>(endpoint: string, options?: RequestInit): Promise<Ap
   }
 }
 
+// Request deduplication cache
+const inFlightRequests = new Map<string, Promise<any>>();
+
+/**
+ * Deduplicate API calls by reusing in-flight requests
+ */
+function deduplicateRequest<T>(key: string, requestFn: () => Promise<T>): Promise<T> {
+  // If there's already a request in flight, return the existing promise
+  if (inFlightRequests.has(key)) {
+    console.log(`[API] Reusing in-flight request: ${key}`);
+    return inFlightRequests.get(key)!;
+  }
+
+  // Create new request
+  console.log(`[API] Starting new request: ${key}`);
+  const promise = requestFn().finally(() => {
+    // Remove from cache when request completes
+    inFlightRequests.delete(key);
+    console.log(`[API] Completed request: ${key}`);
+  });
+
+  // Cache the promise
+  inFlightRequests.set(key, promise);
+  return promise;
+}
+
+/**
+ * Clear the deduplication cache (useful for testing or cleanup)
+ */
+export function clearApiCache(): void {
+  inFlightRequests.clear();
+  console.log('[API] Cache cleared');
+}
+
+// Clean up cache on page unload to prevent memory leaks
+if (typeof window !== 'undefined') {
+  window.addEventListener('beforeunload', () => {
+    clearApiCache();
+  });
+}
+
 export const api = {
   auth: {
-    getCurrentUser: () => jsonFetch<ApiUser>('/api/v1/users/me'), // User profile endpoint
-    verifyAuth: () => jsonFetch<ApiUser>('/api/v1/auth/me'), // Auth verification endpoint
+    getCurrentUser: () => deduplicateRequest('auth:getCurrentUser', () => 
+      jsonFetch<ApiUser>('/api/v1/users/me')
+    ), // User profile endpoint
+    verifyAuth: () => deduplicateRequest('auth:verifyAuth', () => 
+      jsonFetch<ApiUser>('/api/v1/auth/me')
+    ), // Auth verification endpoint
   },
   
   workspace: {
-    getOverview: () => jsonFetch<any>('/api/v1/workspace/overview'),
-    getProjects: () => jsonFetch<ApiProject[]>('/api/v1/workspace/projects'),
-    getTasks: () => jsonFetch<ApiTask[]>('/api/v1/workspace/tasks'),
-    getMeetings: () => jsonFetch<ApiMeeting[]>('/api/v1/workspace/meetings'),
+    getOverview: () => deduplicateRequest('workspace:getOverview', () => 
+      jsonFetch<any>('/api/v1/workspace/overview')
+    ),
+    getProjects: () => deduplicateRequest('workspace:getProjects', () => 
+      jsonFetch<ApiProject[]>('/api/v1/workspace/projects')
+    ),
+    getTasks: () => deduplicateRequest('workspace:getTasks', () => 
+      jsonFetch<ApiTask[]>('/api/v1/workspace/tasks')
+    ),
+    getMeetings: () => deduplicateRequest('workspace:getMeetings', () => 
+      jsonFetch<ApiTask[]>('/api/v1/workspace/meetings')
+    ),
   },
   
   projects: {
-    getCurrentUserProjects: () => jsonFetch<ApiProject[]>('/api/v1/projects/me'),
+    getCurrentUserProjects: () => deduplicateRequest('projects:getCurrentUserProjects', () => 
+      jsonFetch<ApiProject[]>('/api/v1/projects/me')
+    ),
     
     getAll: (params?: { 
       status?: string;
@@ -131,5 +192,69 @@ export const api = {
   
   sprints: {
     getAll: () => jsonFetch<ApiSprint[]>('/api/v1/sprints/'),
+  },
+
+  backlogs: {
+    getAll: (params?: { 
+      project_id?: number; 
+      include_children?: boolean;
+      include_acceptance_criteria?: boolean;
+      status?: string;
+      search?: string;
+      skip?: number;
+      limit?: number;
+    }) => {
+      const searchParams = new URLSearchParams();
+      if (params?.project_id) searchParams.append('project_id', params.project_id.toString());
+      if (params?.include_children) searchParams.append('include_children', params.include_children.toString());
+      if (params?.include_acceptance_criteria) searchParams.append('include_acceptance_criteria', params.include_acceptance_criteria.toString());
+      if (params?.status) searchParams.append('status', params.status);
+      if (params?.search) searchParams.append('search', params.search);
+      if (params?.skip) searchParams.append('skip', params.skip.toString());
+      if (params?.limit) searchParams.append('limit', params.limit.toString());
+      
+      return jsonFetch<ApiBacklog[]>(`/api/v1/backlogs/?${searchParams.toString()}`);
+    },
+    
+    getById: (id: number) => jsonFetch<ApiBacklog>(`/api/v1/backlogs/${id}`),
+    
+    create: (data: Omit<ApiBacklog, 'id' | 'created_at' | 'updated_at' | 'level' | 'path' | 'root_id' | 'acceptance_criteria'>) => 
+      jsonFetch<ApiBacklog>('/api/v1/backlogs/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+    
+    update: (id: number, data: Partial<ApiBacklog>) => 
+      jsonFetch<ApiBacklog>(`/api/v1/backlogs/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+    
+    delete: (id: number) => jsonFetch<void>(`/api/v1/backlogs/${id}`, {
+      method: 'DELETE',
+    }),
+  },
+
+  acceptanceCriteria: {
+    create: (data: { backlog_id: number; title: string; description?: string }) => 
+      jsonFetch<ApiAcceptanceCriteria>('/api/v1/acceptance-criteria/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+    
+    bulkCreate: (backlog_id: number, criteria_titles: string[]) => 
+      jsonFetch<ApiAcceptanceCriteria[]>(`/api/v1/acceptance-criteria/backlog/${backlog_id}/bulk`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(criteria_titles),
+      }),
+    
+    deleteAllByBacklogId: (backlog_id: number) => 
+      jsonFetch<void>(`/api/v1/acceptance-criteria/backlog/${backlog_id}/all`, {
+        method: 'DELETE',
+      }),
   },
 };
