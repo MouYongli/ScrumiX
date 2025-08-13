@@ -96,3 +96,4 @@ class ProjectResponse(ProjectBase):
             last_activity_at=project.last_activity_at,
             user_role=user_role
         )
+

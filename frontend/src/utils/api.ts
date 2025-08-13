@@ -1,7 +1,7 @@
 import { TaskStatus, ProjectStatus } from '@/types/enums';
 import { 
   ApiUser, ApiTask, ApiMeeting, ApiProject, ApiSprint, ApiBacklog, ApiAcceptanceCriteria,
-  TaskListResponse, MeetingListResponse, ApiError, ScrumRole
+  TaskListResponse, MeetingListResponse, ApiError, ScrumRole, ProjectMemberResponse
 } from '@/types/api';
 import { authenticatedFetch } from '@/utils/auth';
 
@@ -147,6 +147,21 @@ export const api = {
       body: JSON.stringify(data),
     }),
     delete: (id: number) => jsonFetch<void>(`/api/v1/projects/${id}`, {
+      method: 'DELETE',
+    }),
+    getMembers: (id: number) => jsonFetch<ProjectMemberResponse[]>(`/api/v1/projects/${id}/members`),
+    inviteMember: (id: number, data: { user_id: number; role: string }) => jsonFetch<ProjectMemberResponse>(`/api/v1/projects/${id}/members`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+    getAvailableUsers: (id: number) => jsonFetch<any[]>(`/api/v1/projects/${id}/available-users`),
+    updateMember: (projectId: number, userId: number, data: { role: string }) => jsonFetch<ProjectMemberResponse>(`/api/v1/projects/${projectId}/members/${userId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+    removeMember: (projectId: number, userId: number) => jsonFetch<void>(`/api/v1/projects/${projectId}/members/${userId}`, {
       method: 'DELETE',
     }),
   },

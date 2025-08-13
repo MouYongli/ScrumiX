@@ -53,6 +53,17 @@ export interface ProjectMember {
   user: ApiUser;
 }
 
+export interface ProjectMemberResponse {
+  id: number;
+  email: string;
+  username?: string;
+  full_name?: string;
+  avatar_url?: string;
+  role: ScrumRole;
+  joined_at: string;
+  is_admin: boolean;
+}
+
 export interface ApiProject {
   id: number;
   name: string;

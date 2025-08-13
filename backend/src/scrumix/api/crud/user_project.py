@@ -128,32 +128,23 @@ class UserProjectCRUD(CRUDBase[UserProject, dict, dict]):
         project_id: int
     ) -> bool:
         """Remove a user from a project"""
-        # Check user's role before removal
-        user_project = db.query(UserProject).filter(
-            and_(
-                UserProject.user_id == user_id,
-                UserProject.project_id == project_id
-            )
-        ).first()
-        
-        if not user_project:
+        try:
+            user_project = db.query(UserProject).filter(
+                and_(
+                    UserProject.user_id == user_id,
+                    UserProject.project_id == project_id
+                )
+            ).first()
+            
+            if user_project:
+                db.delete(user_project)
+                db.commit()
+                return True
             return False
             
-        if user_project.role in [ScrumRole.SCRUM_MASTER, ScrumRole.PRODUCT_OWNER]:
-            # Count remaining team members
-            member_count = db.query(UserProject).filter(
-                UserProject.project_id == project_id
-            ).count()
-            
-            if member_count == 1:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail=f"Cannot remove the only {user_project.role.value} from the project"
-                )
-        
-        db.delete(user_project)
-        db.commit()
-        return True
+        except Exception:
+            db.rollback()
+            return False
 
     def update_user_role(
         self,
@@ -163,64 +154,24 @@ class UserProjectCRUD(CRUDBase[UserProject, dict, dict]):
         new_role: ScrumRole
     ) -> Optional[UserProject]:
         """Update a user's Scrum role in a project"""
-        # Check role constraints first
-        if new_role == ScrumRole.SCRUM_MASTER:
-            existing_sm = db.query(UserProject).filter(
+        try:
+            user_project = db.query(UserProject).filter(
                 and_(
-                    UserProject.project_id == project_id,
-                    UserProject.role == ScrumRole.SCRUM_MASTER,
-                    UserProject.user_id != user_id
+                    UserProject.user_id == user_id,
+                    UserProject.project_id == project_id
                 )
             ).first()
-            if existing_sm:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Project already has a Scrum Master"
-                )
-                
-        elif new_role == ScrumRole.PRODUCT_OWNER:
-            existing_po = db.query(UserProject).filter(
-                and_(
-                    UserProject.project_id == project_id,
-                    UserProject.role == ScrumRole.PRODUCT_OWNER,
-                    UserProject.user_id != user_id
-                )
-            ).first()
-            if existing_po:
-                raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Project already has a Product Owner"
-                )
-        
-        user_project = db.query(UserProject).filter(
-            and_(
-                UserProject.user_id == user_id,
-                UserProject.project_id == project_id
-            )
-        ).first()
-        
-        if user_project:
-            # Check if we're changing a Scrum Master or Product Owner
-            if user_project.role in [ScrumRole.SCRUM_MASTER, ScrumRole.PRODUCT_OWNER]:
-                # Count users with same role
-                same_role_count = db.query(UserProject).filter(
-                    and_(
-                        UserProject.project_id == project_id,
-                        UserProject.role == user_project.role
-                    )
-                ).count()
-                
-                if same_role_count == 1:
-                    raise HTTPException(
-                        status_code=status.HTTP_400_BAD_REQUEST,
-                        detail=f"Cannot change role of the only {user_project.role.value}"
-                    )
             
-            user_project.role = new_role
-            db.commit()
-            db.refresh(user_project)
+            if user_project:
+                user_project.role = new_role
+                db.commit()
+                db.refresh(user_project)
+                
+            return user_project
             
-        return user_project
+        except Exception:
+            db.rollback()
+            raise
 
     def get_project_scrum_master(self, db: Session, project_id: int) -> Optional[User]:
         """Get the Scrum Master of a project"""
