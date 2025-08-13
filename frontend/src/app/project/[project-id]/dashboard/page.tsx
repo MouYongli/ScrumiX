@@ -12,222 +12,298 @@ import Breadcrumb from '@/components/common/Breadcrumb';
 import { Timeline } from 'vis-timeline/standalone';
 import { DataSet } from 'vis-data/standalone';
 import 'vis-timeline/styles/vis-timeline-graph2d.css';
+import { api } from '@/utils/api';
+import { ApiProject, ApiTask, ApiMeeting, ApiSprint, ScrumRole } from '@/types/api';
+import { ProjectStatus, TaskStatus } from '@/types/enums';
 
 interface ProjectDashboardProps {
   params: Promise<{ 'project-id': string }>;
 }
 
-// Mock project data
-const mockProjectData = {
-  id: '1',
-  name: 'E-commerce Platform Refactoring',
-  description: 'Modern e-commerce platform development project based on React and Node.js',
-  status: 'active',
-  progress: 68,
-  currentSprint: {
-    name: 'Sprint 5',
-    progress: 75,
-    daysLeft: 3,
-    totalDays: 14,
-    startDate: '2024-03-01',
-    endDate: '2024-03-15',
-  },
-  team: {
-    totalMembers: 8,
-    activeMembers: 7,
-    roles: {
-      productOwner: 1,
-      scrumMaster: 1,
-      developers: 6,
-    },
-  },
+// Interface for computed dashboard data
+interface DashboardData {
+  project: ApiProject | null;
   tasks: {
-    total: 45,
-    completed: 32,
-    inProgress: 8,
-    pending: 5,
-  },
+    total: number;
+    completed: number;
+    inProgress: number;
+    pending: number;
+  };
+  currentSprint: {
+    name: string;
+    progress: number;
+    daysLeft: number;
+    totalDays: number;
+    startDate: string;
+    endDate: string;
+  } | null;
+  team: {
+    totalMembers: number;
+    activeMembers: number;
+    roles: {
+      productOwner: number;
+      scrumMaster: number;
+      developers: number;
+    };
+  };
   velocity: {
-    planned: 50,
-    completed: 42,
-    average: 38,
-  },
-};
-
-const recentActivities = [
-  {
-    id: 1,
-    user: 'John Smith',
-    action: 'completed task',
-    target: 'User Login API Development',
-    time: '10 minutes ago',
-    type: 'task_completed',
-  },
-  {
-    id: 2,
-    user: 'Jane Doe',
-    action: 'started task',
-    target: 'Shopping Cart Feature Testing',
-    time: '1 hour ago',
-    type: 'task_started',
-  },
-  {
-    id: 3,
-    user: 'Mike Johnson',
-    action: 'commented on',
-    target: 'Database Optimization Plan',
-    time: '2 hours ago',
-    type: 'comment_added',
-  },
-  {
-    id: 4,
-    user: 'Sarah Wilson',
-    action: 'created user story',
-    target: 'Product Recommendation Algorithm',
-    time: '3 hours ago',
-    type: 'story_created',
-  },
-];
-
-const upcomingMeetings = [
-  {
-    id: 1,
-    title: 'Daily Standup',
-    type: 'daily_standup',
-    time: 'Tomorrow 09:00',
-    attendees: 8,
-  },
-  {
-    id: 2,
-    title: 'Sprint Review',
-    type: 'sprint_review',
-    time: 'March 15, 14:00',
-    attendees: 12,
-  },
-  {
-    id: 3,
-    title: 'Sprint Retrospective',
-    type: 'sprint_retrospective',
-    time: 'March 15, 16:00',
-    attendees: 8,
-  },
-];
-
-// Mock kanban data for sprint preview
-const sprintKanbanData = {
-  todo: [
-    { id: 1, title: 'Product Search API', priority: 'high', assignee: 'John D.', storyPoints: 5 },
-    { id: 2, title: 'Payment Gateway Integration', priority: 'medium', assignee: 'Sarah M.', storyPoints: 8 },
-    { id: 3, title: 'Email Notification System', priority: 'low', assignee: 'Mike R.', storyPoints: 3 },
-  ],
-  inProgress: [
-    { id: 4, title: 'User Authentication Flow', priority: 'high', assignee: 'Jane S.', storyPoints: 5 },
-    { id: 5, title: 'Shopping Cart Optimization', priority: 'medium', assignee: 'Tom W.', storyPoints: 3 },
-  ],
-  done: [
-    { id: 6, title: 'Database Schema Design', priority: 'high', assignee: 'Alex K.', storyPoints: 8 },
-    { id: 7, title: 'User Profile Components', priority: 'medium', assignee: 'Lisa P.', storyPoints: 5 },
-    { id: 8, title: 'API Documentation', priority: 'low', assignee: 'David L.', storyPoints: 2 },
-  ],
-};
-
-// Mock hierarchical data for timeline view (matching kanban board)
-const sprintTimelineData = [
-  {
-    id: 'epic-1',
-    type: 'epic',
-    title: 'E-commerce Core Features',
-    progress: 55,
-    startDay: 2,
-    duration: 12,
-    priority: 'high',
-    tasks: [
-      {
-        id: 1,
-        type: 'task',
-        title: 'Product Search API',
-        assignee: 'John D.',
-        progress: 0,
-        startDay: 2,
-        duration: 5,
-        priority: 'high',
-        status: 'todo'
-      },
-      {
-        id: 2,
-        type: 'task',
-        title: 'Payment Gateway Integration',
-        assignee: 'Sarah M.',
-        progress: 0,
-        startDay: 8,
-        duration: 6,
-        priority: 'medium',
-        status: 'todo'
-      },
-      {
-        id: 3,
-        type: 'task',
-        title: 'Email Notification System',
-        assignee: 'Mike R.',
-        progress: 0,
-        startDay: 10,
-        duration: 3,
-        priority: 'low',
-        status: 'todo'
-      }
-    ]
-  },
-  {
-    id: 'epic-2',
-    type: 'epic',
-    title: 'User Experience Enhancement',
-    progress: 65,
-    startDay: 1,
-    duration: 8,
-    priority: 'high',
-    tasks: [
-      {
-        id: 4,
-        type: 'task',
-        title: 'User Authentication Flow',
-        assignee: 'Jane S.',
-        progress: 70,
-        startDay: 1,
-        duration: 4,
-        priority: 'high',
-        status: 'inProgress'
-      },
-      {
-        id: 5,
-        type: 'task',
-        title: 'Shopping Cart Optimization',
-        assignee: 'Tom W.',
-        progress: 60,
-        startDay: 4,
-        duration: 4,
-        priority: 'medium',
-        status: 'inProgress'
-      }
-    ]
-  }
-];
+    planned: number;
+    completed: number;
+    average: number;
+  };
+  recentActivities: Array<{
+    id: number;
+    user: string;
+    action: string;
+    target: string;
+    time: string;
+    type: string;
+  }>;
+  upcomingMeetings: Array<{
+    id: number;
+    title: string;
+    type: string;
+    time: string;
+    attendees: number;
+  }>;
+  sprintKanbanData: {
+    todo: Array<{
+      id: number;
+      title: string;
+      priority: string;
+      assignee: string;
+      storyPoints: number;
+    }>;
+    inProgress: Array<{
+      id: number;
+      title: string;
+      priority: string;
+      assignee: string;
+      storyPoints: number;
+    }>;
+    done: Array<{
+      id: number;
+      title: string;
+      priority: string;
+      assignee: string;
+      storyPoints: number;
+    }>;
+  };
+}
 
 const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
   const resolvedParams = React.use(params);
   const projectId = resolvedParams['project-id'];
-  const project = mockProjectData;
+  
+  // State for dashboard data
+  const [dashboardData, setDashboardData] = useState<DashboardData>({
+    project: null,
+    tasks: { total: 0, completed: 0, inProgress: 0, pending: 0 },
+    currentSprint: null,
+    team: { totalMembers: 0, activeMembers: 0, roles: { productOwner: 0, scrumMaster: 0, developers: 0 } },
+    velocity: { planned: 0, completed: 0, average: 0 },
+    recentActivities: [],
+    upcomingMeetings: [],
+    sprintKanbanData: { todo: [], inProgress: [], done: [] }
+  });
+  
+  // Loading and error states
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   
   // Sprint preview view state
   const [sprintViewType, setSprintViewType] = useState<'kanban' | 'timeline' | 'calendar'>('kanban');
   
   // Kanban drag and drop state
-  const [kanbanData, setKanbanData] = useState(sprintKanbanData);
+  const [kanbanData, setKanbanData] = useState(dashboardData.sprintKanbanData);
   const [draggedItem, setDraggedItem] = useState<any>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   
   // Timeline reference
   const timelineRef = useRef<HTMLDivElement>(null);
   const timelineInstance = useRef<Timeline | null>(null);
+
+  // Fetch dashboard data
+  useEffect(() => {
+    const fetchDashboardData = async () => {
+      if (!projectId) return;
+      
+      setIsLoading(true);
+      setError(null);
+      
+      try {
+        // Fetch project data
+        const projectResponse = await api.projects.getById(parseInt(projectId));
+        if (projectResponse.error) throw new Error(projectResponse.error);
+        
+        const project = projectResponse.data;
+        
+        // Fetch project tasks - for now get all tasks and filter by project
+        // TODO: Add project_id filter to API when backend supports it
+        const tasksResponse = await api.tasks.getAll({ 
+          limit: 100 
+        });
+        if (tasksResponse.error) throw new Error(tasksResponse.error);
+        
+        // Filter tasks by project (assuming tasks have project_id field)
+        // If backend doesn't support this yet, we'll need to implement it
+        const allTasks = tasksResponse.data?.tasks || [];
+        const tasks = allTasks.filter(task => {
+          // Check if task has project_id field, if not, include all for now
+          return (task as any).project_id === parseInt(projectId) || !(task as any).project_id;
+        });
+        
+        // Fetch project sprints
+        const sprintsResponse = await api.sprints.getAll();
+        if (sprintsResponse.error) throw new Error(sprintsResponse.error);
+        
+        const projectSprints = sprintsResponse.data?.filter(sprint => 
+          sprint.projectId === parseInt(projectId)
+        ) || [];
+        
+        // Fetch upcoming meetings
+        const meetingsResponse = await api.meetings.getUpcoming(14);
+        if (meetingsResponse.error) throw new Error(meetingsResponse.error);
+        
+        const projectMeetings = meetingsResponse.data?.filter(meeting => 
+          meeting.projectId === parseInt(projectId)
+        ) || [];
+        
+        // Calculate dashboard metrics
+        const completedTasks = tasks.filter(task => task.status === TaskStatus.DONE);
+        const inProgressTasks = tasks.filter(task => task.status === TaskStatus.IN_PROGRESS);
+        const pendingTasks = tasks.filter(task => task.status === TaskStatus.TODO);
+        
+        // Find current sprint (most recent active sprint)
+        const currentSprint = projectSprints
+          .filter(sprint => new Date(sprint.endDate) >= new Date())
+          .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime())[0];
+        
+        // Calculate sprint progress
+        let sprintProgress = 0;
+        let sprintDaysLeft = 0;
+        let sprintTotalDays = 0;
+        
+        if (currentSprint) {
+          const sprintStart = new Date(currentSprint.startDate);
+          const sprintEnd = new Date(currentSprint.endDate);
+          const now = new Date();
+          
+          sprintTotalDays = Math.ceil((sprintEnd.getTime() - sprintStart.getTime()) / (1000 * 60 * 60 * 24));
+          sprintDaysLeft = Math.ceil((sprintEnd.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
+          
+          if (sprintTotalDays > 0) {
+            sprintProgress = Math.round(((sprintTotalDays - sprintDaysLeft) / sprintTotalDays) * 100);
+          }
+        }
+        
+        // Calculate team composition
+        const teamRoles = {
+          productOwner: project.project_members?.filter(member => member.role === ScrumRole.PRODUCT_OWNER).length || 0,
+          scrumMaster: project.project_members?.filter(member => member.role === ScrumRole.SCRUM_MASTER).length || 0,
+          developers: project.project_members?.filter(member => member.role === ScrumRole.DEVELOPER).length || 0
+        };
+        
+        // Calculate velocity (simplified - using story points)
+        const totalStoryPoints = tasks.reduce((sum, task) => sum + (task.story_point || 0), 0);
+        const completedStoryPoints = completedTasks.reduce((sum, task) => sum + (task.story_point || 0), 0);
+        
+        // Prepare kanban data
+        const sprintKanbanData = {
+          todo: pendingTasks.map(task => ({
+            id: task.id,
+            title: task.title,
+            priority: task.priority,
+            assignee: task.assignedUsers?.[0]?.username || 'Unassigned',
+            storyPoints: task.story_point || 0
+          })),
+          inProgress: inProgressTasks.map(task => ({
+            id: task.id,
+            title: task.title,
+            priority: task.priority,
+            assignee: task.assignedUsers?.[0]?.username || 'Unassigned',
+            storyPoints: task.story_point || 0
+          })),
+          done: completedTasks.map(task => ({
+            id: task.id,
+            title: task.title,
+            priority: task.priority,
+            assignee: task.assignedUsers?.[0]?.username || 'Unassigned',
+            storyPoints: task.story_point || 0
+          }))
+        };
+        
+                 // Prepare recent activities (simplified - using task updates)
+         const recentActivities = tasks
+           .slice(0, 4)
+           .map((task, index) => ({
+             id: task.id,
+             user: task.assignedUsers?.[0]?.username || 'System',
+             action: task.status === TaskStatus.DONE ? 'completed task' : 
+                    task.status === TaskStatus.IN_PROGRESS ? 'started task' : 'updated task',
+             target: task.title,
+             time: `${index + 1} hour${index > 0 ? 's' : ''} ago`,
+             type: task.status === TaskStatus.DONE ? 'task_completed' : 'task_updated'
+           }));
+        
+        // Prepare upcoming meetings
+        const upcomingMeetings = projectMeetings.slice(0, 3).map(meeting => ({
+          id: meeting.id,
+          title: meeting.title,
+          type: meeting.meetingType,
+          time: new Date(meeting.startDatetime).toLocaleDateString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit'
+          }),
+          attendees: 0 // Backend doesn't provide attendee count yet
+        }));
+        
+        // Update dashboard data
+        setDashboardData({
+          project,
+          tasks: {
+            total: tasks.length,
+            completed: completedTasks.length,
+            inProgress: inProgressTasks.length,
+            pending: pendingTasks.length
+          },
+          currentSprint: currentSprint ? {
+            name: currentSprint.sprintName,
+            progress: sprintProgress,
+            daysLeft: Math.max(0, sprintDaysLeft),
+            totalDays: sprintTotalDays,
+            startDate: currentSprint.startDate,
+            endDate: currentSprint.endDate
+          } : null,
+          team: {
+            totalMembers: project.members,
+            activeMembers: project.members, // Assuming all members are active
+            roles: teamRoles
+          },
+          velocity: {
+            planned: totalStoryPoints,
+            completed: completedStoryPoints,
+            average: projectSprints.length > 0 ? Math.round(totalStoryPoints / projectSprints.length) : 0
+          },
+          recentActivities,
+          upcomingMeetings,
+          sprintKanbanData
+        });
+        
+        // Update kanban data state
+        setKanbanData(sprintKanbanData);
+        
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to fetch dashboard data');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchDashboardData();
+  }, [projectId]);
 
   // Drag and drop handlers
   const handleDragStart = (e: React.DragEvent, task: any, sourceColumn: string) => {
@@ -278,41 +354,39 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
 
   // Initialize timeline
   useEffect(() => {
-    if (sprintViewType === 'timeline' && timelineRef.current && !timelineInstance.current) {
-      // Prepare timeline data
+    if (sprintViewType === 'timeline' && timelineRef.current && !timelineInstance.current && dashboardData.currentSprint) {
+      // Prepare timeline data from real sprint data
       const items = new DataSet<any>([]);
       const groups = new DataSet<any>([]);
       
-      // Add groups (epics)
-      sprintTimelineData.forEach((epic) => {
+      // Add sprint as main group
+      const sprint = dashboardData.currentSprint;
         groups.add({
-          id: epic.id,
-          content: epic.title,
-          className: `epic-group priority-${epic.priority}`
-        });
+        id: 'sprint',
+        content: sprint.name,
+        className: 'epic-group priority-high'
+      });
+      
+      // Add tasks to timeline
+      const allTasks = [
+        ...dashboardData.sprintKanbanData.todo,
+        ...dashboardData.sprintKanbanData.inProgress,
+        ...dashboardData.sprintKanbanData.done
+      ];
+      
+      allTasks.forEach((task, index) => {
+        const startDay = Math.floor((index * 2) % 14) + 1; // Distribute tasks across sprint
+        const duration = Math.max(1, Math.floor(Math.random() * 4) + 1);
         
-        // Add epic as an item
-        items.add({
-          id: `epic-${epic.id}`,
-          group: epic.id,
-          content: epic.title,
-          start: new Date(2024, 2, epic.startDay), // March 2024
-          end: new Date(2024, 2, epic.startDay + epic.duration),
-          type: 'range',
-          className: `epic-item priority-${epic.priority}`
-        });
-        
-        // Add tasks
-        epic.tasks.forEach((task) => {
           items.add({
             id: task.id,
-            group: epic.id,
+          group: 'sprint',
             content: `${task.title} (${task.assignee})`,
-            start: new Date(2024, 2, task.startDay),
-            end: new Date(2024, 2, task.startDay + task.duration),
+          start: new Date(sprint.startDate),
+          end: new Date(new Date(sprint.startDate).getTime() + (startDay + duration) * 24 * 60 * 60 * 1000),
             type: 'range',
-            className: `task-item status-${task.status} priority-${task.priority}`
-          });
+          className: `task-item status-${task.id <= dashboardData.tasks.completed ? 'done' : 
+                     task.id <= dashboardData.tasks.completed + dashboardData.tasks.inProgress ? 'inProgress' : 'todo'} priority-${task.priority}`
         });
       });
 
@@ -347,8 +421,8 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
             year: 'YYYY'
           }
         },
-        start: new Date(2024, 2, 1),
-        end: new Date(2024, 2, 15)
+        start: new Date(sprint.startDate),
+        end: new Date(sprint.endDate)
       };
 
       // Create timeline
@@ -362,18 +436,67 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
         timelineInstance.current = null;
       }
     };
-  }, [sprintViewType]);
+  }, [sprintViewType, dashboardData.currentSprint, dashboardData.sprintKanbanData, dashboardData.tasks]);
+
+  // Loading state
+  if (isLoading) {
+    return (
+      <div className="space-y-8">
+        <Breadcrumb items={[]} />
+        <div className="text-center py-12">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading project dashboard...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Error state
+  if (error) {
+    return (
+      <div className="space-y-8">
+        <Breadcrumb items={[]} />
+        <div className="text-center py-8 bg-white dark:bg-gray-800 rounded-lg border border-red-200 dark:border-red-900">
+          <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-red-600 dark:text-red-400 mb-2">
+            Error Loading Dashboard
+          </h3>
+          <p className="text-gray-600 dark:text-gray-400">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-4 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // No project data
+  if (!dashboardData.project) {
+    return (
+      <div className="space-y-8">
+        <Breadcrumb items={[]} />
+        <div className="text-center py-8">
+          <p className="text-gray-600 dark:text-gray-400">Project not found</p>
+        </div>
+      </div>
+    );
+  }
+
+  const project = dashboardData.project;
 
   // Prepare favorite data
   const favoriteItem = {
     id: projectId,
     type: 'project' as const,
     title: project.name,
-    description: project.description,
+    description: project.description || '',
     url: `/project/${projectId}/dashboard`,
     metadata: {
       status: project.status,
-      assignee: `${project.team.totalMembers} members`,
+      assignee: `${project.members} members`,
     },
   };
 
@@ -474,10 +597,10 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
       <div className="flex justify-between items-start">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-            Project Dashboard
+            {project.name}
           </h1>
           <p className="text-gray-600 dark:text-gray-400 mt-2">
-            {project.name} - Project overview and real-time status
+            {project.description || 'Project overview and real-time status'}
           </p>
         </div>
         <div className="flex gap-3">
@@ -527,12 +650,12 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-600 dark:text-gray-400">Team Members</p>
-              <p className="text-2xl font-bold text-green-600">{project.team.activeMembers}/{project.team.totalMembers}</p>
+                      <p className="text-2xl font-bold text-green-600">{dashboardData.team.activeMembers}/{dashboardData.team.totalMembers}</p>
             </div>
             <Users className="w-8 h-8 text-green-500" />
           </div>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-            {project.team.activeMembers} active
+                    {dashboardData.team.activeMembers} active
           </p>
         </div>
 
@@ -540,12 +663,12 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-600 dark:text-gray-400">Tasks Completed</p>
-              <p className="text-2xl font-bold text-purple-600">{project.tasks.completed}/{project.tasks.total}</p>
+              <p className="text-2xl font-bold text-purple-600">{dashboardData.tasks.completed}/{dashboardData.tasks.total}</p>
             </div>
             <CheckCircle2 className="w-8 h-8 text-purple-500" />
           </div>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-            {Math.round((project.tasks.completed / project.tasks.total) * 100)}% completion rate
+            {Math.round((dashboardData.tasks.completed / dashboardData.tasks.total) * 100)}% completion rate
           </p>
         </div>
 
@@ -553,12 +676,12 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-600 dark:text-gray-400">Sprint Remaining</p>
-              <p className="text-2xl font-bold text-orange-600">{project.currentSprint.daysLeft} days</p>
+              <p className="text-2xl font-bold text-orange-600">{dashboardData.currentSprint?.daysLeft || 0} days</p>
             </div>
             <Clock className="w-8 h-8 text-orange-500" />
           </div>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-            {project.currentSprint.totalDays} days total
+            {dashboardData.currentSprint?.totalDays || 0} days total
           </p>
         </div>
       </div>
@@ -569,7 +692,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
           <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
             <div className="flex justify-between items-center mb-6">
               <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
-                {project.currentSprint.name} Status
+                {dashboardData.currentSprint?.name || 'No Active Sprint'} Status
               </h3>
               <Link 
                 href={`/project/${projectId}/sprint`}
@@ -581,35 +704,38 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
             </div>
 
             {/* Sprint Progress */}
+            {dashboardData.currentSprint && (
             <div className="mb-6">
               <div className="flex justify-between text-sm text-gray-600 dark:text-gray-400 mb-2">
                 <span>Sprint Progress</span>
-                <span>{project.currentSprint.progress}%</span>
+                  <span>{dashboardData.currentSprint.progress}%</span>
               </div>
               <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-3">
                 <div 
                   className="bg-green-600 h-3 rounded-full transition-all duration-300" 
-                  style={{ width: `${project.currentSprint.progress}%` }}
+                    style={{ width: `${dashboardData.currentSprint.progress}%` }}
                 ></div>
               </div>
             </div>
+            )}
 
             {/* Task Distribution */}
             <div className="grid grid-cols-3 gap-4 mb-6">
               <div className="text-center p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                <p className="text-2xl font-bold text-green-600">{project.tasks.completed}</p>
+                <p className="text-2xl font-bold text-green-600">{dashboardData.tasks.completed}</p>
                 <p className="text-sm text-green-700 dark:text-green-400">Completed</p>
               </div>
               <div className="text-center p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                <p className="text-2xl font-bold text-blue-600">{project.tasks.inProgress}</p>
+                <p className="text-2xl font-bold text-blue-600">{dashboardData.tasks.inProgress}</p>
                 <p className="text-sm text-blue-700 dark:text-blue-400">In Progress</p>
               </div>
               <div className="text-center p-4 bg-gray-50 dark:bg-gray-900/20 rounded-lg">
-                <p className="text-2xl font-bold text-gray-600">{project.tasks.pending}</p>
+                <p className="text-2xl font-bold text-gray-600">{dashboardData.tasks.pending}</p>
                 <p className="text-sm text-gray-700 dark:text-gray-400">Pending</p>
               </div>
             </div>
             {/* Sprint Preview with View Selector */}
+            {dashboardData.currentSprint && (
             <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
               <div className="flex justify-between items-center mb-4">
                 <h4 className="font-medium text-gray-900 dark:text-white">Sprint Preview</h4>
@@ -849,6 +975,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                 </div>
               )}
             </div>
+            )}
             
             {/* Team Velocity */}
             <div className="border-t border-gray-200 dark:border-gray-700 pt-4 mb-6">
@@ -856,15 +983,15 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
               <div className="grid grid-cols-3 gap-4 text-sm">
                 <div>
                   <p className="text-gray-600 dark:text-gray-400">Planned Points</p>
-                  <p className="font-semibold text-gray-900 dark:text-white">{project.velocity.planned}</p>
+                  <p className="font-semibold text-gray-900 dark:text-white">{dashboardData.velocity.planned}</p>
                 </div>
                 <div>
                   <p className="text-gray-600 dark:text-gray-400">Completed Points</p>
-                  <p className="font-semibold text-gray-900 dark:text-white">{project.velocity.completed}</p>
+                  <p className="font-semibold text-gray-900 dark:text-white">{dashboardData.velocity.completed}</p>
                 </div>
                 <div>
                   <p className="text-gray-600 dark:text-gray-400">Average Velocity</p>
-                  <p className="font-semibold text-gray-900 dark:text-white">{project.velocity.average}</p>
+                  <p className="font-semibold text-gray-900 dark:text-white">{dashboardData.velocity.average}</p>
                 </div>
               </div>
             </div>
@@ -879,7 +1006,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
             </div>
 
             <div className="space-y-4">
-              {recentActivities.map((activity) => (
+              {dashboardData.recentActivities.map((activity) => (
                 <div key={activity.id} className="flex items-start gap-3">
                   <div className="p-2 rounded-lg bg-gray-50 dark:bg-gray-700">
                     <Activity className="w-4 h-4 text-gray-600 dark:text-gray-400" />
@@ -917,7 +1044,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
             </div>
 
             <div className="space-y-3">
-              {upcomingMeetings.map((meeting) => (
+              {dashboardData.upcomingMeetings.map((meeting) => (
                 <div key={meeting.id} className="p-3 border border-gray-200 dark:border-gray-700 rounded-lg">
                   <h4 className="font-medium text-gray-900 dark:text-white text-sm">
                     {meeting.title}
@@ -963,6 +1090,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
           </div>
 
           {/* Alerts and Reminders */}
+          {dashboardData.currentSprint && (
           <div className="bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg p-4">
             <div className="flex items-start gap-3">
               <AlertTriangle className="w-5 h-5 text-orange-600 dark:text-orange-400 mt-0.5" />
@@ -971,11 +1099,12 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                   Sprint Ending Soon
                 </h4>
                 <p className="text-orange-700 dark:text-orange-400 text-xs mt-1">
-                  Current sprint ends in {project.currentSprint.daysLeft} days. Please ensure tasks are completed on time.
+                    Current sprint ends in {dashboardData.currentSprint.daysLeft} days. Please ensure tasks are completed on time.
                 </p>
               </div>
             </div>
           </div>
+          )}
         </div>
       </div>
     </div>

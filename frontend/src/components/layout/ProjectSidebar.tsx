@@ -8,6 +8,8 @@ import {
   TrendingUp, BarChart3, Settings, Menu, ArrowLeft, Users, Target,
   Clock, GitBranch, CheckSquare, ListTodo, TrendingDown, BarChart
 } from 'lucide-react';
+import { api } from '@/utils/api';
+import { ApiProject } from '@/types/api';
 
 interface ProjectSidebarProps {
   projectId: string;
@@ -15,16 +17,11 @@ interface ProjectSidebarProps {
   onToggle: () => void;
 }
 
-// Mock project data
-const mockProject = {
-  id: '1',
-  name: 'E-commerce Platform Rebuild',
-  description: 'Modern e-commerce platform development project based on React and Node.js',
-  status: 'active',
-  color: 'bg-blue-500',
-  currentSprint: 'Sprint 5',
-  progress: 68,
-};
+interface ProjectData extends ApiProject {
+  currentSprint: string | null;
+  progress: number;
+  color: string;
+}
 
 const ProjectSidebar: React.FC<ProjectSidebarProps> = ({ 
   projectId, 
@@ -32,7 +29,57 @@ const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
   onToggle 
 }) => {
   const pathname = usePathname();
-  const [project, setProject] = useState(mockProject);
+  const [project, setProject] = useState<ProjectData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const fetchProjectData = async () => {
+      if (!projectId) return;
+      
+      try {
+        setIsLoading(true);
+        // Fetch project data
+        const projectResponse = await api.projects.getById(parseInt(projectId));
+        if (projectResponse.error) throw new Error(projectResponse.error);
+        
+        // Fetch current sprint
+        const sprintsResponse = await api.sprints.getAll();
+        if (sprintsResponse.error) throw new Error(sprintsResponse.error);
+        
+        const projectSprints = sprintsResponse.data?.filter(sprint => 
+          sprint.projectId === parseInt(projectId)
+        ) || [];
+        
+        // Find current sprint
+        const currentSprint = projectSprints
+          .filter(sprint => new Date(sprint.endDate) >= new Date())
+          .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime())[0];
+
+        // Calculate project progress
+        const tasksResponse = await api.tasks.getAll({ limit: 100 });
+        const projectTasks = tasksResponse.data?.tasks.filter(task => 
+          (task as any).project_id === parseInt(projectId)
+        ) || [];
+        
+        const progress = projectTasks.length > 0
+          ? Math.round((projectTasks.filter(task => task.status === 'DONE').length / projectTasks.length) * 100)
+          : 0;
+
+        setProject({
+          ...projectResponse.data,
+          currentSprint: currentSprint ? `Sprint ${currentSprint.sprintNumber}` : null,
+          progress,
+          color: 'bg-blue-500' // You can map this based on project status or type
+        });
+      } catch (error) {
+        console.error('Error fetching project data:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchProjectData();
+  }, [projectId]);
 
   const navigationItems = [
     {
@@ -138,32 +185,46 @@ const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
         {!isCollapsed && (
           <div className="p-4 pt-0">
             <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
-              <div className="flex items-center mb-2">
-                <div className={`w-3 h-3 ${project.color} rounded-full mr-2`}></div>
-                <h3 className="font-semibold text-gray-900 dark:text-white text-sm truncate">
-                  {project.name}
-                </h3>
-              </div>
-              <div className="flex items-center justify-between mb-2">
-                <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(project.status)}`}>
-                  {getStatusText(project.status)}
-                </span>
-                <span className="text-xs text-gray-500 dark:text-gray-400">
-                  {project.currentSprint}
-                </span>
-              </div>
-              <div className="mb-2">
-                <div className="flex justify-between text-xs text-gray-600 dark:text-gray-400 mb-1">
-                  <span>Project Progress</span>
-                  <span>{project.progress}%</span>
+              {isLoading ? (
+                <div className="animate-pulse space-y-3">
+                  <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4"></div>
+                  <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-1/2"></div>
+                  <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded w-full"></div>
                 </div>
-                <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
-                  <div 
-                    className="bg-blue-600 h-1.5 rounded-full transition-all duration-300" 
-                    style={{ width: `${project.progress}%` }}
-                  ></div>
+              ) : project ? (
+                <>
+                  <div className="flex items-center mb-2">
+                    <div className={`w-3 h-3 ${project.color} rounded-full mr-2`}></div>
+                    <h3 className="font-semibold text-gray-900 dark:text-white text-sm truncate">
+                      {project.name}
+                    </h3>
+                  </div>
+                  <div className="flex items-center justify-between mb-2">
+                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(project.status)}`}>
+                      {getStatusText(project.status)}
+                    </span>
+                    <span className="text-xs text-gray-500 dark:text-gray-400">
+                      {project.currentSprint || 'No Active Sprint'}
+                    </span>
+                  </div>
+                  <div className="mb-2">
+                    <div className="flex justify-between text-xs text-gray-600 dark:text-gray-400 mb-1">
+                      <span>Project Progress</span>
+                      <span>{project.progress}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
+                      <div 
+                        className="bg-blue-600 h-1.5 rounded-full transition-all duration-300" 
+                        style={{ width: `${project.progress}%` }}
+                      ></div>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div className="text-center text-sm text-gray-500 dark:text-gray-400">
+                  Project not found
                 </div>
-              </div>
+              )}
             </div>
           </div>
         )}

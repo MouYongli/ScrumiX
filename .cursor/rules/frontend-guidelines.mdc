@@ -259,7 +259,6 @@ alwaysApply: true
 ## No Emoji Policy
 
 - Do not use emojis anywhere in the codebase:
-  - No emojis in code or JSX
   - No emojis in comments
   - No emojis in console.log statements
   - No emojis in documentation files
