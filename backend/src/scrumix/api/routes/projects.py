@@ -9,10 +9,49 @@ from sqlalchemy.orm import Session
 from scrumix.api.db.session import get_db
 from scrumix.api.core.security import get_current_user
 from scrumix.api.crud.project import project_crud
+from scrumix.api.crud.user_project import user_project_crud
 from scrumix.api.models.project import ProjectStatus
+from scrumix.api.models.user_project import ScrumRole
 from scrumix.api.schemas.project import ProjectCreate, ProjectUpdate, ProjectResponse
 
 router = APIRouter(tags=["projects"])
+
+@router.get("/me", response_model=List[ProjectResponse])
+async def get_my_projects(
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get projects for the current user"""
+    try:
+        # Get projects where the user is a member
+        projects = project_crud.get_user_projects(db, current_user.id)
+        
+        # Convert to response format
+        response_projects = []
+        for project in projects:
+            # Get user's role in the project
+            user_role = user_project_crud.get_user_role(db, current_user.id, project.id)
+            
+            # Get project statistics
+            project_stats = project_crud.get_project_with_user_role(db, project.id, current_user.id)
+            
+            project_response = ProjectResponse.from_db_model(
+                project=project,
+                progress=project_stats["progress"],
+                members=project_stats["members_count"],
+                tasks_completed=project_stats["tasks_completed"],
+                tasks_total=project_stats["tasks_total"],
+                user_role=user_role
+            )
+            response_projects.append(project_response)
+        
+        return response_projects
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 @router.get("/", response_model=List[ProjectResponse])
 async def get_projects(
@@ -36,23 +75,28 @@ async def get_projects(
                 )
             project_status = ProjectStatus(status)
         
-        # Execute search or get project list
+        # Get user's projects
         if search:
-            projects = project_crud.search_projects(db, search, skip=skip, limit=limit)
+            projects = project_crud.search_user_projects(db, current_user.id, search, skip=skip, limit=limit)
         else:
-            projects = project_crud.get_projects(db, skip, limit, project_status)
+            projects = project_crud.get_user_projects(db, current_user.id, skip=skip, limit=limit, status=project_status)
         
         # Convert to response format
         response_projects = []
         for project in projects:
-            # TODO: Calculate actual progress, member count and task statistics
-            # Currently using default values, will be retrieved from database when relationships are added
+            # Get user's role in the project
+            user_role = user_project_crud.get_user_role(db, current_user.id, project.id)
+            
+            # Get project statistics
+            project_stats = project_crud.get_project_with_user_role(db, project.id, current_user.id)
+            
             project_response = ProjectResponse.from_db_model(
                 project=project,
-                progress=0,  # Calculate from task relationships
-                members=1,   # Calculate from project member relationships
-                tasks_completed=0,  # Calculate from task relationships
-                tasks_total=0       # Calculate from task relationships
+                progress=project_stats["progress"],
+                members=project_stats["members_count"],
+                tasks_completed=project_stats["tasks_completed"],
+                tasks_total=project_stats["tasks_total"],
+                user_role=user_role
             )
             response_projects.append(project_response)
         
@@ -80,16 +124,20 @@ async def create_project(
                 detail="Project name already exists"
             )
         
-        # Create project
-        project = project_crud.create_project(db, project_create)
+        # Create project with current user as owner
+        project = project_crud.create_project(db, project_create, creator_id=current_user.id)
+        
+        # Get project statistics
+        project_stats = project_crud.get_project_with_user_role(db, project.id, current_user.id)
         
         # Convert to response format
         project_response = ProjectResponse.from_db_model(
             project=project,
-            progress=0,
-            members=1,
-            tasks_completed=0,
-            tasks_total=0
+            progress=project_stats["progress"],
+            members=project_stats["members_count"],
+            tasks_completed=project_stats["tasks_completed"],
+            tasks_total=project_stats["tasks_total"],
+            user_role=ScrumRole.SCRUM_MASTER
         )
         
         return project_response
@@ -107,51 +155,34 @@ async def get_project(
     db: Session = Depends(get_db)
 ):
     """Get project details by ID"""
-    project = project_crud.get_by_id(db, project_id)
-    if not project:
-        raise HTTPException(
-            status_code=fastapi_status.HTTP_404_NOT_FOUND,
-            detail="Project not found"
+    try:
+        # Get project with user role check
+        project_stats = project_crud.get_project_with_user_role(db, project_id, current_user.id)
+        if not project_stats:
+            raise HTTPException(
+                status_code=fastapi_status.HTTP_404_NOT_FOUND,
+                detail="Project not found"
+            )
+        
+        # Convert to response format
+        project_response = ProjectResponse.from_db_model(
+            project=project_stats["project"],
+            progress=project_stats["progress"],
+            members=project_stats["members_count"],
+            tasks_completed=project_stats["tasks_completed"],
+            tasks_total=project_stats["tasks_total"],
+            user_role=project_stats["user_role"]
         )
-    
-    # Calculate project statistics from relationships
-    # 1. Count project members
-    members_count = len(project.user_projects)
-    
-    # 2. Count tasks and story points across all project sprints
-    tasks_total = 0
-    tasks_completed = 0
-    story_points_total = 0
-    story_points_completed = 0
-    
-    for sprint in project.sprints:
-        for task in sprint.tasks:
-            tasks_total += 1
-            story_points = task.story_point or 0
-            story_points_total += story_points
-            
-            if task.status.value == "done":
-                tasks_completed += 1
-                story_points_completed += story_points
-    
-    # 3. Calculate progress percentage (prefer story points over task count)
-    if story_points_total > 0:
-        progress = int((story_points_completed / story_points_total * 100))
-    elif tasks_total > 0:
-        progress = int((tasks_completed / tasks_total * 100))
-    else:
-        progress = 0
-    
-    # Convert to response format
-    project_response = ProjectResponse.from_db_model(
-        project=project,
-        progress=progress,
-        members=members_count,
-        tasks_completed=tasks_completed,
-        tasks_total=tasks_total
-    )
-    
-    return project_response
+        
+        return project_response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 @router.put("/{project_id}", response_model=ProjectResponse)
 async def update_project(
@@ -162,52 +193,31 @@ async def update_project(
 ):
     """Update project information"""
     try:
-        updated_project = project_crud.update_project(db, project_id, project_update)
+        # Update project with user permission check
+        updated_project = project_crud.update_project(db, project_id, project_update, current_user.id)
         if not updated_project:
             raise HTTPException(
                 status_code=fastapi_status.HTTP_404_NOT_FOUND,
                 detail="Project not found"
             )
         
-        # Calculate project statistics from relationships (same as in get_project)
-        # 1. Count project members
-        members_count = len(updated_project.user_projects)
-        
-        # 2. Count tasks and story points across all project sprints
-        tasks_total = 0
-        tasks_completed = 0
-        story_points_total = 0
-        story_points_completed = 0
-        
-        for sprint in updated_project.sprints:
-            for task in sprint.tasks:
-                tasks_total += 1
-                story_points = task.story_point or 0
-                story_points_total += story_points
-                
-                if task.status.value == "done":
-                    tasks_completed += 1
-                    story_points_completed += story_points
-        
-        # 3. Calculate progress percentage (prefer story points over task count)
-        if story_points_total > 0:
-            progress = int((story_points_completed / story_points_total * 100))
-        elif tasks_total > 0:
-            progress = int((tasks_completed / tasks_total * 100))
-        else:
-            progress = 0
+        # Get project statistics
+        project_stats = project_crud.get_project_with_user_role(db, project_id, current_user.id)
         
         # Convert to response format
         project_response = ProjectResponse.from_db_model(
             project=updated_project,
-            progress=progress,
-            members=members_count,
-            tasks_completed=tasks_completed,
-            tasks_total=tasks_total
+            progress=project_stats["progress"],
+            members=project_stats["members_count"],
+            tasks_completed=project_stats["tasks_completed"],
+            tasks_total=project_stats["tasks_total"],
+            user_role=project_stats["user_role"]
         )
         
         return project_response
         
+    except HTTPException:
+        raise
     except ValueError as e:
         raise HTTPException(
             status_code=fastapi_status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -221,14 +231,22 @@ async def delete_project(
     db: Session = Depends(get_db)
 ):
     """Delete project"""
-    success = project_crud.delete_project(db, project_id)
-    if not success:
+    try:
+        success = project_crud.delete_project(db, project_id, current_user.id)
+        if not success:
+            raise HTTPException(
+                status_code=fastapi_status.HTTP_404_NOT_FOUND,
+                detail="Project not found"
+            )
+        
+        return {"message": "Project deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(
-            status_code=fastapi_status.HTTP_404_NOT_FOUND,
-            detail="Project not found"
+            status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
         )
-    
-    return {"message": "Project deleted successfully"}
 
 @router.get("/status/{status}", response_model=List[ProjectResponse])
 async def get_projects_by_status(
@@ -243,17 +261,28 @@ async def get_projects_by_status(
         # Convert status parameter
         project_status = ProjectStatus(status.replace("-", "_").upper())
         
-        projects = project_crud.get_projects_by_status(db, project_status, skip=skip, limit=limit)
+        # Get user's projects with status filter
+        projects = project_crud.get_user_projects(
+            db, 
+            current_user.id, 
+            skip=skip, 
+            limit=limit, 
+            status=project_status
+        )
         
         # Convert to response format
         response_projects = []
         for project in projects:
+            # Get user's role and project statistics
+            project_stats = project_crud.get_project_with_user_role(db, project.id, current_user.id)
+            
             project_response = ProjectResponse.from_db_model(
                 project=project,
-                progress=0,
-                members=1,
-                tasks_completed=0,
-                tasks_total=0
+                progress=project_stats["progress"],
+                members=project_stats["members_count"],
+                tasks_completed=project_stats["tasks_completed"],
+                tasks_total=project_stats["tasks_total"],
+                user_role=project_stats["user_role"]
             )
             response_projects.append(project_response)
         
@@ -263,4 +292,4 @@ async def get_projects_by_status(
         raise HTTPException(
             status_code=fastapi_status.HTTP_400_BAD_REQUEST,
             detail=f"Invalid status: {status}"
-        ) 
+        )

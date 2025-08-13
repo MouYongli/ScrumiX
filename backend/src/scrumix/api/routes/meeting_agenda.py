@@ -13,7 +13,7 @@ from ..schemas.meeting_agenda import (
     MeetingAgendaListResponse
 )
 from ..crud.meeting_agenda import meeting_agenda
-from ..crud.meeting import meeting
+from ..crud.meeting import meeting_crud
 
 router = APIRouter()
 
@@ -55,7 +55,7 @@ def create_meeting_agenda(
 ):
     """Create a new meeting agenda item."""
     # Verify meeting exists
-    db_meeting = meeting.get(db=db, id=agenda_in.meeting_id)
+    db_meeting = meeting_crud.get(db=db, id=agenda_in.meeting_id)
     if not db_meeting:
         raise HTTPException(
             status_code=404, 
@@ -120,7 +120,7 @@ def get_agenda_by_meeting(
 ):
     """Get agenda items by meeting ID."""
     # Verify meeting exists
-    db_meeting = meeting.get(db=db, id=meeting_id)
+    db_meeting = meeting_crud.get(db=db, id=meeting_id)
     if not db_meeting:
         raise HTTPException(status_code=404, detail=f"Meeting with ID {meeting_id} not found")
     
@@ -136,7 +136,7 @@ def count_agenda_by_meeting(
 ):
     """Count agenda items for a specific meeting."""
     # Verify meeting exists
-    db_meeting = meeting.get(db=db, id=meeting_id)
+    db_meeting = meeting_crud.get(db=db, id=meeting_id)
     if not db_meeting:
         raise HTTPException(status_code=404, detail=f"Meeting with ID {meeting_id} not found")
     
@@ -153,7 +153,7 @@ def bulk_create_agenda_items(
 ):
     """Create multiple agenda items for a meeting."""
     # Verify meeting exists
-    db_meeting = meeting.get(db=db, id=meeting_id)
+    db_meeting = meeting_crud.get(db=db, id=meeting_id)
     if not db_meeting:
         raise HTTPException(status_code=404, detail=f"Meeting with ID {meeting_id} not found")
     
@@ -174,7 +174,7 @@ def delete_all_agenda_by_meeting(
 ):
     """Delete all agenda items for a specific meeting."""
     # Verify meeting exists
-    db_meeting = meeting.get(db=db, id=meeting_id)
+    db_meeting = meeting_crud.get(db=db, id=meeting_id)
     if not db_meeting:
         raise HTTPException(status_code=404, detail=f"Meeting with ID {meeting_id} not found")
     

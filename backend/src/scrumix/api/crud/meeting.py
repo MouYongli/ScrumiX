@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 
 from .base import CRUDBase
 from ..models.meeting import Meeting, MeetingType
+from ..models.user_meeting import UserMeeting
 from ..schemas.meeting import MeetingCreate, MeetingUpdate
 
 
@@ -23,6 +24,47 @@ class CRUDMeeting(CRUDBase[Meeting, MeetingCreate, MeetingUpdate]):
     def get_by_id(self, db: Session, meeting_id: int) -> Optional[Meeting]:
         """Get a meeting by ID."""
         return db.query(self.model).filter(self.model.id == meeting_id).first()
+    
+    def get_upcoming_meetings(
+        self,
+        db: Session,
+        user_id: int,
+        days: int = 7,
+        limit: int = 100
+    ) -> List[Meeting]:
+        """Get upcoming meetings for a specific user within specified days."""
+        end_date = datetime.now() + timedelta(days=days)
+        return (
+            db.query(self.model)
+            .join(UserMeeting)
+            .filter(
+                and_(
+                    UserMeeting.user_id == user_id,
+                    self.model.start_datetime > datetime.now(),
+                    self.model.start_datetime <= end_date
+                )
+            )
+            .order_by(self.model.start_datetime.asc())
+            .limit(limit)
+            .all()
+        )
+    
+    def get_meetings_by_project(
+        self,
+        db: Session,
+        project_id: int,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[Meeting]:
+        """Get meetings by project ID."""
+        return (
+            db.query(self.model)
+            .filter(self.model.project_id == project_id)
+            .order_by(self.model.start_datetime.desc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
     
     def get_multi(
         self,
@@ -234,4 +276,4 @@ class CRUDMeeting(CRUDBase[Meeting, MeetingCreate, MeetingUpdate]):
 
 
 # Create instance
-meeting = CRUDMeeting(Meeting) 
+meeting_crud = CRUDMeeting(Meeting) 

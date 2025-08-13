@@ -1,5 +1,5 @@
 """
-Backlog-related database models - OPTIMIZED VERSION
+Backlog-related database models 
 """
 from sqlalchemy import Column, Integer, String, DateTime, Enum as SQLEnum, Text, ForeignKey, Index, func
 from sqlalchemy.orm import relationship

@@ -4,6 +4,7 @@ from sqlalchemy import and_, or_, func
 
 from .base import CRUDBase
 from ..models.task import Task, TaskStatus
+from ..models.user_task import UserTask
 from ..schemas.task import TaskCreate, TaskUpdate
 
 
@@ -97,6 +98,40 @@ class CRUDTask(CRUDBase[Task, TaskCreate, TaskUpdate]):
             .all()
         )
     
+    def get_tasks_by_project(
+        self,
+        db: Session,
+        project_id: int,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[Task]:
+        """Get tasks by project ID (via sprint relationship)."""
+        return (
+            db.query(self.model)
+            .join(self.model.sprint)
+            .filter(self.model.sprint.has(project_id=project_id))
+            .order_by(self.model.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+    
+    def get_recent_tasks(
+        self,
+        db: Session,
+        user_id: int,
+        limit: int = 10
+    ) -> List[Task]:
+        """Get recently updated tasks for a specific user."""
+        return (
+            db.query(self.model)
+            .join(UserTask)
+            .filter(UserTask.user_id == user_id)
+            .order_by(self.model.updated_at.desc())
+            .limit(limit)
+            .all()
+        )
+    
     def search_tasks(
         self,
         db: Session,
@@ -120,20 +155,6 @@ class CRUDTask(CRUDBase[Task, TaskCreate, TaskUpdate]):
             .all()
         )
     
-    def get_recent_tasks(
-        self,
-        db: Session,
-        *,
-        limit: int = 10
-    ) -> List[Task]:
-        """Get recently updated tasks."""
-        return (
-            db.query(self.model)
-            .order_by(self.model.updated_at.desc())
-            .limit(limit)
-            .all()
-        )
-    
     def get_task_statistics(self, db: Session) -> dict:
         """Get task statistics by status."""
         stats = {}
@@ -150,4 +171,4 @@ class CRUDTask(CRUDBase[Task, TaskCreate, TaskUpdate]):
 
 
 # Create instance
-task = CRUDTask(Task) 
+task_crud = CRUDTask(Task) 

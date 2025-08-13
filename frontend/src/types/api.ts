@@ -41,6 +41,18 @@ export interface ApiMeeting {
   // Note: participants not included in MeetingResponse schema
 }
 
+export enum ScrumRole {
+  SCRUM_MASTER = "scrum_master",
+  PRODUCT_OWNER = "product_owner",
+  DEVELOPER = "developer"
+}
+
+export interface ProjectMember {
+  id: number;
+  role: ScrumRole;
+  user: ApiUser;
+}
+
 export interface ApiProject {
   id: number;
   name: string;
@@ -56,6 +68,9 @@ export interface ApiProject {
   progress: number;
   members: number;                           // Count, not array
   tasks: { completed: number; total: number }; // Object structure
+  // User relationship data
+  user_role?: ScrumRole;              // Current user's role in the project
+  project_members?: ProjectMember[];         // List of project members with roles
 }
 
 // API Response wrappers

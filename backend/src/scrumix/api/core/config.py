@@ -29,7 +29,7 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
     SECRET_KEY: str = os.environ.get("SECRET_KEY", "changeme")
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 8  # 8 days
-    DATABASE_URL: str = os.environ.get("DATABASE_URL", "sqlite:///./test.db")
+    DATABASE_URL: str = os.environ.get("DATABASE_URL", "sqlite:///./scrumix.db")
     
     # Environment Configuration
     ENVIRONMENT: str = os.environ.get("ENVIRONMENT", "development")
@@ -58,10 +58,10 @@ class Settings(BaseSettings):
 
     # Postgres Configuration
     POSTGRES_SERVER: str = os.environ.get("POSTGRES_SERVER", "localhost")
-    POSTGRES_USER: str = os.environ.get("POSTGRES_USER", "postgres")
+    POSTGRES_USER: str = os.environ.get("POSTGRES_USER", "admin")
     POSTGRES_PASSWORD: str = os.environ.get("POSTGRES_PASSWORD", "postgres")
     POSTGRES_DB: str = os.environ.get("POSTGRES_DB", "scrumix")
-    POSTGRES_PORT: str = os.environ.get("POSTGRES_PORT", "5432")
+    POSTGRES_PORT: str = os.environ.get("POSTGRES_PORT", "5433")
 
     # OAuth/Keycloak Configuration
     KEYCLOAK_SERVER_URL: str = os.environ.get("KEYCLOAK_SERVER_URL", "http://localhost:8080")
@@ -101,15 +101,18 @@ class Settings(BaseSettings):
         user = data.get("POSTGRES_USER") or "admin"
         password = data.get("POSTGRES_PASSWORD") or "postgres"
         host = data.get("POSTGRES_SERVER") or "localhost"
-        port = "53584"  # Use the dynamic port from Docker
+        port = data.get("POSTGRES_PORT") or "5433"
         db = data.get("POSTGRES_DB") or "scrumix"
+
+        if isinstance(port, str):
+            port = int(port)
         
         return PostgresDsn.build(
             scheme="postgresql",
             username=user,
             password=password,
             host=host,
-            port=int(port),
+            port=port,
             path=f"{db or ''}",
         )
 

@@ -35,42 +35,37 @@ const MyWorkspacePage = () => {
         const currentUser = mapApiUserToDomain(userResponse.data);
         setCurrentUser(currentUser);
 
-        // Fetch all data concurrently for better performance
-        const [projectsResponse, sprintsResponse, tasksResponse, meetingsResponse] = await Promise.all([
-          api.projects.getAll(),
-          api.sprints.getAll(),
-          api.tasks.getAll({ limit: 1000 }),
-          api.meetings.getUpcoming(7)
-        ]);
+        // Fetch workspace data using the new workspace endpoint
+        const workspaceResponse = await api.workspace.getOverview();
+        if (workspaceResponse.error) throw new Error(workspaceResponse.error);
 
-        if (projectsResponse.error) throw new Error(projectsResponse.error);
-        if (sprintsResponse.error) throw new Error(sprintsResponse.error);
-
+        const workspaceData = workspaceResponse.data;
+        
         // Map data to domain models
-        const projects = projectsResponse.data.map(mapApiProjectToDomain);
-        const sprints = sprintsResponse.error ? [] : sprintsResponse.data.map(mapApiSprintToDomain);
-        const allTasks = tasksResponse.error ? [] : tasksResponse.data.tasks.map(mapApiTaskToDomain);
-        const allMeetings = meetingsResponse.error ? [] : meetingsResponse.data.map(mapApiMeetingToDomain);
+        const projects = workspaceData.projects.map(mapApiProjectToDomain);
+        const sprints = workspaceData.active_sprints.map(mapApiSprintToDomain);
+        const allTasks = workspaceData.recent_tasks.map(mapApiTaskToDomain);
+        const allMeetings = workspaceData.upcoming_meetings.map(mapApiMeetingToDomain);
 
         // Create sprint-to-project mapping
         const sprintToProject = new Map<number, number>();
-        sprints.forEach(sprint => sprintToProject.set(sprint.id, sprint.projectId));
+        sprints.forEach((sprint: Sprint) => sprintToProject.set(sprint.id, sprint.projectId));
 
         // Create projects with properly scoped tasks and meetings
-        const projectsWithDetails = projects.map(project => {
+        const projectsWithDetails = projects.map((project: any) => {
           // Filter tasks by project (via sprint relationship)
-          const projectTasks = allTasks.filter(task => 
+          const projectTasks = allTasks.filter((task: any) => 
             sprintToProject.get(task.sprintId) === project.id
           );
 
           // Filter tasks to only show assigned to current user (if assignedUsers exists)
-          const userTasks = projectTasks.filter(task =>
+          const userTasks = projectTasks.filter((task: any) =>
             task.assignedUsers.length === 0 || // Show unassigned tasks
-            task.assignedUsers.some(user => user.id === currentUser.id)
+            task.assignedUsers.some((user: any) => user.id === currentUser.id)
           );
 
           // Filter meetings by project
-          const projectMeetings = allMeetings.filter(meeting => 
+          const projectMeetings = allMeetings.filter((meeting: any) => 
             meeting.projectId === project.id
           );
 
@@ -122,8 +117,6 @@ const MyWorkspacePage = () => {
         );
     }
   };
-
-
 
   if (loading) {
     return (

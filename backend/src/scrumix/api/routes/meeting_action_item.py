@@ -14,7 +14,7 @@ from ..schemas.meeting_action_item import (
     MeetingActionItemListResponse
 )
 from ..crud.meeting_action_item import meeting_action_item
-from ..crud.meeting import meeting
+from ..crud.meeting import meeting_crud
 
 router = APIRouter()
 
@@ -60,7 +60,7 @@ def create_meeting_action_item(
 ):
     """Create a new meeting action item."""
     # Verify meeting exists
-    db_meeting = meeting.get(db=db, id=item_in.meeting_id)
+    db_meeting = meeting_crud.get(db=db, id=item_in.meeting_id)
     if not db_meeting:
         raise HTTPException(
             status_code=404, 
@@ -125,7 +125,7 @@ def get_action_items_by_meeting(
 ):
     """Get action items by meeting ID."""
     # Verify meeting exists
-    db_meeting = meeting.get(db=db, id=meeting_id)
+    db_meeting = meeting_crud.get(db=db, id=meeting_id)
     if not db_meeting:
         raise HTTPException(status_code=404, detail=f"Meeting with ID {meeting_id} not found")
     
@@ -141,7 +141,7 @@ def count_action_items_by_meeting(
 ):
     """Count action items for a specific meeting."""
     # Verify meeting exists
-    db_meeting = meeting.get(db=db, id=meeting_id)
+    db_meeting = meeting_crud.get(db=db, id=meeting_id)
     if not db_meeting:
         raise HTTPException(status_code=404, detail=f"Meeting with ID {meeting_id} not found")
     
@@ -157,7 +157,7 @@ def delete_all_action_items_by_meeting(
 ):
     """Delete all action items for a specific meeting."""
     # Verify meeting exists
-    db_meeting = meeting.get(db=db, id=meeting_id)
+    db_meeting = meeting_crud.get(db=db, id=meeting_id)
     if not db_meeting:
         raise HTTPException(status_code=404, detail=f"Meeting with ID {meeting_id} not found")
     

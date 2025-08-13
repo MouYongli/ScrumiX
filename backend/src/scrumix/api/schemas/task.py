@@ -54,6 +54,21 @@ class TaskResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    @classmethod
+    def from_orm(cls, obj):
+        """Create response object from ORM model (for compatibility)"""
+        return cls(
+            id=obj.id,
+            title=obj.title,
+            description=obj.description,
+            status=obj.status,
+            priority=obj.priority,
+            story_point=obj.story_point,
+            sprint_id=obj.sprint_id,
+            created_at=obj.created_at,
+            updated_at=obj.updated_at
+        )
+
 
 class TaskListResponse(BaseModel):
     """Schema for paginated task list responses."""

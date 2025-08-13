@@ -1,7 +1,7 @@
 import { TaskStatus, ProjectStatus } from '@/types/enums';
 import { 
   ApiUser, ApiTask, ApiMeeting, ApiProject, ApiSprint,
-  TaskListResponse, MeetingListResponse, ApiError 
+  TaskListResponse, MeetingListResponse, ApiError, ScrumRole
 } from '@/types/api';
 import { authenticatedFetch } from '@/utils/auth';
 
@@ -33,11 +33,61 @@ export const api = {
     verifyAuth: () => jsonFetch<ApiUser>('/api/v1/auth/me'), // Auth verification endpoint
   },
   
+  workspace: {
+    getOverview: () => jsonFetch<any>('/api/v1/workspace/overview'),
+    getProjects: () => jsonFetch<ApiProject[]>('/api/v1/workspace/projects'),
+    getTasks: () => jsonFetch<ApiTask[]>('/api/v1/workspace/tasks'),
+    getMeetings: () => jsonFetch<ApiMeeting[]>('/api/v1/workspace/meetings'),
+  },
+  
   projects: {
-    getAll: () => jsonFetch<ApiProject[]>('/api/v1/projects/'),
+    getCurrentUserProjects: () => jsonFetch<ApiProject[]>('/api/v1/projects/me'),
+    
+    getAll: (params?: { 
+      status?: string;
+      search?: string;
+      skip?: number;
+      limit?: number;
+    }) => {
+      const searchParams = new URLSearchParams();
+      if (params?.status) searchParams.append('status', params.status);
+      if (params?.search) searchParams.append('search', params.search);
+      if (params?.skip) searchParams.append('skip', params.skip.toString());
+      if (params?.limit) searchParams.append('limit', params.limit.toString());
+      
+      return jsonFetch<ApiProject[]>(`/api/v1/projects/?${searchParams.toString()}`);
+    },
     getById: (id: number) => jsonFetch<ApiProject>(`/api/v1/projects/${id}`),
     getByStatus: (status: ProjectStatus) => 
       jsonFetch<ApiProject[]>(`/api/v1/projects/status/${status}`),
+    create: (data: {
+      name: string;
+      description: string;
+      status: ProjectStatus;
+      start_date: string;
+      end_date: string;
+      color: string;
+      members?: { user_id: number; role: ScrumRole }[];
+    }) => jsonFetch<ApiProject>('/api/v1/projects/', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+    update: (id: number, data: Partial<{
+      name: string;
+      description: string;
+      status: ProjectStatus;
+      start_date: string;
+      end_date: string;
+      color: string;
+    }>) => jsonFetch<ApiProject>(`/api/v1/projects/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+    delete: (id: number) => jsonFetch<void>(`/api/v1/projects/${id}`, {
+      method: 'DELETE',
+    }),
   },
   
   tasks: {

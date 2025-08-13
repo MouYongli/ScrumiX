@@ -1,7 +1,8 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
+import { api } from '@/utils/api';
 import {
   FolderOpen, Plus, Search, MoreVertical, Users, Calendar,
   BarChart3, CheckCircle2, AlertCircle, Clock, Star, X
@@ -9,21 +10,15 @@ import {
 import Breadcrumb from '@/components/common/Breadcrumb';
 import FavoriteButton from '@/components/common/FavoriteButton';
 
-interface Project {
-  id: string;
-  name: string;
-  description: string;
-  status: 'active' | 'on-hold' | 'completed' | 'planning';
-  progress: number;
-  members: number;
-  tasks: {
-    completed: number;
-    total: number;
-  };
-  startDate: string;
-  endDate: string;
-  lastActivity: string;
-  color: string;
+import { ApiProject, ScrumRole } from '@/types/api';
+import { ProjectStatus } from '@/types/enums';
+
+// Frontend Project interface extends ApiProject with some UI-specific fields
+interface Project extends Omit<ApiProject, 'id' | 'start_date' | 'end_date' | 'last_activity_at'> {
+  id: string; // Keep as string for frontend routing
+  startDate: string; // Alias for start_date
+  endDate: string;   // Alias for end_date
+  lastActivity: string; // Alias for last_activity_at
 }
 
 // Project Creation Modal Component
@@ -59,10 +54,10 @@ const CreateProjectModal = ({
   ];
 
   const statusOptions = [
-    { value: 'planning', label: 'Planning' },
-    { value: 'active', label: 'Active' },
-    { value: 'on-hold', label: 'On Hold' },
-    { value: 'completed', label: 'Completed' }
+    { value: ProjectStatus.PLANNING, label: 'Planning' },
+    { value: ProjectStatus.ACTIVE, label: 'Active' },
+    { value: ProjectStatus.ON_HOLD, label: 'On Hold' },
+    { value: ProjectStatus.COMPLETED, label: 'Completed' }
   ];
 
   const validateForm = () => {
@@ -103,7 +98,7 @@ const CreateProjectModal = ({
       setFormData({
         name: '',
         description: '',
-        status: 'planning',
+        status: ProjectStatus.PLANNING,
         startDate: '',
         endDate: '',
         color: 'bg-blue-500'
@@ -288,73 +283,42 @@ const ProjectsPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('all');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [projects, setProjects] = useState<Project[]>([
-    {
-      id: '1',
-      name: 'Mobile App Development',
-      description: 'Customer-facing mobile application development project, including core features such as user authentication, product display, shopping cart, etc.',
-      status: 'active',
-      progress: 68,
-      members: 8,
-      tasks: { completed: 25, total: 37 },
-      startDate: '2024-01-15',
-      endDate: '2025-07-10',
-      lastActivity: '2024-03-15T14:30:00',
-      color: 'bg-green-500'
-    },
-    {
-      id: '2',
-      name: 'E-commerce Platform Rebuild',
-      description: 'Modern e-commerce platform based on React',
-      status: 'active',
-      progress: 32,
-      members: 8,
-      tasks: { completed: 8, total: 25 },
-      startDate: '2024-01-15',
-      endDate: '2025-08-15',
-      lastActivity: '2024-03-14T16:20:00',
-      color: 'bg-blue-500'
-    },
-    {
-      id: '3',
-      name: 'Data Analysis Platform',
-      description: 'Data analysis and visualization platform developed for internal use.',
-      status: 'planning',
-      progress: 15,
-      members: 6,
-      tasks: { completed: 3, total: 20 },
-      startDate: '2024-03-01',
-      endDate: '2024-08-30',
-      lastActivity: '2024-03-13T10:15:00',
-      color: 'bg-purple-500'
-    },
-    {
-      id: '4',
-      name: 'Customer Service System Upgrade',
-      description: 'Function upgrade and performance optimization project for existing customer service system.',
-      status: 'completed',
-      progress: 100,
-      members: 4,
-      tasks: { completed: 18, total: 18 },
-      startDate: '2023-11-01',
-      endDate: '2024-02-28',
-      lastActivity: '2024-02-28T17:00:00',
-      color: 'bg-emerald-500'
-    },
-    {
-      id: '5',
-      name: 'Supply Chain Management System',
-      description: 'Supplier management system, including order management and inventory tracking.',
-      status: 'on-hold',
-      progress: 30,
-      members: 7,
-      tasks: { completed: 8, total: 25 },
-      startDate: '2024-01-20',
-      endDate: '2024-07-15',
-      lastActivity: '2024-03-01T09:30:00',
-      color: 'bg-orange-500'
-    }
-  ]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [projects, setProjects] = useState<Project[]>([]);
+
+  // Fetch projects when search term or status changes
+  useEffect(() => {
+    const fetchProjects = async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        // Get projects where user is a member
+        const { data, error } = await api.projects.getCurrentUserProjects();
+
+        if (error) throw new Error(error);
+
+        // Convert API response to frontend Project format
+        const formattedProjects = data.map(project => ({
+          ...project,
+          id: project.id.toString(),
+          startDate: project.start_date || '',
+          endDate: project.end_date || '',
+          lastActivity: project.last_activity_at,
+        }));
+
+        setProjects(formattedProjects);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to fetch projects');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchProjects();
+  }, [searchTerm, selectedStatus]);
+
+
 
   // Breadcrumb navigation
   const breadcrumbItems = [
@@ -363,25 +327,26 @@ const ProjectsPage = () => {
 
   const statusOptions = [
     { value: 'all', label: 'All Status' },
-    { value: 'active', label: 'In Progress' },
-    { value: 'planning', label: 'Planning' },
-    { value: 'on-hold', label: 'On Hold' },
-    { value: 'completed', label: 'Completed' }
+    { value: ProjectStatus.ACTIVE, label: 'In Progress' },
+    { value: ProjectStatus.PLANNING, label: 'Planning' },
+    { value: ProjectStatus.ON_HOLD, label: 'On Hold' },
+    { value: ProjectStatus.COMPLETED, label: 'Completed' }
   ];
 
-  const getStatusInfo = (status: string) => {
+  const getStatusInfo = (status: ProjectStatus) => {
     const statusMap = {
-      active: { label: 'In Progress', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400', icon: '🟢' },
-      planning: { label: 'Planning', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400', icon: '📋' },
-      'on-hold': { label: 'On Hold', color: 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400', icon: '⏸️' },
-      completed: { label: 'Completed', color: 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400', icon: '✅' }
+      [ProjectStatus.ACTIVE]: { label: 'In Progress', color: 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400', icon: '🟢' },
+      [ProjectStatus.PLANNING]: { label: 'Planning', color: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400', icon: '📋' },
+      [ProjectStatus.ON_HOLD]: { label: 'On Hold', color: 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400', icon: '⏸️' },
+      [ProjectStatus.COMPLETED]: { label: 'Completed', color: 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400', icon: '✅' },
+      [ProjectStatus.CANCELLED]: { label: 'Cancelled', color: 'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-400', icon: '❌' }
     };
-    return statusMap[status as keyof typeof statusMap] || statusMap.active;
+    return statusMap[status] || statusMap[ProjectStatus.ACTIVE];
   };
 
   const getDaysRemainingInfo = (project: Project) => {
     // Don't show days remaining for completed, on-hold, or planning projects
-    if (project.status === 'completed' || project.status === 'on-hold' || project.status === 'planning') {
+    if (project.status === ProjectStatus.COMPLETED || project.status === ProjectStatus.ON_HOLD || project.status === ProjectStatus.PLANNING || project.status === ProjectStatus.CANCELLED) {
       return null;
     }
 
@@ -391,35 +356,71 @@ const ProjectsPage = () => {
       return {
         value: Math.abs(daysRemaining),
         label: 'Overdue by',
-        color: 'text-red-600 dark:text-red-400'
+        color: 'text-red-600 dark:text-red-400',
       };
     } else {
       return {
         value: daysRemaining,
         label: 'Days Remaining',
-        color: 'text-gray-900 dark:text-white'
+        color: 'text-gray-900 dark:text-white',
       };
     }
   };
 
-  const handleCreateProject = (newProjectData: Omit<Project, 'id' | 'progress' | 'tasks' | 'lastActivity'>) => {
-    const newProject: Project = {
-      ...newProjectData,
-      id: Math.random().toString(36).substr(2, 9),
-      progress: 0,
-      tasks: { completed: 0, total: 0 },
-      lastActivity: new Date().toISOString()
-    };
-    
-    setProjects(prev => [newProject, ...prev]);
+  const handleCreateProject = async (newProjectData: Omit<Project, 'id' | 'progress' | 'tasks' | 'lastActivity'>) => {
+    try {
+      const { data, error } = await api.projects.create({
+        name: newProjectData.name,
+        description: newProjectData.description || '',
+        status: newProjectData.status as ProjectStatus,
+        start_date: newProjectData.startDate || new Date().toISOString(),
+        end_date: newProjectData.endDate || new Date().toISOString(),
+        color: newProjectData.color || 'bg-blue-500'
+      });
+
+      if (error) throw new Error(error);
+
+      // Convert API response to frontend Project format
+      const newProject: Project = {
+        ...data,
+        id: data.id.toString(),
+        startDate: data.start_date || '',
+        endDate: data.end_date || '',
+        lastActivity: data.last_activity_at
+      };
+      
+      setProjects(prev => [newProject, ...prev]);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to create project');
+    }
   };
 
-  const filteredProjects = projects.filter(project => {
-    const matchesSearch = project.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         project.description.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = selectedStatus === 'all' || project.status === selectedStatus;
-    return matchesSearch && matchesStatus;
-  });
+  // Filter projects client-side since we're already fetching user-specific projects
+  const filteredProjects = projects
+    .filter(project => {
+      const matchesSearch = project.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         (project.description?.toLowerCase().includes(searchTerm.toLowerCase()) ?? false);
+      const matchesStatus = selectedStatus === 'all' || project.status === (selectedStatus as ProjectStatus);
+      return matchesSearch && matchesStatus;
+    })
+    // Sort projects by role (owner first, then admin, etc.) and then by last activity
+    .sort((a, b) => {
+      const roleOrder: Record<ScrumRole, number> = {
+        [ScrumRole.SCRUM_MASTER]: 0,
+        [ScrumRole.PRODUCT_OWNER]: 1,
+        [ScrumRole.DEVELOPER]: 2
+      };
+      
+      const aRoleOrder = a.user_role ? roleOrder[a.user_role] : 4;
+      const bRoleOrder = b.user_role ? roleOrder[b.user_role] : 4;
+      
+      if (aRoleOrder !== bRoleOrder) {
+        return aRoleOrder - bRoleOrder;
+      }
+      
+      // If roles are the same, sort by last activity (most recent first)
+      return new Date(b.lastActivity).getTime() - new Date(a.lastActivity).getTime();
+    });
 
   return (
     <div className="space-y-8">
@@ -477,16 +478,42 @@ const ProjectsPage = () => {
         </div>
       </div>
 
-      {/* 项目网格 */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredProjects.map(project => {
+      {/* Loading State */}
+      {isLoading && (
+        <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading projects...</p>
+        </div>
+      )}
+
+      {/* Error State */}
+      {error && (
+        <div className="text-center py-8 bg-white dark:bg-gray-800 rounded-lg border border-red-200 dark:border-red-900">
+          <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-red-600 dark:text-red-400 mb-2">
+            Error Loading Projects
+          </h3>
+          <p className="text-gray-600 dark:text-gray-400">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-4 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+          >
+            Try Again
+          </button>
+        </div>
+      )}
+
+      {/* Project Grid */}
+      {!isLoading && !error && (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {filteredProjects.map(project => {
           const statusInfo = getStatusInfo(project.status);
           const daysRemainingInfo = getDaysRemainingInfo(project);
           const favoriteItem = {
             id: project.id,
             type: 'project' as const,
             title: project.name,
-            description: project.description,
+            description: project.description || '',
             url: `/project/${project.id}/dashboard`,
             metadata: {
               status: project.status,
@@ -511,9 +538,16 @@ const ProjectsPage = () => {
                       {project.name}
                     </h3>
                     <div className="flex items-center gap-2 mt-1">
-                      <span className={`px-2 py-1 text-xs rounded-full ${statusInfo.color}`}>
-                        {statusInfo.icon} {statusInfo.label}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2 py-1 text-xs rounded-full ${statusInfo.color}`}>
+                          {statusInfo.icon} {statusInfo.label}
+                        </span>
+                        {project.user_role && (
+                          <span className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">
+                            {project.user_role === ScrumRole.SCRUM_MASTER ? '👑' : project.user_role === ScrumRole.PRODUCT_OWNER ? '📋' : '👤'} {project.user_role}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
                   <div onClick={(e) => e.preventDefault()}>
@@ -603,9 +637,11 @@ const ProjectsPage = () => {
             </Link>
           );
         })}
-      </div>
+        </div>
+      )}
 
-      {filteredProjects.length === 0 && (
+      {/* Empty State */}
+      {!isLoading && !error && filteredProjects.length === 0 && (
         <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
           <FolderOpen className="w-16 h-16 text-gray-300 dark:text-gray-600 mx-auto mb-4" />
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">

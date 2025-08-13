@@ -88,6 +88,23 @@ class MeetingResponse(BaseModel):
     createdAt: datetime = Field(alias="created_at")
     updatedAt: datetime = Field(alias="updated_at")
     
+    @classmethod
+    def from_orm(cls, obj):
+        """Create response object from ORM model (for compatibility)"""
+        return cls(
+            id=obj.id,
+            title=obj.title,
+            meeting_type=obj.meeting_type,
+            start_datetime=obj.start_datetime,
+            description=obj.description,
+            duration=obj.duration,
+            location=obj.location,
+            sprint_id=obj.sprint_id,
+            project_id=obj.project_id,
+            created_at=obj.created_at,
+            updated_at=obj.updated_at
+        )
+    
     @computed_field
     @property
     def endDatetime(self) -> datetime:

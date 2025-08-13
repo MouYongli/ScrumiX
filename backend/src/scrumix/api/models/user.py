@@ -40,7 +40,7 @@ class User(Base):
     # Personal information
     avatar_url = Column(String(500), nullable=True)
     timezone = Column(String(100), default="UTC")
-    language = Column(String(10), default="zh-CN")
+    language = Column(String(10), default="en")
     
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -66,10 +66,6 @@ class UserOAuth(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    username = Column(String(255), nullable=False)
-    email = Column(String(255), nullable=False)
-    password = Column(String(255), nullable=False)
-    avatar_url = Column(String(500), nullable=True)
     
     # OAuth information
     provider = Column(SQLEnum(AuthProvider), nullable=False)
@@ -91,11 +87,6 @@ class UserOAuth(Base):
     
     # Relationships
     user = relationship("User", back_populates="oauth_accounts")
-    
-    # Composite unique index: a user can only have one account per OAuth provider
-    __table_args__ = (
-        {"schema": None},
-    )
 
 class UserSession(Base):
     """User session table"""
@@ -121,6 +112,7 @@ class UserSession(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     last_activity_at = Column(DateTime(timezone=True), server_default=func.now())
+    deactivated_at = Column(DateTime(timezone=True), nullable=True)
     
     # Relationships
-    user = relationship("User", back_populates="sessions") 
+    user = relationship("User", back_populates="sessions")
