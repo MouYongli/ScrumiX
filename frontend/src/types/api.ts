@@ -41,6 +41,14 @@ export interface ApiMeeting {
   // Note: participants not included in MeetingResponse schema
 }
 
+export interface ApiMeetingAgenda {
+  agendaId: number;                // camelCase (alias in backend)
+  meetingId: number;               // camelCase (alias in backend)
+  title: string;
+  createdAt: string;               // camelCase (alias in backend)
+  updatedAt: string;               // camelCase (alias in backend)
+}
+
 export enum ScrumRole {
   SCRUM_MASTER = "scrum_master",
   PRODUCT_OWNER = "product_owner",
@@ -165,6 +173,5 @@ export enum BacklogPriority {
 export enum BacklogType {
   EPIC = 'epic',
   STORY = 'story',
-  TASK = 'task',
   BUG = 'bug',
 }

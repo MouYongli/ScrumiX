@@ -33,14 +33,16 @@ class CRUDMeeting(CRUDBase[Meeting, MeetingCreate, MeetingUpdate]):
         limit: int = 100
     ) -> List[Meeting]:
         """Get upcoming meetings for a specific user within specified days."""
-        end_date = datetime.now() + timedelta(days=days)
+        from datetime import timezone
+        now = datetime.now(timezone.utc)
+        end_date = now + timedelta(days=days)
         return (
             db.query(self.model)
             .join(UserMeeting)
             .filter(
                 and_(
                     UserMeeting.user_id == user_id,
-                    self.model.start_datetime > datetime.now(),
+                    self.model.start_datetime > now,
                     self.model.start_datetime <= end_date
                 )
             )
@@ -96,7 +98,9 @@ class CRUDMeeting(CRUDBase[Meeting, MeetingCreate, MeetingUpdate]):
         
         # Apply upcoming only filter
         if upcoming_only:
-            query = query.filter(self.model.start_datetime > datetime.now())
+            from datetime import timezone
+            now = datetime.now(timezone.utc)
+            query = query.filter(self.model.start_datetime > now)
         
         # Apply date range filter
         if date_from:
@@ -155,12 +159,14 @@ class CRUDMeeting(CRUDBase[Meeting, MeetingCreate, MeetingUpdate]):
         limit: int = 100
     ) -> List[Meeting]:
         """Get upcoming meetings within specified days."""
-        end_date = datetime.now() + timedelta(days=days)
+        from datetime import timezone
+        now = datetime.now(timezone.utc)
+        end_date = now + timedelta(days=days)
         return (
             db.query(self.model)
             .filter(
                 and_(
-                    self.model.start_datetime > datetime.now(),
+                    self.model.start_datetime > now,
                     self.model.start_datetime <= end_date
                 )
             )
@@ -171,7 +177,8 @@ class CRUDMeeting(CRUDBase[Meeting, MeetingCreate, MeetingUpdate]):
     
     def get_today(self, db: Session) -> List[Meeting]:
         """Get today's meetings."""
-        today = datetime.now().date()
+        from datetime import timezone
+        today = datetime.now(timezone.utc).date()
         return (
             db.query(self.model)
             .filter(func.date(self.model.start_datetime) == today)
@@ -187,7 +194,8 @@ class CRUDMeeting(CRUDBase[Meeting, MeetingCreate, MeetingUpdate]):
         limit: int = 100
     ) -> List[Meeting]:
         """Get currently ongoing meetings."""
-        now = datetime.now()
+        from datetime import timezone
+        now = datetime.now(timezone.utc)
         
         # Get all meetings and filter in Python for SQLite compatibility
         all_meetings = (

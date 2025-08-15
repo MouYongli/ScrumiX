@@ -1,6 +1,6 @@
 import { TaskStatus, ProjectStatus } from '@/types/enums';
 import { 
-  ApiUser, ApiTask, ApiMeeting, ApiProject, ApiSprint, ApiBacklog, ApiAcceptanceCriteria,
+  ApiUser, ApiTask, ApiMeeting, ApiMeetingAgenda, ApiProject, ApiSprint, ApiBacklog, ApiAcceptanceCriteria,
   TaskListResponse, MeetingListResponse, ApiError, ScrumRole, ProjectMemberResponse
 } from '@/types/api';
 import { authenticatedFetch } from '@/utils/auth';
@@ -203,10 +203,121 @@ export const api = {
       });
       return jsonFetch<ApiMeeting[]>(`/api/v1/meetings/range?${params.toString()}`);
     },
+
+    // CRUD operations
+    getAll: (params?: { 
+      skip?: number; 
+      limit?: number;
+      meeting_type?: string;
+      search?: string;
+      upcoming_only?: boolean;
+      date_from?: string;
+      date_to?: string;
+    }) => {
+      const searchParams = new URLSearchParams();
+      if (params?.skip) searchParams.append('skip', params.skip.toString());
+      if (params?.limit) searchParams.append('limit', params.limit.toString());
+      if (params?.meeting_type) searchParams.append('meeting_type', params.meeting_type);
+      if (params?.search) searchParams.append('search', params.search);
+      if (params?.upcoming_only) searchParams.append('upcoming_only', params.upcoming_only.toString());
+      if (params?.date_from) searchParams.append('date_from', params.date_from);
+      if (params?.date_to) searchParams.append('date_to', params.date_to);
+      
+      return jsonFetch<MeetingListResponse>(`/api/v1/meetings/?${searchParams.toString()}`);
+    },
+
+    getById: (id: number) => jsonFetch<ApiMeeting>(`/api/v1/meetings/${id}`),
+
+    getByProject: (project_id: number) => 
+      jsonFetch<ApiMeeting[]>(`/api/v1/projects/${project_id}/meetings`),
+
+    create: (data: {
+      title: string;
+      meeting_type: string;
+      start_datetime: string;
+      description?: string;
+      duration: number;
+      location?: string;
+      sprint_id: number;
+      project_id: number;
+    }) => 
+      jsonFetch<ApiMeeting>('/api/v1/meetings/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    update: (id: number, data: Partial<{
+      title: string;
+      meeting_type: string;
+      start_datetime: string;
+      description?: string;
+      duration: number;
+      location?: string;
+      sprint_id: number;
+      project_id: number;
+    }>) => 
+      jsonFetch<ApiMeeting>(`/api/v1/meetings/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+
+    delete: (id: number) => jsonFetch<void>(`/api/v1/meetings/${id}`, {
+      method: 'DELETE',
+    }),
+  },
+
+  meetingAgenda: {
+    getByMeeting: (meeting_id: number) => 
+      jsonFetch<ApiMeetingAgenda[]>(`/api/v1/meeting-agendas/meeting/${meeting_id}`),
+    
+    create: (data: { meeting_id: number; title: string }) => 
+      jsonFetch<ApiMeetingAgenda>('/api/v1/meeting-agendas/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+    
+    bulkCreate: (meeting_id: number, agenda_titles: string[]) => 
+      jsonFetch<ApiMeetingAgenda[]>(`/api/v1/meeting-agendas/meeting/${meeting_id}/bulk`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(agenda_titles),
+      }),
+    
+    update: (id: number, data: { title: string }) => 
+      jsonFetch<ApiMeetingAgenda>(`/api/v1/meeting-agendas/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+    
+    delete: (id: number) => jsonFetch<void>(`/api/v1/meeting-agendas/${id}`, {
+      method: 'DELETE',
+    }),
+    
+    deleteAllByMeeting: (meeting_id: number) => 
+      jsonFetch<void>(`/api/v1/meeting-agendas/meeting/${meeting_id}/all`, {
+        method: 'DELETE',
+      }),
   },
   
   sprints: {
     getAll: () => jsonFetch<ApiSprint[]>('/api/v1/sprints/'),
+    getByProject: (project_id: number) => jsonFetch<ApiSprint[]>(`/api/v1/sprints/?project_id=${project_id}`),
+    create: (data: {
+      sprint_name: string;
+      sprint_goal?: string;
+      start_date: string;
+      end_date: string;
+      project_id: number;
+    }) => 
+      jsonFetch<ApiSprint>('/api/v1/sprints/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
   },
 
   backlogs: {

@@ -208,7 +208,16 @@ def reschedule_meeting(
     current_user: User = Depends(get_current_user)
 ):
     """Reschedule a meeting."""
-    if meeting_in.start_datetime < datetime.now():
+    from datetime import timezone
+    now = datetime.now(timezone.utc)
+    # Ensure start_datetime is timezone-aware for comparison
+    if meeting_in.start_datetime.tzinfo is None:
+        # If naive, assume it's in UTC
+        start_dt = meeting_in.start_datetime.replace(tzinfo=timezone.utc)
+    else:
+        start_dt = meeting_in.start_datetime
+    
+    if start_dt < now:
         raise HTTPException(status_code=400, detail="Cannot reschedule to a past time")
     
     db_meeting = meeting_crud.get(db=db, id=meeting_id)

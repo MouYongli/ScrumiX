@@ -75,12 +75,15 @@ class SprintCRUD(CRUDBase[Sprint, SprintCreate, SprintUpdate]):
         )
     
     def get_sprints(self, db: Session, skip: int = 0, limit: int = 100, 
-                   status: Optional[SprintStatus] = None) -> List[Sprint]:
+                   status: Optional[SprintStatus] = None, project_id: Optional[int] = None) -> List[Sprint]:
         """Get list of sprints"""
         query = db.query(Sprint)
         
         if status:
             query = query.filter(Sprint.status == status)
+        
+        if project_id:
+            query = query.filter(Sprint.project_id == project_id)
         
         return query.order_by(Sprint.start_date.desc()).offset(skip).limit(limit).all()
     

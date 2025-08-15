@@ -1,7 +1,7 @@
 """
 Project management API routes
 """
-from typing import List, Optional
+from typing import List, Optional, Dict
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi import status as fastapi_status
 from sqlalchemy.orm import Session
@@ -14,6 +14,7 @@ from scrumix.api.models.project import ProjectStatus
 from scrumix.api.models.user_project import ScrumRole
 from scrumix.api.schemas.project import ProjectCreate, ProjectUpdate, ProjectResponse
 from scrumix.api.schemas.user_project import ProjectMemberResponse, UserProjectCreate, UserProjectUpdate
+from scrumix.api.schemas.meeting import MeetingResponse
 
 router = APIRouter(tags=["projects"])
 
@@ -570,6 +571,42 @@ async def remove_project_member(
             )
         
         return {"message": "User removed from project successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+
+@router.get("/{project_id}/meetings", response_model=List[MeetingResponse])
+async def get_project_meetings(
+    project_id: int,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get meetings for a specific project"""
+    try:
+        # Check if user is a member of the project
+        user_role = user_project_crud.get_user_role(db, current_user.id, project_id)
+        if not user_role:
+            raise HTTPException(
+                status_code=fastapi_status.HTTP_403_FORBIDDEN,
+                detail="You are not a member of this project"
+            )
+        
+        # Import meeting CRUD
+        from scrumix.api.crud.meeting import meeting_crud
+        
+        # Get meetings for the project
+        meetings = meeting_crud.get_meetings_by_project(db, project_id, skip=skip, limit=limit)
+        
+        # Convert to response format using Pydantic schema
+        return [MeetingResponse.model_validate(meeting) for meeting in meetings]
         
     except HTTPException:
         raise

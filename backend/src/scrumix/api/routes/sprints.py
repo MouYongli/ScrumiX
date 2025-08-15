@@ -24,6 +24,7 @@ def get_sprints(
     skip: int = Query(0, ge=0, description="Number of records to skip"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
     status: Optional[SprintStatus] = Query(None, description="Filter by sprint status"),
+    project_id: Optional[int] = Query(None, gt=0, description="Filter by project ID"),
     search: Optional[str] = Query(None, description="Search in sprint name and goal"),
     db: Session = Depends(get_db),
     current_user: UserInDB = Depends(get_current_user)
@@ -35,7 +36,7 @@ def get_sprints(
         if search:
             sprints = sprint_crud.search_sprints(db, search, skip=skip, limit=limit)
         else:
-            sprints = sprint_crud.get_sprints(db, skip=skip, limit=limit, status=status)
+            sprints = sprint_crud.get_sprints(db, skip=skip, limit=limit, status=status, project_id=project_id)
         
         return [
             SprintResponse.from_db_model(sprint) 

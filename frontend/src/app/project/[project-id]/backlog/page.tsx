@@ -107,7 +107,7 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
     items.forEach(item => {
       itemMap.set(item.id, { ...item, children: [] });
     });
-    
+
     // Second pass: organize into parent-child relationships
     items.forEach(item => {
       if (item.parent_id && itemMap.has(item.parent_id)) {
@@ -118,7 +118,7 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
         rootItems.push(itemMap.get(item.id)!);
       }
     });
-    
+
     return rootItems;
   };
 
@@ -278,10 +278,10 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
   const filteredBacklogItems = backlogItems.filter(item => {
     const matchesSearch = !searchTerm || 
       item.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      item.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         item.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
       (item.acceptance_criteria && item.acceptance_criteria.some(ac => 
         ac.title.toLowerCase().includes(searchTerm.toLowerCase())
-      ));
+                         ));
     
     const matchesPriority = filterPriority === 'all' || item.priority === filterPriority;
     const matchesStatus = filterStatus === 'all' || item.status === filterStatus;
@@ -361,7 +361,7 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
         include_children: true,
         include_acceptance_criteria: true
       });
-
+      
       if (refreshResponse.error) throw new Error(refreshResponse.error);
       
       const items = (refreshResponse.data || []).map(item => ({
@@ -397,8 +397,8 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
       if (itemData.acceptance_criteria_titles && itemData.acceptance_criteria_titles.length > 0) {
         // Delete existing acceptance criteria
         await api.acceptanceCriteria.deleteAllByBacklogId(itemData.id);
-        
-        // Create new acceptance criteria
+          
+          // Create new acceptance criteria
         const criteriaData = itemData.acceptance_criteria_titles
           .filter((title: string) => title.trim() !== '')
           .map((title: string) => ({ title: title.trim() }));
@@ -414,7 +414,7 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
         include_children: true,
         include_acceptance_criteria: true
       });
-
+      
       if (refreshResponse.error) throw new Error(refreshResponse.error);
       
       const items = (refreshResponse.data || []).map(item => ({
@@ -436,15 +436,15 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
     
     try {
       const response = await api.backlogs.delete(itemId);
-      if (response.error) throw new Error(response.error);
+        if (response.error) throw new Error(response.error);
 
-      // Refresh the backlog items
+        // Refresh the backlog items
       const refreshResponse = await api.backlogs.getAll({
-        project_id: parseInt(projectId),
-        include_children: true,
-        include_acceptance_criteria: true
-      });
-
+          project_id: parseInt(projectId),
+          include_children: true,
+          include_acceptance_criteria: true
+        });
+        
       if (refreshResponse.error) throw new Error(refreshResponse.error);
       
       const items = (refreshResponse.data || []).map(item => ({
@@ -632,12 +632,12 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
           story_point: editingItem.story_point,
           parent_id: editingItem.parent_id,
           item_type: editingItem.item_type,
-                     acceptanceCriteria: (() => {
+          acceptanceCriteria: (() => {
              if (editingItem && editingItem.acceptance_criteria && Array.isArray(editingItem.acceptance_criteria) && editingItem.acceptance_criteria.length > 0) {
-               return editingItem.acceptance_criteria.map(ac => ac.title);
-             }
+              return editingItem.acceptance_criteria.map(ac => ac.title);
+            }
              return [];
-           })()
+          })()
         } : null}
         projectId={parseInt(projectId)}
       />
