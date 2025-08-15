@@ -24,6 +24,7 @@ def get_backlogs(
     limit: int = Query(100, ge=1, le=1000, description="Number of records to return"),
     status: Optional[BacklogStatus] = Query(None, description="Filter by status"),
     priority: Optional[BacklogPriority] = Query(None, description="Filter by priority"),
+    item_type: Optional[BacklogType] = Query(None, description="Filter by item type"),
     project_id: Optional[int] = Query(None, description="Filter by project ID"),
     sprint_id: Optional[int] = Query(None, description="Filter by sprint ID"),
     assigned_to_id: Optional[int] = Query(None, description="Filter by assigned user ID"),
@@ -45,7 +46,7 @@ def get_backlogs(
                 limit,
                 status,
                 priority,
-                None,  # item_type
+                item_type,
                 project_id,
                 sprint_id,
                 assigned_to_id,

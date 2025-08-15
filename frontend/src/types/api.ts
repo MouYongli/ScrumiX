@@ -167,6 +167,4 @@ export enum BacklogType {
   STORY = 'story',
   TASK = 'task',
   BUG = 'bug',
-  FEATURE = 'feature',
-  IMPROVEMENT = 'improvement'
 }

@@ -17,6 +17,11 @@ import {
   ApiAcceptanceCriteria as AcceptanceCriteria 
 } from '@/types/api';
 
+// Extended type for hierarchical display
+interface HierarchicalBacklogItem extends BacklogItem {
+  children?: HierarchicalBacklogItem[];
+}
+
 interface ProjectBacklogProps {
   params: Promise<{ 'project-id': string }>;
 }
@@ -57,15 +62,12 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
         
         if (response.error) throw new Error(response.error);
         
-        console.log('API Response:', response);
-        
         // Transform the data to match our interface
         const items = (response.data || []).map(item => ({
           ...item,
           acceptance_criteria: Array.isArray(item.acceptance_criteria) ? item.acceptance_criteria : []
         }));
         
-        console.log('Backlog items with acceptance criteria:', items);
         setBacklogItems(items);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to fetch data');
@@ -76,6 +78,7 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
 
     fetchData();
   }, [projectId]);
+
   const [searchTerm, setSearchTerm] = useState('');
   const [filterPriority, setFilterPriority] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
@@ -88,7 +91,6 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
   // Validate editingItem state to ensure acceptance_criteria is always an array
   useEffect(() => {
     if (editingItem && (!editingItem.acceptance_criteria || !Array.isArray(editingItem.acceptance_criteria))) {
-      console.log('Fixing editingItem with invalid acceptance_criteria:', editingItem);
       setEditingItem({
         ...editingItem,
         acceptance_criteria: []
@@ -96,269 +98,373 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
     }
   }, [editingItem]);
 
-  // Breadcrumb navigation
-  const breadcrumbItems = [
-    { label: 'Projects', href: '/project', icon: <FolderOpen className="w-4 h-4" /> },
-    { label: project?.name || 'Loading...', href: `/project/${projectId}/dashboard` },
-    { label: 'Product Backlog', icon: <ListTodo className="w-4 h-4" /> }
-  ];
-
-  // Build hierarchical structure
-  interface BacklogItemWithChildren extends BacklogItem {
-    children: BacklogItemWithChildren[];
-  }
-
-  // Interface for editing backlog items with acceptance criteria titles
-  interface BacklogItemForEdit extends Omit<BacklogItem, 'acceptance_criteria'> {
-    acceptance_criteria_titles: string[];
-  }
-
-  const buildHierarchy = (items: BacklogItem[]) => {
-    const itemMap = new Map<number, BacklogItemWithChildren>();
-    const rootItems: BacklogItemWithChildren[] = [];
-
-    // Initialize all items in the map
+  // Function to organize backlog items hierarchically
+  const organizeHierarchically = (items: BacklogItem[]) => {
+    const itemMap = new Map<number, HierarchicalBacklogItem>();
+    const rootItems: HierarchicalBacklogItem[] = [];
+    
+    // First pass: create a map of all items
     items.forEach(item => {
       itemMap.set(item.id, { ...item, children: [] });
     });
-
-    // Build parent-child relationships
+    
+    // Second pass: organize into parent-child relationships
     items.forEach(item => {
-      const itemWithChildren = itemMap.get(item.id)!;
       if (item.parent_id && itemMap.has(item.parent_id)) {
-        itemMap.get(item.parent_id)!.children.push(itemWithChildren);
+        const parent = itemMap.get(item.parent_id)!;
+        parent.children = parent.children || [];
+        parent.children.push(itemMap.get(item.id)!);
       } else {
-        rootItems.push(itemWithChildren);
+        rootItems.push(itemMap.get(item.id)!);
       }
     });
-
+    
     return rootItems;
   };
 
-  // Flatten hierarchy for display with visibility control
-  const flattenHierarchy = (hierarchyItems: BacklogItemWithChildren[]) => {
-    const result: BacklogItem[] = [];
+  // Function to render a single backlog item with its children
+  const renderBacklogItem = (item: HierarchicalBacklogItem, depth: number = 0) => {
+    const hasChildren = item.children && item.children.length > 0;
+    const isCollapsed = collapsedHierarchy.has(item.id.toString());
     
-    const traverse = (items: BacklogItemWithChildren[]) => {
-      items.forEach(item => {
-        const { children, ...itemWithoutChildren } = item;
-        result.push(itemWithoutChildren);
+    return (
+      <div key={item.id}>
+        <div 
+          className={`bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6 ${
+            depth > 0 ? `ml-${depth * 8} border-l-4 ${
+              item.item_type === BacklogType.STORY ? 'border-l-blue-300' : 
+              'border-l-gray-300'
+            }` : ''
+          }`}
+        >
+          <div className="flex items-start justify-between">
+            <div className="flex-1">
+              {/* Header with ID, Title, Labels, and Hierarchy Controls */}
+              <div className="flex items-start gap-4 mb-3">
+                {/* Hierarchy Controls */}
+                <div className="flex items-center gap-2">
+                  {hasChildren && (
+                    <button
+                      onClick={() => toggleHierarchyCollapse(item.id.toString())}
+                      className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1"
+                      title={isCollapsed ? 'Expand children' : 'Collapse children'}
+                    >
+                      {isCollapsed ? (
+                        <ChevronRight className="w-4 h-4" />
+                      ) : (
+                        <ChevronDown className="w-4 h-4" />
+                      )}
+                    </button>
+                  )}
+                  <span className={`text-sm font-mono text-gray-500 dark:text-gray-400 px-2 py-1 rounded ${
+                    item.item_type === BacklogType.EPIC ? 'bg-purple-100 dark:bg-purple-900/20' :
+                    item.item_type === BacklogType.STORY ? 'bg-blue-100 dark:bg-blue-900/20' :
+                    'bg-gray-100 dark:bg-gray-700'
+                  }`}>
+                    {item.item_type === BacklogType.EPIC ? 'EPIC' : 'PBI'}-{item.id}
+                  </span>
+                </div>
+                <div className="flex-1">
+                  <div className="flex flex-wrap items-center gap-3 mb-2">
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                      {item.title}
+                    </h3>
+                    {/* Priority, Status, Story Points, and Assignee inline */}
+                    <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${getPriorityColor(item.priority)}`}>
+                      {item.priority.charAt(0).toUpperCase() + item.priority.slice(1)}
+                    </span>
+                    <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${getStatusColor(item.status)}`}>
+                      {item.status.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
+                    </span>
+                    <span className="text-xs text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
+                      {item.story_point} SP
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-2 mb-3">
+                    <span
+                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getLabelColor(item.item_type)}`}
+                    >
+                      {item.item_type.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Description */}
+              <p className="text-gray-700 dark:text-gray-300 mb-4 leading-relaxed">
+                {item.description}
+              </p>
+
+              {/* Expandable Acceptance Criteria */}
+              {(item.acceptance_criteria && item.acceptance_criteria.length > 0) && (
+                <div className="mb-4">
+                  <button
+                    onClick={() => toggleItemExpansion(item.id.toString())}
+                    className="flex items-center gap-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
+                  >
+                    <ChevronDown className={`w-4 h-4 transition-transform ${expandedItems.has(item.id.toString()) ? 'rotate-180' : ''}`} />
+                    Acceptance Criteria ({item.acceptance_criteria.length})
+                  </button>
+                  {expandedItems.has(item.id.toString()) && (
+                    <ul className="mt-2 space-y-1 pl-6">
+                      {item.acceptance_criteria.map((criteria) => (
+                        <li key={criteria.id} className="text-sm text-gray-600 dark:text-gray-400 flex items-start gap-2">
+                          <span className="text-blue-500 mt-1">•</span>
+                          {criteria.title}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              )}
+
+              {/* Dates */}
+              <div className="flex items-center gap-6 text-xs text-gray-500 dark:text-gray-400">
+                <div className="flex items-center gap-1">
+                  <Calendar className="w-3 h-3" />
+                  Created: {new Date(item.created_at).toLocaleDateString()}
+                </div>
+                <div className="flex items-center gap-1">
+                  <Clock className="w-3 h-3" />
+                  Updated: {new Date(item.updated_at).toLocaleDateString()}
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex gap-2 ml-4">
+              <button
+                                 onClick={() => {
+                   const editingData = {
+                     ...item,
+                     acceptance_criteria: (item.acceptance_criteria && Array.isArray(item.acceptance_criteria)) ? item.acceptance_criteria : []
+                   };
+                   setEditingItem(editingData);
+                 }}
+                className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                title="Edit PBI"
+              >
+                <Edit2 className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => handleDeleteItem(item.id)}
+                className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 p-2 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                title="Delete PBI"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
         
-        // Only show children if parent is not collapsed
-        if (!collapsedHierarchy.has(item.id.toString()) && children.length > 0) {
-          traverse(children);
-        }
-      });
-    };
-    
-    traverse(hierarchyItems);
-    return result;
+        {/* Render children if not collapsed */}
+        {hasChildren && !isCollapsed && (
+          <div className="space-y-4">
+            {item.children!.map(child => renderBacklogItem(child, depth + 1))}
+          </div>
+        )}
+      </div>
+    );
   };
 
-  const filteredItems = backlogItems.filter(item => {
-    const matchesSearch = item.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         item.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         (item.acceptance_criteria && Array.isArray(item.acceptance_criteria) && item.acceptance_criteria.some(criteria => 
-                           criteria && criteria.title && criteria.title.toLowerCase().includes(searchTerm.toLowerCase())
-                         ));
+  // Breadcrumb navigation
+  const breadcrumbItems = [
+    { label: 'Workspace', href: '/workspace' },
+    { label: project?.name || 'Project', href: `/project/${projectId}` },
+    { label: 'Product Backlog', href: `/project/${projectId}/backlog` }
+  ];
+
+  // Filter backlog items based on search and filters
+  const filteredBacklogItems = backlogItems.filter(item => {
+    const matchesSearch = !searchTerm || 
+      item.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      item.description.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (item.acceptance_criteria && item.acceptance_criteria.some(ac => 
+        ac.title.toLowerCase().includes(searchTerm.toLowerCase())
+      ));
+    
     const matchesPriority = filterPriority === 'all' || item.priority === filterPriority;
     const matchesStatus = filterStatus === 'all' || item.status === filterStatus;
     const matchesLabel = filterLabel === 'all' || item.item_type === filterLabel;
+    
     return matchesSearch && matchesPriority && matchesStatus && matchesLabel;
   });
 
-  const hierarchyItems = buildHierarchy(filteredItems);
-  const displayItems = flattenHierarchy(hierarchyItems);
-
-    interface NewBacklogItem {
-    title: string;
-    description: string;
-    priority: BacklogPriority;
-    status: BacklogStatus;
-    story_point: number;
-    item_type: BacklogType;
-    parent_id?: number;
-  }
-
-  const handleAddItem = async (newItem: NewBacklogItem) => {
-    try {
-      const response = await api.backlogs.create({
-        ...newItem,
-        project_id: parseInt(projectId)
-      });
-
-      if (response.error) throw new Error(response.error);
-
-      // Refresh the backlog items
-      const updatedResponse = await api.backlogs.getAll({
-        project_id: parseInt(projectId),
-        include_children: true,
-        include_acceptance_criteria: true
-      });
-      
-      if (updatedResponse.error) throw new Error(updatedResponse.error);
-      setBacklogItems(updatedResponse.data || []);
-      setIsAddModalOpen(false);
-    } catch (err) {
-      console.error('Failed to add backlog item:', err);
-      alert('Failed to add backlog item. Please try again.');
-    }
-  };
-
-    const handleEditItem = async (editedItem: BacklogItemForEdit) => {
-    try {
-      // Prepare update data matching the backend BacklogUpdate schema
-      const updateData = {
-        title: editedItem.title,
-        description: editedItem.description,
-        priority: editedItem.priority,
-        status: editedItem.status,
-        story_point: editedItem.story_point,
-        item_type: editedItem.item_type,
-        parent_id: editedItem.parent_id
-        // Note: project_id is not included in BacklogUpdate schema
-      };
-
-      console.log('Updating backlog item:', editedItem.id, 'with data:', updateData);
-
-      const response = await api.backlogs.update(editedItem.id, updateData);
-
-      if (response.error) throw new Error(response.error);
-
-      console.log('Update successful:', response.data);
-
-      // Handle acceptance criteria updates if they exist
-      if (editedItem.acceptance_criteria_titles && Array.isArray(editedItem.acceptance_criteria_titles) && editedItem.acceptance_criteria_titles.length > 0) {
-        console.log('Updating acceptance criteria for item:', editedItem.id);
-        
-        try {
-          // Delete existing acceptance criteria
-          await api.acceptanceCriteria.deleteAllByBacklogId(editedItem.id);
-          console.log('Deleted existing acceptance criteria');
-          
-          // Create new acceptance criteria
-          const criteriaTitles = editedItem.acceptance_criteria_titles
-            .filter(title => title && title.trim() !== '');
-          
-          if (criteriaTitles.length > 0) {
-            const newCriteria = await api.acceptanceCriteria.bulkCreate(editedItem.id, criteriaTitles);
-            if (newCriteria.error) {
-              console.error('Failed to create new acceptance criteria:', newCriteria.error);
-            } else {
-              console.log('Created new acceptance criteria:', newCriteria.data);
-            }
-          }
-        } catch (err) {
-          console.error('Failed to update acceptance criteria:', err);
-          // Don't fail the entire update if acceptance criteria update fails
-        }
-      }
-
-      // Refresh the backlog items
-      const updatedResponse = await api.backlogs.getAll({
-        project_id: parseInt(projectId),
-        include_children: true,
-        include_acceptance_criteria: true
-      });
-      
-      if (updatedResponse.error) throw new Error(updatedResponse.error);
-      setBacklogItems(updatedResponse.data || []);
-      setEditingItem(null);
-    } catch (err) {
-      console.error('Failed to update backlog item:', err);
-      alert('Failed to update backlog item. Please try again.');
-    }
-  };
-
-  const handleDeleteItem = async (id: number) => {
-    if (window.confirm('Are you sure you want to delete this PBI? This action cannot be undone.')) {
-      try {
-        console.log('Deleting backlog item:', id);
-
-        const response = await api.backlogs.delete(id);
-        if (response.error) throw new Error(response.error);
-
-        console.log('Delete successful for item:', id);
-
-        // Refresh the backlog items
-        const updatedResponse = await api.backlogs.getAll({
-          project_id: parseInt(projectId),
-          include_children: true,
-          include_acceptance_criteria: true
-        });
-        
-        if (updatedResponse.error) throw new Error(updatedResponse.error);
-        setBacklogItems(updatedResponse.data || []);
-        
-        console.log('Backlog items refreshed after delete');
-      } catch (err) {
-        console.error('Failed to delete backlog item:', err);
-        alert('Failed to delete backlog item. Please try again.');
-      }
-    }
-  };
-
-  const toggleItemExpansion = (id: string) => {
-    const newExpanded = new Set(expandedItems);
-    if (newExpanded.has(id)) {
-      newExpanded.delete(id);
+  // Toggle item expansion for acceptance criteria
+  const toggleItemExpansion = (itemId: string) => {
+    const newExpandedItems = new Set(expandedItems);
+    if (newExpandedItems.has(itemId)) {
+      newExpandedItems.delete(itemId);
     } else {
-      newExpanded.add(id);
+      newExpandedItems.add(itemId);
     }
-    setExpandedItems(newExpanded);
+    setExpandedItems(newExpandedItems);
   };
 
-  const toggleHierarchyCollapse = (id: string) => {
-    const newCollapsed = new Set(collapsedHierarchy);
-    if (newCollapsed.has(id)) {
-      newCollapsed.delete(id);
+  // Toggle hierarchy collapse for parent items
+  const toggleHierarchyCollapse = (itemId: string) => {
+    const newCollapsedHierarchy = new Set(collapsedHierarchy);
+    if (newCollapsedHierarchy.has(itemId)) {
+      newCollapsedHierarchy.delete(itemId);
     } else {
-      newCollapsed.add(id);
+      newCollapsedHierarchy.add(itemId);
     }
-    setCollapsedHierarchy(newCollapsed);
+    setCollapsedHierarchy(newCollapsedHierarchy);
   };
 
-  const getPriorityColor = (priority: string) => {
+  // Color utility functions
+  const getPriorityColor = (priority: BacklogPriority) => {
     switch (priority) {
-      case 'high': return 'text-red-600 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800';
-      case 'medium': return 'text-yellow-600 bg-yellow-50 dark:bg-yellow-900/20 border-yellow-200 dark:border-yellow-800';
-      case 'low': return 'text-green-600 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800';
-      default: return 'text-gray-600 bg-gray-50 dark:bg-gray-900/20 border-gray-200 dark:border-gray-800';
+      case BacklogPriority.CRITICAL: return 'border-red-500 bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300';
+      case BacklogPriority.HIGH: return 'border-orange-500 bg-orange-50 text-orange-700 dark:bg-orange-900/20 dark:text-orange-300';
+      case BacklogPriority.MEDIUM: return 'border-yellow-500 bg-yellow-50 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-300';
+      case BacklogPriority.LOW: return 'border-green-500 bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-300';
+      default: return 'border-gray-500 bg-gray-50 text-gray-700 dark:bg-gray-900/20 dark:text-gray-300';
     }
   };
 
-  const getStatusColor = (status: string) => {
+  const getStatusColor = (status: BacklogStatus) => {
     switch (status) {
-      case 'new': return 'text-blue-600 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800';
-      case 'ready': return 'text-purple-600 bg-purple-50 dark:bg-purple-900/20 border-purple-200 dark:border-purple-800';
-      case 'in-progress': return 'text-orange-600 bg-orange-50 dark:bg-orange-900/20 border-orange-200 dark:border-orange-800';
-      case 'done': return 'text-green-600 bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800';
-      case 'blocked': return 'text-red-600 bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800';
-      default: return 'text-gray-600 bg-gray-50 dark:bg-gray-900/20 border-gray-200 dark:border-gray-800';
+      case BacklogStatus.TODO: return 'border-gray-500 bg-gray-50 text-gray-700 dark:bg-gray-900/20 dark:text-gray-300';
+      case BacklogStatus.IN_PROGRESS: return 'border-blue-500 bg-blue-50 text-blue-700 dark:bg-blue-900/20 dark:text-blue-300';
+      case BacklogStatus.IN_REVIEW: return 'border-purple-500 bg-purple-50 text-purple-700 dark:bg-purple-900/20 dark:text-purple-300';
+      case BacklogStatus.DONE: return 'border-green-500 bg-green-50 text-green-700 dark:bg-green-900/20 dark:text-green-300';
+      case BacklogStatus.CANCELLED: return 'border-red-500 bg-red-50 text-red-700 dark:bg-red-900/20 dark:text-red-300';
+      default: return 'border-gray-500 bg-gray-50 text-gray-700 dark:bg-gray-900/20 dark:text-gray-300';
     }
   };
 
   const getLabelColor = (label: string) => {
     switch (label) {
-      case 'epic': return 'bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-900/20 dark:text-purple-300 dark:border-purple-800';
-      case 'user-story': return 'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-800';
-      case 'bug': return 'bg-red-100 text-red-800 border-red-200 dark:bg-red-900/20 dark:text-red-300 dark:border-red-800';
-      case 'enhancement': return 'bg-green-100 text-green-800 border-green-200 dark:bg-green-900/20 dark:text-green-300 dark:border-green-800';
-      default: return 'bg-gray-100 text-gray-800 border-gray-200 dark:bg-gray-900/20 dark:text-gray-300 dark:border-gray-800';
+      case 'epic': return 'bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-300';
+      case 'story': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-300';
+      case 'bug': return 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-300';
+      default: return 'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-300';
+    }
+  };
+
+  // Handle adding new items
+  const handleAddItem = async (itemData: any) => {
+    try {
+      const newItem = {
+        ...itemData,
+        project_id: parseInt(projectId),
+        acceptance_criteria: itemData.acceptanceCriteria || []
+      };
+
+      const response = await api.backlogs.create(newItem);
+      if (response.error) throw new Error(response.error);
+
+      // Refresh the backlog items
+      const refreshResponse = await api.backlogs.getAll({
+        project_id: parseInt(projectId),
+        include_children: true,
+        include_acceptance_criteria: true
+      });
+
+      if (refreshResponse.error) throw new Error(refreshResponse.error);
+      
+      const items = (refreshResponse.data || []).map(item => ({
+        ...item,
+        acceptance_criteria: Array.isArray(item.acceptance_criteria) ? item.acceptance_criteria : []
+      }));
+
+      setBacklogItems(items);
+      setIsAddModalOpen(false);
+    } catch (error) {
+      console.error('Error adding item:', error);
+      // You might want to show a toast notification here
+    }
+  };
+
+  // Handle editing items
+  const handleEditItem = async (itemData: any) => {
+    try {
+      const updateData = {
+        title: itemData.title,
+        description: itemData.description,
+        priority: itemData.priority,
+        status: itemData.status,
+        story_point: itemData.story_point,
+        parent_id: itemData.parent_id || null, // Ensure null is properly handled
+        item_type: itemData.item_type
+      };
+
+      const response = await api.backlogs.update(itemData.id, updateData);
+      if (response.error) throw new Error(response.error);
+
+      // Handle acceptance criteria updates
+      if (itemData.acceptance_criteria_titles && itemData.acceptance_criteria_titles.length > 0) {
+        // Delete existing acceptance criteria
+        await api.acceptanceCriteria.deleteAllByBacklogId(itemData.id);
+        
+        // Create new acceptance criteria
+        const criteriaData = itemData.acceptance_criteria_titles
+          .filter((title: string) => title.trim() !== '')
+          .map((title: string) => ({ title: title.trim() }));
+        
+        if (criteriaData.length > 0) {
+          await api.acceptanceCriteria.bulkCreate(itemData.id, criteriaData.map((c: any) => c.title));
+        }
+      }
+
+      // Refresh the backlog items
+      const refreshResponse = await api.backlogs.getAll({
+        project_id: parseInt(projectId),
+        include_children: true,
+        include_acceptance_criteria: true
+      });
+
+      if (refreshResponse.error) throw new Error(refreshResponse.error);
+      
+      const items = (refreshResponse.data || []).map(item => ({
+        ...item,
+        acceptance_criteria: Array.isArray(item.acceptance_criteria) ? item.acceptance_criteria : []
+      }));
+
+      setBacklogItems(items);
+      setEditingItem(null);
+    } catch (error) {
+      console.error('Error editing item:', error);
+      // You might want to show a toast notification here
+    }
+  };
+
+  // Handle deleting items
+  const handleDeleteItem = async (itemId: number) => {
+    if (!confirm('Are you sure you want to delete this item?')) return;
+    
+    try {
+      const response = await api.backlogs.delete(itemId);
+      if (response.error) throw new Error(response.error);
+
+      // Refresh the backlog items
+      const refreshResponse = await api.backlogs.getAll({
+        project_id: parseInt(projectId),
+        include_children: true,
+        include_acceptance_criteria: true
+      });
+
+      if (refreshResponse.error) throw new Error(refreshResponse.error);
+      
+      const items = (refreshResponse.data || []).map(item => ({
+        ...item,
+        acceptance_criteria: Array.isArray(item.acceptance_criteria) ? item.acceptance_criteria : []
+      }));
+
+      setBacklogItems(items);
+    } catch (error) {
+      console.error('Error deleting item:', error);
+      // You might want to show a toast notification here
     }
   };
 
   if (isLoading) {
     return (
-      <div className="space-y-8">
-        <div className="animate-pulse">
-          <div className="h-8 bg-gray-200 dark:bg-gray-700 rounded w-1/3 mb-4"></div>
-          <div className="h-6 bg-gray-200 dark:bg-gray-700 rounded w-1/2 mb-8"></div>
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {[1, 2, 3, 4].map((i) => (
-              <div key={i} className="h-24 bg-gray-200 dark:bg-gray-700 rounded"></div>
-            ))}
-          </div>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto"></div>
+          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading backlog...</p>
         </div>
       </div>
     );
@@ -366,35 +472,17 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
 
   if (error) {
     return (
-      <div className="space-y-8">
-        <div className="text-center py-12">
-          <AlertCircle className="mx-auto h-12 w-12 text-red-500 mb-4" />
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Error Loading Backlog</h2>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <AlertCircle className="h-32 w-32 text-red-500 mx-auto mb-4" />
+          <h2 className="text-2xl font-bold text-gray-900 dark:text-white mb-2">Error Loading Backlog</h2>
           <p className="text-gray-600 dark:text-gray-400 mb-4">{error}</p>
           <button
             onClick={() => window.location.reload()}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg"
           >
-            Try Again
+            Retry
           </button>
-        </div>
-      </div>
-    );
-  }
-
-  if (!project) {
-    return (
-      <div className="space-y-8">
-        <div className="text-center py-12">
-          <AlertCircle className="mx-auto h-12 w-12 text-red-500 mb-4" />
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Project Not Found</h2>
-          <p className="text-gray-600 dark:text-gray-400 mb-4">The requested project could not be found.</p>
-          <Link
-            href="/project"
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
-          >
-            Back to Projects
-          </Link>
         </div>
       </div>
     );
@@ -499,11 +587,8 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
             >
               <option value="all">All Types</option>
               <option value={BacklogType.EPIC}>Epic</option>
-              <option value={BacklogType.STORY}>Story</option>
-              <option value={BacklogType.TASK}>Task</option>
+              <option value={BacklogType.STORY}>User Story</option>
               <option value={BacklogType.BUG}>Bug</option>
-              <option value={BacklogType.FEATURE}>Feature</option>
-              <option value={BacklogType.IMPROVEMENT}>Improvement</option>
             </select>
           </div>
         </div>
@@ -511,163 +596,7 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
 
       {/* Backlog Items List - Hierarchical */}
       <div className="space-y-4">
-        {backlogItems.map((item) => {
-          const hasChildren = backlogItems.some(child => child.parent_id === item.id);
-          const isCollapsed = collapsedHierarchy.has(item.id.toString());
-          
-          return (
-          <div 
-            key={item.id} 
-            className={`bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6 ${
-              item.level > 0 ? `ml-8 border-l-4 ${
-                item.item_type === BacklogType.STORY ? 'border-l-blue-300' : 
-                'border-l-gray-300'
-              }` : ''
-            }`}
-          >
-            <div className="flex items-start justify-between">
-              <div className="flex-1">
-                {/* Header with ID, Title, Labels, and Hierarchy Controls */}
-                <div className="flex items-start gap-4 mb-3">
-                  {/* Hierarchy Controls */}
-                  <div className="flex items-center gap-2">
-                    {hasChildren && (
-                      <button
-                        onClick={() => toggleHierarchyCollapse(item.id.toString())}
-                        className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1"
-                        title={isCollapsed ? 'Expand children' : 'Collapse children'}
-                      >
-                        {isCollapsed ? (
-                          <ChevronRight className="w-4 h-4" />
-                        ) : (
-                          <ChevronDown className="w-4 h-4" />
-                        )}
-                      </button>
-                    )}
-                    <span className={`text-sm font-mono text-gray-500 dark:text-gray-400 px-2 py-1 rounded ${
-                      item.item_type === BacklogType.EPIC ? 'bg-purple-100 dark:bg-purple-900/20' :
-                      item.item_type === BacklogType.STORY ? 'bg-blue-100 dark:bg-blue-900/20' :
-                      'bg-gray-100 dark:bg-gray-700'
-                    }`}>
-                      {item.item_type === BacklogType.EPIC ? 'EPIC' : 'PBI'}-{item.id}
-                    </span>
-                  </div>
-                  <div className="flex-1">
-                    <div className="flex flex-wrap items-center gap-3 mb-2">
-                      <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                        {item.title}
-                      </h3>
-                      {/* Priority, Status, Story Points, and Assignee inline */}
-                      <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${getPriorityColor(item.priority)}`}>
-                        {item.priority.charAt(0).toUpperCase() + item.priority.slice(1)}
-                      </span>
-                                    <span className={`inline-flex items-center px-2 py-1 rounded-full text-xs font-medium border ${getStatusColor(item.status)}`}>
-                {item.status.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
-              </span>
-              <span className="text-xs text-gray-600 dark:text-gray-400 bg-gray-100 dark:bg-gray-700 px-2 py-1 rounded">
-              {item.story_point} SP
-                </span>
-            </div>
-            <div className="flex flex-wrap gap-2 mb-3">
-                <span
-              className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${getLabelColor(item.item_type)}`}
-                >
-              {item.item_type.split('_').map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ')}
-                </span>
-            </div>
-          </div>
-        </div>
-
-        {/* Description */}
-        <p className="text-gray-700 dark:text-gray-300 mb-4 leading-relaxed">
-          {item.description}
-        </p>
-
-        {/* Expandable Acceptance Criteria */}
-      {(item.acceptance_criteria && item.acceptance_criteria.length > 0) && (
-          <div className="mb-4">
-            <button
-            onClick={() => toggleItemExpansion(item.id.toString())}
-              className="flex items-center gap-2 text-sm font-medium text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300"
-            >
-            <ChevronDown className={`w-4 h-4 transition-transform ${expandedItems.has(item.id.toString()) ? 'rotate-180' : ''}`} />
-            Acceptance Criteria ({item.acceptance_criteria.length})
-            </button>
-          {expandedItems.has(item.id.toString()) && (
-              <ul className="mt-2 space-y-1 pl-6">
-            {item.acceptance_criteria.map((criteria) => (
-              <li key={criteria.id} className="text-sm text-gray-600 dark:text-gray-400 flex items-start gap-2">
-                  <span className="text-blue-500 mt-1">•</span>
-                {criteria.title}
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-      )}
-
-                {/* Dates */}
-                <div className="flex items-center gap-6 text-xs text-gray-500 dark:text-gray-400">
-                  <div className="flex items-center gap-1">
-                    <Calendar className="w-3 h-3" />
-                  Created: {new Date(item.created_at).toLocaleDateString()}
-                  </div>
-                  <div className="flex items-center gap-1">
-                    <Clock className="w-3 h-3" />
-                  Updated: {new Date(item.updated_at).toLocaleDateString()}
-                  </div>
-                </div>
-              </div>
-
-              {/* Actions */}
-              <div className="flex gap-2 ml-4">
-                <button
-                  onClick={() => {
-                    const editingData = {
-                      ...item,
-                      acceptance_criteria: (item.acceptance_criteria && Array.isArray(item.acceptance_criteria)) ? item.acceptance_criteria : []
-                    };
-                    console.log('Setting editing item:', editingData);
-                    setEditingItem(editingData);
-                  }}
-                  className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 p-2 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
-                  title="Edit PBI"
-                >
-                  <Edit2 className="w-4 h-4" />
-                </button>
-                <button
-                  onClick={() => handleDeleteItem(item.id)}
-                  className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 p-2 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors"
-                  title="Delete PBI"
-                >
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          </div>
-          );
-        })}
-
-        {backlogItems.length === 0 && (
-          <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-            <AlertCircle className="mx-auto h-12 w-12 text-gray-400 mb-4" />
-            <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">No PBIs found</h3>
-            <p className="text-gray-500 dark:text-gray-400 mb-4">
-              No product backlog items match your current filters.
-            </p>
-            <button
-              onClick={() => {
-                setSearchTerm('');
-                setFilterPriority('all');
-                setFilterStatus('all');
-                setFilterLabel('all');
-              }}
-              className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium"
-            >
-              Clear all filters
-            </button>
-          </div>
-        )}
+        {organizeHierarchically(filteredBacklogItems).map((item) => renderBacklogItem(item))}
       </div>
 
       {/* Add/Edit Modal */}
@@ -679,7 +608,7 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
         }}
         onSubmit={(item: { title: string; description: string; priority: BacklogPriority; status: BacklogStatus; acceptanceCriteria: string[] }) => {
           if (editingItem) {
-            const editData: BacklogItemForEdit = {
+            const editData: any = {
               ...editingItem,
               ...item,
               // Pass acceptance criteria titles for updating
@@ -703,14 +632,14 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
           story_point: editingItem.story_point,
           parent_id: editingItem.parent_id,
           item_type: editingItem.item_type,
-          acceptanceCriteria: (() => {
-            console.log('Processing editingItem for modal:', editingItem);
-            if (editingItem.acceptance_criteria && Array.isArray(editingItem.acceptance_criteria) && editingItem.acceptance_criteria.length > 0) {
-              return editingItem.acceptance_criteria.map(ac => ac.title);
-            }
-            return [''];
-          })()
+                     acceptanceCriteria: (() => {
+             if (editingItem && editingItem.acceptance_criteria && Array.isArray(editingItem.acceptance_criteria) && editingItem.acceptance_criteria.length > 0) {
+               return editingItem.acceptance_criteria.map(ac => ac.title);
+             }
+             return [];
+           })()
         } : null}
+        projectId={parseInt(projectId)}
       />
     </div>
   );

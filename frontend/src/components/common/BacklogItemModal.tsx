@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { X, Plus, Trash2 } from 'lucide-react';
 
-import { BacklogPriority, BacklogStatus, BacklogType } from '@/types/api';
+import { BacklogPriority, BacklogStatus, BacklogType, ApiBacklog } from '@/types/api';
+import { api } from '@/utils/api';
 
 interface BacklogFormData {
   title: string;
@@ -19,24 +20,29 @@ interface BacklogItemModalProps {
   onClose: () => void;
   onSubmit: (item: BacklogFormData) => void;
   editingItem?: (BacklogFormData & { id?: number }) | null;
+  projectId: number;
 }
 
 const BacklogItemModal: React.FC<BacklogItemModalProps> = ({
   isOpen,
   onClose,
   onSubmit,
-  editingItem
+  editingItem,
+  projectId
 }) => {
   const [formData, setFormData] = useState<BacklogFormData>({
     title: '',
     description: '',
-    acceptanceCriteria: [''],
+    acceptanceCriteria: [],
     priority: BacklogPriority.MEDIUM,
     status: BacklogStatus.TODO,
     story_point: 0,
     parent_id: undefined,
     item_type: BacklogType.STORY
   });
+
+  const [epics, setEpics] = useState<ApiBacklog[]>([]);
+  const [isLoadingEpics, setIsLoadingEpics] = useState(false);
 
   useEffect(() => {
     if (editingItem) {
@@ -45,7 +51,7 @@ const BacklogItemModal: React.FC<BacklogItemModalProps> = ({
       setFormData({
         title: '',
         description: '',
-        acceptanceCriteria: [''],
+        acceptanceCriteria: [],
         priority: BacklogPriority.MEDIUM,
         status: BacklogStatus.TODO,
         story_point: 0,
@@ -55,10 +61,33 @@ const BacklogItemModal: React.FC<BacklogItemModalProps> = ({
     }
   }, [editingItem]);
 
+  // Fetch epics for parent selection
+  useEffect(() => {
+    const fetchEpics = async () => {
+      if (!projectId) return;
+      
+      try {
+        setIsLoadingEpics(true);
+        const response = await api.backlogs.getEpics(projectId);
+        if (response.error) {
+          console.error('Failed to fetch epics:', response.error);
+          return;
+        }
+        setEpics(response.data || []);
+      } catch (error) {
+        console.error('Error fetching epics:', error);
+      } finally {
+        setIsLoadingEpics(false);
+      }
+    };
+
+    fetchEpics();
+  }, [projectId]);
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     
-    // Filter out empty acceptance criteria
+    // Filter out empty acceptance criteria and allow empty array
     const filteredData = {
       ...formData,
       acceptanceCriteria: formData.acceptanceCriteria.filter(criteria => criteria.trim() !== ''),
@@ -80,7 +109,7 @@ const BacklogItemModal: React.FC<BacklogItemModalProps> = ({
     const newCriteria = formData.acceptanceCriteria.filter((_, i) => i !== index);
     setFormData({
       ...formData,
-      acceptanceCriteria: newCriteria.length > 0 ? newCriteria : ['']
+      acceptanceCriteria: newCriteria
     });
   };
 
@@ -102,6 +131,18 @@ const BacklogItemModal: React.FC<BacklogItemModalProps> = ({
       case 'bug': return 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-300';
       case 'enhancement': return 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-300';
       default: return 'bg-gray-100 text-gray-800 dark:bg-gray-900/20 dark:text-gray-300';
+    }
+  };
+
+  const getDescriptionPlaceholder = () => {
+    switch (formData.item_type) {
+      case BacklogType.BUG:
+        return "Describe the bug";
+      case BacklogType.EPIC:
+        return "As a [role], I want [feature] so that [benefit]...";
+      case BacklogType.STORY:
+      default:
+        return "As a [role], I want [feature] so that [benefit]...";
     }
   };
 
@@ -148,7 +189,7 @@ const BacklogItemModal: React.FC<BacklogItemModalProps> = ({
               onChange={(e) => setFormData({ ...formData, description: e.target.value })}
               rows={3}
               className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-              placeholder="As a [role], I want [feature] so that [benefit]..."
+              placeholder={getDescriptionPlaceholder()}
               required
             />
           </div>
@@ -168,17 +209,17 @@ const BacklogItemModal: React.FC<BacklogItemModalProps> = ({
                 Add Criteria
               </button>
             </div>
-            <div className="space-y-2">
-              {formData.acceptanceCriteria.map((criteria, index) => (
-                <div key={index} className="flex gap-2">
-                  <input
-                    type="text"
-                    value={criteria}
-                    onChange={(e) => updateAcceptanceCriteria(index, e.target.value)}
-                    className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-                    placeholder={`Acceptance criteria #${index + 1}`}
-                  />
-                  {formData.acceptanceCriteria.length > 1 && (
+            {formData.acceptanceCriteria.length > 0 && (
+              <div className="space-y-2">
+                {formData.acceptanceCriteria.map((criteria, index) => (
+                  <div key={index} className="flex gap-2">
+                    <input
+                      type="text"
+                      value={criteria}
+                      onChange={(e) => updateAcceptanceCriteria(index, e.target.value)}
+                      className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+                      placeholder={`Acceptance criteria #${index + 1}`}
+                    />
                     <button
                       type="button"
                       onClick={() => removeAcceptanceCriteria(index)}
@@ -186,10 +227,10 @@ const BacklogItemModal: React.FC<BacklogItemModalProps> = ({
                     >
                       <Trash2 className="w-4 h-4" />
                     </button>
-                  )}
-                </div>
-              ))}
-            </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Item Type */}
@@ -197,17 +238,14 @@ const BacklogItemModal: React.FC<BacklogItemModalProps> = ({
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Item Type *
             </label>
-                         <select
+             <select
                value={formData.item_type}
                onChange={(e) => setFormData({ ...formData, item_type: e.target.value as BacklogType })}
                className="w-full px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
              >
                <option value={BacklogType.EPIC}>Epic</option>
-               <option value={BacklogType.STORY}>Story</option>
-               <option value={BacklogType.TASK}>Task</option>
+               <option value={BacklogType.STORY}>User Story</option>
                <option value={BacklogType.BUG}>Bug</option>
-               <option value={BacklogType.FEATURE}>Feature</option>
-               <option value={BacklogType.IMPROVEMENT}>Improvement</option>
              </select>
           </div>
 
@@ -223,9 +261,17 @@ const BacklogItemModal: React.FC<BacklogItemModalProps> = ({
               disabled={formData.item_type === BacklogType.EPIC}
             >
               <option value="">None (Root Level)</option>
-              {/* Available parent items - typically Epics that can have User Stories as children */}
-              <option value="1">EPIC-001 - User Authentication System</option>
-              <option value="5">EPIC-005 - E-commerce Shopping Features</option>
+              {isLoadingEpics ? (
+                <option value="" disabled>Loading epics...</option>
+              ) : epics.length === 0 ? (
+                <option value="" disabled>No epics available</option>
+              ) : (
+                epics.map((epic) => (
+                  <option key={epic.id} value={epic.id}>
+                    {epic.title}
+                  </option>
+                ))
+              )}
             </select>
             {formData.item_type === BacklogType.EPIC && (
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">

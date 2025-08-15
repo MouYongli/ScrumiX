@@ -215,6 +215,7 @@ export const api = {
       include_children?: boolean;
       include_acceptance_criteria?: boolean;
       status?: string;
+      item_type?: string;
       search?: string;
       skip?: number;
       limit?: number;
@@ -224,6 +225,7 @@ export const api = {
       if (params?.include_children) searchParams.append('include_children', params.include_children.toString());
       if (params?.include_acceptance_criteria) searchParams.append('include_acceptance_criteria', params.include_acceptance_criteria.toString());
       if (params?.status) searchParams.append('status', params.status);
+      if (params?.item_type) searchParams.append('item_type', params.item_type);
       if (params?.search) searchParams.append('search', params.search);
       if (params?.skip) searchParams.append('skip', params.skip.toString());
       if (params?.limit) searchParams.append('limit', params.limit.toString());
@@ -232,6 +234,9 @@ export const api = {
     },
     
     getById: (id: number) => jsonFetch<ApiBacklog>(`/api/v1/backlogs/${id}`),
+    
+    getEpics: (project_id: number) => 
+      jsonFetch<ApiBacklog[]>(`/api/v1/backlogs/?project_id=${project_id}&item_type=epic`),
     
     create: (data: Omit<ApiBacklog, 'id' | 'created_at' | 'updated_at' | 'level' | 'path' | 'root_id' | 'acceptance_criteria'>) => 
       jsonFetch<ApiBacklog>('/api/v1/backlogs/', {
