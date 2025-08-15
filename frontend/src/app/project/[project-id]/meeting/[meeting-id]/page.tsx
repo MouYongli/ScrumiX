@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { 
@@ -13,203 +13,92 @@ import {
   Trash2, X, Check, GripVertical
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
+import { api } from '@/utils/api';
+import { ApiMeeting, ApiProject, ApiMeetingAgenda } from '@/types/api';
+import { MeetingType } from '@/types/enums';
+import { ProjectMemberResponse } from '@/types/api';
 
-// Meeting type configuration
+// Meeting type configuration - maps backend enum values to display names
 const meetingTypes = {
-  'daily-standup': {
+  [MeetingType.DAILY_STANDUP]: {
     name: 'Daily Standup',
     color: 'bg-blue-500',
     icon: MessageSquare,
   },
-  'sprint-planning': {
+  [MeetingType.SPRINT_PLANNING]: {
     name: 'Sprint Planning',
     color: 'bg-green-500',
     icon: Target,
   },
-  'sprint-review': {
+  [MeetingType.SPRINT_REVIEW]: {
     name: 'Sprint Review',
     color: 'bg-purple-500',
     icon: BarChart3,
   },
-  'sprint-retrospective': {
+  [MeetingType.SPRINT_RETROSPECTIVE]: {
     name: 'Sprint Retrospective',
     color: 'bg-orange-500',
     icon: UserCheck,
   },
-  'backlog-refinement': {
-    name: 'Backlog Refinement',
+  [MeetingType.TEAM_MEETING]: {
+    name: 'Team Meeting',
     color: 'bg-indigo-500',
-    icon: Edit,
+    icon: MessageSquare,
+  },
+  [MeetingType.OTHER]: {
+    name: 'Other',
+    color: 'bg-gray-500',
+    icon: MessageSquare,
   },
 };
 
-// Mock meeting detail data
-const getMeetingData = (id: string) => {
-  const meetings = {
-    'meeting-1': {
-      id: 'meeting-1',
-      title: 'Daily Standup - Week 3',
-      type: 'daily-standup',
-      status: 'scheduled',
-      date: '2024-03-15',
-      time: '09:00',
-      duration: 15,
-      location: 'Zoom Meeting Room',
-      meetingLink: 'https://zoom.us/j/1234567890',
-      facilitator: 'Alice Wang',
-      participants: ['John Smith', 'Alice Wang', 'Bob Zhang', 'Carol Li', 'David Zhao'],
-      description: 'Daily team sync meeting to share yesterday\'s progress, today\'s plans, and any blockers.',
-      agenda: [
-        'Work completed yesterday',
-        'Today\'s work plan', 
-        'Encountered blockers',
-        'Items requiring assistance'
-      ],
-      objectives: [
-        'Sync team progress',
-        'Identify blocking issues',
-        'Coordinate team collaboration'
-      ],
-    },
-    'meeting-4': {
-      id: 'meeting-4',
-      title: 'Sprint 5 Retrospective Meeting',
-      type: 'sprint-retrospective',
-      status: 'completed',
-      date: '2024-03-13',
-      time: '10:00',
-      duration: 90,
-      location: 'Conference Room A',
-      facilitator: 'Alice Wang',
-      participants: ['Alice Wang', 'Bob Zhang', 'Carol Li', 'David Zhao'],
-      description: 'Review Sprint 5 work process and identify improvement points.',
-      agenda: [
-        'What went well',
-        'Areas for improvement',
-        'Action plan for next Sprint',
-        'Team feedback collection'
-      ],
-      objectives: [
-        'Identify team strengths',
-        'Discover improvement opportunities',
-        'Develop action plan'
-      ],
-      notes: `# Sprint 5 Retrospective Meeting Notes
-
-## Meeting Information
-- **Time**: March 13, 2024 10:00-11:30
-- **Facilitator**: Alice Wang
-- **Participants**: Alice Wang, Bob Zhang, Carol Li, David Zhao
-
-## What Went Well
-
-### Technical Aspects
-- **Significant improvement in code quality**: Team started using ESLint and Prettier, code style became more consistent
-- **Notable performance optimization results**: Page loading speed improved by 30%
-- **Test coverage reached 75%**: 15% improvement from previous Sprint
-
-### Collaboration Aspects
-- Team communication became smoother, daily standups were very efficient
-- Code Review process was effectively implemented
-- Documentation quality improved
-
-## Areas for Improvement
-
-### Process Optimization
-1. **Code Review process needs standardization**
-   - Lack of unified checklist
-   - Review time sometimes too long
-   - Need to establish clearer standards
-
-2. **Insufficient automated test coverage**
-   - Few integration tests
-   - Missing end-to-end tests
-   - Need to add more test cases
-
-3. **Deployment process needs optimization**
-   - Many manual operation steps
-   - Rollback mechanism not perfect enough
-
-### Technical Debt
-- Old code modules need refactoring
-- API documentation updates not timely
-- Database query performance needs optimization
-
-## Team Feedback
-
-> **Bob Zhang**: "Hope to add more technical sharing sessions, especially new technology applications"
-
-> **Carol Li**: "Suggest optimizing development environment configuration to improve development efficiency"
-
-> **David Zhao**: "Need clearer requirement documents to reduce questions during development"
-
-## Decisions & Action Items
-
-### Immediate Actions (Within this week)
-- [ ] Establish Code Review checklist - **Owner**: Bob Zhang
-- [ ] Update API documentation - **Owner**: Carol Li
-
-### Short-term Goals (Within 2 weeks)  
-- [ ] Increase automated test coverage to 80% - **Owner**: Carol Li
-- [ ] Optimize deployment process, achieve one-click deployment - **Owner**: David Zhao
-
-### Long-term Planning (Within 1 month)
-- [ ] Refactor core module code - **Owner**: Bob Zhang
-- [ ] Establish technical sharing mechanism - **Owner**: Alice Wang
-
-## Next Sprint Focus
-
-1. **User Authentication Enhancement**
-   - Social login integration
-   - Two-factor authentication
-   - Permission management optimization
-
-2. **Performance Monitoring System Setup**
-   - Error tracking
-   - Performance metrics collection
-   - Alert mechanism
-
----
-
-**Meeting Recorder**: Alice Wang  
-**Reviewer**: John Smith  
-**Published**: March 13, 2024 12:00`,
-      actionItems: [
-        {
-          id: 'action-1',
-          title: 'Establish Code Review checklist',
-          assignee: 'Bob Zhang',
-          dueDate: '2024-03-20',
-          status: 'pending',
-          priority: 'high'
-        },
-        {
-          id: 'action-2', 
-          title: 'Increase automated test coverage to 80%',
-          assignee: 'Carol Li',
-          dueDate: '2024-03-25',
-          status: 'pending',
-          priority: 'medium'
-        },
-        {
-          id: 'action-3',
-          title: 'Optimize deployment process documentation',
-          assignee: 'David Zhao',
-          dueDate: '2024-03-18',
-          status: 'completed',
-          priority: 'low'
-        }
-      ],
-      decisions: [
-        'Adopt new Code Review tool',
-        'Hold technical sharing sessions every Friday',
-        'Add test steps to daily builds'
-      ]
-    }
-  };
+// Utility function to safely parse datetime - enhanced to handle various formats
+function parseDatetimeSafely(datetimeValue: any): Date | null {
+  if (!datetimeValue) return null;
   
-  return meetings[id as keyof typeof meetings] || meetings['meeting-1'];
-};
+  try {
+    let dateToTry: Date;
+    
+    if (typeof datetimeValue === 'string') {
+      let normalized = datetimeValue.trim();
+      
+      if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(normalized)) {
+        normalized = normalized.replace(' ', 'T');
+      }
+      
+      normalized = normalized.replace(/\+00:00$/, 'Z');
+      normalized = normalized.replace(/\+00$/, 'Z');
+      normalized = normalized.replace(/\.(\d{3})\d+(?=(Z|[+\-]\d{2}:?\d{2})?$)/, '.$1');
+      
+      dateToTry = new Date(normalized);
+      
+      if (isNaN(dateToTry.getTime())) {
+        const isoMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2}):(\d{2})/);
+        if (isoMatch) {
+          const [, year, month, day, hour, minute, second] = isoMatch;
+          dateToTry = new Date(
+            parseInt(year), 
+            parseInt(month) - 1, 
+            parseInt(day), 
+            parseInt(hour), 
+            parseInt(minute), 
+            parseInt(second)
+          );
+        }
+      }
+    } else {
+      dateToTry = new Date(datetimeValue);
+    }
+    
+    if (!isNaN(dateToTry.getTime())) {
+      return dateToTry;
+    }
+  } catch (error) {
+    console.error('Error parsing datetime:', error, 'Value:', datetimeValue);
+  }
+  
+  return null;
+}
 
 // Markdown Editor Component
 const MarkdownEditor = ({ value, onChange, readonly = false }: { 
@@ -727,43 +616,29 @@ const MeetingDetail = () => {
   const params = useParams();
   const projectId = params['project-id'] as string;
   const meetingId = params['meeting-id'] as string;
-  const initialMeeting = getMeetingData(meetingId);
   
   // State management
-  const [meeting, setMeeting] = useState(initialMeeting);
+  const [meeting, setMeeting] = useState<ApiMeeting | null>(null);
+  const [project, setProject] = useState<ApiProject | null>(null);
+  const [agendaItems, setAgendaItems] = useState<ApiMeetingAgenda[]>([]);
+  const [meetingNotes, setMeetingNotes] = useState<any[]>([]);
+  const [actionItems, setActionItems] = useState<any[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
   const [activeTab, setActiveTab] = useState('overview');
   const [isRecording, setIsRecording] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  const [meetingNotes, setMeetingNotes] = useState('');
+  const [currentNote, setCurrentNote] = useState('');
   const [hasUnsavedNotes, setHasUnsavedNotes] = useState(false);
-  const [notesHistory, setNotesHistory] = useState<Array<{
-    id: string;
-    content: string;
-    timestamp: string;
-    author: string;
-    replies?: Array<{
-      id: string;
-      content: string;
-      timestamp: string;
-      author: string;
-    }>;
-  }>>(() => {
-    if ('notesHistory' in meeting && Array.isArray(meeting.notesHistory)) {
-      return meeting.notesHistory;
-    }
-    return [];
-  });
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyContent, setReplyContent] = useState('');
 
   // Overview editing states
   const [editingDescription, setEditingDescription] = useState(false);
-  const [editingObjectives, setEditingObjectives] = useState(false);
   const [editingParticipants, setEditingParticipants] = useState(false);
-  const [tempDescription, setTempDescription] = useState(meeting.description);
-  const [tempObjectives, setTempObjectives] = useState([...(meeting.objectives || [])]);
-  const [tempParticipants, setTempParticipants] = useState([...meeting.participants]);
-  const [newObjective, setNewObjective] = useState('');
+  const [tempDescription, setTempDescription] = useState('');
+  const [tempParticipants, setTempParticipants] = useState<ProjectMemberResponse[]>([]);
   const [newParticipant, setNewParticipant] = useState('');
 
   // Modal states
@@ -778,59 +653,136 @@ const MeetingDetail = () => {
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
-  const meetingType = meetingTypes[meeting.type as keyof typeof meetingTypes];
+  // Fetch meeting data and related information
+  useEffect(() => {
+    const fetchMeetingData = async () => {
+      if (!meetingId || !projectId) return;
+      
+      try {
+        setIsLoading(true);
+        setError(null);
+        
+        // Fetch meeting details
+        const meetingResponse = await api.meetings.getById(parseInt(meetingId));
+        if (meetingResponse.error) throw new Error(meetingResponse.error);
+        setMeeting(meetingResponse.data);
+        
+        // Set initial editing values
+        setTempDescription(meetingResponse.data.description || '');
+        
+        // Fetch project information
+        const projectResponse = await api.projects.getById(parseInt(projectId));
+        if (projectResponse.error) {
+          console.warn('Failed to fetch project:', projectResponse.error);
+        } else {
+          setProject(projectResponse.data);
+        }
+        
+        // Fetch project members for participants
+        try {
+          const membersResponse = await api.projects.getMembers(parseInt(projectId));
+          if (membersResponse.error) {
+            console.warn('Failed to fetch project members:', membersResponse.error);
+            setTempParticipants([]);
+          } else {
+            setTempParticipants(membersResponse.data || []);
+          }
+        } catch (error) {
+          console.warn('Failed to fetch project members:', error);
+          setTempParticipants([]);
+        }
+        
+        // Fetch agenda items
+        try {
+          const agendaResponse = await api.meetingAgenda.getByMeeting(parseInt(meetingId));
+          if (agendaResponse.data) {
+            setAgendaItems(agendaResponse.data);
+          }
+        } catch (error) {
+          console.warn('Failed to fetch agenda items:', error);
+        }
+        
+        // TODO: Add meeting notes and action items APIs when backend supports them
+        setMeetingNotes([]);
+        setActionItems([]);
+        
+      } catch (error) {
+        console.error('Error fetching meeting data:', error);
+        setError(error instanceof Error ? error.message : 'Failed to fetch meeting data');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchMeetingData();
+  }, [meetingId, projectId]);
+
+  // Early return if loading or error
+  if (isLoading) {
+    return (
+      <div className="space-y-8">
+        <div className="text-center py-12">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-400">Loading meeting details...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !meeting) {
+    return (
+      <div className="space-y-8">
+        <div className="text-center py-12">
+          <div className="text-red-500 mb-4">
+            <FileText className="h-16 w-16 mx-auto" />
+          </div>
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+            Error Loading Meeting
+          </h3>
+          <p className="text-gray-600 dark:text-gray-400 mb-4">
+            {error || 'Meeting not found'}
+          </p>
+          <Link
+            href={`/project/${projectId}/meeting`}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg"
+          >
+            Back to Meetings
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const meetingType = meetingTypes[meeting.meetingType as keyof typeof meetingTypes] || meetingTypes[MeetingType.OTHER];
   const IconComponent = meetingType.icon;
 
   // Handle notes change
   const handleNotesChange = (value: string) => {
-    setMeetingNotes(value);
-    setHasUnsavedNotes(value !== (('notes' in meeting ? meeting.notes : '') || ''));
+    setCurrentNote(value);
+    setHasUnsavedNotes(value.trim() !== '');
   };
 
   // Save meeting notes
-  const handleSaveNotes = () => {
-    if (!meetingNotes.trim()) return;
+  const handleSaveNotes = async () => {
+    if (!currentNote.trim()) return;
     
-    const newNote = {
-      id: `note-${Date.now()}`,
-      content: meetingNotes.trim(),
-      timestamp: new Date().toLocaleString(),
-      author: 'Current User', // In real app, this would be the current user's name
-      replies: []
-    };
+    // TODO: Implement when meeting notes API is available
+    console.log('Adding new meeting note:', currentNote.trim());
     
-    const updateHistory = [...notesHistory, newNote];
-    setNotesHistory(updateHistory);
-    setMeeting(prev => ({...prev, notesHistory: updateHistory}));
-    setMeetingNotes(''); // Clear the input field after saving
+    // For now, just clear the input
+    setCurrentNote('');
     setHasUnsavedNotes(false);
-    // Here you would typically make an API call to save the notes
-    console.log('Adding new meeting note:', newNote);
   };
 
   // Reply to a note
-  const handleReply = (noteId: string) => {
+  const handleReply = async (noteId: string) => {
     if (!replyContent.trim()) return;
     
-    const newReply = {
-      id: `reply-${Date.now()}`,
-      content: replyContent.trim(),
-      timestamp: new Date().toLocaleString(),
-      author: 'Current User' // In real app, this would be the current user's name
-    };
+    // TODO: Implement when meeting notes API is available
+    console.log('Adding reply to note:', noteId, replyContent.trim());
     
-    const updatedHistory = notesHistory.map(note => 
-      note.id === noteId 
-        ? { ...note, replies: [...(note.replies || []), newReply] }
-        : note
-    );
-    
-    setNotesHistory(updatedHistory);
-    setMeeting(prev => ({...prev, notesHistory: updatedHistory}));
     setReplyContent('');
     setReplyingTo(null);
-    // Here you would typically make an API call to save the reply
-    console.log('Adding reply to note:', noteId, newReply);
   };
 
   // Cancel reply
@@ -840,57 +792,73 @@ const MeetingDetail = () => {
   };
 
   // Overview editing handlers
-  const handleSaveDescription = () => {
-    setMeeting(prev => ({...prev, description: tempDescription}));
+  const handleSaveDescription = async () => {
+    try {
+      const updateData = {
+        description: tempDescription
+      };
+      
+      const response = await api.meetings.update(parseInt(meetingId), updateData);
+      if (response.error) throw new Error(response.error);
+      
+      setMeeting(prev => prev ? { ...prev, description: tempDescription } : null);
     setEditingDescription(false);
     console.log('Updated description:', tempDescription);
-  };
-
-  const handleCancelDescription = () => {
-    setTempDescription(meeting.description);
-    setEditingDescription(false);
-  };
-
-  const handleSaveObjectives = () => {
-    setMeeting(prev => ({...prev, objectives: tempObjectives}));
-    setEditingObjectives(false);
-    setNewObjective('');
-    console.log('Updated objectives:', tempObjectives);
-  };
-
-  const handleCancelObjectives = () => {
-    setTempObjectives([...(meeting.objectives || [])]);
-    setEditingObjectives(false);
-    setNewObjective('');
-  };
-
-  const handleAddObjective = () => {
-    if (newObjective.trim()) {
-      setTempObjectives([...tempObjectives, newObjective.trim()]);
-      setNewObjective('');
+    } catch (error) {
+      console.error('Error updating description:', error);
+      // TODO: Show error notification to user
     }
   };
 
-  const handleRemoveObjective = (index: number) => {
-    setTempObjectives(tempObjectives.filter((_, i) => i !== index));
+  const handleCancelDescription = () => {
+    setTempDescription(meeting.description || '');
+    setEditingDescription(false);
   };
 
+
+
   const handleSaveParticipants = () => {
-    setMeeting(prev => ({...prev, participants: tempParticipants}));
+    // TODO: Implement when meeting participants API is available
+    console.log('Updated participants:', tempParticipants);
     setEditingParticipants(false);
     setNewParticipant('');
-    console.log('Updated participants:', tempParticipants);
   };
 
   const handleCancelParticipants = () => {
-    setTempParticipants([...meeting.participants]);
+    // Reset to current project members
+    const fetchMembers = async () => {
+      try {
+        const membersResponse = await api.projects.getMembers(parseInt(projectId));
+        if (!membersResponse.error && membersResponse.data) {
+          setTempParticipants(membersResponse.data);
+        }
+      } catch (error) {
+        console.warn('Failed to fetch project members:', error);
+      }
+    };
+    fetchMembers();
     setEditingParticipants(false);
     setNewParticipant('');
   };
 
   const handleAddParticipant = () => {
-    if (newParticipant.trim() && !tempParticipants.includes(newParticipant.trim())) {
-      setTempParticipants([...tempParticipants, newParticipant.trim()]);
+    if (newParticipant.trim()) {
+      // Find the user by email or username from project members
+      const existingMember = tempParticipants.find(member => 
+        member.email === newParticipant.trim() || 
+        member.username === newParticipant.trim() ||
+        member.full_name === newParticipant.trim()
+      );
+      
+      if (existingMember) {
+        // User is already a participant
+        setNewParticipant('');
+        return;
+      }
+      
+      // For now, we can't add new users to the project through this interface
+      // This would require the meeting participants API
+      console.log('Cannot add new participants without meeting participants API');
       setNewParticipant('');
     }
   };
@@ -901,47 +869,32 @@ const MeetingDetail = () => {
 
   // Delete meeting notes
   const handleDeleteNotes = () => {
-    setNotesHistory([]);
-    setMeeting(prev => ({...prev, notesHistory: []}));
+    setMeetingNotes([]);
     setConfirmModalOpen(false);
     setDeleteTarget(null);
-    // Here you would typically make an API call to delete the notes
+    // TODO: Implement when meeting notes API is available
     console.log('Deleting all meeting notes');
   };
 
   // Agenda item handlers
   const handleAddAgendaItem = (item: string) => {
-    setMeeting(prev => ({
-      ...prev,
-      agenda: [...prev.agenda, item]
-    }));
-    // Here you would typically make an API call
+    // TODO: Implement when agenda API supports adding items
     console.log('Adding agenda item:', item);
   };
 
   const handleEditAgendaItem = (item: string) => {
     if (editingAgendaIndex !== null) {
-      setMeeting(prev => ({
-        ...prev,
-        agenda: prev.agenda.map((agendaItem, index) => 
-          index === editingAgendaIndex ? item : agendaItem
-        )
-      }));
-      setEditingAgendaIndex(null);
-      // Here you would typically make an API call
+      // TODO: Implement when agenda API supports editing items
       console.log('Editing agenda item:', item);
+      setEditingAgendaIndex(null);
     }
   };
 
   const handleDeleteAgendaItem = (index: number) => {
-    setMeeting(prev => ({
-      ...prev,
-      agenda: prev.agenda.filter((_, i) => i !== index)
-    }));
+    // TODO: Implement when agenda API supports deleting items
+    console.log('Deleting agenda item at index:', index);
     setConfirmModalOpen(false);
     setDeleteTarget(null);
-    // Here you would typically make an API call
-    console.log('Deleting agenda item at index:', index);
   };
 
   // Drag and drop handlers
@@ -970,7 +923,7 @@ const MeetingDetail = () => {
       return;
     }
 
-    const newAgenda = [...meeting.agenda];
+    const newAgenda = [...agendaItems];
     const draggedItem = newAgenda[draggedIndex];
     
     // Remove the dragged item
@@ -980,10 +933,7 @@ const MeetingDetail = () => {
     const insertIndex = draggedIndex < dropIndex ? dropIndex - 1 : dropIndex;
     newAgenda.splice(insertIndex, 0, draggedItem);
 
-    setMeeting(prev => ({
-      ...prev,
-      agenda: newAgenda
-    }));
+    setAgendaItems(newAgenda);
 
     setDraggedIndex(null);
     // Here you would typically make an API call to save the new order
@@ -997,34 +947,22 @@ const MeetingDetail = () => {
 
   // Action item handlers
   const handleAddActionItem = (item: any) => {
-    const actionItems = ('actionItems' in meeting ? meeting.actionItems : []) || [];
-    setMeeting(prev => ({
-      ...prev,
-      actionItems: [...actionItems, item]
-    }));
+    setActionItems(prev => [...prev, item]);
     // Here you would typically make an API call
     console.log('Adding action item:', item);
   };
 
   const handleEditActionItem = (item: any) => {
-    const actionItems = ('actionItems' in meeting ? meeting.actionItems : []) || [];
-    setMeeting(prev => ({
-      ...prev,
-      actionItems: actionItems.map((action: any) => 
-        action.id === item.id ? item : action
-      )
-    }));
+    setActionItems(prev => prev.map((action: any) => 
+      action.id === item.id ? item : action
+    ));
     setEditingActionItem(null);
     // Here you would typically make an API call
     console.log('Editing action item:', item);
   };
 
   const handleDeleteActionItem = (itemId: string) => {
-    const actionItems = ('actionItems' in meeting ? meeting.actionItems : []) || [];
-    setMeeting(prev => ({
-      ...prev,
-      actionItems: actionItems.filter((action: any) => action.id !== itemId)
-    }));
+    setActionItems(prev => prev.filter((action: any) => action.id !== itemId));
     setConfirmModalOpen(false);
     setDeleteTarget(null);
     // Here you would typically make an API call
@@ -1052,23 +990,14 @@ const MeetingDetail = () => {
     }
   };
 
-  // Get project name
-  const getProjectName = (id: string) => {
-    const projects = {
-      '1': 'E-commerce Platform Rebuild',
-      '2': 'Mobile App Development', 
-      '3': 'Data Analytics Platform',
-    };
-    return projects[id as keyof typeof projects] || 'Unknown Project';
-  };
-
-  const projectName = getProjectName(projectId);
+  const projectName = project?.name || 'Loading...';
 
   // Breadcrumb data with icons
   const breadcrumbItems = [
-    { label: 'Project', href: '/project', icon: <FolderOpen className="w-4 h-4" /> },
+    { label: 'Home', href: '/', icon: <FolderOpen className="w-4 h-4" /> },
+    { label: 'Projects', href: '/project', icon: <FolderOpen className="w-4 h-4" /> },
     { label: projectName, href: `/project/${projectId}/dashboard` },
-    { label: 'Meeting Management', href: `/project/${projectId}/meeting`, icon: <Calendar className="w-4 h-4" /> },
+    { label: 'Meetings', href: `/project/${projectId}/meeting`, icon: <Calendar className="w-4 h-4" /> },
     { label: meeting.title, current: true }
   ];
 
@@ -1094,7 +1023,25 @@ const MeetingDetail = () => {
     };
   };
 
-  const statusStyle = getStatusStyle(meeting.status);
+  // Determine meeting status based on start time
+  const getMeetingStatus = (startDatetime: string) => {
+    const now = new Date();
+    const startTime = parseDatetimeSafely(startDatetime);
+    
+    if (!startTime) return { className: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100', text: 'Unknown' };
+    
+    const endTime = new Date(startTime.getTime() + meeting.duration * 60000);
+    
+    if (now < startTime) {
+      return { className: 'bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-100', text: 'Scheduled' };
+    } else if (now >= startTime && now <= endTime) {
+      return { className: 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100', text: 'In Progress' };
+    } else {
+      return { className: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100', text: 'Completed' };
+    }
+  };
+
+  const statusStyle = getMeetingStatus(meeting.startDatetime);
 
   // Get action item status style
   const getActionItemStatus = (status: string) => {
@@ -1147,13 +1094,13 @@ const MeetingDetail = () => {
             <span className={`px-3 py-1 text-sm font-medium rounded-full ${statusStyle.className}`}>
               {statusStyle.text}
             </span>
-            {meeting.status === 'scheduled' && (
+            {statusStyle.text === 'Scheduled' && (
               <button className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors">
                 <Play className="w-4 h-4" />
                 Start Meeting
               </button>
             )}
-            {meeting.status === 'in-progress' && (
+            {statusStyle.text === 'In Progress' && (
               <div className="flex gap-2">
                 <button 
                   onClick={() => setIsMuted(!isMuted)}
@@ -1190,7 +1137,13 @@ const MeetingDetail = () => {
             <div>
               <p className="text-sm text-gray-600 dark:text-gray-400">Date & Time</p>
               <p className="font-medium text-gray-900 dark:text-white">
-                {meeting.date} {meeting.time}
+                {(() => {
+                  const startDate = parseDatetimeSafely(meeting.startDatetime);
+                  if (startDate) {
+                    return `${startDate.toLocaleDateString()} ${startDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
+                  }
+                  return 'Date not available';
+                })()}
               </p>
             </div>
           </div>
@@ -1210,14 +1163,15 @@ const MeetingDetail = () => {
             <div>
               <p className="text-sm text-gray-600 dark:text-gray-400">Location</p>
               <p className="font-medium text-gray-900 dark:text-white">
-                {meeting.location}
+                {meeting.location || 'No location specified'}
               </p>
             </div>
           </div>
           
-          <div className="flex items-center gap-2">
-            <ParticipantsHeaderTooltip participants={meeting.participants} facilitator={meeting.facilitator} />
-          </div>
+          <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+              <Users className="w-5 h-5" />
+              <span>{tempParticipants.length} participants</span>
+            </div>
         </div>
       </div>
 
@@ -1255,7 +1209,7 @@ const MeetingDetail = () => {
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                     Meeting Description
                   </h3>
-                  {meeting.status !== 'completed' && !editingDescription && (
+                  {statusStyle.text !== 'Completed' && !editingDescription && (
                     <button
                       onClick={() => setEditingDescription(true)}
                       className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
@@ -1296,82 +1250,7 @@ const MeetingDetail = () => {
                 )}
               </div>
 
-              {/* Meeting Objectives Section */}
-              <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
-                <div className="flex justify-between items-center mb-3">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                    Meeting Objectives
-                  </h3>
-                  {meeting.status !== 'completed' && !editingObjectives && (
-                    <button
-                      onClick={() => setEditingObjectives(true)}
-                      className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-                {editingObjectives ? (
-                  <div className="space-y-3">
-                    <div className="space-y-2">
-                      {tempObjectives.map((objective, index) => (
-                        <div key={index} className="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-700 rounded">
-                          <Target className="w-4 h-4 text-blue-500" />
-                          <span className="flex-1 text-gray-900 dark:text-white">{objective}</span>
-                          <button
-                            onClick={() => handleRemoveObjective(index)}
-                            className="text-red-500 hover:text-red-700 transition-colors"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={newObjective}
-                        onChange={(e) => setNewObjective(e.target.value)}
-                        placeholder="Add new objective..."
-                        className="flex-1 p-2 border border-gray-300 dark:border-gray-600 rounded
-                                 bg-white dark:bg-gray-700 text-gray-900 dark:text-white
-                                 placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        onKeyPress={(e) => e.key === 'Enter' && handleAddObjective()}
-                      />
-                      <button
-                        onClick={handleAddObjective}
-                        disabled={!newObjective.trim()}
-                        className="px-3 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded transition-colors"
-                      >
-                        <Plus className="w-4 h-4" />
-                      </button>
-                    </div>
-                    <div className="flex justify-end gap-2">
-                      <button
-                        onClick={handleCancelObjectives}
-                        className="px-3 py-1 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={handleSaveObjectives}
-                        className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
-                      >
-                        Save
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <ul className="space-y-2">
-                    {meeting.objectives?.map((objective, index) => (
-                      <li key={index} className="flex items-center gap-2">
-                        <Target className="w-4 h-4 text-blue-500" />
-                        <span className="text-gray-600 dark:text-gray-400">{objective}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
+              
 
               {/* Participants Section */}
               <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
@@ -1379,7 +1258,7 @@ const MeetingDetail = () => {
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                     Participants
                   </h3>
-                  {meeting.status !== 'completed' && !editingParticipants && (
+                  {statusStyle.text !== 'Completed' && !editingParticipants && (
                     <button
                       onClick={() => setEditingParticipants(true)}
                       className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
@@ -1395,44 +1274,28 @@ const MeetingDetail = () => {
                         <div key={index} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
                           <div className="w-8 h-8 bg-gray-200 dark:bg-gray-600 rounded-full flex items-center justify-center">
                             <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
-                              {participant.charAt(0)}
+                              {participant.full_name?.charAt(0) || participant.username?.charAt(0) || participant.email.charAt(0)}
                             </span>
                           </div>
                           <div className="flex-1">
-                            <p className="font-medium text-gray-900 dark:text-white">{participant}</p>
+                            <p className="font-medium text-gray-900 dark:text-white">
+                              {participant.full_name || participant.username || participant.email}
+                            </p>
                             <p className="text-sm text-gray-600 dark:text-gray-400">
-                              {participant === meeting.facilitator ? 'Facilitator' : 'Participant'}
+                              {participant.role}
                             </p>
                           </div>
-                          {participant !== meeting.facilitator && (
-                            <button
-                              onClick={() => handleRemoveParticipant(index)}
-                              className="text-red-500 hover:text-red-700 transition-colors"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          )}
+                          <button
+                            onClick={() => handleRemoveParticipant(index)}
+                            className="text-red-500 hover:text-red-700 transition-colors"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
                         </div>
                       ))}
                     </div>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={newParticipant}
-                        onChange={(e) => setNewParticipant(e.target.value)}
-                        placeholder="Add participant name..."
-                        className="flex-1 p-2 border border-gray-300 dark:border-gray-600 rounded
-                                 bg-white dark:bg-gray-700 text-gray-900 dark:text-white
-                                 placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        onKeyPress={(e) => e.key === 'Enter' && handleAddParticipant()}
-                      />
-                      <button
-                        onClick={handleAddParticipant}
-                        disabled={!newParticipant.trim() || tempParticipants.includes(newParticipant.trim())}
-                        className="px-3 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded transition-colors"
-                      >
-                        <Plus className="w-4 h-4" />
-                      </button>
+                    <div className="text-sm text-gray-500 dark:text-gray-400">
+                      <p>Note: Participants are based on project members. To add new participants, invite them to the project first.</p>
                     </div>
                     <div className="flex justify-end gap-2">
                       <button
@@ -1450,7 +1313,35 @@ const MeetingDetail = () => {
                     </div>
                   </div>
                 ) : (
-                  <ParticipantsDetailView participants={meeting.participants} facilitator={meeting.facilitator} />
+                  <div className="space-y-3">
+                    {tempParticipants.length > 0 ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {tempParticipants.map((participant, index) => (
+                          <div key={index} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                            <div className="w-8 h-8 bg-gray-200 dark:bg-gray-600 rounded-full flex items-center justify-center">
+                              <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
+                                {participant.full_name?.charAt(0) || participant.username?.charAt(0) || participant.email.charAt(0)}
+                              </span>
+                            </div>
+                            <div>
+                              <p className="font-medium text-gray-900 dark:text-white">
+                                {participant.full_name || participant.username || participant.email}
+                              </p>
+                              <p className="text-sm text-gray-600 dark:text-gray-400">
+                                {participant.role}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                        <Users className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+                        <p>No participants assigned yet</p>
+                        <p className="text-sm mt-2">Participants are based on project members</p>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -1463,7 +1354,7 @@ const MeetingDetail = () => {
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                   Meeting Agenda
                 </h3>
-                {meeting.status !== 'completed' && (
+                {statusStyle.text !== 'Completed' && (
                   <button 
                     onClick={() => setAgendaModalOpen(true)}
                     className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm flex items-center gap-2"
@@ -1475,10 +1366,10 @@ const MeetingDetail = () => {
               </div>
               
               <div className="space-y-3">
-                {meeting.agenda.map((item, index) => (
+                {agendaItems.length > 0 ? agendaItems.map((item, index) => (
                   <div 
                     key={index} 
-                    draggable={meeting.status !== 'completed'}
+                    draggable={statusStyle.text !== 'Completed'}
                     onDragStart={(e) => handleDragStart(e, index)}
                     onDragOver={(e) => handleDragOver(e, index)}
                     onDragLeave={handleDragLeave}
@@ -1491,10 +1382,10 @@ const MeetingDetail = () => {
                         ? 'bg-blue-50 dark:bg-blue-800 border-2 border-blue-300 dark:border-blue-600'
                         : 'bg-gray-50 dark:bg-gray-700'
                     } ${
-                      meeting.status !== 'completed' ? 'cursor-move' : ''
+                      statusStyle.text !== 'Completed' ? 'cursor-move' : ''
                     }`}
                   >
-                    {meeting.status !== 'completed' && (
+                    {statusStyle.text !== 'Completed' && (
                       <div className="flex items-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
                         <GripVertical className="w-4 h-4" />
                       </div>
@@ -1502,11 +1393,11 @@ const MeetingDetail = () => {
                     <div className="w-6 h-6 bg-blue-100 dark:bg-blue-800 text-blue-600 dark:text-blue-300 rounded-full flex items-center justify-center text-sm font-medium">
                       {index + 1}
                     </div>
-                    <span className="flex-1 text-gray-900 dark:text-white">{item}</span>
-                    {meeting.status === 'completed' && (
+                    <span className="flex-1 text-gray-900 dark:text-white">{item.title}</span>
+                    {statusStyle.text === 'Completed' && (
                       <CheckCircle className="w-5 h-5 text-green-500" />
                     )}
-                    {meeting.status !== 'completed' && (
+                    {statusStyle.text !== 'Completed' && (
                       <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
                           onClick={() => {
@@ -1531,7 +1422,11 @@ const MeetingDetail = () => {
                       </div>
                     )}
                   </div>
-                ))}
+                )) : (
+                  <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                    No agenda items yet
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1540,15 +1435,15 @@ const MeetingDetail = () => {
           {activeTab === 'notes' && (
             <div className="space-y-6">
               {/* Meeting Notes History Section */}
-              {notesHistory.length > 0 && (
+              {meetingNotes.length > 0 && (
                 <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
                   <div className="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
                       <MessageSquare className="w-5 h-5" />
-                      Meeting Notes History ({notesHistory.length})
+                      Meeting Notes History ({meetingNotes.length})
                     </h3>
                     <div className="flex items-center gap-3">
-                      {meeting.status !== 'completed' && (
+                      {statusStyle.text !== 'Completed' && (
                         <button 
                           onClick={() => {
                             setDeleteTarget({type: 'notes'});
@@ -1556,31 +1451,33 @@ const MeetingDetail = () => {
                           }}
                           className="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors"
                         >
-                          <Trash2 className="w-4 h-4" />
+                          <Trash2 className="w-4 h-2" />
                           Clear All Notes
                         </button>
                       )}
                     </div>
                   </div>
                   <div className="px-6 py-4 space-y-4 max-h-96 overflow-y-auto">
-                    {notesHistory.map((note) => (
+                    {meetingNotes.map((note) => (
                       <div key={note.id} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
                         {/* Main note */}
                         <div className="flex items-start gap-3">
                           <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
-                            {note.author.charAt(0)}
+                            {note.author?.charAt(0) || 'U'}
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
-                              <span className="font-medium text-gray-900 dark:text-white">{note.author}</span>
-                              <span className="text-sm text-gray-500 dark:text-gray-400">{note.timestamp}</span>
+                              <span className="font-medium text-gray-900 dark:text-white">{note.author || 'Unknown User'}</span>
+                              <span className="text-sm text-gray-500 dark:text-gray-400">
+                                {note.createdAt ? new Date(note.createdAt).toLocaleString() : 'Unknown time'}
+                              </span>
                             </div>
                             <div className="prose prose-sm max-w-none dark:prose-invert">
                               <MarkdownEditor value={note.content} readonly={true} />
                             </div>
-                            {meeting.status !== 'completed' && (
+                            {statusStyle.text !== 'Completed' && (
                               <button
-                                onClick={() => setReplyingTo(note.id)}
+                                onClick={() => setReplyingTo(note.id.toString())}
                                 className="mt-2 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
                               >
                                 Reply
@@ -1592,7 +1489,7 @@ const MeetingDetail = () => {
                         {/* Replies */}
                         {note.replies && note.replies.length > 0 && (
                           <div className="mt-4 ml-11 space-y-3">
-                            {note.replies.map((reply) => (
+                            {note.replies.map((reply: any) => (
                               <div key={reply.id} className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
                                 <div className="flex items-start gap-3">
                                   <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center text-white text-xs font-medium">
@@ -1614,7 +1511,7 @@ const MeetingDetail = () => {
                         )}
 
                         {/* Reply input */}
-                        {replyingTo === note.id && meeting.status !== 'completed' && (
+                        {replyingTo === note.id && statusStyle.text !== 'Completed' && (
                           <div className="mt-4 ml-11">
                             <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600 p-3">
                               <textarea
@@ -1655,7 +1552,7 @@ const MeetingDetail = () => {
                 <div className="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
                     <Edit className="w-5 h-5" />
-                    {meeting.status === 'completed' ? 'Meeting Notes' : 'Write Meeting Notes'}
+                    {statusStyle.text === 'Completed' ? 'Meeting Notes' : 'Write Meeting Notes'}
                   </h3>
                   <div className="flex items-center gap-2">
                     {hasUnsavedNotes && (
@@ -1664,26 +1561,26 @@ const MeetingDetail = () => {
                         Unsaved changes
                       </span>
                     )}
-                    {meeting.status !== 'completed' && (
+                    {statusStyle.text !== 'Completed' && (
                       <button 
                         onClick={handleSaveNotes}
-                        disabled={!meetingNotes.trim()}
+                        disabled={!currentNote.trim()}
                         className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors"
                       >
-                        <Save className="w-4 h-4" />
+                        <Save className="w-4 h-2" />
                         Add Note
                       </button>
                     )}
                   </div>
                 </div>
                 <div className="p-6">
-                  {meeting.status === 'completed' ? (
+                  {statusStyle.text === 'Completed' ? (
                     <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                       Meeting is completed. No new notes can be added.
                     </div>
                   ) : (
                     <MarkdownEditor 
-                      value={meetingNotes} 
+                      value={currentNote} 
                       readonly={false} 
                       onChange={handleNotesChange}
                     />
@@ -1692,26 +1589,22 @@ const MeetingDetail = () => {
               </div>
 
               {/* Meeting Decisions Section */}
-              {'decisions' in meeting && meeting.decisions && (
-                <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
-                  <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-                    <h4 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                      <CheckCircle className="w-5 h-5 text-green-500" />
-                      Meeting Decisions
-                    </h4>
-                  </div>
-                  <div className="px-6 py-4">
-                    <ul className="space-y-3">
-                      {meeting.decisions.map((decision: string, index: number) => (
-                        <li key={index} className="flex items-start gap-3 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
-                          <CheckCircle className="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
-                          <span className="text-gray-700 dark:text-gray-300 leading-relaxed">{decision}</span>
-                        </li>
-                      ))}
-                    </ul>
+              {/* TODO: Implement when decisions field is added to backend */}
+              <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+                <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                  <h4 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                    <CheckCircle className="w-5 h-5 text-green-500" />
+                    Meeting Decisions
+                  </h4>
+                </div>
+                <div className="px-6 py-4">
+                  <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                    <CheckCircle className="h-12 w-12 mx-auto mb-4 text-green-400" />
+                    <p>No decisions recorded yet</p>
+                    <p className="text-sm mt-2">Decisions functionality will be available when backend supports it</p>
                   </div>
                 </div>
-              )}
+              </div>
             </div>
           )}
 
@@ -1731,14 +1624,14 @@ const MeetingDetail = () => {
                 </button>
               </div>
 
-              {'actionItems' in meeting && meeting.actionItems && meeting.actionItems.length > 0 ? (
+              {actionItems.length > 0 ? (
                 <div className="space-y-3">
-                  {meeting.actionItems.map((action: any) => {
+                  {actionItems.map((action: any) => {
                     const actionStatus = getActionItemStatus(action.status);
                     const priorityColors = {
                       low: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100',
                       medium: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-800 dark:text-yellow-100',
-                      high: 'bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-100'
+                      high: 'bg-red-100 text-red-800 dark:bg-red-800 dark:text-gray-100'
                     };
                     return (
                       <div key={action.id} className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg group">
@@ -1803,7 +1696,7 @@ const MeetingDetail = () => {
           setEditingAgendaIndex(null);
         }}
         onSave={editingAgendaIndex !== null ? handleEditAgendaItem : handleAddAgendaItem}
-        item={editingAgendaIndex !== null ? meeting.agenda[editingAgendaIndex] : null}
+        item={editingAgendaIndex !== null ? agendaItems[editingAgendaIndex]?.title : null}
       />
 
       <ActionItemModal
