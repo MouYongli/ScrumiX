@@ -301,6 +301,13 @@ export const api = {
       jsonFetch<void>(`/api/v1/meeting-agendas/meeting/${meeting_id}/all`, {
         method: 'DELETE',
       }),
+    
+    reorder: (agenda_ids: number[]) => 
+      jsonFetch<ApiMeetingAgenda[]>(`/api/v1/meeting-agendas/reorder`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ agenda_ids }),
+      }),
   },
   
   sprints: {

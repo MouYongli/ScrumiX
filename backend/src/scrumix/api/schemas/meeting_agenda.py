@@ -55,6 +55,11 @@ class MeetingAgendaResponse(BaseModel):
     updatedAt: datetime = Field(alias="updated_at")
 
 
+class MeetingAgendaReorderRequest(BaseModel):
+    """Schema for reordering meeting agenda items."""
+    agenda_ids: list[int] = Field(..., min_items=1, description="List of agenda item IDs in the desired order")
+
+
 class MeetingAgendaListResponse(BaseModel):
     """Schema for paginated meeting agenda list responses."""
     agendaItems: list[MeetingAgendaResponse]

@@ -403,14 +403,18 @@ const AgendaItemModal = ({
   isOpen, 
   onClose, 
   onSave, 
+  onBulkSave,
   item = null 
 }: {
   isOpen: boolean;
   onClose: () => void;
   onSave: (item: string) => void;
+  onBulkSave?: (items: string[]) => void;
   item?: string | null;
 }) => {
   const [agendaItem, setAgendaItem] = useState(item || '');
+  const [isBulkMode, setIsBulkMode] = useState(false);
+  const [bulkItems, setBulkItems] = useState<string[]>(['']);
 
   const handleSave = () => {
     if (agendaItem.trim()) {
@@ -420,38 +424,114 @@ const AgendaItemModal = ({
     }
   };
 
+  const handleBulkSave = () => {
+    const validItems = bulkItems.filter(item => item.trim());
+    if (validItems.length > 0 && onBulkSave) {
+      onBulkSave(validItems);
+      setBulkItems(['']);
+      setIsBulkMode(false);
+      onClose();
+    }
+  };
+
+  const addBulkItem = () => {
+    setBulkItems([...bulkItems, '']);
+  };
+
+  const removeBulkItem = (index: number) => {
+    if (bulkItems.length > 1) {
+      setBulkItems(bulkItems.filter((_, i) => i !== index));
+    }
+  };
+
+  const updateBulkItem = (index: number, value: string) => {
+    const newItems = [...bulkItems];
+    newItems[index] = value;
+    setBulkItems(newItems);
+  };
+
+  const handleClose = () => {
+    setAgendaItem('');
+    setBulkItems(['']);
+    setIsBulkMode(false);
+    onClose();
+  };
+
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-          {item ? 'Edit Agenda Item' : 'Add Agenda Item'}
-        </h3>
-        <textarea
-          value={agendaItem}
-          onChange={(e) => setAgendaItem(e.target.value)}
-          placeholder="Enter agenda item..."
-          className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg resize-none h-24
-                   bg-white dark:bg-gray-700 text-gray-900 dark:text-white
-                   placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-        />
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+            {item ? 'Edit Agenda Item' : 'Add Agenda Item'}
+          </h3>
+          {!item && onBulkSave && (
+            <button
+              onClick={() => setIsBulkMode(!isBulkMode)}
+              className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
+            >
+              {isBulkMode ? 'Single Item' : 'Bulk Add'}
+            </button>
+          )}
+        </div>
+
+        {isBulkMode ? (
+          <div className="space-y-3">
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              Add multiple agenda items at once:
+            </p>
+            {bulkItems.map((item, index) => (
+              <div key={index} className="flex gap-2">
+                <textarea
+                  value={item}
+                  onChange={(e) => updateBulkItem(index, e.target.value)}
+                  placeholder={`Agenda item ${index + 1}...`}
+                  className="flex-1 p-2 border border-gray-300 dark:border-gray-600 rounded resize-none h-16
+                           bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+                           placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                {bulkItems.length > 1 && (
+                  <button
+                    onClick={() => removeBulkItem(index)}
+                    className="px-2 py-1 text-red-600 hover:text-red-800 transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            ))}
+            <button
+              onClick={addBulkItem}
+              className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            >
+              <Plus className="w-4 h-4 mx-auto" />
+            </button>
+          </div>
+        ) : (
+          <textarea
+            value={agendaItem}
+            onChange={(e) => setAgendaItem(e.target.value)}
+            placeholder="Enter agenda item..."
+            className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg resize-none h-24
+                     bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+                     placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+          />
+        )}
+
         <div className="flex justify-end gap-3 mt-4">
           <button
-            onClick={() => {
-              setAgendaItem('');
-              onClose();
-            }}
+            onClick={handleClose}
             className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
           >
             Cancel
           </button>
           <button
-            onClick={handleSave}
-            disabled={!agendaItem.trim()}
+            onClick={isBulkMode ? handleBulkSave : handleSave}
+            disabled={isBulkMode ? bulkItems.filter(item => item.trim()).length === 0 : !agendaItem.trim()}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
           >
-            {item ? 'Update' : 'Add'}
+            {isBulkMode ? 'Add All' : (item ? 'Update' : 'Add')}
           </button>
         </div>
       </div>
@@ -652,6 +732,10 @@ const MeetingDetail = () => {
   // Drag and drop states
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  // Loading states
+  const [agendaLoading, setAgendaLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
 
   // Fetch meeting data and related information
   useEffect(() => {
@@ -877,24 +961,143 @@ const MeetingDetail = () => {
   };
 
   // Agenda item handlers
-  const handleAddAgendaItem = (item: string) => {
-    // TODO: Implement when agenda API supports adding items
-    console.log('Adding agenda item:', item);
-  };
-
-  const handleEditAgendaItem = (item: string) => {
-    if (editingAgendaIndex !== null) {
-      // TODO: Implement when agenda API supports editing items
-      console.log('Editing agenda item:', item);
-      setEditingAgendaIndex(null);
+  const handleAddAgendaItem = async (item: string) => {
+    setAgendaLoading(true);
+    try {
+      const response = await api.meetingAgenda.create({
+        meeting_id: parseInt(meetingId),
+        title: item
+      });
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      
+      // Refresh agenda items
+      const agendaResponse = await api.meetingAgenda.getByMeeting(parseInt(meetingId));
+      if (agendaResponse.data) {
+        setAgendaItems(agendaResponse.data);
+      }
+      
+      console.log('Added agenda item:', response.data);
+      // TODO: Show success notification
+    } catch (error) {
+      console.error('Error adding agenda item:', error);
+      // TODO: Show error notification to user
+    } finally {
+      setAgendaLoading(false);
     }
   };
 
-  const handleDeleteAgendaItem = (index: number) => {
-    // TODO: Implement when agenda API supports deleting items
-    console.log('Deleting agenda item at index:', index);
-    setConfirmModalOpen(false);
-    setDeleteTarget(null);
+  const handleEditAgendaItem = async (item: string) => {
+    if (editingAgendaIndex !== null) {
+      setAgendaLoading(true);
+      try {
+        const agendaItem = agendaItems[editingAgendaIndex];
+        if (!agendaItem) return;
+        
+        const response = await api.meetingAgenda.update(agendaItem.agendaId, {
+          title: item
+        });
+        
+        if (response.error) {
+          throw new Error(response.error);
+        }
+        
+        // Refresh agenda items
+        const agendaResponse = await api.meetingAgenda.getByMeeting(parseInt(meetingId));
+        if (agendaResponse.data) {
+          setAgendaItems(agendaResponse.data);
+        }
+        
+        setEditingAgendaIndex(null);
+        console.log('Updated agenda item:', response.data);
+        // TODO: Show success notification
+      } catch (error) {
+        console.error('Error updating agenda item:', error);
+        // TODO: Show error notification to user
+      } finally {
+        setAgendaLoading(false);
+      }
+    }
+  };
+
+  const handleDeleteAgendaItem = async (index: number) => {
+    setAgendaLoading(true);
+    try {
+      const agendaItem = agendaItems[index];
+      if (!agendaItem) return;
+      
+      const response = await api.meetingAgenda.delete(agendaItem.agendaId);
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      
+      // Remove from local state
+      setAgendaItems(prev => prev.filter((_, i) => i !== index));
+      setConfirmModalOpen(false);
+      setDeleteTarget(null);
+      
+      console.log('Deleted agenda item:', agendaItem.agendaId);
+      // TODO: Show success notification
+    } catch (error) {
+      console.error('Error deleting agenda item:', error);
+      // TODO: Show error notification to user
+    } finally {
+      setAgendaLoading(false);
+    }
+  };
+
+  // Bulk create agenda items
+  const handleBulkCreateAgendaItems = async (agendaTitles: string[]) => {
+    setAgendaLoading(true);
+    try {
+      const response = await api.meetingAgenda.bulkCreate(parseInt(meetingId), agendaTitles);
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      
+      // Refresh agenda items
+      const agendaResponse = await api.meetingAgenda.getByMeeting(parseInt(meetingId));
+      if (agendaResponse.data) {
+        setAgendaItems(agendaResponse.data);
+      }
+      
+      console.log('Bulk created agenda items:', response.data);
+      // TODO: Show success notification
+    } catch (error) {
+      console.error('Error bulk creating agenda items:', error);
+      // TODO: Show error notification to user
+    } finally {
+      setAgendaLoading(false);
+    }
+  };
+
+  // Clear all agenda items
+  const handleClearAllAgendaItems = async () => {
+    setAgendaLoading(true);
+    try {
+      const response = await api.meetingAgenda.deleteAllByMeeting(parseInt(meetingId));
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      
+      // Clear local state
+      setAgendaItems([]);
+      setConfirmModalOpen(false);
+      setDeleteTarget(null);
+      
+      console.log('Cleared all agenda items');
+      // TODO: Show success notification
+    } catch (error) {
+      console.error('Error clearing agenda items:', error);
+      // TODO: Show error notification to user
+    } finally {
+      setAgendaLoading(false);
+    }
   };
 
   // Drag and drop handlers
@@ -914,7 +1117,7 @@ const MeetingDetail = () => {
     setDragOverIndex(null);
   };
 
-  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
+  const handleDrop = async (e: React.DragEvent, dropIndex: number) => {
     e.preventDefault();
     setDragOverIndex(null);
     
@@ -933,11 +1136,38 @@ const MeetingDetail = () => {
     const insertIndex = draggedIndex < dropIndex ? dropIndex - 1 : dropIndex;
     newAgenda.splice(insertIndex, 0, draggedItem);
 
+    // Update local state immediately for responsive UI
     setAgendaItems(newAgenda);
-
     setDraggedIndex(null);
-    // Here you would typically make an API call to save the new order
-    console.log('Reordered agenda items:', newAgenda);
+
+    setAgendaLoading(true);
+    try {
+      // Send reorder request to backend
+      console.log('DEBUG: newAgenda before mapping:', newAgenda);
+      const agendaIds = newAgenda.map(item => {
+        console.log('DEBUG: mapping item:', item, 'agendaId:', item.agendaId);
+        return item.agendaId;
+      });
+      console.log('DEBUG: final agendaIds:', agendaIds);
+      const response = await api.meetingAgenda.reorder(agendaIds);
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      
+      console.log('Reordered agenda items:', response.data);
+      // TODO: Show success notification
+    } catch (error) {
+      console.error('Error reordering agenda items:', error);
+      // Revert to original order on error
+      const agendaResponse = await api.meetingAgenda.getByMeeting(parseInt(meetingId));
+      if (agendaResponse.data) {
+        setAgendaItems(agendaResponse.data);
+      }
+      // TODO: Show error notification to user
+    } finally {
+      setAgendaLoading(false);
+    }
   };
 
   const handleDragEnd = () => {
@@ -977,6 +1207,9 @@ const MeetingDetail = () => {
           if (deleteTarget.index !== undefined) {
             handleDeleteAgendaItem(deleteTarget.index);
           }
+          break;
+        case 'all-agenda':
+          handleClearAllAgendaItems();
           break;
         case 'action':
           if (deleteTarget.item?.id) {
@@ -1350,41 +1583,71 @@ const MeetingDetail = () => {
           {/* Agenda tab */}
           {activeTab === 'agenda' && (
             <div className="space-y-4">
-              <div className="flex justify-between items-center">
-                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                  Meeting Agenda
-                </h3>
-                {statusStyle.text !== 'Completed' && (
-                  <button 
-                    onClick={() => setAgendaModalOpen(true)}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm flex items-center gap-2"
-                  >
-                    <Plus className="w-4 h-4" />
-                    Add Agenda
-                  </button>
-                )}
-              </div>
+                             <div className="flex justify-between items-center">
+                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                   Meeting Agenda
+                 </h3>
+                 {statusStyle.text !== 'Completed' && (
+                   <div className="flex gap-2">
+                     <button 
+                       onClick={() => setAgendaModalOpen(true)}
+                       disabled={agendaLoading}
+                       className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-3 py-2 rounded-lg text-sm flex items-center gap-2 disabled:cursor-not-allowed"
+                     >
+                       {agendaLoading ? (
+                         <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                       ) : (
+                         <Plus className="w-4 h-4" />
+                       )}
+                       {agendaLoading ? 'Processing...' : 'Add Agenda'}
+                     </button>
+                     {agendaItems.length > 0 && (
+                       <button 
+                         onClick={() => {
+                           setDeleteTarget({type: 'all-agenda'});
+                           setConfirmModalOpen(true);
+                         }}
+                         disabled={agendaLoading}
+                         className="bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white px-3 py-2 rounded-lg text-sm flex items-center gap-2 disabled:cursor-not-allowed"
+                       >
+                         {agendaLoading ? (
+                           <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                         ) : (
+                           <Trash2 className="w-4 h-4" />
+                         )}
+                         {agendaLoading ? 'Processing...' : 'Clear All'}
+                       </button>
+                     )}
+                   </div>
+                 )}
+               </div>
               
-              <div className="space-y-3">
-                {agendaItems.length > 0 ? agendaItems.map((item, index) => (
-                  <div 
-                    key={index} 
-                    draggable={statusStyle.text !== 'Completed'}
-                    onDragStart={(e) => handleDragStart(e, index)}
-                    onDragOver={(e) => handleDragOver(e, index)}
-                    onDragLeave={handleDragLeave}
-                    onDrop={(e) => handleDrop(e, index)}
-                    onDragEnd={handleDragEnd}
-                    className={`flex items-center gap-3 p-4 rounded-lg group transition-all duration-200 ${
-                      draggedIndex === index 
-                        ? 'bg-blue-100 dark:bg-blue-900 opacity-50 scale-95' 
-                        : dragOverIndex === index && draggedIndex !== null
-                        ? 'bg-blue-50 dark:bg-blue-800 border-2 border-blue-300 dark:border-blue-600'
-                        : 'bg-gray-50 dark:bg-gray-700'
-                    } ${
-                      statusStyle.text !== 'Completed' ? 'cursor-move' : ''
-                    }`}
-                  >
+                             <div className="space-y-3">
+                 {agendaLoading && (
+                   <div className="text-center py-4">
+                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                     <p className="text-sm text-gray-600 dark:text-gray-400">Updating agenda...</p>
+                   </div>
+                 )}
+                 {agendaItems.length > 0 ? agendaItems.map((item, index) => (
+                                     <div 
+                     key={index} 
+                     draggable={statusStyle.text !== 'Completed' && !agendaLoading}
+                     onDragStart={(e) => handleDragStart(e, index)}
+                     onDragOver={(e) => handleDragOver(e, index)}
+                     onDragLeave={handleDragLeave}
+                     onDrop={(e) => handleDrop(e, index)}
+                     onDragEnd={handleDragEnd}
+                     className={`flex items-center gap-3 p-4 rounded-lg group transition-all duration-200 ${
+                       draggedIndex === index 
+                         ? 'bg-blue-100 dark:bg-blue-900 opacity-50 scale-95' 
+                         : dragOverIndex === index && draggedIndex !== null
+                         ? 'bg-blue-50 dark:bg-blue-800 border-2 border-blue-300 dark:border-blue-600'
+                         : 'bg-gray-50 dark:bg-gray-700'
+                     } ${
+                       statusStyle.text !== 'Completed' && !agendaLoading ? 'cursor-move' : ''
+                     }`}
+                   >
                     {statusStyle.text !== 'Completed' && (
                       <div className="flex items-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
                         <GripVertical className="w-4 h-4" />
@@ -1397,30 +1660,32 @@ const MeetingDetail = () => {
                     {statusStyle.text === 'Completed' && (
                       <CheckCircle className="w-5 h-5 text-green-500" />
                     )}
-                    {statusStyle.text !== 'Completed' && (
-                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                        <button
-                          onClick={() => {
-                            setEditingAgendaIndex(index);
-                            setAgendaModalOpen(true);
-                          }}
-                          className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
-                          title="Edit agenda item"
-                        >
-                          <Edit className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => {
-                            setDeleteTarget({type: 'agenda', index});
-                            setConfirmModalOpen(true);
-                          }}
-                          className="p-1 text-gray-400 hover:text-red-600 transition-colors"
-                          title="Delete agenda item"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
-                      </div>
-                    )}
+                                         {statusStyle.text !== 'Completed' && (
+                       <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                         <button
+                           onClick={() => {
+                             setEditingAgendaIndex(index);
+                             setAgendaModalOpen(true);
+                           }}
+                           disabled={agendaLoading}
+                           className="p-1 text-gray-400 hover:text-blue-600 disabled:text-gray-300 disabled:cursor-not-allowed transition-colors"
+                           title="Edit agenda item"
+                         >
+                           <Edit className="w-4 h-4" />
+                         </button>
+                         <button
+                           onClick={() => {
+                             setDeleteTarget({type: 'agenda', index});
+                             setConfirmModalOpen(true);
+                           }}
+                           disabled={agendaLoading}
+                           className="p-1 text-gray-400 hover:text-red-600 disabled:text-gray-300 disabled:cursor-not-allowed transition-colors"
+                           title="Delete agenda item"
+                         >
+                           <Trash2 className="w-4 h-4" />
+                         </button>
+                       </div>
+                     )}
                   </div>
                 )) : (
                   <div className="text-center py-8 text-gray-500 dark:text-gray-400">
@@ -1689,15 +1954,16 @@ const MeetingDetail = () => {
       </div>
 
       {/* Modals */}
-      <AgendaItemModal
-        isOpen={agendaModalOpen}
-        onClose={() => {
-          setAgendaModalOpen(false);
-          setEditingAgendaIndex(null);
-        }}
-        onSave={editingAgendaIndex !== null ? handleEditAgendaItem : handleAddAgendaItem}
-        item={editingAgendaIndex !== null ? agendaItems[editingAgendaIndex]?.title : null}
-      />
+             <AgendaItemModal
+         isOpen={agendaModalOpen}
+         onClose={() => {
+           setAgendaModalOpen(false);
+           setEditingAgendaIndex(null);
+         }}
+         onSave={editingAgendaIndex !== null ? handleEditAgendaItem : handleAddAgendaItem}
+         onBulkSave={editingAgendaIndex === null ? handleBulkCreateAgendaItems : undefined}
+         item={editingAgendaIndex !== null ? agendaItems[editingAgendaIndex]?.title : null}
+       />
 
       <ActionItemModal
         isOpen={actionModalOpen}
@@ -1716,17 +1982,19 @@ const MeetingDetail = () => {
           setDeleteTarget(null);
         }}
         onConfirm={handleConfirmDelete}
-        title={
-          deleteTarget?.type === 'agenda' ? 'Delete Agenda Item' :
-          deleteTarget?.type === 'action' ? 'Delete Action Item' :
-          deleteTarget?.type === 'notes' ? 'Delete Meeting Notes' : 'Confirm Delete'
-        }
-        message={
-          deleteTarget?.type === 'agenda' ? 'Are you sure you want to delete this agenda item? This action cannot be undone.' :
-          deleteTarget?.type === 'action' ? 'Are you sure you want to delete this action item? This action cannot be undone.' :
-          deleteTarget?.type === 'notes' ? 'Are you sure you want to delete all meeting notes? This action cannot be undone.' :
-          'Are you sure you want to delete this item?'
-        }
+                 title={
+           deleteTarget?.type === 'agenda' ? 'Delete Agenda Item' :
+           deleteTarget?.type === 'all-agenda' ? 'Clear All Agenda Items' :
+           deleteTarget?.type === 'action' ? 'Delete Action Item' :
+           deleteTarget?.type === 'notes' ? 'Delete Meeting Notes' : 'Confirm Delete'
+         }
+         message={
+           deleteTarget?.type === 'agenda' ? 'Are you sure you want to delete this agenda item? This action cannot be undone.' :
+           deleteTarget?.type === 'all-agenda' ? 'Are you sure you want to clear all agenda items? This action cannot be undone.' :
+           deleteTarget?.type === 'action' ? 'Are you sure you want to delete this action item? This action cannot be undone.' :
+           deleteTarget?.type === 'notes' ? 'Are you sure you want to delete all meeting notes? This action cannot be undone.' :
+           'Are you sure you want to delete this item?'
+         }
       />
     </div>
   );

@@ -137,15 +137,16 @@ class CRUDMeetingAgenda(CRUDBase[MeetingAgenda, MeetingAgendaCreate, MeetingAgen
         *,
         agenda_ids: List[int]
     ) -> List[MeetingAgenda]:
-        """Reorder agenda items by updating their IDs (for display purposes)."""
-        # Note: This is a simple implementation
-        # In production, you might want to add an 'order' field to the model
+        """Reorder agenda items by returning them in the requested order."""
+        # Note: This is a simple implementation that returns items in the requested order
+        # In production, you might want to add an 'order' field to the model for persistent ordering
         agenda_items = []
         for agenda_id in agenda_ids:
             agenda_obj = self.get(db=db, id=agenda_id)
             if agenda_obj:
                 agenda_items.append(agenda_obj)
         
+        # Return items in the exact order requested
         return agenda_items
     
     def get_upcoming_meeting_agendas(

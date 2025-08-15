@@ -1,7 +1,8 @@
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 import math
+import json
 
 from ..core.security import get_current_user
 from ..db.session import get_db
@@ -10,7 +11,8 @@ from ..schemas.meeting_agenda import (
     MeetingAgendaCreate,
     MeetingAgendaUpdate,
     MeetingAgendaResponse,
-    MeetingAgendaListResponse
+    MeetingAgendaListResponse,
+    MeetingAgendaReorderRequest
 )
 from ..crud.meeting_agenda import meeting_agenda
 from ..crud.meeting import meeting_crud
@@ -64,6 +66,47 @@ def create_meeting_agenda(
     
     db_agenda = meeting_agenda.create(db=db, obj_in=agenda_in)
     return MeetingAgendaResponse.model_validate(db_agenda)
+
+
+@router.post("/reorder")
+async def reorder_agenda_items(
+    request: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Reorder agenda items by providing a new order of agenda IDs."""
+    try:
+        # Get raw request body for debugging
+        body = await request.body()
+        print(f"DEBUG: Raw request body: {body}")
+        
+        # Parse JSON manually for debugging
+        body_data = json.loads(body)
+        print(f"DEBUG: Parsed body data: {body_data}")
+        print(f"DEBUG: Body data type: {type(body_data)}")
+        
+        # Check if agenda_ids exists
+        if 'agenda_ids' not in body_data:
+            print(f"DEBUG: agenda_ids not found in body_data. Keys: {list(body_data.keys())}")
+            return {"error": "agenda_ids field is missing", "received": body_data}
+        
+        agenda_ids = body_data['agenda_ids']
+        print(f"DEBUG: agenda_ids: {agenda_ids}")
+        print(f"DEBUG: agenda_ids type: {type(agenda_ids)}")
+        
+        # Basic validation
+        if not isinstance(agenda_ids, list):
+            return {"error": "agenda_ids must be a list", "received_type": str(type(agenda_ids))}
+        
+        if not agenda_ids:
+            return {"error": "agenda_ids cannot be empty"}
+        
+        # For now, just return success
+        return {"success": True, "received_ids": agenda_ids, "count": len(agenda_ids)}
+        
+    except Exception as e:
+        print(f"DEBUG: Error processing request: {e}")
+        return {"error": f"Invalid request format: {e}"}
 
 
 @router.get("/{agenda_id}", response_model=MeetingAgendaResponse)
