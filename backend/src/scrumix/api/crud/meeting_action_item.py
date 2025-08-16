@@ -2,6 +2,7 @@ from typing import Optional, List
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
 from datetime import datetime
+from sqlalchemy.orm import joinedload
 
 from .base import CRUDBase
 from ..models.meeting_action_item import MeetingActionItem
@@ -10,6 +11,25 @@ from ..schemas.meeting_action_item import MeetingActionItemCreate, MeetingAction
 
 class CRUDMeetingActionItem(CRUDBase[MeetingActionItem, MeetingActionItemCreate, MeetingActionItemUpdate]):
     """CRUD operations for MeetingActionItem."""
+    
+    def create_with_user(
+        self,
+        db: Session,
+        *,
+        obj_in: MeetingActionItemCreate,
+        user_id: int
+    ) -> MeetingActionItem:
+        """Create a new meeting action item with user information."""
+        db_obj = MeetingActionItem(
+            meeting_id=obj_in.meeting_id,
+            user_id=user_id,
+            title=obj_in.title,
+            due_date=obj_in.due_date
+        )
+        db.add(db_obj)
+        db.commit()
+        db.refresh(db_obj)
+        return db_obj
     
     def get_multi_with_pagination(
         self,
@@ -23,7 +43,7 @@ class CRUDMeetingActionItem(CRUDBase[MeetingActionItem, MeetingActionItemCreate,
         due_after: Optional[datetime] = None
     ) -> tuple[List[MeetingActionItem], int]:
         """Get multiple meeting action items with pagination and optional filtering."""
-        query = db.query(self.model)
+        query = db.query(self.model).options(joinedload(self.model.user))  # Load user relationship
         
         # Apply meeting filter
         if meeting_id:
@@ -56,15 +76,26 @@ class CRUDMeetingActionItem(CRUDBase[MeetingActionItem, MeetingActionItemCreate,
         skip: int = 0,
         limit: int = 100
     ) -> List[MeetingActionItem]:
-        """Get action items by meeting ID."""
-        return (
+        """Get action items by meeting ID with user information."""
+        action_items = (
             db.query(self.model)
+            .options(joinedload(self.model.user))  # Load user relationship
             .filter(self.model.meeting_id == meeting_id)
             .order_by(self.model.due_date.asc().nulls_last(), self.model.id.asc())
             .offset(skip)
             .limit(limit)
             .all()
         )
+        
+        # Debug: Check if user relationships are loaded
+        for item in action_items:
+            print(f"DEBUG: Action item {item.id} - User ID: {item.user_id}")
+            if hasattr(item, 'user') and item.user:
+                print(f"DEBUG: User loaded - ID: {item.user.id}, Username: {item.user.username}, Full Name: {item.user.full_name}, Email: {item.user.email}")
+            else:
+                print(f"DEBUG: User relationship not loaded for action item {item.id}")
+        
+        return action_items
     
     def count_by_meeting_id(self, db: Session, *, meeting_id: int) -> int:
         """Count action items for a specific meeting."""
@@ -82,7 +113,7 @@ class CRUDMeetingActionItem(CRUDBase[MeetingActionItem, MeetingActionItemCreate,
         """Search action items by title."""
         search_filter = self.model.title.ilike(f"%{query}%")
         
-        db_query = db.query(self.model).filter(search_filter)
+        db_query = db.query(self.model).options(joinedload(self.model.user)).filter(search_filter)  # Load user relationship
         
         # Optionally filter by meeting_id
         if meeting_id:

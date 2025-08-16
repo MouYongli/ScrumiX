@@ -49,6 +49,34 @@ export interface ApiMeetingAgenda {
   updatedAt: string;               // camelCase (alias in backend)
 }
 
+export interface ApiMeetingActionItem {
+  id: number;                      // Backend field name
+  meeting_id: number;              // Backend field name
+  title: string;
+  due_date?: string;               // Backend field name
+  created_at: string;              // Backend field name
+  updated_at: string;              // Backend field name
+  user: {                          // User who created the action item (matches backend field name)
+    id: number;
+    username?: string;
+    email: string;
+    full_name?: string;
+  };
+}
+
+export interface ApiMeetingNote {
+  id: number;                      // Frontend expects 'id'
+  content: string;
+  author?: string;                  // Frontend expects 'author'
+  createdAt: string;               // camelCase (alias in backend)
+  replies?: Array<{                 // Frontend expects 'replies'
+    id: number;
+    content: string;
+    author: string;
+    timestamp: string;
+  }>;
+}
+
 export enum ScrumRole {
   SCRUM_MASTER = "scrum_master",
   PRODUCT_OWNER = "product_owner",

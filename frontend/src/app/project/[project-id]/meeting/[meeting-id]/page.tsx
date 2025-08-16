@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
 import { api } from '@/utils/api';
-import { ApiMeeting, ApiProject, ApiMeetingAgenda } from '@/types/api';
+import { ApiMeeting, ApiProject, ApiMeetingAgenda, ApiMeetingActionItem, ApiMeetingNote } from '@/types/api';
 import { MeetingType } from '@/types/enums';
 import { ProjectMemberResponse } from '@/types/api';
 
@@ -192,7 +192,7 @@ const MarkdownEditor = ({ value, onChange, readonly = false }: {
             const IconComponent = button.icon;
             return (
               <button
-                key={index}
+                key={`toolbar-${button.label}-${index}`}
                 onClick={button.action}
                 className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
                 title={button.label}
@@ -272,7 +272,7 @@ const ParticipantsHeaderTooltip = ({ participants, facilitator }: {
           >
             {participants.slice(0, 3).map((participant, index) => (
               <div
-                key={index}
+                key={`tooltip-participant-${index}-${participant}`}
                 className="w-5 h-5 bg-gray-200 dark:bg-gray-600 rounded-full flex items-center justify-center border border-white dark:border-gray-800 cursor-pointer hover:bg-gray-300 dark:hover:bg-gray-500 transition-colors"
               >
                 <span className="text-xs text-gray-600 dark:text-gray-300">
@@ -296,7 +296,7 @@ const ParticipantsHeaderTooltip = ({ participants, facilitator }: {
                 </div>
                 <div className="space-y-2 max-h-40 overflow-y-auto">
                   {participants.map((participant, index) => (
-                    <div key={index} className="flex items-center gap-2">
+                    <div key={`tooltip-list-participant-${index}-${participant}`} className="flex items-center gap-2">
                       <div className="w-6 h-6 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center">
                         <span className="text-xs text-gray-600 dark:text-gray-300">
                           {participant.charAt(0)}
@@ -332,7 +332,7 @@ const ParticipantsDetailView = ({ participants, facilitator }: {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       {participants.map((participant, index) => (
-        <div key={index} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+        <div key={`participant-${index}-${participant}`} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
           <div className="w-8 h-8 bg-gray-200 dark:bg-gray-600 rounded-full flex items-center justify-center">
             <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
               {participant.charAt(0)}
@@ -464,8 +464,8 @@ const AgendaItemModal = ({
       <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
         <div className="flex justify-between items-center mb-4">
           <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-            {item ? 'Edit Agenda Item' : 'Add Agenda Item'}
-          </h3>
+          {item ? 'Edit Agenda Item' : 'Add Agenda Item'}
+        </h3>
           {!item && onBulkSave && (
             <button
               onClick={() => setIsBulkMode(!isBulkMode)}
@@ -482,7 +482,7 @@ const AgendaItemModal = ({
               Add multiple agenda items at once:
             </p>
             {bulkItems.map((item, index) => (
-              <div key={index} className="flex gap-2">
+              <div key={`bulk-item-${index}`} className="flex gap-2">
                 <textarea
                   value={item}
                   onChange={(e) => updateBulkItem(index, e.target.value)}
@@ -509,14 +509,14 @@ const AgendaItemModal = ({
             </button>
           </div>
         ) : (
-          <textarea
-            value={agendaItem}
-            onChange={(e) => setAgendaItem(e.target.value)}
-            placeholder="Enter agenda item..."
-            className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg resize-none h-24
-                     bg-white dark:bg-gray-700 text-gray-900 dark:text-white
-                     placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-          />
+        <textarea
+          value={agendaItem}
+          onChange={(e) => setAgendaItem(e.target.value)}
+          placeholder="Enter agenda item..."
+          className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg resize-none h-24
+                   bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+                   placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+        />
         )}
 
         <div className="flex justify-end gap-3 mt-4">
@@ -544,35 +544,49 @@ const ActionItemModal = ({
   isOpen, 
   onClose, 
   onSave, 
-  item = null 
+  item = null,
+  projectMembers = []
 }: {
   isOpen: boolean;
   onClose: () => void;
   onSave: (item: any) => void;
   item?: any;
+  projectMembers?: any[];
 }) => {
   const [actionItem, setActionItem] = useState({
-    title: item?.title || '',
-    assignee: item?.assignee || '',
-    dueDate: item?.dueDate || '',
-    priority: item?.priority || 'medium',
-    status: item?.status || 'pending'
+    title: '',
+    dueDate: ''
   });
 
+  // Update form when editing item changes
+  useEffect(() => {
+    console.log('ActionItemModal: item prop changed:', item);
+    if (item) {
+      const dueDate = item.due_date ? new Date(item.due_date).toISOString().split('T')[0] : '';
+      console.log('ActionItemModal: Setting form data - title:', item.title, 'dueDate:', dueDate);
+      setActionItem({
+        title: item.title || '',
+        dueDate: dueDate
+      });
+    } else {
+      console.log('ActionItemModal: Clearing form data');
+      setActionItem({
+        title: '',
+        dueDate: ''
+      });
+    }
+  }, [item]);
+
   const handleSave = () => {
-    if (actionItem.title.trim() && actionItem.assignee.trim()) {
+    if (actionItem.title.trim()) {
       onSave({
         ...actionItem,
-        id: item?.id || `action-${Date.now()}`,
-        title: actionItem.title.trim(),
-        assignee: actionItem.assignee.trim()
+        id: item?.id,
+        title: actionItem.title.trim()
       });
       setActionItem({
         title: '',
-        assignee: '',
-        dueDate: '',
-        priority: 'medium',
-        status: 'pending'
+        dueDate: ''
       });
       onClose();
     }
@@ -603,20 +617,6 @@ const ActionItemModal = ({
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Assignee *
-            </label>
-            <input
-              type="text"
-              value={actionItem.assignee}
-              onChange={(e) => setActionItem({...actionItem, assignee: e.target.value})}
-              placeholder="Enter assignee name..."
-              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg
-                       bg-white dark:bg-gray-700 text-gray-900 dark:text-white
-                       placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Due Date
             </label>
             <input
@@ -628,50 +628,14 @@ const ActionItemModal = ({
                        focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Priority
-              </label>
-              <select
-                value={actionItem.priority}
-                onChange={(e) => setActionItem({...actionItem, priority: e.target.value})}
-                className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg
-                         bg-white dark:bg-gray-700 text-gray-900 dark:text-white
-                         focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Status
-              </label>
-              <select
-                value={actionItem.status}
-                onChange={(e) => setActionItem({...actionItem, status: e.target.value})}
-                className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg
-                         bg-white dark:bg-gray-700 text-gray-900 dark:text-white
-                         focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="pending">Pending</option>
-                <option value="in-progress">In Progress</option>
-                <option value="completed">Completed</option>
-              </select>
-            </div>
-          </div>
+
         </div>
         <div className="flex justify-end gap-3 mt-6">
           <button
             onClick={() => {
               setActionItem({
                 title: '',
-                assignee: '',
-                dueDate: '',
-                priority: 'medium',
-                status: 'pending'
+                dueDate: ''
               });
               onClose();
             }}
@@ -681,7 +645,7 @@ const ActionItemModal = ({
           </button>
           <button
             onClick={handleSave}
-            disabled={!actionItem.title.trim() || !actionItem.assignee.trim()}
+            disabled={!actionItem.title.trim()}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
           >
             {item ? 'Update' : 'Add'}
@@ -701,8 +665,8 @@ const MeetingDetail = () => {
   const [meeting, setMeeting] = useState<ApiMeeting | null>(null);
   const [project, setProject] = useState<ApiProject | null>(null);
   const [agendaItems, setAgendaItems] = useState<ApiMeetingAgenda[]>([]);
-  const [meetingNotes, setMeetingNotes] = useState<any[]>([]);
-  const [actionItems, setActionItems] = useState<any[]>([]);
+  const [meetingNotes, setMeetingNotes] = useState<ApiMeetingNote[]>([]);
+  const [actionItems, setActionItems] = useState<ApiMeetingActionItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
@@ -786,9 +750,29 @@ const MeetingDetail = () => {
           console.warn('Failed to fetch agenda items:', error);
         }
         
-        // TODO: Add meeting notes and action items APIs when backend supports them
-        setMeetingNotes([]);
-        setActionItems([]);
+        // Fetch meeting notes
+        try {
+          const notesResponse = await api.meetingNotes.getByMeeting(parseInt(meetingId));
+          if (notesResponse.data) {
+            setMeetingNotes(notesResponse.data);
+          }
+        } catch (error) {
+          console.warn('Failed to fetch meeting notes:', error);
+          setMeetingNotes([]);
+        }
+        
+        // Fetch action items
+        try {
+          const actionResponse = await api.meetingActionItems.getByMeeting(parseInt(meetingId));
+          if (actionResponse.data) {
+            console.log('Fetched action items:', actionResponse.data);
+            console.log('Sample action item structure:', actionResponse.data[0]);
+            setActionItems(actionResponse.data);
+          }
+        } catch (error) {
+          console.warn('Failed to fetch action items:', error);
+          setActionItems([]);
+        }
         
       } catch (error) {
         console.error('Error fetching meeting data:', error);
@@ -1010,7 +994,7 @@ const MeetingDetail = () => {
           setAgendaItems(agendaResponse.data);
         }
         
-        setEditingAgendaIndex(null);
+      setEditingAgendaIndex(null);
         console.log('Updated agenda item:', response.data);
         // TODO: Show success notification
       } catch (error) {
@@ -1036,8 +1020,8 @@ const MeetingDetail = () => {
       
       // Remove from local state
       setAgendaItems(prev => prev.filter((_, i) => i !== index));
-      setConfirmModalOpen(false);
-      setDeleteTarget(null);
+    setConfirmModalOpen(false);
+    setDeleteTarget(null);
       
       console.log('Deleted agenda item:', agendaItem.agendaId);
       // TODO: Show success notification
@@ -1176,27 +1160,82 @@ const MeetingDetail = () => {
   };
 
   // Action item handlers
-  const handleAddActionItem = (item: any) => {
-    setActionItems(prev => [...prev, item]);
-    // Here you would typically make an API call
-    console.log('Adding action item:', item);
+  const handleAddActionItem = async (item: any) => {
+    try {
+      console.log('Creating action item with data:', item);
+      const dueDate = item.dueDate ? new Date(item.dueDate).toISOString() : undefined;
+      console.log('Formatted due date:', dueDate);
+      
+      const response = await api.meetingActionItems.create({
+        meeting_id: parseInt(meetingId),
+        title: item.title,
+        due_date: dueDate
+      });
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      
+      // Refresh action items from API
+      const actionResponse = await api.meetingActionItems.getByMeeting(parseInt(meetingId));
+      if (actionResponse.data) {
+        setActionItems(actionResponse.data);
+      }
+      
+      console.log('Added action item:', response.data);
+    } catch (error) {
+      console.error('Error adding action item:', error);
+      // TODO: Show error notification to user
+    }
   };
 
-  const handleEditActionItem = (item: any) => {
-    setActionItems(prev => prev.map((action: any) => 
-      action.id === item.id ? item : action
-    ));
-    setEditingActionItem(null);
-    // Here you would typically make an API call
-    console.log('Editing action item:', item);
+  const handleEditActionItem = async (item: any) => {
+    try {
+      console.log('Updating action item with data:', item);
+      const dueDate = item.dueDate ? new Date(item.dueDate).toISOString() : undefined;
+      console.log('Formatted due date:', dueDate);
+      
+              const response = await api.meetingActionItems.update(item.id, {
+        title: item.title,
+        due_date: dueDate
+      });
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      
+      // Refresh action items from API
+      const actionResponse = await api.meetingActionItems.getByMeeting(parseInt(meetingId));
+      if (actionResponse.data) {
+        setActionItems(actionResponse.data);
+      }
+      
+      setEditingActionItem(null);
+      console.log('Updated action item:', response.data);
+    } catch (error) {
+      console.error('Error updating action item:', error);
+      // TODO: Show error notification to user
+    }
   };
 
-  const handleDeleteActionItem = (itemId: string) => {
-    setActionItems(prev => prev.filter((action: any) => action.id !== itemId));
-    setConfirmModalOpen(false);
-    setDeleteTarget(null);
-    // Here you would typically make an API call
-    console.log('Deleting action item:', itemId);
+  const handleDeleteActionItem = async (itemId: string) => {
+    try {
+      const response = await api.meetingActionItems.delete(parseInt(itemId));
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      
+      // Remove from local state
+              setActionItems(prev => prev.filter((action) => action.id !== parseInt(itemId)));
+      setConfirmModalOpen(false);
+      setDeleteTarget(null);
+      
+      console.log('Deleted action item:', itemId);
+    } catch (error) {
+      console.error('Error deleting action item:', error);
+      // TODO: Show error notification to user
+    }
   };
 
   // Confirmation handlers
@@ -1212,8 +1251,8 @@ const MeetingDetail = () => {
           handleClearAllAgendaItems();
           break;
         case 'action':
-          if (deleteTarget.item?.id) {
-            handleDeleteActionItem(deleteTarget.item.id);
+                  if (deleteTarget.item?.id) {
+          handleDeleteActionItem(deleteTarget.item.id.toString());
           }
           break;
         case 'notes':
@@ -1227,10 +1266,10 @@ const MeetingDetail = () => {
 
   // Breadcrumb data with icons
   const breadcrumbItems = [
-    { label: 'Home', href: '/', icon: <FolderOpen className="w-4 h-4" /> },
-    { label: 'Projects', href: '/project', icon: <FolderOpen className="w-4 h-4" /> },
+    { label: 'Home', href: '/' },
+    { label: 'Projects', href: '/project' },
     { label: projectName, href: `/project/${projectId}/dashboard` },
-    { label: 'Meetings', href: `/project/${projectId}/meeting`, icon: <Calendar className="w-4 h-4" /> },
+    { label: 'Meetings', href: `/project/${projectId}/meeting` },
     { label: meeting.title, current: true }
   ];
 
@@ -1404,7 +1443,7 @@ const MeetingDetail = () => {
           <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
               <Users className="w-5 h-5" />
               <span>{tempParticipants.length} participants</span>
-            </div>
+          </div>
         </div>
       </div>
 
@@ -1504,7 +1543,7 @@ const MeetingDetail = () => {
                   <div className="space-y-4">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {tempParticipants.map((participant, index) => (
-                        <div key={index} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                        <div key={`edit-participant-${participant.id || participant.email || index}`} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
                           <div className="w-8 h-8 bg-gray-200 dark:bg-gray-600 rounded-full flex items-center justify-center">
                             <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
                               {participant.full_name?.charAt(0) || participant.username?.charAt(0) || participant.email.charAt(0)}
@@ -1518,12 +1557,12 @@ const MeetingDetail = () => {
                               {participant.role}
                             </p>
                           </div>
-                          <button
-                            onClick={() => handleRemoveParticipant(index)}
-                            className="text-red-500 hover:text-red-700 transition-colors"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
+                            <button
+                              onClick={() => handleRemoveParticipant(index)}
+                              className="text-red-500 hover:text-red-700 transition-colors"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
                         </div>
                       ))}
                     </div>
@@ -1550,7 +1589,7 @@ const MeetingDetail = () => {
                     {tempParticipants.length > 0 ? (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                         {tempParticipants.map((participant, index) => (
-                          <div key={index} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                          <div key={`overview-participant-${participant.id || participant.email || index}`} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
                             <div className="w-8 h-8 bg-gray-200 dark:bg-gray-600 rounded-full flex items-center justify-center">
                               <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
                                 {participant.full_name?.charAt(0) || participant.username?.charAt(0) || participant.email.charAt(0)}
@@ -1583,24 +1622,24 @@ const MeetingDetail = () => {
           {/* Agenda tab */}
           {activeTab === 'agenda' && (
             <div className="space-y-4">
-                             <div className="flex justify-between items-center">
-                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                   Meeting Agenda
-                 </h3>
+              <div className="flex justify-between items-center">
+                <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                  Meeting Agenda
+                </h3>
                  {statusStyle.text !== 'Completed' && (
                    <div className="flex gap-2">
-                     <button 
-                       onClick={() => setAgendaModalOpen(true)}
+                  <button 
+                    onClick={() => setAgendaModalOpen(true)}
                        disabled={agendaLoading}
                        className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-3 py-2 rounded-lg text-sm flex items-center gap-2 disabled:cursor-not-allowed"
-                     >
+                  >
                        {agendaLoading ? (
                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
                        ) : (
-                         <Plus className="w-4 h-4" />
+                    <Plus className="w-4 h-4" />
                        )}
                        {agendaLoading ? 'Processing...' : 'Add Agenda'}
-                     </button>
+                  </button>
                      {agendaItems.length > 0 && (
                        <button 
                          onClick={() => {
@@ -1619,10 +1658,10 @@ const MeetingDetail = () => {
                        </button>
                      )}
                    </div>
-                 )}
-               </div>
+                )}
+              </div>
               
-                             <div className="space-y-3">
+              <div className="space-y-3">
                  {agendaLoading && (
                    <div className="text-center py-4">
                      <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
@@ -1630,24 +1669,24 @@ const MeetingDetail = () => {
                    </div>
                  )}
                  {agendaItems.length > 0 ? agendaItems.map((item, index) => (
-                                     <div 
-                     key={index} 
+                  <div 
+                    key={`agenda-${item.agendaId || index}`} 
                      draggable={statusStyle.text !== 'Completed' && !agendaLoading}
-                     onDragStart={(e) => handleDragStart(e, index)}
-                     onDragOver={(e) => handleDragOver(e, index)}
-                     onDragLeave={handleDragLeave}
-                     onDrop={(e) => handleDrop(e, index)}
-                     onDragEnd={handleDragEnd}
-                     className={`flex items-center gap-3 p-4 rounded-lg group transition-all duration-200 ${
-                       draggedIndex === index 
-                         ? 'bg-blue-100 dark:bg-blue-900 opacity-50 scale-95' 
-                         : dragOverIndex === index && draggedIndex !== null
-                         ? 'bg-blue-50 dark:bg-blue-800 border-2 border-blue-300 dark:border-blue-600'
-                         : 'bg-gray-50 dark:bg-gray-700'
-                     } ${
+                    onDragStart={(e) => handleDragStart(e, index)}
+                    onDragOver={(e) => handleDragOver(e, index)}
+                    onDragLeave={handleDragLeave}
+                    onDrop={(e) => handleDrop(e, index)}
+                    onDragEnd={handleDragEnd}
+                    className={`flex items-center gap-3 p-4 rounded-lg group transition-all duration-200 ${
+                      draggedIndex === index 
+                        ? 'bg-blue-100 dark:bg-blue-900 opacity-50 scale-95' 
+                        : dragOverIndex === index && draggedIndex !== null
+                        ? 'bg-blue-50 dark:bg-blue-800 border-2 border-blue-300 dark:border-blue-600'
+                        : 'bg-gray-50 dark:bg-gray-700'
+                    } ${
                        statusStyle.text !== 'Completed' && !agendaLoading ? 'cursor-move' : ''
-                     }`}
-                   >
+                    }`}
+                  >
                     {statusStyle.text !== 'Completed' && (
                       <div className="flex items-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
                         <GripVertical className="w-4 h-4" />
@@ -1661,31 +1700,31 @@ const MeetingDetail = () => {
                       <CheckCircle className="w-5 h-5 text-green-500" />
                     )}
                                          {statusStyle.text !== 'Completed' && (
-                       <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                         <button
-                           onClick={() => {
-                             setEditingAgendaIndex(index);
-                             setAgendaModalOpen(true);
-                           }}
+                      <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => {
+                            setEditingAgendaIndex(index);
+                            setAgendaModalOpen(true);
+                          }}
                            disabled={agendaLoading}
                            className="p-1 text-gray-400 hover:text-blue-600 disabled:text-gray-300 disabled:cursor-not-allowed transition-colors"
-                           title="Edit agenda item"
-                         >
-                           <Edit className="w-4 h-4" />
-                         </button>
-                         <button
-                           onClick={() => {
-                             setDeleteTarget({type: 'agenda', index});
-                             setConfirmModalOpen(true);
-                           }}
+                          title="Edit agenda item"
+                        >
+                          <Edit className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => {
+                            setDeleteTarget({type: 'agenda', index});
+                            setConfirmModalOpen(true);
+                          }}
                            disabled={agendaLoading}
                            className="p-1 text-gray-400 hover:text-red-600 disabled:text-gray-300 disabled:cursor-not-allowed transition-colors"
-                           title="Delete agenda item"
-                         >
-                           <Trash2 className="w-4 h-4" />
-                         </button>
-                       </div>
-                     )}
+                          title="Delete agenda item"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
                   </div>
                 )) : (
                   <div className="text-center py-8 text-gray-500 dark:text-gray-400">
@@ -1724,7 +1763,7 @@ const MeetingDetail = () => {
                   </div>
                   <div className="px-6 py-4 space-y-4 max-h-96 overflow-y-auto">
                     {meetingNotes.map((note) => (
-                      <div key={note.id} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                      <div key={`note-${note.id || note.createdAt || Math.random()}`} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
                         {/* Main note */}
                         <div className="flex items-start gap-3">
                           <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
@@ -1755,7 +1794,7 @@ const MeetingDetail = () => {
                         {note.replies && note.replies.length > 0 && (
                           <div className="mt-4 ml-11 space-y-3">
                             {note.replies.map((reply: any) => (
-                              <div key={reply.id} className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
+                              <div key={`reply-${reply.id || reply.timestamp || Math.random()}`} className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
                                 <div className="flex items-start gap-3">
                                   <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center text-white text-xs font-medium">
                                     {reply.author.charAt(0)}
@@ -1776,7 +1815,7 @@ const MeetingDetail = () => {
                         )}
 
                         {/* Reply input */}
-                        {replyingTo === note.id && statusStyle.text !== 'Completed' && (
+                        {replyingTo === note.id.toString() && statusStyle.text !== 'Completed' && (
                           <div className="mt-4 ml-11">
                             <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600 p-3">
                               <textarea
@@ -1796,7 +1835,7 @@ const MeetingDetail = () => {
                                   Cancel
                                 </button>
                                 <button
-                                  onClick={() => handleReply(note.id)}
+                                  onClick={() => handleReply(note.id.toString())}
                                   disabled={!replyContent.trim()}
                                   className="px-3 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white text-sm rounded transition-colors"
                                 >
@@ -1855,14 +1894,14 @@ const MeetingDetail = () => {
 
               {/* Meeting Decisions Section */}
               {/* TODO: Implement when decisions field is added to backend */}
-              <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
-                <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-                  <h4 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                    <CheckCircle className="w-5 h-5 text-green-500" />
-                    Meeting Decisions
-                  </h4>
-                </div>
-                <div className="px-6 py-4">
+                <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
+                  <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+                    <h4 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+                      <CheckCircle className="w-5 h-5 text-green-500" />
+                      Meeting Decisions
+                    </h4>
+                  </div>
+                  <div className="px-6 py-4">
                   <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                     <CheckCircle className="h-12 w-12 mx-auto mb-4 text-green-400" />
                     <p>No decisions recorded yet</p>
@@ -1891,29 +1930,41 @@ const MeetingDetail = () => {
 
               {actionItems.length > 0 ? (
                 <div className="space-y-3">
-                  {actionItems.map((action: any) => {
-                    const actionStatus = getActionItemStatus(action.status);
-                    const priorityColors = {
-                      low: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100',
-                      medium: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-800 dark:text-yellow-100',
-                      high: 'bg-red-100 text-red-800 dark:bg-red-800 dark:text-gray-100'
-                    };
+                  {actionItems.map((action: any, idx: number) => {
+                    const stableKey = action.id ?? `fallback-${idx}`;
+                    if (process.env.NODE_ENV !== 'production') {
+                      if (stableKey === `fallback-${idx}`) {
+                        // eslint-disable-next-line no-console
+                        console.warn('Action item missing id, using fallback key', action);
+                      }
+                    }
+                    console.log('Rendering action item:', action);
+                    
+                    // Parse dates properly
+                    const createdDate = action.created_at ? new Date(action.created_at) : null;
+                    const dueDate = action.due_date ? new Date(action.due_date) : null;
+                    
+                    // Get creator display name - prioritize full_name, fallback to username, then email
+                    const creatorDisplayName = action.user?.full_name || 
+                                             action.user?.username || 
+                                             action.user?.email || 
+                                             'Unknown User';
+                    
+                    console.log('Created date:', action.created_at, 'Parsed:', createdDate);
+                    console.log('Due date:', action.due_date, 'Parsed:', dueDate);
+                    console.log('Creator:', action.user, 'Display name:', creatorDisplayName);
+                    
                     return (
-                      <div key={action.id} className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg group">
+                      <div key={stableKey} className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg group">
                         <div className="flex justify-between items-start mb-2">
                           <h4 className="font-medium text-gray-900 dark:text-white">
                             {action.title}
                           </h4>
                           <div className="flex items-center gap-2">
-                            <span className={`px-2 py-1 text-xs font-medium rounded-full ${priorityColors[action.priority as keyof typeof priorityColors]}`}>
-                              {action.priority}
-                            </span>
-                            <span className={`px-2 py-1 text-xs font-medium rounded-full ${actionStatus.className}`}>
-                              {actionStatus.text}
-                            </span>
                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                               <button
                                 onClick={() => {
+                                  console.log('Edit button clicked for action:', action);
                                   setEditingActionItem(action);
                                   setActionModalOpen(true);
                                 }}
@@ -1936,8 +1987,11 @@ const MeetingDetail = () => {
                           </div>
                         </div>
                         <div className="flex justify-between items-center text-sm text-gray-600 dark:text-gray-400">
-                          <span>Assignee: {action.assignee}</span>
-                          <span>Due: {action.dueDate || 'No due date'}</span>
+                          <div className="flex items-center gap-4">
+                            <span>Created: {createdDate ? createdDate.toLocaleDateString() : 'Unknown'}</span>
+                            <span>by: {creatorDisplayName}</span>
+                          </div>
+                          <span>Due: {dueDate ? dueDate.toLocaleDateString() : 'No due date'}</span>
                         </div>
                       </div>
                     );
@@ -1954,25 +2008,27 @@ const MeetingDetail = () => {
       </div>
 
       {/* Modals */}
-             <AgendaItemModal
-         isOpen={agendaModalOpen}
-         onClose={() => {
-           setAgendaModalOpen(false);
-           setEditingAgendaIndex(null);
-         }}
-         onSave={editingAgendaIndex !== null ? handleEditAgendaItem : handleAddAgendaItem}
+      <AgendaItemModal
+        isOpen={agendaModalOpen}
+        onClose={() => {
+          setAgendaModalOpen(false);
+          setEditingAgendaIndex(null);
+        }}
+        onSave={editingAgendaIndex !== null ? handleEditAgendaItem : handleAddAgendaItem}
          onBulkSave={editingAgendaIndex === null ? handleBulkCreateAgendaItems : undefined}
          item={editingAgendaIndex !== null ? agendaItems[editingAgendaIndex]?.title : null}
-       />
+      />
 
       <ActionItemModal
         isOpen={actionModalOpen}
         onClose={() => {
+          console.log('ActionItemModal: Closing modal, clearing editingActionItem');
           setActionModalOpen(false);
           setEditingActionItem(null);
         }}
         onSave={editingActionItem ? handleEditActionItem : handleAddActionItem}
         item={editingActionItem}
+        projectMembers={tempParticipants}
       />
 
       <ConfirmationModal
@@ -1982,19 +2038,19 @@ const MeetingDetail = () => {
           setDeleteTarget(null);
         }}
         onConfirm={handleConfirmDelete}
-                 title={
-           deleteTarget?.type === 'agenda' ? 'Delete Agenda Item' :
+        title={
+          deleteTarget?.type === 'agenda' ? 'Delete Agenda Item' :
            deleteTarget?.type === 'all-agenda' ? 'Clear All Agenda Items' :
-           deleteTarget?.type === 'action' ? 'Delete Action Item' :
-           deleteTarget?.type === 'notes' ? 'Delete Meeting Notes' : 'Confirm Delete'
-         }
-         message={
-           deleteTarget?.type === 'agenda' ? 'Are you sure you want to delete this agenda item? This action cannot be undone.' :
+          deleteTarget?.type === 'action' ? 'Delete Action Item' :
+          deleteTarget?.type === 'notes' ? 'Delete Meeting Notes' : 'Confirm Delete'
+        }
+        message={
+          deleteTarget?.type === 'agenda' ? 'Are you sure you want to delete this agenda item? This action cannot be undone.' :
            deleteTarget?.type === 'all-agenda' ? 'Are you sure you want to clear all agenda items? This action cannot be undone.' :
-           deleteTarget?.type === 'action' ? 'Are you sure you want to delete this action item? This action cannot be undone.' :
-           deleteTarget?.type === 'notes' ? 'Are you sure you want to delete all meeting notes? This action cannot be undone.' :
-           'Are you sure you want to delete this item?'
-         }
+          deleteTarget?.type === 'action' ? 'Are you sure you want to delete this action item? This action cannot be undone.' :
+          deleteTarget?.type === 'notes' ? 'Are you sure you want to delete all meeting notes? This action cannot be undone.' :
+          'Are you sure you want to delete this item?'
+        }
       />
     </div>
   );

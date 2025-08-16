@@ -309,6 +309,46 @@ export const api = {
         body: JSON.stringify({ agenda_ids }),
       }),
   },
+
+  meetingNotes: {
+    getByMeeting: (meeting_id: number) => 
+      jsonFetch<ApiMeetingNote[]>(`/api/v1/meeting-notes/meeting/${meeting_id}`),
+    
+    create: (data: { meeting_id: number; content: string; user_id: number }) => 
+      jsonFetch<ApiMeetingNote>('/api/v1/meeting-notes/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+  },
+
+  meetingActionItems: {
+    getByMeeting: (meeting_id: number) => 
+      jsonFetch<ApiMeetingActionItem[]>(`/api/v1/meeting-action-items/meeting/${meeting_id}`),
+    
+    create: (data: { meeting_id: number; title: string; due_date?: string }) => 
+      jsonFetch<ApiMeetingActionItem>('/api/v1/meeting-action-items/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+    
+    update: (id: number, data: { title?: string; due_date?: string }) => 
+      jsonFetch<ApiMeetingActionItem>(`/api/v1/meeting-action-items/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+    
+    delete: (id: number) => jsonFetch<void>(`/api/v1/meeting-action-items/${id}`, {
+      method: 'DELETE',
+    }),
+    
+    deleteAllByMeeting: (meeting_id: number) => 
+      jsonFetch<void>(`/api/v1/meeting-action-items/meeting/${meeting_id}/all`, {
+        method: 'DELETE',
+      }),
+  },
   
   sprints: {
     getAll: () => jsonFetch<ApiSprint[]>('/api/v1/sprints/'),
