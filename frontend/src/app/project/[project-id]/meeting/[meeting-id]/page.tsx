@@ -1366,12 +1366,7 @@ const MeetingDetail = () => {
             <span className={`px-3 py-1 text-sm font-medium rounded-full ${statusStyle.className}`}>
               {statusStyle.text}
             </span>
-            {statusStyle.text === 'Scheduled' && (
-              <button className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors">
-                <Play className="w-4 h-4" />
-                Start Meeting
-              </button>
-            )}
+
             {statusStyle.text === 'In Progress' && (
               <div className="flex gap-2">
                 <button 
