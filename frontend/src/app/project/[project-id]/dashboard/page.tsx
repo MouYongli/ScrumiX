@@ -141,6 +141,8 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
         
         // Fetch project tasks - for now get all tasks and filter by project
         // TODO: Add project_id filter to API when backend supports it
+        // Note: Backend should return tasks with assignees array containing user details
+        // from user_task.py: {id, username, full_name, email, role, assigned_at}
         const tasksResponse = await api.tasks.getAll({ 
           limit: 100 
         });
@@ -149,10 +151,38 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
         // Filter tasks by project (assuming tasks have project_id field)
         // If backend doesn't support this yet, we'll need to implement it
         const allTasks = tasksResponse.data?.tasks || [];
+        
+        // Debug: Log the structure of tasks to understand what we're receiving
+        console.log('Raw tasks from API:', allTasks.slice(0, 2)); // Log first 2 tasks
+        
         const tasks = allTasks.filter(task => {
           // Check if task has project_id field, if not, include all for now
           return (task as any).project_id === parseInt(projectId) || !(task as any).project_id;
         });
+        
+        // Debug: Log filtered tasks and their assignee structure
+        console.log('Filtered tasks for project:', tasks.slice(0, 2));
+        tasks.slice(0, 2).forEach((task, index) => {
+          console.log(`Task ${index + 1} assignees:`, {
+            taskId: task.id,
+            taskTitle: task.title,
+            assignees: task.assignees,
+            assigneesType: typeof task.assignees,
+            assigneesLength: Array.isArray(task.assignees) ? task.assignees.length : 'not array'
+          });
+        });
+        
+        // Try to get tasks with assignee information from sprint endpoints
+        let tasksWithAssignees = tasks;
+        
+        // Debug: Log tasks with assignees
+        console.log('Tasks with assignees:', tasksWithAssignees.slice(0, 2));
+        
+        // Debug: Check if any tasks have assignee information
+        const tasksWithAssigneesInfo = tasksWithAssignees.filter(task => 
+          task.assignees && Array.isArray(task.assignees) && task.assignees.length > 0
+        );
+        console.log(`Tasks with assignee info: ${tasksWithAssigneesInfo.length}/${tasksWithAssignees.length}`);
         
         // Fetch project sprints
         const sprintsResponse = await api.sprints.getAll();
@@ -162,23 +192,38 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
           sprint.projectId === parseInt(projectId)
         ) || [];
         
-        // Fetch upcoming meetings
-        const meetingsResponse = await api.meetings.getUpcoming(14);
-        if (meetingsResponse.error) throw new Error(meetingsResponse.error);
-        
-        const projectMeetings = meetingsResponse.data?.filter(meeting => 
-          meeting.projectId === parseInt(projectId)
-        ) || [];
-        
-        // Calculate dashboard metrics
-        const completedTasks = tasks.filter(task => task.status === TaskStatus.DONE);
-        const inProgressTasks = tasks.filter(task => task.status === TaskStatus.IN_PROGRESS);
-        const pendingTasks = tasks.filter(task => task.status === TaskStatus.TODO);
-        
         // Find current sprint (most recent active sprint)
         const currentSprint = projectSprints
           .filter(sprint => new Date(sprint.endDate) >= new Date())
           .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime())[0];
+        
+        // Try to get tasks with assignee information from sprint endpoints
+        if (currentSprint) {
+          try {
+            const sprintBacklogResponse = await api.sprints.getSprintBacklog(currentSprint.id, {
+              include_acceptance_criteria: false,
+              limit: 1000
+            });
+            
+            if (!sprintBacklogResponse.error && sprintBacklogResponse.data) {
+              // Extract tasks from sprint backlog items
+              const sprintTasks: any[] = [];
+              sprintBacklogResponse.data.forEach(backlogItem => {
+                if (backlogItem.tasks && Array.isArray(backlogItem.tasks)) {
+                  sprintTasks.push(...backlogItem.tasks);
+                }
+              });
+              
+              // If we got tasks with assignee info, use them
+              if (sprintTasks.length > 0) {
+                console.log('Found tasks with assignee info from sprint backlog:', sprintTasks.slice(0, 2));
+                tasksWithAssignees = sprintTasks;
+              }
+            }
+          } catch (error) {
+            console.warn('Failed to fetch sprint backlog for assignee info:', error);
+          }
+        }
         
         // Calculate sprint progress
         let sprintProgress = 0;
@@ -224,34 +269,94 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
             .reduce((sum, item) => sum + (item.story_point || 0), 0);
         }
         
+        // Fetch upcoming meetings
+        const meetingsResponse = await api.meetings.getUpcoming(14);
+        if (meetingsResponse.error) throw new Error(meetingsResponse.error);
+        
+        const projectMeetings = meetingsResponse.data?.filter(meeting => 
+          meeting.projectId === parseInt(projectId)
+        ) || [];
+        
+        // Calculate dashboard metrics
+        const completedTasks = tasksWithAssignees.filter(task => task.status === TaskStatus.DONE);
+        const inProgressTasks = tasksWithAssignees.filter(task => task.status === TaskStatus.IN_PROGRESS);
+        const pendingTasks = tasksWithAssignees.filter(task => task.status === TaskStatus.TODO);
+        
         // Prepare kanban data (without story points)
         const sprintKanbanData = {
           todo: pendingTasks.map(task => ({
             id: task.id,
             title: task.title,
             priority: task.priority,
-            assignee: task.assignedUsers?.[0]?.username || 'Unassigned'
+            assignee: getAssigneeDisplay(task.assignees || [])
           })),
           inProgress: inProgressTasks.map(task => ({
             id: task.id,
             title: task.title,
             priority: task.priority,
-            assignee: task.assignedUsers?.[0]?.username || 'Unassigned'
+            assignee: getAssigneeDisplay(task.assignees || [])
           })),
           done: completedTasks.map(task => ({
             id: task.id,
             title: task.title,
             priority: task.priority,
-            assignee: task.assignedUsers?.[0]?.username || 'Unassigned'
+            assignee: getAssigneeDisplay(task.assignees || [])
           }))
         };
         
+        // Helper function to format assignee display based on backend user_task.py structure
+        // This function handles the assignee data structure returned by the backend:
+        // - Backend uses UserTask model to manage task assignments
+        // - get_task_assignee_details() returns: {id, username, full_name, email, role, assigned_at}
+        // - Multiple users can be assigned to a single task
+        // - Priority: full_name > username > email (extracted name) > fallback
+        function getAssigneeDisplay(assignees: any[]): string {
+          if (!assignees || assignees.length === 0) {
+            return 'Unassigned';
+          }
+          
+          // Handle backend assignee structure from user_task.py
+          // Backend returns assignees as objects with: {id, username, full_name, email, role, assigned_at}
+          const users = assignees.map(assignee => {
+            if (typeof assignee === 'object') {
+              // Backend provides full user details
+              if (assignee.full_name && assignee.full_name.trim()) {
+                return assignee.full_name;
+              } else if (assignee.username && assignee.username.trim()) {
+                return assignee.username;
+              } else if (assignee.email) {
+                // Extract name from email if no name/username available
+                return assignee.email.split('@')[0];
+              }
+            } else if (typeof assignee === 'number') {
+              // If it's just a user ID, we can't display the name here
+              // This might happen if backend hasn't been updated yet
+              console.warn(`Task has assignee ID ${assignee} but no user details. Backend may need update.`);
+              return `User ${assignee}`;
+            }
+            return 'Unknown User';
+          });
+          
+          // Filter out any undefined or empty names
+          const validUsers = users.filter(name => name && name.trim() !== '');
+          
+          if (validUsers.length === 0) {
+            return 'Unassigned';
+          } else if (validUsers.length === 1) {
+            return validUsers[0];
+          } else if (validUsers.length === 2) {
+            return `${validUsers[0]} & ${validUsers[1]}`;
+          } else {
+            return `${validUsers[0]} +${validUsers.length - 1} more`;
+          }
+        }
+        
                  // Prepare recent activities (simplified - using task updates)
-         const recentActivities = tasks
+         const recentActivities = tasksWithAssignees
            .slice(0, 4)
            .map((task, index) => ({
              id: task.id,
-             user: task.assignedUsers?.[0]?.username || 'System',
+             user: getAssigneeDisplay(task.assignees || []),
              action: task.status === TaskStatus.DONE ? 'completed task' : 
                     task.status === TaskStatus.IN_PROGRESS ? 'started task' : 'updated task',
              target: task.title,
@@ -277,7 +382,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
         setDashboardData({
           project,
           tasks: {
-            total: tasks.length,
+            total: tasksWithAssignees.length,
             completed: completedTasks.length,
             inProgress: inProgressTasks.length,
             pending: pendingTasks.length
