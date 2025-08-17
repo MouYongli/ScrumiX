@@ -141,6 +141,20 @@ const AddStoryModal: React.FC<{
     
     return matchesSearch && matchesStatus && matchesPriority;
   });
+  
+  // Ensure no duplicates in filtered stories (extra safety)
+  const uniqueFilteredStories = filteredStories.filter((story, index, self) => 
+    index === self.findIndex(s => s.id === story.id)
+  );
+  
+  // Debug logging for filtered stories
+  if (filteredStories.length !== uniqueFilteredStories.length) {
+    console.warn('Duplicate stories in filtered results:', {
+      filtered: filteredStories.length,
+      unique: uniqueFilteredStories.length,
+      duplicates: filteredStories.length - uniqueFilteredStories.length
+    });
+  }
 
   const handleStoryToggle = (storyId: string) => {
     const newSelected = new Set(selectedStoryIds);
@@ -153,10 +167,10 @@ const AddStoryModal: React.FC<{
   };
 
   const handleSelectAll = () => {
-    if (selectedStoryIds.size === filteredStories.length) {
+    if (selectedStoryIds.size === uniqueFilteredStories.length) {
       setSelectedStoryIds(new Set());
     } else {
-      setSelectedStoryIds(new Set(filteredStories.map(s => s.id.toString())));
+      setSelectedStoryIds(new Set(uniqueFilteredStories.map(s => s.id.toString())));
     }
   };
 
@@ -303,9 +317,9 @@ const AddStoryModal: React.FC<{
 
           <div className="flex-1 overflow-y-auto px-4 pb-4">
             <div className="space-y-3">
-              {filteredStories.map((story) => (
+              {uniqueFilteredStories.map((story) => (
                 <div 
-                  key={story.id} 
+                  key={`addmodal-${story.id}`} 
                   className={`border rounded-lg p-4 cursor-pointer transition-all ${
                     selectedStoryIds.has(story.id.toString())
                       ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
@@ -399,7 +413,7 @@ const AddStoryModal: React.FC<{
                         </div>
                         <div className="space-y-2">
                           {storyTasks.map((task: Task) => (
-                            <div key={task.id} className="bg-gray-50 dark:bg-gray-700 rounded-md p-3">
+                            <div key={`addmodal-task-${task.id}`} className="bg-gray-50 dark:bg-gray-700 rounded-md p-3">
                               <div className="flex items-start justify-between mb-1">
                                 <h6 className="text-sm font-medium text-gray-900 dark:text-white">{task.title}</h6>
                                 <div className="flex items-center gap-2">
@@ -1614,7 +1628,22 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
               created_at: item.created_at,
               updated_at: item.updated_at
             }));
-          setAvailableStories(convertedStories);
+          
+          // Ensure no duplicates by ID
+          const uniqueStories = convertedStories.filter((story, index, self) => 
+            index === self.findIndex(s => s.id === story.id)
+          );
+          
+          // Debug logging to check for duplicates
+          if (convertedStories.length !== uniqueStories.length) {
+            console.warn('Duplicate stories detected and removed:', {
+              original: convertedStories.length,
+              unique: uniqueStories.length,
+              duplicates: convertedStories.length - uniqueStories.length
+            });
+          }
+          
+          setAvailableStories(uniqueStories);
         } else {
           setAvailableStories([]);
         }
@@ -1822,7 +1851,19 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
         assigned_to_id: storyToRemove.assigned_to_id
       };
       
-      setAvailableStories(prev => [...prev, storyToAddBack]);
+      setAvailableStories(prev => {
+        // Check if the story already exists to prevent duplication
+        const alreadyExists = prev.some(story => story.id === storyToAddBack.id);
+        if (alreadyExists) {
+          return prev; // Don't add if it already exists
+        }
+        
+        // Add the story and ensure no duplicates in the entire array
+        const newStories = [...prev, storyToAddBack];
+        return newStories.filter((story, index, self) => 
+          index === self.findIndex(s => s.id === story.id)
+        );
+      });
       setStoryToDelete(null);
     } catch (err) {
       console.error('Error removing story from sprint:', err);
@@ -2268,7 +2309,7 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
               <div className="space-y-4">
                 {sprint.stories?.map((story) => (
                   <div 
-                    key={story.id} 
+                    key={`backlog-${story.id}`} 
                     className={`border rounded-lg p-4 hover:shadow-md transition-all ${
                       recentlyAddedStories.has(story.id.toString())
                         ? 'border-green-500 bg-green-50 dark:bg-green-900/20 shadow-md animate-pulse'
@@ -2362,7 +2403,7 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                           </div>
                           <div className="space-y-2">
                             {storyTasks.map((task: Task) => (
-                              <div key={task.id} className="bg-gray-50 dark:bg-gray-700 rounded-md p-3">
+                              <div key={`backlog-task-${task.id}`} className="bg-gray-50 dark:bg-gray-700 rounded-md p-3">
                                 <div className="flex items-start justify-between mb-1">
                                   <h6 className="text-sm font-medium text-gray-900 dark:text-white">{task.title}</h6>
                                   <div className="flex items-center gap-2">

@@ -324,6 +324,7 @@ def get_sprint_backlog(
 def get_available_backlog_items(
     sprint_id: int,
     project_id: int = Query(..., gt=0),
+    item_type: Optional[str] = Query(None, description="Filter by item type (story, bug, epic, etc.)"),
     skip: int = Query(0, ge=0),
     limit: int = Query(1000, ge=1, le=1000),
     db: Session = Depends(get_db),
@@ -333,9 +334,23 @@ def get_available_backlog_items(
     Get backlog items that are not assigned to any sprint (available for selection)
     """
     try:
+        # Validate item_type if provided
+        if item_type:
+            valid_types = ['epic', 'story', 'task', 'bug', 'feature', 'improvement']
+            if item_type not in valid_types:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Invalid item_type. Must be one of: {', '.join(valid_types)}"
+                )
+        
+        # Log the request parameters for debugging
+        print(f"[DEBUG] get_available_backlog_items called with: project_id={project_id}, item_type={item_type}, skip={skip}, limit={limit}")
+        
         available_items = sprint_backlog_crud.get_available_backlog_items(
-            db, project_id, None, skip=skip, limit=limit
+            db, project_id, None, item_type, skip=skip, limit=limit
         )
+        
+        print(f"[DEBUG] Retrieved {len(available_items)} available backlog items")
         
         # Convert to response format
         result = []

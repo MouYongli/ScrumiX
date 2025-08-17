@@ -35,6 +35,7 @@ class SprintBacklogCRUD:
         db: Session, 
         project_id: int,
         sprint_id: Optional[int] = None,
+        item_type: Optional[str] = None,
         skip: int = 0, 
         limit: int = 1000
     ) -> List[Backlog]:
@@ -48,7 +49,23 @@ class SprintBacklogCRUD:
             # Get items not assigned to any sprint
             query = query.filter(Backlog.sprint_id.is_(None))
         
-        return query.order_by(Backlog.created_at.desc()).offset(skip).limit(limit).all()
+        # Add item_type filtering if provided
+        if item_type:
+            query = query.filter(Backlog.item_type == item_type)
+            print(f"[DEBUG] Filtering by item_type: {item_type}")
+        
+        result = query.order_by(Backlog.created_at.desc()).offset(skip).limit(limit).all()
+        print(f"[DEBUG] CRUD method returning {len(result)} items for project {project_id}")
+        
+        # Additional debugging: check for duplicate IDs
+        ids = [item.id for item in result]
+        unique_ids = set(ids)
+        if len(ids) != len(unique_ids):
+            print(f"[WARNING] Duplicate IDs detected in result: {len(ids)} total, {len(unique_ids)} unique")
+            duplicate_ids = [id for id in ids if ids.count(id) > 1]
+            print(f"[WARNING] Duplicate IDs: {duplicate_ids}")
+        
+        return result
     
     def add_backlog_item_to_sprint(
         self, 
