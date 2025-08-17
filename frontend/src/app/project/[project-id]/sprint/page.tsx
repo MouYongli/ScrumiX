@@ -335,7 +335,17 @@ const EditSprintModal: React.FC<{
   // Initialize form data when sprint changes
   useEffect(() => {
     if (sprint) {
-      setFormData(sprint);
+      // Format dates for HTML date inputs (YYYY-MM-DD format)
+      const formatDateForInput = (dateString: string) => {
+        const date = new Date(dateString);
+        return date.toISOString().split('T')[0];
+      };
+      
+      setFormData({
+        ...sprint,
+        startDate: formatDateForInput(sprint.startDate),
+        endDate: formatDateForInput(sprint.endDate)
+      });
     }
   }, [sprint]);
 
