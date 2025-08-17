@@ -41,8 +41,8 @@ async def get_my_projects(
                 project=project,
                 progress=project_stats["progress"],
                 members=project_stats["members_count"],
-                tasks_completed=project_stats["tasks_completed"],
-                tasks_total=project_stats["tasks_total"],
+                tasks_completed=project_stats["backlog_completed"],
+                tasks_total=project_stats["backlog_total"],
                 user_role=user_role
             )
             response_projects.append(project_response)
@@ -96,8 +96,8 @@ async def get_projects(
                 project=project,
                 progress=project_stats["progress"],
                 members=project_stats["members_count"],
-                tasks_completed=project_stats["tasks_completed"],
-                tasks_total=project_stats["tasks_total"],
+                tasks_completed=project_stats["backlog_completed"],
+                tasks_total=project_stats["backlog_total"],
                 user_role=user_role
             )
             response_projects.append(project_response)
@@ -137,8 +137,8 @@ async def create_project(
             project=project,
             progress=project_stats["progress"],
             members=project_stats["members_count"],
-            tasks_completed=project_stats["tasks_completed"],
-            tasks_total=project_stats["tasks_total"],
+            tasks_completed=project_stats["backlog_completed"],
+            tasks_total=project_stats["backlog_total"],
             user_role=ScrumRole.SCRUM_MASTER
         )
         
@@ -171,8 +171,8 @@ async def get_project(
             project=project_stats["project"],
             progress=project_stats["progress"],
             members=project_stats["members_count"],
-            tasks_completed=project_stats["tasks_completed"],
-            tasks_total=project_stats["tasks_total"],
+            tasks_completed=project_stats["backlog_completed"],
+            tasks_total=project_stats["backlog_total"],
             user_role=project_stats["user_role"]
         )
         
@@ -211,8 +211,8 @@ async def update_project(
             project=updated_project,
             progress=project_stats["progress"],
             members=project_stats["members_count"],
-            tasks_completed=project_stats["tasks_completed"],
-            tasks_total=project_stats["tasks_total"],
+            tasks_completed=project_stats["backlog_completed"],
+            tasks_total=project_stats["backlog_total"],
             user_role=project_stats["user_role"]
         )
         
@@ -282,8 +282,8 @@ async def get_projects_by_status(
                 project=project,
                 progress=project_stats["progress"],
                 members=project_stats["members_count"],
-                tasks_completed=project_stats["tasks_completed"],
-                tasks_total=project_stats["tasks_total"],
+                tasks_completed=project_stats["backlog_completed"],
+                tasks_total=project_stats["backlog_total"],
                 user_role=project_stats["user_role"]
             )
             response_projects.append(project_response)

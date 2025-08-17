@@ -18,7 +18,6 @@ export interface ApiTask {
   description?: string;
   status: TaskStatus;
   priority: TaskPriority;
-  story_point?: number;
   sprint_id: number;
   created_at: string;
   updated_at: string;

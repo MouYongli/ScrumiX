@@ -19,6 +19,7 @@ from scrumix.api.crud.sprint import sprint_crud
 from scrumix.api.crud.sprint_backlog import sprint_backlog_crud
 from scrumix.api.models.backlog import Backlog
 from scrumix.api.models.task import Task
+from scrumix.api.models.sprint import Sprint
 
 router = APIRouter()
 
@@ -247,6 +248,57 @@ def get_sprint_statistics(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching sprint statistics: {str(e)}")
 
+@router.get("/{sprint_id}/project-users", response_model=List[dict])
+def get_project_users_for_tasks(
+    sprint_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserInDB = Depends(get_current_user)
+):
+    """
+    Get all users in the project for task assignment
+    """
+    try:
+        # Get the sprint to find the project_id
+        sprint = db.query(Sprint).filter(Sprint.id == sprint_id).first()
+        if not sprint:
+            raise HTTPException(status_code=404, detail="Sprint not found")
+        
+        # Check if current user has access to the project
+        from scrumix.api.crud.user_project import user_project_crud
+        current_user_role = user_project_crud.get_user_role(db, current_user.id, sprint.project_id)
+        if not current_user_role:
+            raise HTTPException(
+                status_code=403,
+                detail="Access denied to this project"
+            )
+        
+        # Get project members
+        from scrumix.api.crud.user_project import user_project_crud
+        members_data = user_project_crud.get_project_members(db, sprint.project_id)
+        
+        # Convert to response format
+        users_response = []
+        for member_data in members_data:
+            user = member_data["user"]
+            role = member_data["role"]
+            
+            users_response.append({
+                "id": user.id,
+                "email": user.email,
+                "username": user.username,
+                "full_name": user.full_name,
+                "avatar_url": user.avatar_url,
+                "role": role.value
+            })
+        
+        return users_response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching project users: {str(e)}")
+
+
 # Sprint Backlog Management Endpoints
 
 @router.get("/{sprint_id}/backlog", response_model=List[dict])
@@ -273,7 +325,6 @@ def get_sprint_backlog(
                 "title": item.title,
                 "description": item.description,
                 "status": item.status.value,
-                "story_point": item.story_point,
                 "priority": item.priority.value,
                 "label": item.label,
                 "item_type": item.item_type.value,
@@ -299,7 +350,6 @@ def get_sprint_backlog(
                         "description": task.description,
                         "status": task.status.value,
                         "priority": task.priority.value,
-                        "story_point": task.story_point,
                         "created_at": task.created_at,
                         "updated_at": task.updated_at,
                         "assignees": [
@@ -360,7 +410,6 @@ def get_available_backlog_items(
                 "title": item.title,
                 "description": item.description,
                 "status": item.status.value,
-                "story_point": item.story_point,
                 "priority": item.priority.value,
                 "label": item.label,
                 "item_type": item.item_type.value,

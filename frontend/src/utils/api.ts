@@ -487,6 +487,9 @@ export const api = {
     
     getSprintStatistics: (sprintId: number) => 
       jsonFetch<any>(`/api/v1/sprints/${sprintId}/statistics`),
+    
+    getProjectUsers: (sprintId: number) => 
+      jsonFetch<any>(`/api/v1/sprints/${sprintId}/project-users`),
   },
 
   backlogs: {

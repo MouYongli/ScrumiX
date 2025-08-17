@@ -72,21 +72,18 @@ interface DashboardData {
       title: string;
       priority: string;
       assignee: string;
-      storyPoints: number;
     }>;
     inProgress: Array<{
       id: number;
       title: string;
       priority: string;
       assignee: string;
-      storyPoints: number;
     }>;
     done: Array<{
       id: number;
       title: string;
       priority: string;
       assignee: string;
-      storyPoints: number;
     }>;
   };
 }
@@ -115,7 +112,11 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
   const [sprintViewType, setSprintViewType] = useState<'kanban' | 'timeline' | 'calendar'>('kanban');
   
   // Kanban drag and drop state
-  const [kanbanData, setKanbanData] = useState(dashboardData.sprintKanbanData);
+  const [kanbanData, setKanbanData] = useState<DashboardData['sprintKanbanData']>({
+    todo: [],
+    inProgress: [],
+    done: []
+  });
   const [draggedItem, setDraggedItem] = useState<any>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
   
@@ -204,32 +205,44 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
           developers: project.project_members?.filter(member => member.role === ScrumRole.DEVELOPER).length || 0
         };
         
-        // Calculate velocity (simplified - using story points)
-        const totalStoryPoints = tasks.reduce((sum, task) => sum + (task.story_point || 0), 0);
-        const completedStoryPoints = completedTasks.reduce((sum, task) => sum + (task.story_point || 0), 0);
+        // Calculate velocity from backlog items (user stories) since tasks don't have story points
+        // We need to fetch backlog items to get story points for velocity calculation
+        const backlogResponse = await api.backlogs.getAll({
+          project_id: parseInt(projectId),
+          include_children: true,
+          include_acceptance_criteria: false
+        });
         
-        // Prepare kanban data
+        let totalStoryPoints = 0;
+        let completedStoryPoints = 0;
+        
+        if (!backlogResponse.error && backlogResponse.data) {
+          const backlogItems = backlogResponse.data;
+          totalStoryPoints = backlogItems.reduce((sum, item) => sum + (item.story_point || 0), 0);
+          completedStoryPoints = backlogItems
+            .filter(item => item.status === 'done')
+            .reduce((sum, item) => sum + (item.story_point || 0), 0);
+        }
+        
+        // Prepare kanban data (without story points)
         const sprintKanbanData = {
           todo: pendingTasks.map(task => ({
             id: task.id,
             title: task.title,
             priority: task.priority,
-            assignee: task.assignedUsers?.[0]?.username || 'Unassigned',
-            storyPoints: task.story_point || 0
+            assignee: task.assignedUsers?.[0]?.username || 'Unassigned'
           })),
           inProgress: inProgressTasks.map(task => ({
             id: task.id,
             title: task.title,
             priority: task.priority,
-            assignee: task.assignedUsers?.[0]?.username || 'Unassigned',
-            storyPoints: task.story_point || 0
+            assignee: task.assignedUsers?.[0]?.username || 'Unassigned'
           })),
           done: completedTasks.map(task => ({
             id: task.id,
             title: task.title,
             priority: task.priority,
-            assignee: task.assignedUsers?.[0]?.username || 'Unassigned',
-            storyPoints: task.story_point || 0
+            assignee: task.assignedUsers?.[0]?.username || 'Unassigned'
           }))
         };
         
@@ -825,7 +838,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                               }`}>
                                 {task.priority}
                               </span>
-                              <span className="text-gray-500 dark:text-gray-400">{task.storyPoints}pt</span>
+                              <span className="text-gray-500 dark:text-gray-400">Task</span>
                             </div>
                           </div>
                         </div>
@@ -875,7 +888,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                               }`}>
                                 {task.priority}
                               </span>
-                              <span className="text-gray-500 dark:text-gray-400">{task.storyPoints}pt</span>
+                              <span className="text-gray-500 dark:text-gray-400">Task</span>
                             </div>
                           </div>
                         </div>

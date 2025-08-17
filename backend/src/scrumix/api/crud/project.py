@@ -186,27 +186,19 @@ class ProjectCRUD(CRUDBase[Project, ProjectCreate, ProjectUpdate]):
         # Get project members count
         members_count = len(project.user_projects)
         
-        # Count tasks
-        tasks_total = 0
-        tasks_completed = 0
-        story_points_total = 0
-        story_points_completed = 0
+        # Count backlog items (user stories) for progress calculation
+        backlog_total = 0
+        backlog_completed = 0
         
         for sprint in project.sprints:
-            for task in sprint.tasks:
-                tasks_total += 1
-                story_points = task.story_point or 0
-                story_points_total += story_points
-                
-                if task.status.value == "done":
-                    tasks_completed += 1
-                    story_points_completed += story_points
+            for backlog_item in sprint.backlog_items:
+                backlog_total += 1
+                if backlog_item.status.value == "done":
+                    backlog_completed += 1
         
-        # Calculate progress
-        if story_points_total > 0:
-            progress = int((story_points_completed / story_points_total * 100))
-        elif tasks_total > 0:
-            progress = int((tasks_completed / tasks_total * 100))
+        # Calculate progress based on completed backlog items
+        if backlog_total > 0:
+            progress = int((backlog_completed / backlog_total * 100))
         else:
             progress = 0
             
@@ -214,8 +206,8 @@ class ProjectCRUD(CRUDBase[Project, ProjectCreate, ProjectUpdate]):
             "project": project,
             "user_role": role,
             "members_count": members_count,
-            "tasks_completed": tasks_completed,
-            "tasks_total": tasks_total,
+            "backlog_completed": backlog_completed,
+            "backlog_total": backlog_total,
             "progress": progress
         }
 

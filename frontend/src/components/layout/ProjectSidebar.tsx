@@ -55,19 +55,20 @@ const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
           .filter(sprint => new Date(sprint.endDate) >= new Date())
           .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime())[0];
 
-        // Calculate project progress
+        // Calculate project progress by getting tasks from project sprints
+        const projectSprintIds = projectSprints.map(sprint => sprint.id);
         const tasksResponse = await api.tasks.getAll({ limit: 100 });
         const projectTasks = tasksResponse.data?.tasks.filter(task => 
-          (task as any).project_id === parseInt(projectId)
+          projectSprintIds.includes(task.sprint_id)
         ) || [];
         
         const progress = projectTasks.length > 0
-          ? Math.round((projectTasks.filter(task => task.status === 'DONE').length / projectTasks.length) * 100)
+          ? Math.round((projectTasks.filter(task => task.status === 'done').length / projectTasks.length) * 100)
           : 0;
 
         setProject({
           ...projectResponse.data,
-          currentSprint: currentSprint ? `Sprint ${currentSprint.sprintNumber}` : null,
+          currentSprint: currentSprint ? currentSprint.sprintName : null,
           progress,
           color: 'bg-blue-500' // You can map this based on project status or type
         });

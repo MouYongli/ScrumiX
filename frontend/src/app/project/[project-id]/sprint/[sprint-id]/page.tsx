@@ -18,11 +18,10 @@ interface Task {
   description?: string;
   status: 'todo' | 'in_progress' | 'done' | 'cancelled';
   priority: 'low' | 'medium' | 'high' | 'critical';
-  story_point?: number;
   sprint_id: number;
   created_at: string;
   updated_at: string;
-  assignees: string[];
+  assignees: number[];
 }
 
 interface BacklogItem {
@@ -381,6 +380,7 @@ const AddStoryModal: React.FC<{
                   {/* Tasks Section */}
                   {(() => {
                     const storyTasks = getTasksForStory(story.id.toString());
+                    console.log(`Rendering tasks for story "${story.title}" (ID: ${story.id}):`, storyTasks);
                     return storyTasks.length > 0 ? (
                       <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
                         <div className="flex items-center justify-between mb-2">
@@ -438,9 +438,9 @@ const AddStoryModal: React.FC<{
                                     <div className="flex items-center gap-1 flex-wrap">
                                       <User className="w-3 h-3" />
                                       <div className="flex flex-wrap gap-1">
-                                        {task.assignees.map((assignee: string, idx: number) => (
-                                          <span key={assignee} className="inline-flex items-center">
-                                            {assignee}
+                                        {task.assignees.map((assigneeId: number, idx: number) => (
+                                          <span key={assigneeId} className="inline-flex items-center">
+                                            {getUserDisplayName(assigneeId)}
                                             {idx < task.assignees.length - 1 && <span className="ml-1 mr-1">,</span>}
                                           </span>
                                         ))}
@@ -586,18 +586,24 @@ const AddStoryModal: React.FC<{
 const CreateTaskModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (task: Omit<Task, 'id' | 'created_at' | 'updated_at'>) => void;
+  onSubmit: (task: Omit<Task, 'id' | 'created_at' | 'updated_at'>) => Promise<void>;
   storyId: string;
   storyTitle: string;
-  teamMembers: string[];
-}> = ({ isOpen, onClose, onSubmit, storyId, storyTitle, teamMembers }) => {
+  projectUsers: Array<{
+    id: number;
+    email: string;
+    username: string;
+    full_name: string;
+    avatar_url?: string;
+    role: string;
+  }>;
+}> = ({ isOpen, onClose, onSubmit, storyId, storyTitle, projectUsers }) => {
   const [formData, setFormData] = useState<{
     title: string;
     description: string;
-    assignees: string[];
+    assignees: number[];
     status: Task['status'];
     priority: Task['priority'];
-    story_point?: number;
     sprint_id: number;
   }>({
     title: '',
@@ -605,13 +611,12 @@ const CreateTaskModal: React.FC<{
     assignees: [],
     status: 'todo',
     priority: 'medium',
-    story_point: undefined,
     sprint_id: parseInt(storyId, 10)
   });
 
   const [isAssigneeDropdownOpen, setIsAssigneeDropdownOpen] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!formData.title.trim()) {
@@ -619,20 +624,24 @@ const CreateTaskModal: React.FC<{
       return;
     }
 
-    onSubmit(formData);
-    
-    // Reset form
-    setFormData({
-      title: '',
-      description: '',
-      assignees: [],
-      status: 'todo' as Task['status'],
-      priority: 'medium' as Task['priority'],
-      story_point: undefined,
-      sprint_id: parseInt(storyId, 10)
-    });
-    
-    onClose();
+    try {
+      await onSubmit(formData);
+      
+      // Reset form
+      setFormData({
+        title: '',
+        description: '',
+        assignees: [],
+        status: 'todo' as Task['status'],
+        priority: 'medium' as Task['priority'],
+        sprint_id: parseInt(storyId, 10)
+      });
+      
+      onClose();
+    } catch (error) {
+      console.error('Error submitting task:', error);
+      // Don't close modal on error
+    }
   };
 
   const handleCancel = () => {
@@ -643,26 +652,30 @@ const CreateTaskModal: React.FC<{
       assignees: [],
       status: 'todo' as Task['status'],
       priority: 'medium' as Task['priority'],
-      story_point: undefined,
       sprint_id: parseInt(storyId, 10)
     });
     onClose();
   };
 
-  const toggleAssignee = (member: string) => {
+  const toggleAssignee = (userId: number) => {
     setFormData(prev => ({
       ...prev,
-      assignees: prev.assignees.includes(member)
-        ? prev.assignees.filter(a => a !== member)
-        : [...prev.assignees, member]
+      assignees: prev.assignees.includes(userId)
+        ? prev.assignees.filter(id => id !== userId)
+        : [...prev.assignees, userId]
     }));
   };
 
-  const removeAssignee = (member: string) => {
+  const removeAssignee = (userId: number) => {
     setFormData(prev => ({
       ...prev,
-      assignees: prev.assignees.filter(a => a !== member)
+      assignees: prev.assignees.filter(id => id !== userId)
     }));
+  };
+
+  const getUserDisplayName = (userId: number) => {
+    const user = projectUsers.find(u => u.id === userId);
+    return user ? (user.full_name || user.username || user.email) : 'Unknown User';
   };
 
   if (!isOpen) return null;
@@ -734,21 +747,6 @@ const CreateTaskModal: React.FC<{
             </select>
           </div>
 
-          {/* Story Points */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Story Points
-            </label>
-            <input
-              type="number"
-              value={formData.story_point || ''}
-              onChange={(e) => setFormData(prev => ({ ...prev, story_point: e.target.value ? parseInt(e.target.value) : undefined }))}
-              placeholder="Enter story points..."
-              min="0"
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-
           {/* Assignees */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -771,15 +769,15 @@ const CreateTaskModal: React.FC<{
               
               {isAssigneeDropdownOpen && (
                 <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                  {teamMembers.map(member => (
-                    <label key={member} className="flex items-center px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-600 cursor-pointer">
+                  {projectUsers.map(user => (
+                    <label key={user.id} className="flex items-center px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-600 cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={formData.assignees.includes(member)}
-                        onChange={() => toggleAssignee(member)}
+                        checked={formData.assignees.includes(user.id)}
+                        onChange={() => toggleAssignee(user.id)}
                         className="mr-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                       />
-                      <span className="text-gray-900 dark:text-white">{member}</span>
+                      <span className="text-gray-900 dark:text-white">{getUserDisplayName(user.id)}</span>
                     </label>
                   ))}
                 </div>
@@ -788,15 +786,15 @@ const CreateTaskModal: React.FC<{
             
             {formData.assignees.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-2">
-                {formData.assignees.map(member => (
+                {formData.assignees.map(userId => (
                   <span
-                    key={member}
+                    key={userId}
                     className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-900/20 text-blue-800 dark:text-blue-400 text-sm rounded-full"
                   >
-                    {member}
+                    {getUserDisplayName(userId)}
                     <button
                       type="button"
-                      onClick={() => removeAssignee(member)}
+                      onClick={() => removeAssignee(userId)}
                       className="hover:text-blue-600 dark:hover:text-blue-300"
                     >
                       <X className="w-3 h-3" />
@@ -851,17 +849,23 @@ const CreateTaskModal: React.FC<{
 const EditTaskModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (taskData: Omit<Task, 'id' | 'created_at' | 'updated_at'>) => void;
+  onSubmit: (taskData: Omit<Task, 'id' | 'created_at' | 'updated_at'>) => Promise<void>;
   task: Task;
-  teamMembers: string[];
-}> = ({ isOpen, onClose, onSubmit, task, teamMembers }) => {
+  projectUsers: Array<{
+    id: number;
+    email: string;
+    username: string;
+    full_name: string;
+    avatar_url?: string;
+    role: string;
+  }>;
+}> = ({ isOpen, onClose, onSubmit, task, projectUsers }) => {
   const [formData, setFormData] = useState<{
     title: string;
     description: string;
-    assignees: string[];
+    assignees: number[];
     status: Task['status'];
     priority: Task['priority'];
-    story_point?: number;
     sprint_id: number;
   }>({
     title: task.title,
@@ -869,7 +873,6 @@ const EditTaskModal: React.FC<{
     assignees: [...task.assignees],
     status: task.status,
     priority: task.priority,
-    story_point: task.story_point,
     sprint_id: task.sprint_id
   });
 
@@ -883,12 +886,11 @@ const EditTaskModal: React.FC<{
       assignees: [...task.assignees],
       status: task.status,
       priority: task.priority,
-      story_point: task.story_point,
       sprint_id: task.sprint_id
     });
   }, [task]);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
     if (!formData.title.trim()) {
@@ -896,8 +898,13 @@ const EditTaskModal: React.FC<{
       return;
     }
 
-    onSubmit(formData);
-    onClose();
+    try {
+      await onSubmit(formData);
+      onClose();
+    } catch (error) {
+      console.error('Error updating task:', error);
+      // Don't close modal on error
+    }
   };
 
   const handleCancel = () => {
@@ -908,26 +915,30 @@ const EditTaskModal: React.FC<{
       assignees: [...task.assignees],
       status: task.status,
       priority: task.priority,
-      story_point: task.story_point,
       sprint_id: task.sprint_id
     });
     onClose();
   };
 
-  const toggleAssignee = (member: string) => {
+  const toggleAssignee = (userId: number) => {
     setFormData(prev => ({
       ...prev,
-      assignees: prev.assignees.includes(member)
-        ? prev.assignees.filter(a => a !== member)
-        : [...prev.assignees, member]
+      assignees: prev.assignees.includes(userId)
+        ? prev.assignees.filter(id => id !== userId)
+        : [...prev.assignees, userId]
     }));
   };
 
-  const removeAssignee = (member: string) => {
+  const removeAssignee = (userId: number) => {
     setFormData(prev => ({
       ...prev,
-      assignees: prev.assignees.filter(a => a !== member)
+      assignees: prev.assignees.filter(id => id !== userId)
     }));
+  };
+
+  const getUserDisplayName = (userId: number) => {
+    const user = projectUsers.find(u => u.id === userId);
+    return user ? (user.full_name || user.username || user.email) : 'Unknown User';
   };
 
   if (!isOpen) return null;
@@ -999,21 +1010,6 @@ const EditTaskModal: React.FC<{
             </select>
           </div>
 
-          {/* Story Points */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Story Points
-            </label>
-            <input
-              type="number"
-              value={formData.story_point || ''}
-              onChange={(e) => setFormData(prev => ({ ...prev, story_point: e.target.value ? parseInt(e.target.value) : undefined }))}
-              placeholder="Enter story points..."
-              min="0"
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-
           {/* Assignees */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -1036,15 +1032,15 @@ const EditTaskModal: React.FC<{
               
               {isAssigneeDropdownOpen && (
                 <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                  {teamMembers.map(member => (
-                    <label key={member} className="flex items-center px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-600 cursor-pointer">
+                  {projectUsers.map(user => (
+                    <label key={user.id} className="flex items-center px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-600 cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={formData.assignees.includes(member)}
-                        onChange={() => toggleAssignee(member)}
+                        checked={formData.assignees.includes(user.id)}
+                        onChange={() => toggleAssignee(user.id)}
                         className="mr-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                       />
-                      <span className="text-gray-900 dark:text-white">{member}</span>
+                      <span className="text-gray-900 dark:text-white">{getUserDisplayName(user.id)}</span>
                     </label>
                   ))}
                 </div>
@@ -1053,15 +1049,15 @@ const EditTaskModal: React.FC<{
             
             {formData.assignees.length > 0 && (
               <div className="mt-2 flex flex-wrap gap-2">
-                {formData.assignees.map(member => (
+                {formData.assignees.map(userId => (
                   <span
-                    key={member}
+                    key={userId}
                     className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-900/20 text-blue-800 dark:text-blue-400 text-sm rounded-full"
                   >
-                    {member}
+                    {getUserDisplayName(userId)}
                     <button
                       type="button"
-                      onClick={() => removeAssignee(member)}
+                      onClick={() => removeAssignee(userId)}
                       className="hover:text-blue-600 dark:hover:text-blue-300"
                     >
                       <X className="w-3 h-3" />
@@ -1399,6 +1395,14 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
   const [availableStories, setAvailableStories] = useState<ProductBacklogItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [projectUsers, setProjectUsers] = useState<Array<{
+    id: number;
+    email: string;
+    username: string;
+    full_name: string;
+    avatar_url?: string;
+    role: string;
+  }>>([]);
 
   // Add new state for modals
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -1682,6 +1686,17 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
               is_met: false,
               created_at: ac.created_at,
               updated_at: ac.updated_at
+            })) || [],
+            tasks: item.tasks?.map((task: any) => ({
+              id: task.id,
+              title: task.title,
+              description: task.description,
+              status: task.status,
+              priority: task.priority,
+              sprint_id: parseInt(sprintId, 10),
+              created_at: task.created_at,
+              updated_at: task.updated_at,
+              assignees: task.assignees?.map((assignee: any) => assignee.full_name || assignee.username || 'Unknown') || []
             })) || []
           }));
 
@@ -1697,6 +1712,16 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
               completedStoryPoints: sprintStories.filter(s => s.status === BacklogStatus.DONE).reduce((sum, s) => sum + (s.story_point || 0), 0)
             };
           });
+        }
+
+        // Fetch project users for task assignment
+        const projectUsersResponse = await api.sprints.getProjectUsers(sprintIdNum);
+        if (projectUsersResponse.error) {
+          console.warn('Failed to fetch project users:', projectUsersResponse.error);
+          // Don't fail the entire request, just use empty array
+          setProjectUsers([]);
+        } else {
+          setProjectUsers(projectUsersResponse.data || []);
         }
 
       } catch (err) {
@@ -1724,7 +1749,24 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
     }
   }, [projectId, sprintId]);
 
+  // Add useEffect to monitor sprint state changes
+  useEffect(() => {
+    if (sprint) {
+      console.log('Sprint state updated:', sprint);
+      console.log('Stories in sprint:', sprint.stories);
+      if (sprint.stories) {
+        sprint.stories.forEach(story => {
+          console.log(`Story "${story.title}" has ${story.tasks?.length || 0} tasks:`, story.tasks);
+        });
+      }
+    }
+  }, [sprint]);
 
+  // Helper function to get user display name
+  const getUserDisplayName = (userId: number) => {
+    const user = projectUsers.find(u => u.id === userId);
+    return user ? (user.full_name || user.username || user.email) : 'Unknown User';
+  };
 
   // Add handler for sprint updates
   const handleUpdateSprint = (updatedSprint: Sprint) => {
@@ -1880,6 +1922,9 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
     if (!selectedStoryForTask) return;
     
     try {
+      console.log('Creating task with data:', taskData);
+      console.log('Selected story:', selectedStoryForTask);
+      
       const response = await api.sprints.createTaskForBacklogItem(
         parseInt(sprintId, 10),
         selectedStoryForTask.id,
@@ -1887,51 +1932,69 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
           title: taskData.title,
           description: taskData.description,
           status: taskData.status,
-          priority: taskData.priority,
-          story_point: taskData.story_point
+          priority: taskData.priority
         }
       );
+      
+      console.log('Task creation response:', response);
       
       if (response.error) {
         throw new Error(response.error);
       }
       
-      // Refresh sprint data to get the new task
-      const sprintBacklogResponse = await api.sprints.getSprintBacklog(parseInt(sprintId, 10));
-      if (sprintBacklogResponse.data && sprint) {
-        const updatedStories = sprintBacklogResponse.data.map(item => ({
-          id: item.id,
-          title: item.title,
-          description: item.description,
-          status: item.status,
-          story_point: item.story_point,
-          priority: item.priority,
-          label: item.label,
-          item_type: item.item_type,
-          parent_id: item.parent_id,
-          assigned_to_id: item.assigned_to_id,
-          project_id: item.project_id,
-          sprint_id: item.sprint_id,
-          created_at: item.created_at,
-          updated_at: item.updated_at,
-          acceptance_criteria: item.acceptance_criteria?.map((ac: any) => ({
-            id: ac.id,
-            backlog_id: ac.backlog_id,
-            title: ac.title,
-            description: '',
-            is_met: false,
-            created_at: ac.created_at,
-            updated_at: ac.updated_at
-          })) || []
-        }));
+      // Create the new task object with the response data
+      const newTask: Task = {
+        id: response.data?.task_id || response.data?.id || Date.now(), // Handle different response structures
+        title: taskData.title,
+        description: taskData.description || '',
+        status: taskData.status,
+        priority: taskData.priority,
+        sprint_id: parseInt(sprintId, 10),
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        assignees: taskData.assignees || []
+      };
+      
+      console.log('New task object:', newTask);
+      console.log('Response data structure:', response.data);
+      
+      // Update the sprint state to include the new task
+      if (sprint) {
+        console.log('Current sprint state before update:', sprint);
+        console.log('Current stories:', sprint.stories);
+        
+        const updatedStories = sprint.stories?.map(story => {
+          console.log(`Checking story ID: ${story.id} (${typeof story.id}) vs selectedStoryForTask ID: ${selectedStoryForTask.id} (${typeof selectedStoryForTask.id})`);
+          if (story.id === selectedStoryForTask.id) {
+            const currentTasks = story.tasks || [];
+            console.log(`Story "${story.title}" current tasks:`, currentTasks);
+            
+            const updatedStory = {
+              ...story,
+              tasks: [...currentTasks, newTask]
+            };
+            console.log('Updated story with new task:', updatedStory);
+            return updatedStory;
+          }
+          return story;
+        }) || [];
+        
+        console.log('Updated stories:', updatedStories);
         
         setSprint(prevSprint => {
           if (!prevSprint) return prevSprint;
-          return {
+          const newSprint = {
             ...prevSprint,
             stories: updatedStories
           };
+          console.log('New sprint state:', newSprint);
+          return newSprint;
         });
+        
+        // Force a re-render by updating the state again
+        setTimeout(() => {
+          console.log('Sprint state after timeout:', sprint);
+        }, 100);
       }
       
       setIsCreateTaskModalOpen(false);
@@ -1953,8 +2016,7 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
           title: taskData.title,
           description: taskData.description,
           status: taskData.status,
-          priority: taskData.priority,
-          story_point: taskData.story_point
+          priority: taskData.priority
         }
       );
       
@@ -1962,34 +2024,28 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
         throw new Error(response.error);
       }
       
-      // Refresh sprint data to get the updated task
-      const sprintBacklogResponse = await api.sprints.getSprintBacklog(parseInt(sprintId, 10));
-      if (sprintBacklogResponse.data && sprint) {
-        const updatedStories = sprintBacklogResponse.data.map(item => ({
-          id: item.id,
-          title: item.title,
-          description: item.description,
-          status: item.status,
-          story_point: item.story_point,
-          priority: item.priority,
-          label: item.label,
-          item_type: item.item_type,
-          parent_id: item.parent_id,
-          assigned_to_id: item.assigned_to_id,
-          project_id: item.project_id,
-          sprint_id: item.sprint_id,
-          created_at: item.created_at,
-          updated_at: item.updated_at,
-          acceptance_criteria: item.acceptance_criteria?.map((ac: any) => ({
-            id: ac.id,
-            backlog_id: ac.backlog_id,
-            title: ac.title,
-            description: '',
-            is_met: false,
-            created_at: ac.created_at,
-            updated_at: ac.updated_at
-          })) || []
-        }));
+      // Update the task in the sprint state
+      if (sprint) {
+        const updatedStories = sprint.stories?.map(story => {
+          if (story.tasks) {
+            const updatedTasks = story.tasks.map(task => {
+              if (task.id === selectedTaskForEdit.id) {
+                return {
+                  ...task,
+                  title: taskData.title,
+                  description: taskData.description || '',
+                  status: taskData.status,
+                  priority: taskData.priority,
+                  assignees: taskData.assignees || [],
+                  updated_at: new Date().toISOString()
+                };
+              }
+              return task;
+            });
+            return { ...story, tasks: updatedTasks };
+          }
+          return story;
+        }) || [];
         
         setSprint(prevSprint => {
           if (!prevSprint) return prevSprint;
@@ -2016,34 +2072,17 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
         throw new Error(response.error);
       }
       
-      // Refresh sprint data to get the updated task list
-      const sprintBacklogResponse = await api.sprints.getSprintBacklog(parseInt(sprintId, 10));
-      if (sprintBacklogResponse.data && sprint) {
-        const updatedStories = sprintBacklogResponse.data.map(item => ({
-          id: item.id,
-          title: item.title,
-          description: item.description,
-          status: item.status,
-          story_point: item.story_point,
-          priority: item.priority,
-          label: item.label,
-          item_type: item.item_type,
-          parent_id: item.parent_id,
-          assigned_to_id: item.assigned_to_id,
-          project_id: item.project_id,
-          sprint_id: item.sprint_id,
-          created_at: item.created_at,
-          updated_at: item.updated_at,
-          acceptance_criteria: item.acceptance_criteria?.map((ac: any) => ({
-            id: ac.id,
-            backlog_id: ac.backlog_id,
-            title: ac.title,
-            description: '',
-            is_met: false,
-            created_at: ac.created_at,
-            updated_at: ac.updated_at
-          })) || []
-        }));
+      // Remove the task from the sprint state
+      if (sprint) {
+        const updatedStories = sprint.stories?.map(story => {
+          if (story.tasks) {
+            return {
+              ...story,
+              tasks: story.tasks.filter(task => task.id !== taskToRemove.id)
+            };
+          }
+          return story;
+        }) || [];
         
         setSprint(prevSprint => {
           if (!prevSprint) return prevSprint;
@@ -2076,10 +2115,20 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
   };
 
   const getTasksForStory = (storyId: string) => {
-    if (!sprint || !sprint.stories) return [];
+    if (!sprint || !sprint.stories) {
+      console.log('getTasksForStory: No sprint or stories available');
+      return [];
+    }
     
     const story = sprint.stories.find(s => s.id.toString() === storyId);
-    if (!story) return [];
+    if (!story) {
+      console.log(`getTasksForStory: Story with ID ${storyId} not found`);
+      console.log('Available stories:', sprint.stories.map(s => ({ id: s.id, title: s.title })));
+      return [];
+    }
+    
+    console.log(`getTasksForStory: Found story "${story.title}" with ID ${story.id}`);
+    console.log('Story tasks:', story.tasks);
     
     // Return tasks from the story data (which comes from the API)
     return story.tasks || [];
@@ -2371,6 +2420,7 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                     {/* Tasks Section */}
                     {(() => {
                       const storyTasks = getTasksForStory(story.id.toString());
+                      console.log(`Rendering tasks for story "${story.title}" (ID: ${story.id}):`, storyTasks);
                       return storyTasks.length > 0 ? (
                         <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
                           <div className="flex items-center justify-between mb-2">
@@ -2435,9 +2485,9 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                                       <div className="flex items-center gap-1 flex-wrap">
                                         <User className="w-3 h-3" />
                                         <div className="flex flex-wrap gap-1">
-                                          {task.assignees.map((assignee: string, idx: number) => (
-                                            <span key={assignee} className="inline-flex items-center">
-                                              {assignee}
+                                          {task.assignees.map((assigneeId: number, idx: number) => (
+                                            <span key={assigneeId} className="inline-flex items-center">
+                                              {getUserDisplayName(assigneeId)}
                                               {idx < task.assignees.length - 1 && <span className="ml-1 mr-1">,</span>}
                                             </span>
                                           ))}
@@ -2482,58 +2532,6 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                         </div>
                       );
                     })()}
-                    <div className="flex items-center gap-2 ml-4">
-                      <button
-                        onClick={() => {
-                          // Convert ProductBacklogItem to BacklogItem for the modal
-                          const backlogItem: BacklogItem = {
-                            id: story.id,
-                            title: story.title,
-                            description: story.description,
-                            status: BacklogStatus.TODO,
-                            story_point: story.story_point,
-                            priority: story.priority,
-                            label: story.label,
-                            item_type: story.item_type,
-                            project_id: story.project_id,
-                            sprint_id: undefined,
-                            created_at: story.created_at,
-                            updated_at: story.updated_at,
-                            acceptance_criteria: []
-                          };
-                          openCreateTaskModal(backlogItem);
-                        }}
-                        className="text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 p-2 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
-                        title="Create task"
-                      >
-                        <Plus className="w-4 h-4" />
-                      </button>
-                      <button
-                        onClick={() => {
-                          // Convert ProductBacklogItem to BacklogItem for the modal
-                          const backlogItem: BacklogItem = {
-                            id: story.id,
-                            title: story.title,
-                            description: story.description,
-                            status: BacklogStatus.TODO,
-                            story_point: story.story_point,
-                            priority: story.priority,
-                            label: story.label,
-                            item_type: story.item_type,
-                            project_id: story.project_id,
-                            sprint_id: undefined,
-                            created_at: story.created_at,
-                            updated_at: story.updated_at,
-                            acceptance_criteria: []
-                          };
-                          confirmDeleteStory(backlogItem);
-                        }}
-                        className="text-gray-400 hover:text-red-600 dark:hover:text-red-400 p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                        title="Remove from sprint"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
-                    </div>
                   </div>
                 ))}
               </div>
@@ -2687,7 +2685,7 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
           onSubmit={handleCreateTask}
           storyId={selectedStoryForTask.id.toString()}
           storyTitle={selectedStoryForTask.title}
-          teamMembers={sprint.teamMembers || []}
+          projectUsers={projectUsers}
         />
       )}
 
@@ -2701,7 +2699,7 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
           }}
           onSubmit={handleUpdateTask}
           task={selectedTaskForEdit}
-          teamMembers={sprint.teamMembers || []}
+          projectUsers={projectUsers}
         />
       )}
 
@@ -2797,9 +2795,9 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                     <div className="flex items-center justify-between text-sm mt-2">
                       <span className="text-gray-600 dark:text-gray-400">Assignees:</span>
                       <div className="flex flex-wrap gap-1">
-                        {taskToDelete.assignees.map((assignee: string, idx: number) => (
-                          <span key={assignee} className="text-gray-900 dark:text-white">
-                            {assignee}
+                        {taskToDelete.assignees.map((assigneeId: number, idx: number) => (
+                          <span key={assigneeId} className="text-gray-900 dark:text-white">
+                            {getUserDisplayName(assigneeId)}
                             {idx < taskToDelete.assignees.length - 1 && ', '}
                           </span>
                         ))}

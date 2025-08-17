@@ -31,7 +31,6 @@ class Task(Base):
     description = Column(Text, nullable=True)
     status = Column(SQLEnum(TaskStatus), nullable=False, default=TaskStatus.TODO, index=True)
     priority = Column(SQLEnum(TaskPriority), nullable=False, default=TaskPriority.MEDIUM, index=True)
-    story_point = Column(Integer, nullable=True, default=None)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     
