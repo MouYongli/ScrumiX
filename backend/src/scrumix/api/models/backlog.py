@@ -76,6 +76,7 @@ class Backlog(Base):
     assignee = relationship("User", foreign_keys=[assigned_to_id], backref="assigned_backlog_items")
     project = relationship("Project", backref="backlog_items")
     sprint = relationship("Sprint", backref="backlog_items")
+    tasks = relationship("Task", back_populates="backlog", cascade="all, delete-orphan")
     
     # Composite indexes for common query patterns
     __table_args__ = (

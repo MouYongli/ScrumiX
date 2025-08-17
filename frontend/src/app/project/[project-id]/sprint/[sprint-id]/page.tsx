@@ -4,50 +4,75 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { 
   ArrowLeft, Calendar, Target, Users, Clock, TrendingUp, 
-  CheckCircle, AlertCircle, Play, Square, Edit2, Plus,
-  FolderOpen, Zap, BarChart3, FileText, User, X, ChevronDown,
-  Search, Filter, ExternalLink, Archive, Trash2
+  CheckCircle, Play, Square, Edit2, Plus,
+  FolderOpen, Zap, FileText, User, X, ChevronDown,
+  Search, ExternalLink, Archive, Trash2, Loader2
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
+import { api } from '@/utils/api';
+import { ApiSprint, ApiBacklog, BacklogStatus, BacklogPriority, BacklogType } from '@/types/api';
 
 interface Task {
-  id: string;
+  id: number;
   title: string;
-  description: string;
+  description?: string;
+  status: 'todo' | 'in_progress' | 'done' | 'cancelled';
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  story_point?: number;
+  sprint_id: number;
+  created_at: string;
+  updated_at: string;
   assignees: string[];
-  status: 'todo' | 'in-progress' | 'review' | 'done';
-  storyId: string;
 }
 
-interface UserStory {
-  id: string;
+interface BacklogItem {
+  id: number;
   title: string;
-  asA: string;
-  iWant: string;
-  soThat: string;
-  storyPoints: number;
-  status: 'todo' | 'in-progress' | 'review' | 'done';
-  assignee?: string;
-  priority: 'critical' | 'high' | 'medium' | 'low';
-  labels: string[];
+  description?: string;
+  status: BacklogStatus;
+  story_point?: number;
+  priority: BacklogPriority;
+  label?: string;
+  item_type: BacklogType;
+  parent_id?: number;
+  assigned_to_id?: number;
+  project_id: number;
+  sprint_id?: number;
+  created_at: string;
+  updated_at: string;
+  acceptance_criteria?: AcceptanceCriteria[];
   tasks?: Task[];
 }
 
+interface AcceptanceCriteria {
+  id: number;
+  backlog_id: number;
+  title: string;
+  description?: string;
+  is_met: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
 interface Sprint {
-  id: string;
-  name: string;
-  goal: string;
+  id: number;
+  sprint_name: string;
+  sprint_goal?: string;
   status: 'planning' | 'active' | 'completed' | 'cancelled';
-  startDate: string;
-  endDate: string;
-  capacity: number;
-  totalStoryPoints: number;
-  completedStoryPoints: number;
-  totalStories: number;
-  completedStories: number;
-  teamMembers: string[];
-  velocity: number;
-  stories: UserStory[];
+  start_date: string;
+  end_date: string;
+  sprint_capacity?: number;
+  project_id: number;
+  created_at: string;
+  updated_at: string;
+  // Frontend-only fields for display
+  totalStoryPoints?: number;
+  completedStoryPoints?: number;
+  totalStories?: number;
+  completedStories?: number;
+  teamMembers?: string[];
+  velocity?: number;
+  stories?: BacklogItem[];
 }
 
 interface BurndownData {
@@ -58,215 +83,27 @@ interface BurndownData {
 }
 
 interface ProductBacklogItem {
-  id: string;
+  id: number;
   title: string;
-  asA: string;
-  iWant: string;
-  soThat: string;
-  storyPoints: number;
-  priority: 'critical' | 'high' | 'medium' | 'low';
-  labels: string[];
-  status: 'draft' | 'ready' | 'in-progress' | 'blocked';
+  description?: string;
+  story_point: number;
+  priority: BacklogPriority;
+  label?: string;
+  status: BacklogStatus;
   assignee?: string;
   acceptanceCriteria: string[];
   dependencies: string[];
+  item_type: BacklogType;
+  project_id: number;
+  created_at: string;
+  updated_at: string;
+  parent_id?: number;
+  assigned_to_id?: number;
 }
 
 interface SprintDetailProps {
   params: Promise<{ 'project-id': string; 'sprint-id': string }>;
 }
-
-// Mock data
-const mockSprint: Sprint = {
-  id: '2',
-  name: 'Sprint 2 - E-commerce Core',
-  goal: 'Build shopping cart, product catalog, and basic checkout functionality',
-  status: 'active',
-  startDate: '2024-03-01',
-  endDate: '2024-03-15',
-  capacity: 45,
-  totalStoryPoints: 42,
-  completedStoryPoints: 28,
-  totalStories: 10,
-  completedStories: 6,
-  teamMembers: ['Sarah Johnson', 'Mike Chen', 'Emily Rodriguez', 'David Park'],
-  velocity: 38,
-  stories: [
-    {
-      id: '1',
-      title: 'Product Catalog Display',
-      asA: 'customer',
-      iWant: 'to browse products in organized categories',
-      soThat: 'I can easily find what I\'m looking for',
-      storyPoints: 8,
-      status: 'done',
-      assignee: 'Sarah Johnson',
-      priority: 'high',
-      labels: ['frontend', 'catalog']
-    },
-    {
-      id: '2',
-      title: 'Shopping Cart Management',
-      asA: 'customer',
-      iWant: 'to add and remove items from my cart',
-      soThat: 'I can review my purchases before checkout',
-      storyPoints: 13,
-      status: 'in-progress',
-      assignee: 'Mike Chen',
-      priority: 'critical',
-      labels: ['frontend', 'cart']
-    },
-    {
-      id: '3',
-      title: 'Product Search Functionality',
-      asA: 'customer',
-      iWant: 'to search for products by keywords',
-      soThat: 'I can quickly find specific items',
-      storyPoints: 5,
-      status: 'done',
-      assignee: 'Emily Rodriguez',
-      priority: 'medium',
-      labels: ['frontend', 'search']
-    },
-    {
-      id: '4',
-      title: 'Checkout Process',
-      asA: 'customer',
-      iWant: 'to complete my purchase securely',
-      soThat: 'I can buy the items in my cart',
-      storyPoints: 21,
-      status: 'todo',
-      assignee: 'David Park',
-      priority: 'critical',
-      labels: ['frontend', 'backend', 'payment']
-    }
-  ]
-};
-
-const mockBurndownData: BurndownData[] = [
-  { day: 0, date: '2024-03-01', ideal: 42, actual: 42 },
-  { day: 1, date: '2024-03-02', ideal: 39, actual: 42 },
-  { day: 2, date: '2024-03-03', ideal: 36, actual: 38 },
-  { day: 3, date: '2024-03-04', ideal: 33, actual: 35 },
-  { day: 4, date: '2024-03-05', ideal: 30, actual: 32 },
-  { day: 5, date: '2024-03-06', ideal: 27, actual: 28 },
-  { day: 6, date: '2024-03-07', ideal: 24, actual: 28 },
-  { day: 7, date: '2024-03-08', ideal: 21, actual: 25 },
-  { day: 8, date: '2024-03-09', ideal: 18, actual: 20 },
-  { day: 9, date: '2024-03-10', ideal: 15, actual: 18 },
-  { day: 10, date: '2024-03-11', ideal: 12, actual: 14 },
-  { day: 11, date: '2024-03-12', ideal: 9, actual: 14 },
-  { day: 12, date: '2024-03-13', ideal: 6, actual: 14 },
-  { day: 13, date: '2024-03-14', ideal: 3, actual: 14 },
-  { day: 14, date: '2024-03-15', ideal: 0, actual: 14 }
-];
-
-// Mock product backlog items (not yet in sprint)
-const mockProductBacklog: ProductBacklogItem[] = [
-  {
-    id: '5',
-    title: 'User Registration System',
-    asA: 'new user',
-    iWant: 'to create an account with email verification',
-    soThat: 'I can access the platform securely',
-    storyPoints: 8,
-    priority: 'high',
-    labels: ['backend', 'auth', 'email'],
-    status: 'ready',
-    acceptanceCriteria: [
-      'Email validation is required',
-      'Password strength requirements are enforced',
-      'Email verification is sent and required'
-    ],
-    dependencies: []
-  },
-  {
-    id: '6',
-    title: 'Payment Gateway Integration',
-    asA: 'customer',
-    iWant: 'to pay using multiple payment methods',
-    soThat: 'I can complete purchases conveniently',
-    storyPoints: 13,
-    priority: 'critical',
-    labels: ['backend', 'payment', 'integration'],
-    status: 'ready',
-    assignee: 'David Park',
-    acceptanceCriteria: [
-      'Support for credit cards, PayPal, and Apple Pay',
-      'PCI compliance requirements met',
-      'Error handling for failed transactions'
-    ],
-    dependencies: ['4']
-  },
-  {
-    id: '7',
-    title: 'Product Reviews and Ratings',
-    asA: 'customer',
-    iWant: 'to read and write product reviews',
-    soThat: 'I can make informed purchasing decisions',
-    storyPoints: 5,
-    priority: 'medium',
-    labels: ['frontend', 'reviews', 'user-content'],
-    status: 'ready',
-    acceptanceCriteria: [
-      'Display average rating and review count',
-      'Allow authenticated users to submit reviews',
-      'Include helpful/unhelpful voting system'
-    ],
-    dependencies: ['1']
-  },
-  {
-    id: '8',
-    title: 'Inventory Management Dashboard',
-    asA: 'admin',
-    iWant: 'to track product inventory levels',
-    soThat: 'I can manage stock and prevent overselling',
-    storyPoints: 21,
-    priority: 'high',
-    labels: ['admin', 'inventory', 'dashboard'],
-    status: 'draft',
-    acceptanceCriteria: [
-      'Real-time inventory tracking',
-      'Low stock alerts',
-      'Bulk inventory updates'
-    ],
-    dependencies: []
-  },
-  {
-    id: '9',
-    title: 'Order History and Tracking',
-    asA: 'customer',
-    iWant: 'to view my order history and track shipments',
-    soThat: 'I can monitor my purchases and deliveries',
-    storyPoints: 8,
-    priority: 'medium',
-    labels: ['frontend', 'orders', 'tracking'],
-    status: 'ready',
-    acceptanceCriteria: [
-      'Display order status and tracking information',
-      'Allow order cancellation within time limit',
-      'Show detailed order history'
-    ],
-    dependencies: ['4']
-  },
-  {
-    id: '10',
-    title: 'Customer Support Chat',
-    asA: 'customer',
-    iWant: 'to get real-time help with my questions',
-    soThat: 'I can resolve issues quickly',
-    storyPoints: 13,
-    priority: 'low',
-    labels: ['frontend', 'support', 'chat'],
-    status: 'draft',
-    acceptanceCriteria: [
-      'Live chat widget integration',
-      'Chat history persistence',
-      'Agent availability status'
-    ],
-    dependencies: []
-  }
-];
 
 // Add Story Selection Modal component
 const AddStoryModal: React.FC<{
@@ -277,22 +114,27 @@ const AddStoryModal: React.FC<{
   currentCapacity: number;
   usedCapacity: number;
   projectId: string;
-}> = ({ isOpen, onClose, onAddStories, availableStories, currentCapacity, usedCapacity, projectId }) => {
+  getTasksForStory: (storyId: string) => Task[];
+  openCreateTaskModal: (story: BacklogItem) => void;
+  getTaskStatusColor: (status: string) => string;
+  confirmDeleteTask: (task: Task) => void;
+  confirmDeleteStory: (story: BacklogItem) => void;
+}> = ({ isOpen, onClose, onAddStories, availableStories, currentCapacity, usedCapacity, projectId, getTasksForStory, openCreateTaskModal, getTaskStatusColor, confirmDeleteTask, confirmDeleteStory }) => {
   const [selectedStoryIds, setSelectedStoryIds] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
 
-  const selectedStories = availableStories.filter(story => selectedStoryIds.has(story.id));
-  const selectedPoints = selectedStories.reduce((sum, story) => sum + story.storyPoints, 0);
+  const selectedStories = availableStories.filter(story => selectedStoryIds.has(story.id.toString()));
+  const selectedPoints = selectedStories.reduce((sum, story) => sum + story.story_point, 0);
   const totalPointsAfterAdd = usedCapacity + selectedPoints;
   const isOverCapacity = totalPointsAfterAdd > currentCapacity;
 
   // Filter stories based on search and filters
   const filteredStories = availableStories.filter(story => {
     const matchesSearch = story.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         story.asA.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         story.iWant.toLowerCase().includes(searchTerm.toLowerCase());
+                         story.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         story.acceptanceCriteria.some(criteria => criteria.toLowerCase().includes(searchTerm.toLowerCase()));
     
     const matchesStatus = statusFilter === 'all' || story.status === statusFilter;
     const matchesPriority = priorityFilter === 'all' || story.priority === priorityFilter;
@@ -314,7 +156,7 @@ const AddStoryModal: React.FC<{
     if (selectedStoryIds.size === filteredStories.length) {
       setSelectedStoryIds(new Set());
     } else {
-      setSelectedStoryIds(new Set(filteredStories.map(s => s.id)));
+      setSelectedStoryIds(new Set(filteredStories.map(s => s.id.toString())));
     }
   };
 
@@ -465,25 +307,25 @@ const AddStoryModal: React.FC<{
                 <div 
                   key={story.id} 
                   className={`border rounded-lg p-4 cursor-pointer transition-all ${
-                    selectedStoryIds.has(story.id)
+                    selectedStoryIds.has(story.id.toString())
                       ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20'
                       : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
                   }`}
-                  onClick={() => handleStoryToggle(story.id)}
+                  onClick={() => handleStoryToggle(story.id.toString())}
                 >
                   <div className="flex items-start gap-3">
                     <input
                       type="checkbox"
-                      checked={selectedStoryIds.has(story.id)}
-                      onChange={() => handleStoryToggle(story.id)}
+                      checked={selectedStoryIds.has(story.id.toString())}
+                      onChange={() => handleStoryToggle(story.id.toString())}
                       className="mt-1 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                     />
                     <div className="flex-1">
                       <div className="flex items-center gap-2 mb-2">
                         <h4 className="font-medium text-gray-900 dark:text-white">{story.title}</h4>
                         <span className={`px-2 py-1 rounded text-xs font-medium ${
-                          story.status === 'ready' ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400' :
-                          story.status === 'draft' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400' :
+                          story.status === BacklogStatus.TODO ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400' :
+                          story.status === BacklogStatus.IN_PROGRESS ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400' :
                           'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400'
                         }`}>
                           {story.status.toUpperCase()}
@@ -498,35 +340,188 @@ const AddStoryModal: React.FC<{
                         </span>
                       </div>
                       <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                        <span className="font-medium">As a</span> {story.asA}, <span className="font-medium">I want</span> {story.iWant}
+                        {story.description}
                       </p>
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
+                      <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
+                        <span className="flex items-center gap-1">
+                          <Target className="w-3 h-3" />
+                          {story.story_point} pts
+                        </span>
+                        {story.label && (
                           <span className="flex items-center gap-1">
-                            <Target className="w-3 h-3" />
-                            {story.storyPoints} pts
+                            <User className="w-3 h-3" />
+                            {story.label}
                           </span>
-                          {story.assignee && (
-                            <span className="flex items-center gap-1">
-                              <User className="w-3 h-3" />
-                              {story.assignee}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex flex-wrap gap-1">
-                          {story.labels.slice(0, 3).map((label, index) => (
-                            <span key={index} className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-xs rounded">
-                              {label}
-                            </span>
-                          ))}
-                          {story.labels.length > 3 && (
-                            <span className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-xs rounded">
-                              +{story.labels.length - 3}
-                            </span>
-                          )}
-                        </div>
+                        )}
                       </div>
                     </div>
+                  </div>
+                  <div className="flex flex-wrap gap-1 mb-3">
+                    {story.label && story.label.split(',').map((label, index) => (
+                      <span key={index} className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-xs rounded">
+                        {label.trim()}
+                      </span>
+                    ))}
+                  </div>
+                  
+                  {/* Tasks Section */}
+                  {(() => {
+                    const storyTasks = getTasksForStory(story.id.toString());
+                    return storyTasks.length > 0 ? (
+                      <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
+                        <div className="flex items-center justify-between mb-2">
+                          <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300">Tasks ({storyTasks.length})</h5>
+                          <button
+                            onClick={() => {
+                              // Convert ProductBacklogItem to BacklogItem for the modal
+                              const backlogItem: BacklogItem = {
+                                id: story.id,
+                                title: story.title,
+                                description: story.description,
+                                status: BacklogStatus.TODO,
+                                story_point: story.story_point,
+                                priority: story.priority,
+                                label: story.label,
+                                item_type: story.item_type,
+                                project_id: story.project_id,
+                                sprint_id: undefined,
+                                created_at: story.created_at,
+                                updated_at: story.updated_at,
+                                acceptance_criteria: []
+                              };
+                              openCreateTaskModal(backlogItem);
+                            }}
+                            className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 flex items-center gap-1"
+                          >
+                            <Plus className="w-4 h-4" />
+                            Add Task
+                          </button>
+                        </div>
+                        <div className="space-y-2">
+                          {storyTasks.map((task: Task) => (
+                            <div key={task.id} className="bg-gray-50 dark:bg-gray-700 rounded-md p-3">
+                              <div className="flex items-start justify-between mb-1">
+                                <h6 className="text-sm font-medium text-gray-900 dark:text-white">{task.title}</h6>
+                                <div className="flex items-center gap-2">
+                                  <span className={`px-2 py-1 rounded text-xs font-medium ${getTaskStatusColor(task.status)}`}>
+                                    {task.status.replace('_', ' ').toUpperCase()}
+                                  </span>
+                                  <button
+                                    onClick={() => confirmDeleteTask(task)}
+                                    className="text-gray-400 hover:text-red-600 dark:hover:text-red-400 p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                    title="Delete task"
+                                  >
+                                    <Trash2 className="w-3 h-3" />
+                                  </button>
+                                </div>
+                              </div>
+                              {task.description && (
+                                <p className="text-xs text-gray-600 dark:text-gray-400 mb-2">{task.description}</p>
+                              )}
+                              <div className="flex items-center justify-between text-xs">
+                                <div className="text-gray-500 dark:text-gray-400">
+                                  {task.assignees.length > 0 ? (
+                                    <div className="flex items-center gap-1 flex-wrap">
+                                      <User className="w-3 h-3" />
+                                      <div className="flex flex-wrap gap-1">
+                                        {task.assignees.map((assignee: string, idx: number) => (
+                                          <span key={assignee} className="inline-flex items-center">
+                                            {assignee}
+                                            {idx < task.assignees.length - 1 && <span className="ml-1 mr-1">,</span>}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    'Unassigned'
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
+                        <button
+                          onClick={() => {
+                            // Convert ProductBacklogItem to BacklogItem for the modal
+                            const backlogItem: BacklogItem = {
+                              id: story.id,
+                              title: story.title,
+                              description: story.description,
+                              status: BacklogStatus.TODO,
+                              story_point: story.story_point,
+                              priority: story.priority,
+                              label: story.label,
+                              item_type: story.item_type,
+                              project_id: story.project_id,
+                              sprint_id: undefined,
+                              created_at: story.created_at,
+                              updated_at: story.updated_at,
+                              acceptance_criteria: []
+                            };
+                            openCreateTaskModal(backlogItem);
+                          }}
+                          className="w-full text-sm text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 py-2 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg hover:border-blue-300 dark:hover:border-blue-500 transition-colors flex items-center justify-center gap-2"
+                        >
+                          <Plus className="w-4 h-4" />
+                          Create Task
+                        </button>
+                      </div>
+                    );
+                  })()}
+                  <div className="flex items-center gap-2 ml-4">
+                    <button
+                      onClick={() => {
+                        // Convert ProductBacklogItem to BacklogItem for the modal
+                        const backlogItem: BacklogItem = {
+                          id: story.id,
+                          title: story.title,
+                          description: story.description,
+                          status: BacklogStatus.TODO,
+                          story_point: story.story_point,
+                          priority: story.priority,
+                          label: story.label,
+                          item_type: story.item_type,
+                          project_id: story.project_id,
+                          sprint_id: undefined,
+                          created_at: story.created_at,
+                          updated_at: story.updated_at,
+                          acceptance_criteria: []
+                        };
+                        openCreateTaskModal(backlogItem);
+                      }}
+                      className="text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 p-2 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                      title="Create task"
+                    >
+                      <Plus className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        // Convert ProductBacklogItem to BacklogItem for the modal
+                        const backlogItem: BacklogItem = {
+                          id: story.id,
+                          title: story.title,
+                          description: story.description,
+                          status: BacklogStatus.TODO,
+                          story_point: story.story_point,
+                          priority: story.priority,
+                          label: story.label,
+                          item_type: story.item_type,
+                          project_id: story.project_id,
+                          sprint_id: undefined,
+                          created_at: story.created_at,
+                          updated_at: story.updated_at,
+                          acceptance_criteria: []
+                        };
+                        confirmDeleteStory(backlogItem);
+                      }}
+                      className="text-gray-400 hover:text-red-600 dark:hover:text-red-400 p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                      title="Remove from sprint"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
                   </div>
                 </div>
               ))}
@@ -559,11 +554,11 @@ const AddStoryModal: React.FC<{
             </button>
             <button
               onClick={handleAddStories}
-              disabled={selectedStories.length === 0}
+              disabled={selectedStoryIds.size === 0}
               className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center gap-2"
             >
               <Plus className="w-4 h-4" />
-              Add {selectedStories.length} {selectedStories.length === 1 ? 'Story' : 'Stories'}
+              Add {selectedStoryIds.size} {selectedStoryIds.size === 1 ? 'Story' : 'Stories'}
               {selectedPoints > 0 && <span>({selectedPoints} pts)</span>}
             </button>
           </div>
@@ -577,7 +572,7 @@ const AddStoryModal: React.FC<{
 const CreateTaskModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (task: Omit<Task, 'id'>) => void;
+  onSubmit: (task: Omit<Task, 'id' | 'created_at' | 'updated_at'>) => void;
   storyId: string;
   storyTitle: string;
   teamMembers: string[];
@@ -587,13 +582,17 @@ const CreateTaskModal: React.FC<{
     description: string;
     assignees: string[];
     status: Task['status'];
-    storyId: string;
+    priority: Task['priority'];
+    story_point?: number;
+    sprint_id: number;
   }>({
     title: '',
     description: '',
     assignees: [],
     status: 'todo',
-    storyId
+    priority: 'medium',
+    story_point: undefined,
+    sprint_id: parseInt(storyId, 10)
   });
 
   const [isAssigneeDropdownOpen, setIsAssigneeDropdownOpen] = useState(false);
@@ -614,7 +613,9 @@ const CreateTaskModal: React.FC<{
       description: '',
       assignees: [],
       status: 'todo' as Task['status'],
-      storyId
+      priority: 'medium' as Task['priority'],
+      story_point: undefined,
+      sprint_id: parseInt(storyId, 10)
     });
     
     onClose();
@@ -627,7 +628,9 @@ const CreateTaskModal: React.FC<{
       description: '',
       assignees: [],
       status: 'todo' as Task['status'],
-      storyId
+      priority: 'medium' as Task['priority'],
+      story_point: undefined,
+      sprint_id: parseInt(storyId, 10)
     });
     onClose();
   };
@@ -700,6 +703,38 @@ const CreateTaskModal: React.FC<{
             />
           </div>
 
+          {/* Priority */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Priority
+            </label>
+            <select
+              value={formData.priority}
+              onChange={(e) => setFormData(prev => ({ ...prev, priority: e.target.value as Task['priority'] }))}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="critical">Critical</option>
+            </select>
+          </div>
+
+          {/* Story Points */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Story Points
+            </label>
+            <input
+              type="number"
+              value={formData.story_point || ''}
+              onChange={(e) => setFormData(prev => ({ ...prev, story_point: e.target.value ? parseInt(e.target.value) : undefined }))}
+              placeholder="Enter story points..."
+              min="0"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+
           {/* Assignees */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -769,9 +804,9 @@ const CreateTaskModal: React.FC<{
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               <option value="todo">To Do</option>
-              <option value="in-progress">In Progress</option>
-              <option value="review">Review</option>
+              <option value="in_progress">In Progress</option>
               <option value="done">Done</option>
+              <option value="cancelled">Cancelled</option>
             </select>
           </div>
 
@@ -790,6 +825,271 @@ const CreateTaskModal: React.FC<{
             >
               <Plus className="w-4 h-4" />
               Create Task
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+};
+
+// Add EditTaskModal component
+const EditTaskModal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  onSubmit: (taskData: Omit<Task, 'id' | 'created_at' | 'updated_at'>) => void;
+  task: Task;
+  teamMembers: string[];
+}> = ({ isOpen, onClose, onSubmit, task, teamMembers }) => {
+  const [formData, setFormData] = useState<{
+    title: string;
+    description: string;
+    assignees: string[];
+    status: Task['status'];
+    priority: Task['priority'];
+    story_point?: number;
+    sprint_id: number;
+  }>({
+    title: task.title,
+    description: task.description || '',
+    assignees: [...task.assignees],
+    status: task.status,
+    priority: task.priority,
+    story_point: task.story_point,
+    sprint_id: task.sprint_id
+  });
+
+  const [isAssigneeDropdownOpen, setIsAssigneeDropdownOpen] = useState(false);
+
+  // Update form data when task changes
+  useEffect(() => {
+    setFormData({
+      title: task.title,
+      description: task.description || '',
+      assignees: [...task.assignees],
+      status: task.status,
+      priority: task.priority,
+      story_point: task.story_point,
+      sprint_id: task.sprint_id
+    });
+  }, [task]);
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!formData.title.trim()) {
+      alert('Task title is required');
+      return;
+    }
+
+    onSubmit(formData);
+    onClose();
+  };
+
+  const handleCancel = () => {
+    // Reset form to original task data
+    setFormData({
+      title: task.title,
+      description: task.description || '',
+      assignees: [...task.assignees],
+      status: task.status,
+      priority: task.priority,
+      story_point: task.story_point,
+      sprint_id: task.sprint_id
+    });
+    onClose();
+  };
+
+  const toggleAssignee = (member: string) => {
+    setFormData(prev => ({
+      ...prev,
+      assignees: prev.assignees.includes(member)
+        ? prev.assignees.filter(a => a !== member)
+        : [...prev.assignees, member]
+    }));
+  };
+
+  const removeAssignee = (member: string) => {
+    setFormData(prev => ({
+      ...prev,
+      assignees: prev.assignees.filter(a => a !== member)
+    }));
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-[100]">
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl w-full max-w-md max-h-[90vh] overflow-y-auto">
+        {/* Modal Header */}
+        <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700">
+          <div>
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Edit Task</h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+              Update task details
+            </p>
+          </div>
+          <button
+            onClick={handleCancel}
+            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        {/* Modal Body */}
+        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+          {/* Title */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Title <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="text"
+              value={formData.title}
+              onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
+              placeholder="Enter task title..."
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              required
+            />
+          </div>
+
+          {/* Description */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Description
+            </label>
+            <textarea
+              value={formData.description}
+              onChange={(e) => setFormData(prev => ({ ...prev, description: e.target.value }))}
+              placeholder="Describe the task..."
+              rows={3}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
+            />
+          </div>
+
+          {/* Priority */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Priority
+            </label>
+            <select
+              value={formData.priority}
+              onChange={(e) => setFormData(prev => ({ ...prev, priority: e.target.value as Task['priority'] }))}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+              <option value="critical">Critical</option>
+            </select>
+          </div>
+
+          {/* Story Points */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Story Points
+            </label>
+            <input
+              type="number"
+              value={formData.story_point || ''}
+              onChange={(e) => setFormData(prev => ({ ...prev, story_point: e.target.value ? parseInt(e.target.value) : undefined }))}
+              placeholder="Enter story points..."
+              min="0"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            />
+          </div>
+
+          {/* Assignees */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Assignees
+            </label>
+            <div className="relative">
+              <button
+                type="button"
+                onClick={() => setIsAssigneeDropdownOpen(!isAssigneeDropdownOpen)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent flex justify-between items-center"
+              >
+                <span className="text-gray-500 dark:text-gray-400">
+                  {formData.assignees.length === 0 
+                    ? 'Select assignees...' 
+                    : `${formData.assignees.length} assignee${formData.assignees.length !== 1 ? 's' : ''} selected`
+                  }
+                </span>
+                <ChevronDown className={`w-4 h-4 transform transition-transform ${isAssigneeDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+              
+              {isAssigneeDropdownOpen && (
+                <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                  {teamMembers.map(member => (
+                    <label key={member} className="flex items-center px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-600 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={formData.assignees.includes(member)}
+                        onChange={() => toggleAssignee(member)}
+                        className="mr-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-gray-900 dark:text-white">{member}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+            
+            {formData.assignees.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {formData.assignees.map(member => (
+                  <span
+                    key={member}
+                    className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-900/20 text-blue-800 dark:text-blue-400 text-sm rounded-full"
+                  >
+                    {member}
+                    <button
+                      type="button"
+                      onClick={() => removeAssignee(member)}
+                      className="hover:text-blue-600 dark:hover:text-blue-300"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* Status */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Status
+            </label>
+            <select
+              value={formData.status}
+              onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value as Task['status'] }))}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            >
+              <option value="todo">To Do</option>
+              <option value="in_progress">In Progress</option>
+              <option value="done">Done</option>
+              <option value="cancelled">Cancelled</option>
+            </select>
+          </div>
+
+          {/* Modal Footer */}
+          <div className="flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700">
+            <button
+              type="button"
+              onClick={handleCancel}
+              className="px-4 py-2 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2"
+            >
+              <Edit2 className="w-4 h-4" />
+              Update Task
             </button>
           </div>
         </form>
@@ -835,17 +1135,17 @@ const EditSprintModal: React.FC<{
     e.preventDefault();
     
     // Basic validation
-    if (!formData.name.trim()) {
+    if (!formData.sprint_name.trim()) {
       alert('Sprint name is required');
       return;
     }
     
-    if (!formData.startDate || !formData.endDate) {
+    if (!formData.start_date || !formData.end_date) {
       alert('Start and end dates are required');
       return;
     }
     
-    if (new Date(formData.startDate) >= new Date(formData.endDate)) {
+    if (new Date(formData.start_date) >= new Date(formData.end_date)) {
       alert('End date must be after start date');
       return;
     }
@@ -857,16 +1157,18 @@ const EditSprintModal: React.FC<{
   const toggleTeamMember = (member: string) => {
     setFormData(prev => ({
       ...prev,
-      teamMembers: prev.teamMembers.includes(member)
+      teamMembers: prev.teamMembers ? prev.teamMembers.includes(member)
         ? prev.teamMembers.filter(m => m !== member)
         : [...prev.teamMembers, member]
+      : []
     }));
   };
 
   const removeTeamMember = (member: string) => {
     setFormData(prev => ({
       ...prev,
-      teamMembers: prev.teamMembers.filter(m => m !== member)
+      teamMembers: prev.teamMembers ? prev.teamMembers.filter(m => m !== member)
+      : []
     }));
   };
 
@@ -895,8 +1197,8 @@ const EditSprintModal: React.FC<{
             </label>
             <input
               type="text"
-              value={formData.name}
-              onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+              value={formData.sprint_name}
+              onChange={(e) => setFormData(prev => ({ ...prev, sprint_name: e.target.value }))}
               placeholder="e.g., Sprint 1 - User Authentication"
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               required
@@ -909,8 +1211,8 @@ const EditSprintModal: React.FC<{
               Sprint Goal <span className="text-gray-400 text-sm">(Optional)</span>
             </label>
             <textarea
-              value={formData.goal}
-              onChange={(e) => setFormData(prev => ({ ...prev, goal: e.target.value }))}
+              value={formData.sprint_goal}
+              onChange={(e) => setFormData(prev => ({ ...prev, sprint_goal: e.target.value }))}
               placeholder="Describe the main objective of this sprint..."
               rows={3}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
@@ -925,8 +1227,8 @@ const EditSprintModal: React.FC<{
               </label>
               <input
                 type="date"
-                value={formData.startDate}
-                onChange={(e) => setFormData(prev => ({ ...prev, startDate: e.target.value }))}
+                value={formData.start_date}
+                onChange={(e) => setFormData(prev => ({ ...prev, start_date: e.target.value }))}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 required
               />
@@ -937,9 +1239,9 @@ const EditSprintModal: React.FC<{
               </label>
               <input
                 type="date"
-                value={formData.endDate}
-                onChange={(e) => setFormData(prev => ({ ...prev, endDate: e.target.value }))}
-                min={formData.startDate}
+                value={formData.end_date}
+                onChange={(e) => setFormData(prev => ({ ...prev, end_date: e.target.value }))}
+                min={formData.start_date}
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 required
               />
@@ -953,8 +1255,8 @@ const EditSprintModal: React.FC<{
             </label>
             <input
               type="number"
-              value={formData.capacity}
-              onChange={(e) => setFormData(prev => ({ ...prev, capacity: parseInt(e.target.value) || 0 }))}
+              value={formData.sprint_capacity}
+              onChange={(e) => setFormData(prev => ({ ...prev, sprint_capacity: parseInt(e.target.value) || 0 }))}
               min="1"
               max="200"
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -973,10 +1275,7 @@ const EditSprintModal: React.FC<{
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent flex justify-between items-center"
               >
                 <span className="text-gray-500 dark:text-gray-400">
-                  {formData.teamMembers.length === 0 
-                    ? 'Select team members...' 
-                    : `${formData.teamMembers.length} member${formData.teamMembers.length !== 1 ? 's' : ''} selected`
-                  }
+                  {formData.teamMembers ? `${formData.teamMembers.length} member${formData.teamMembers.length !== 1 ? 's' : ''} selected` : 'Select team members...'}
                 </span>
                 <ChevronDown className={`w-4 h-4 transform transition-transform ${isTeamDropdownOpen ? 'rotate-180' : ''}`} />
               </button>
@@ -987,7 +1286,7 @@ const EditSprintModal: React.FC<{
                     <label key={member} className="flex items-center px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-600 cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={formData.teamMembers.includes(member)}
+                        checked={formData.teamMembers ? formData.teamMembers.includes(member) : false}
                         onChange={() => toggleTeamMember(member)}
                         className="mr-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                       />
@@ -998,7 +1297,7 @@ const EditSprintModal: React.FC<{
               )}
             </div>
             
-            {formData.teamMembers.length > 0 && (
+            {formData.teamMembers && (
               <div className="mt-2 flex flex-wrap gap-2">
                 {formData.teamMembers.map(member => (
                   <span
@@ -1026,7 +1325,7 @@ const EditSprintModal: React.FC<{
             </label>
             <select
               value={formData.status}
-              onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value as any }))}
+              onChange={(e) => setFormData(prev => ({ ...prev, status: e.target.value as 'planning' | 'active' | 'completed' | 'cancelled' }))}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
               {statusOptions.map(option => (
@@ -1064,21 +1363,40 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
   const projectId = resolvedParams['project-id'];
   const sprintId = resolvedParams['sprint-id'];
 
-  const [sprint, setSprint] = useState<Sprint>(mockSprint);
-  const [burndownData] = useState<BurndownData[]>(mockBurndownData);
-  const [activeTab, setActiveTab] = useState<'overview' | 'backlog' | 'burndown' | 'team'>('overview');
-  const [availableStories] = useState<ProductBacklogItem[]>(mockProductBacklog);
+  const [sprint, setSprint] = useState<Sprint | null>(null);
+  const [burndownData, setBurndownData] = useState<BurndownData[]>([
+    { day: 0, date: '2024-03-01', ideal: 42, actual: 42 },
+    { day: 1, date: '2024-03-02', ideal: 39, actual: 42 },
+    { day: 2, date: '2024-03-03', ideal: 36, actual: 38 },
+    { day: 3, date: '2024-03-04', ideal: 33, actual: 35 },
+    { day: 4, date: '2024-03-05', ideal: 30, actual: 32 },
+    { day: 5, date: '2024-03-06', ideal: 27, actual: 28 },
+    { day: 6, date: '2024-03-07', ideal: 24, actual: 28 },
+    { day: 7, date: '2024-03-08', ideal: 21, actual: 25 },
+    { day: 8, date: '2024-03-09', ideal: 18, actual: 20 },
+    { day: 9, date: '2024-03-10', ideal: 15, actual: 18 },
+    { day: 10, date: '2024-03-11', ideal: 12, actual: 14 },
+    { day: 11, date: '2024-03-12', ideal: 9, actual: 14 },
+    { day: 12, date: '2024-03-13', ideal: 6, actual: 14 },
+    { day: 13, date: '2024-03-14', ideal: 3, actual: 14 },
+    { day: 14, date: '2024-03-15', ideal: 0, actual: 14 }
+  ]);
+  const [activeTab, setActiveTab] = useState<'backlog' | 'burndown' | 'team'>('backlog');
+  const [availableStories, setAvailableStories] = useState<ProductBacklogItem[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   // Add new state for modals
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isAddStoryModalOpen, setIsAddStoryModalOpen] = useState(false);
   const [recentlyAddedStories, setRecentlyAddedStories] = useState<Set<string>>(new Set());
-  const [storyToDelete, setStoryToDelete] = useState<UserStory | null>(null);
+  const [storyToDelete, setStoryToDelete] = useState<BacklogItem | null>(null);
   
   // Task modal state
   const [isCreateTaskModalOpen, setIsCreateTaskModalOpen] = useState(false);
-  const [selectedStoryForTask, setSelectedStoryForTask] = useState<UserStory | null>(null);
-  const [tasks, setTasks] = useState<Task[]>([]);
+  const [isEditTaskModalOpen, setIsEditTaskModalOpen] = useState(false);
+  const [selectedStoryForTask, setSelectedStoryForTask] = useState<BacklogItem | null>(null);
+  const [selectedTaskForEdit, setSelectedTaskForEdit] = useState<Task | null>(null);
   const [taskToDelete, setTaskToDelete] = useState<Task | null>(null);
 
   // Breadcrumb navigation
@@ -1086,7 +1404,7 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
     { label: 'Projects', href: '/project', icon: <FolderOpen className="w-4 h-4" /> },
     { label: 'Project Name', href: `/project/${projectId}/dashboard` },
     { label: 'Sprints', href: `/project/${projectId}/sprint`, icon: <Zap className="w-4 h-4" /> },
-    { label: sprint.name }
+    { label: sprint?.sprint_name || 'Loading...' }
   ];
 
   const getStatusColor = (status: string) => {
@@ -1129,8 +1447,9 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
     }
   };
 
-  const calculateProgress = (completed: number, total: number) => {
-    if (total === 0) return 0;
+  const calculateProgress = (completed: number | undefined, total: number | undefined) => {
+    if (!total || total === 0) return 0;
+    if (!completed) return 0;
     return Math.round((completed / total) * 100);
   };
 
@@ -1142,13 +1461,241 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
     return diffDays;
   };
 
-  const getCurrentDayData = () => {
-    const today = new Date();
-    const startDate = new Date(sprint.startDate);
-    const diffTime = today.getTime() - startDate.getTime();
-    const currentDay = Math.floor(diffTime / (1000 * 60 * 60 * 24));
-    return burndownData.find(d => d.day === currentDay) || burndownData[burndownData.length - 1];
-  };
+  // Fetch sprint and backlog data
+  useEffect(() => {
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        setError(null);
+        
+        // Check authentication first
+        try {
+          const authResponse = await api.auth.getCurrentUser();
+          if (authResponse.error) {
+            throw new Error(`Authentication error: ${authResponse.error}`);
+          }
+          if (!authResponse.data) {
+            throw new Error('No user data received - not authenticated');
+          }
+        } catch (authError) {
+          console.error('Authentication check failed:', authError);
+          throw new Error(`Authentication failed: ${authError instanceof Error ? authError.message : 'Unknown error'}`);
+        }
+        
+        // Validate parameters
+        if (!projectId || !sprintId) {
+          throw new Error('Missing project ID or sprint ID');
+        }
+        
+        const projectIdNum = parseInt(projectId, 10);
+        const sprintIdNum = parseInt(sprintId, 10);
+        
+        if (isNaN(projectIdNum) || isNaN(sprintIdNum)) {
+          throw new Error('Invalid project ID or sprint ID');
+        }
+
+        // Test API connectivity first using the authenticated fetch
+        try {
+          const testResponse = await api.sprints.getAll();
+          
+          if (testResponse.error) {
+            if (testResponse.error.includes('401') || testResponse.error.includes('Unauthorized')) {
+              throw new Error('Authentication required. Please log in again.');
+            } else if (testResponse.error.includes('403') || testResponse.error.includes('Forbidden')) {
+              throw new Error('Access forbidden. You may not have permission to view this sprint.');
+            } else {
+              throw new Error(`API server error: ${testResponse.error}`);
+            }
+          }
+        } catch (apiTestError) {
+          console.error('API connectivity test failed:', apiTestError);
+          throw new Error(`Cannot connect to API server: ${apiTestError instanceof Error ? apiTestError.message : 'Unknown error'}`);
+        }
+
+        // Fetch sprint data
+        const sprintResponse = await api.sprints.getById(sprintIdNum);
+        
+        if (sprintResponse.error) {
+          throw new Error(typeof sprintResponse.error === 'string' ? sprintResponse.error : 'Failed to fetch sprint data');
+        }
+
+        if (!sprintResponse.data) {
+          throw new Error('No sprint data received from API');
+        }
+
+        const sprintData = sprintResponse.data;
+        
+        // Validate required fields
+        if (!sprintData.id || !sprintData.sprintName || !sprintData.startDate || !sprintData.endDate || !sprintData.status || !sprintData.projectId) {
+          throw new Error('Sprint data is missing required fields');
+        }
+        
+        // Validate and normalize status
+        let normalizedStatus: 'planning' | 'active' | 'completed' | 'cancelled';
+        switch (sprintData.status) {
+          case 'planning':
+          case 'active':
+          case 'completed':
+          case 'cancelled':
+            normalizedStatus = sprintData.status;
+            break;
+          default:
+            console.warn('Unknown sprint status:', sprintData.status, 'defaulting to planning');
+            normalizedStatus = 'planning';
+        }
+        
+        const convertedSprint: Sprint = {
+          id: sprintData.id,
+          sprint_name: sprintData.sprintName,
+          sprint_goal: sprintData.sprintGoal || '',
+          status: normalizedStatus,
+          start_date: sprintData.startDate,
+          end_date: sprintData.endDate,
+          sprint_capacity: sprintData.sprintCapacity || 0,
+          project_id: sprintData.projectId,
+          created_at: sprintData.createdAt,
+          updated_at: sprintData.updatedAt,
+          totalStoryPoints: 0,
+          completedStoryPoints: 0,
+          totalStories: 0,
+          completedStories: 0,
+          teamMembers: ['Sarah Johnson', 'Mike Chen', 'Emily Rodriguez', 'David Park'],
+          velocity: 0,
+          stories: []
+        };
+        
+        setSprint(convertedSprint);
+
+        // Fetch backlog items for this project (stories and bugs)
+        // Fetch stories and bugs separately since the API expects single item_type values
+        const storiesResponse = await api.sprints.getAvailableBacklogItems(sprintIdNum, projectIdNum, {
+          item_type: 'story',
+          include_acceptance_criteria: true,
+          limit: 1000
+        });
+        
+        const bugsResponse = await api.sprints.getAvailableBacklogItems(sprintIdNum, projectIdNum, {
+          item_type: 'bug',
+          include_acceptance_criteria: true,
+          limit: 1000
+        });
+        
+        // Check for errors in both responses
+        if (storiesResponse.error) {
+          throw new Error(`Failed to fetch stories: ${storiesResponse.error}`);
+        }
+        
+        if (bugsResponse.error) {
+          throw new Error(`Failed to fetch bugs: ${bugsResponse.error}`);
+        }
+        
+        // Combine stories and bugs
+        const allBacklogItems = [
+          ...(storiesResponse.data || []),
+          ...(bugsResponse.data || [])
+        ];
+        
+        if (allBacklogItems.length > 0) {
+          const convertedStories: ProductBacklogItem[] = allBacklogItems
+            .filter(item => !item.sprint_id) // Only items not already in a sprint
+            .map(item => ({
+              id: item.id,
+              title: item.title,
+              description: item.description,
+              story_point: item.story_point || 0,
+              priority: item.priority,
+              label: item.label,
+              status: item.status,
+              assignee: undefined,
+              acceptanceCriteria: item.acceptance_criteria?.map((ac: any) => ac.title) || [],
+              dependencies: [],
+              item_type: item.item_type,
+              project_id: item.project_id,
+              created_at: item.created_at,
+              updated_at: item.updated_at
+            }));
+          setAvailableStories(convertedStories);
+        } else {
+          setAvailableStories([]);
+        }
+
+        // Fetch stories already in this sprint
+        const sprintBacklogResponse = await api.sprints.getSprintBacklog(sprintIdNum, {
+          include_acceptance_criteria: true,
+          limit: 1000
+        });
+
+        if (sprintBacklogResponse.error) {
+          throw new Error(`Failed to fetch sprint backlog data: ${sprintBacklogResponse.error}`);
+        }
+
+        if (sprintBacklogResponse.data) {
+          const sprintStories: BacklogItem[] = sprintBacklogResponse.data.map(item => ({
+            id: item.id,
+            title: item.title,
+            description: item.description,
+            status: item.status,
+            story_point: item.story_point,
+            priority: item.priority,
+            label: item.label,
+            item_type: item.item_type,
+            parent_id: item.parent_id,
+            assigned_to_id: item.assigned_to_id,
+            project_id: item.project_id,
+            sprint_id: item.sprint_id,
+            created_at: item.created_at,
+            updated_at: item.updated_at,
+            acceptance_criteria: item.acceptance_criteria?.map((ac: any) => ({
+              id: ac.id,
+              backlog_id: ac.backlog_id,
+              title: ac.title,
+              description: '',
+              is_met: false,
+              created_at: ac.created_at,
+              updated_at: ac.updated_at
+            })) || []
+          }));
+
+          setSprint(prevSprint => {
+            if (!prevSprint) return prevSprint;
+            
+            return {
+              ...prevSprint,
+              stories: sprintStories,
+              totalStories: sprintStories.length,
+              totalStoryPoints: sprintStories.reduce((sum, s) => sum + (s.story_point || 0), 0),
+              completedStories: sprintStories.filter(s => s.status === BacklogStatus.DONE).length,
+              completedStoryPoints: sprintStories.filter(s => s.status === BacklogStatus.DONE).reduce((sum, s) => sum + (s.story_point || 0), 0)
+            };
+          });
+        }
+
+      } catch (err) {
+        console.error('Error fetching sprint data:', err);
+        console.error('Error type:', typeof err);
+        console.error('Error object:', err);
+        
+        let errorMessage = 'Failed to fetch data';
+        if (err instanceof Error) {
+          errorMessage = err.message;
+        } else if (typeof err === 'object' && err !== null) {
+          errorMessage = JSON.stringify(err);
+        } else if (typeof err === 'string') {
+          errorMessage = err;
+        }
+        
+        setError(errorMessage);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    if (projectId && sprintId) {
+      fetchData();
+    }
+  }, [projectId, sprintId]);
+
+
 
   // Add handler for sprint updates
   const handleUpdateSprint = (updatedSprint: Sprint) => {
@@ -1157,99 +1704,391 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
   };
 
   // Add handler for adding stories to sprint
-  const handleAddStories = (newStories: ProductBacklogItem[]) => {
-    const convertedStories: UserStory[] = newStories.map(story => ({
-      id: story.id,
-      title: story.title,
-      asA: story.asA,
-      iWant: story.iWant,
-      soThat: story.soThat,
-      storyPoints: story.storyPoints,
-      status: 'todo' as const,
-      assignees: story.assignee ? [story.assignee] : [],
-      priority: story.priority,
-      labels: story.labels
-    }));
+  const handleAddStories = async (newStories: ProductBacklogItem[]) => {
+    try {
+      // Add each story to the sprint using the new SprintBacklog API
+      const addPromises = newStories.map(story => 
+        api.sprints.addBacklogItemToSprint(parseInt(sprintId, 10), story.id)
+      );
+      
+      const addResults = await Promise.all(addPromises);
+      const errors = addResults.filter(result => result.error);
+      
+      if (errors.length > 0) {
+        throw new Error(`Failed to add ${errors.length} stories to sprint`);
+      }
 
-    const updatedSprint = {
-      ...sprint,
-      stories: [...sprint.stories, ...convertedStories],
-      totalStories: sprint.totalStories + convertedStories.length,
-      totalStoryPoints: sprint.totalStoryPoints + convertedStories.reduce((sum, s) => sum + s.storyPoints, 0)
-    };
+      // Convert stories to BacklogItem format
+      const convertedStories: BacklogItem[] = newStories.map(story => ({
+        id: story.id,
+        title: story.title,
+        description: story.description || '',
+        story_point: story.story_point,
+        status: BacklogStatus.TODO,
+        priority: story.priority,
+        label: story.label,
+        item_type: story.item_type,
+        parent_id: story.parent_id,
+        assigned_to_id: story.assigned_to_id,
+        project_id: story.project_id,
+        sprint_id: parseInt(sprintId, 10),
+        created_at: story.created_at,
+        updated_at: story.updated_at,
+        acceptance_criteria: story.acceptanceCriteria.map((criteria, index) => ({
+          id: index + 1,
+          backlog_id: story.id,
+          title: criteria,
+          description: '',
+          is_met: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }))
+      }));
 
-    // Track recently added stories for visual feedback
-    const newStoryIds = new Set(convertedStories.map(s => s.id));
-    setRecentlyAddedStories(newStoryIds);
-    
-    // Clear the highlight after 3 seconds
-    setTimeout(() => {
-      setRecentlyAddedStories(new Set());
-    }, 3000);
+      if (sprint) {
+        const updatedSprint = {
+          ...sprint,
+          stories: [...(sprint.stories || []), ...convertedStories],
+          totalStories: (sprint.totalStories || 0) + convertedStories.length,
+          totalStoryPoints: (sprint.totalStoryPoints || 0) + convertedStories.reduce((sum, s) => sum + (s.story_point || 0), 0)
+        };
 
-    setSprint(updatedSprint);
-    setIsAddStoryModalOpen(false);
+        // Track recently added stories for visual feedback
+        const newStoryIds = new Set(convertedStories.map(s => s.id.toString()));
+        setRecentlyAddedStories(newStoryIds);
+        
+        // Clear the highlight after 3 seconds
+        setTimeout(() => {
+          setRecentlyAddedStories(new Set());
+        }, 3000);
+
+        setSprint(updatedSprint);
+        
+        // Remove added stories from available stories
+        setAvailableStories(prev => prev.filter(story => 
+          !newStories.some(newStory => newStory.id === story.id)
+        ));
+      }
+      
+      setIsAddStoryModalOpen(false);
+    } catch (err) {
+      console.error('Error adding stories to sprint:', err);
+      alert(`Failed to add stories to sprint: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
   };
 
   // Add handler for removing stories from sprint
-  const handleDeleteStory = (storyToRemove: UserStory) => {
-    const updatedStories = sprint.stories.filter(story => story.id !== storyToRemove.id);
-    const updatedSprint = {
-      ...sprint,
-      stories: updatedStories,
-      totalStories: updatedStories.length,
-      totalStoryPoints: updatedStories.reduce((sum, s) => sum + s.storyPoints, 0),
-      completedStories: updatedStories.filter(s => s.status === 'done').length,
-      completedStoryPoints: updatedStories.filter(s => s.status === 'done').reduce((sum, s) => sum + s.storyPoints, 0)
-    };
+  const handleDeleteStory = async (storyToRemove: BacklogItem) => {
+    if (!sprint) return;
+    
+    try {
+      // Remove the backlog item from the sprint using the new SprintBacklog API
+      const response = await api.sprints.removeBacklogItemFromSprint(parseInt(sprintId, 10), storyToRemove.id);
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
 
-    setSprint(updatedSprint);
-    setStoryToDelete(null);
+      // Update local state
+      const updatedStories = (sprint.stories || []).filter(story => story.id !== storyToRemove.id);
+      const updatedSprint = {
+        ...sprint,
+        stories: updatedStories,
+        totalStories: updatedStories.length,
+        totalStoryPoints: updatedStories.reduce((sum, s) => sum + (s.story_point || 0), 0),
+        completedStories: updatedStories.filter(s => s.status === BacklogStatus.DONE).length,
+        completedStoryPoints: updatedStories.filter(s => s.status === BacklogStatus.DONE).reduce((sum, s) => sum + (s.story_point || 0), 0)
+      };
+
+      setSprint(updatedSprint);
+      
+      // Add the story back to available stories
+      const storyToAddBack: ProductBacklogItem = {
+        id: storyToRemove.id,
+        title: storyToRemove.title,
+        description: storyToRemove.description || '',
+        story_point: storyToRemove.story_point || 0,
+        priority: storyToRemove.priority,
+        label: storyToRemove.label,
+        status: storyToRemove.status,
+        assignee: undefined,
+        acceptanceCriteria: storyToRemove.acceptance_criteria?.map(ac => ac.title) || [],
+        dependencies: [],
+        item_type: storyToRemove.item_type,
+        project_id: storyToRemove.project_id,
+        created_at: storyToRemove.created_at,
+        updated_at: storyToRemove.updated_at,
+        parent_id: storyToRemove.parent_id,
+        assigned_to_id: storyToRemove.assigned_to_id
+      };
+      
+      setAvailableStories(prev => [...prev, storyToAddBack]);
+      setStoryToDelete(null);
+    } catch (err) {
+      console.error('Error removing story from sprint:', err);
+      alert(`Failed to remove story from sprint: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
   };
 
-  const confirmDeleteStory = (story: UserStory) => {
+  const confirmDeleteStory = (story: BacklogItem) => {
     setStoryToDelete(story);
   };
 
   // Task management handlers
-  const handleCreateTask = (taskData: Omit<Task, 'id'>) => {
-    const newTask: Task = {
-      ...taskData,
-      id: `task-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-    };
+  const handleCreateTask = async (taskData: Omit<Task, 'id' | 'created_at' | 'updated_at'>) => {
+    if (!selectedStoryForTask) return;
     
-    setTasks(prev => [...prev, newTask]);
-    setIsCreateTaskModalOpen(false);
-    setSelectedStoryForTask(null);
-  };
-
-  const openCreateTaskModal = (story: UserStory) => {
-    setSelectedStoryForTask(story);
-    setIsCreateTaskModalOpen(true);
-  };
-
-  const getTasksForStory = (storyId: string) => {
-    return tasks.filter(task => task.storyId === storyId);
-  };
-
-  const getTaskStatusColor = (status: string) => {
-    switch (status) {
-      case 'todo': return 'text-gray-600 bg-gray-50 dark:bg-gray-900/20 dark:text-gray-400';
-      case 'in-progress': return 'text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-400';
-      case 'review': return 'text-yellow-600 bg-yellow-50 dark:bg-yellow-900/20 dark:text-yellow-400';
-      case 'done': return 'text-green-600 bg-green-50 dark:bg-green-900/20 dark:text-green-400';
-      default: return 'text-gray-600 bg-gray-50 dark:bg-gray-900/20';
+    try {
+      const response = await api.sprints.createTaskForBacklogItem(
+        parseInt(sprintId, 10),
+        selectedStoryForTask.id,
+        {
+          title: taskData.title,
+          description: taskData.description,
+          status: taskData.status,
+          priority: taskData.priority,
+          story_point: taskData.story_point
+        }
+      );
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      
+      // Refresh sprint data to get the new task
+      const sprintBacklogResponse = await api.sprints.getSprintBacklog(parseInt(sprintId, 10));
+      if (sprintBacklogResponse.data && sprint) {
+        const updatedStories = sprintBacklogResponse.data.map(item => ({
+          id: item.id,
+          title: item.title,
+          description: item.description,
+          status: item.status,
+          story_point: item.story_point,
+          priority: item.priority,
+          label: item.label,
+          item_type: item.item_type,
+          parent_id: item.parent_id,
+          assigned_to_id: item.assigned_to_id,
+          project_id: item.project_id,
+          sprint_id: item.sprint_id,
+          created_at: item.created_at,
+          updated_at: item.updated_at,
+          acceptance_criteria: item.acceptance_criteria?.map((ac: any) => ({
+            id: ac.id,
+            backlog_id: ac.backlog_id,
+            title: ac.title,
+            description: '',
+            is_met: false,
+            created_at: ac.created_at,
+            updated_at: ac.updated_at
+          })) || []
+        }));
+        
+        setSprint(prevSprint => {
+          if (!prevSprint) return prevSprint;
+          return {
+            ...prevSprint,
+            stories: updatedStories
+          };
+        });
+      }
+      
+      setIsCreateTaskModalOpen(false);
+      setSelectedStoryForTask(null);
+    } catch (err) {
+      console.error('Error creating task:', err);
+      alert(`Failed to create task: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
   };
 
-  const handleDeleteTask = (taskToRemove: Task) => {
-    setTasks(prev => prev.filter(task => task.id !== taskToRemove.id));
-    setTaskToDelete(null);
+  const handleUpdateTask = async (taskData: Omit<Task, 'id' | 'created_at' | 'updated_at'>) => {
+    if (!selectedTaskForEdit) return;
+    
+    try {
+      const response = await api.sprints.updateTask(
+        parseInt(sprintId, 10),
+        selectedTaskForEdit.id,
+        {
+          title: taskData.title,
+          description: taskData.description,
+          status: taskData.status,
+          priority: taskData.priority,
+          story_point: taskData.story_point
+        }
+      );
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      
+      // Refresh sprint data to get the updated task
+      const sprintBacklogResponse = await api.sprints.getSprintBacklog(parseInt(sprintId, 10));
+      if (sprintBacklogResponse.data && sprint) {
+        const updatedStories = sprintBacklogResponse.data.map(item => ({
+          id: item.id,
+          title: item.title,
+          description: item.description,
+          status: item.status,
+          story_point: item.story_point,
+          priority: item.priority,
+          label: item.label,
+          item_type: item.item_type,
+          parent_id: item.parent_id,
+          assigned_to_id: item.assigned_to_id,
+          project_id: item.project_id,
+          sprint_id: item.sprint_id,
+          created_at: item.created_at,
+          updated_at: item.updated_at,
+          acceptance_criteria: item.acceptance_criteria?.map((ac: any) => ({
+            id: ac.id,
+            backlog_id: ac.backlog_id,
+            title: ac.title,
+            description: '',
+            is_met: false,
+            created_at: ac.created_at,
+            updated_at: ac.updated_at
+          })) || []
+        }));
+        
+        setSprint(prevSprint => {
+          if (!prevSprint) return prevSprint;
+          return {
+            ...prevSprint,
+            stories: updatedStories
+          };
+        });
+      }
+      
+      setIsEditTaskModalOpen(false);
+      setSelectedTaskForEdit(null);
+    } catch (err) {
+      console.error('Error updating task:', err);
+      alert(`Failed to update task: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
+  };
+
+  const handleDeleteTask = async (taskToRemove: Task) => {
+    try {
+      const response = await api.sprints.deleteTask(parseInt(sprintId, 10), taskToRemove.id);
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      
+      // Refresh sprint data to get the updated task list
+      const sprintBacklogResponse = await api.sprints.getSprintBacklog(parseInt(sprintId, 10));
+      if (sprintBacklogResponse.data && sprint) {
+        const updatedStories = sprintBacklogResponse.data.map(item => ({
+          id: item.id,
+          title: item.title,
+          description: item.description,
+          status: item.status,
+          story_point: item.story_point,
+          priority: item.priority,
+          label: item.label,
+          item_type: item.item_type,
+          parent_id: item.parent_id,
+          assigned_to_id: item.assigned_to_id,
+          project_id: item.project_id,
+          sprint_id: item.sprint_id,
+          created_at: item.created_at,
+          updated_at: item.updated_at,
+          acceptance_criteria: item.acceptance_criteria?.map((ac: any) => ({
+            id: ac.id,
+            backlog_id: ac.backlog_id,
+            title: ac.title,
+            description: '',
+            is_met: false,
+            created_at: ac.created_at,
+            updated_at: ac.updated_at
+          })) || []
+        }));
+        
+        setSprint(prevSprint => {
+          if (!prevSprint) return prevSprint;
+          return {
+            ...prevSprint,
+            stories: updatedStories
+          };
+        });
+      }
+      
+      setTaskToDelete(null);
+    } catch (err) {
+      console.error('Error deleting task:', err);
+      alert(`Failed to delete task: ${err instanceof Error ? err.message : 'Unknown error'}`);
+    }
   };
 
   const confirmDeleteTask = (task: Task) => {
     setTaskToDelete(task);
   };
+
+  const openEditTaskModal = (task: Task) => {
+    setSelectedTaskForEdit(task);
+    setIsEditTaskModalOpen(true);
+  };
+
+  const openCreateTaskModal = (story: BacklogItem) => {
+    setSelectedStoryForTask(story);
+    setIsCreateTaskModalOpen(true);
+  };
+
+  const getTasksForStory = (storyId: string) => {
+    if (!sprint || !sprint.stories) return [];
+    
+    const story = sprint.stories.find(s => s.id.toString() === storyId);
+    if (!story) return [];
+    
+    // Return tasks from the story data (which comes from the API)
+    return story.tasks || [];
+  };
+
+  const getTaskStatusColor = (status: string) => {
+    switch (status) {
+      case 'todo': return 'text-gray-600 bg-gray-50 dark:bg-gray-900/20 dark:text-gray-400';
+      case 'in_progress': return 'text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-400';
+      case 'done': return 'text-green-600 bg-green-50 dark:bg-green-900/20 dark:text-green-400';
+      case 'cancelled': return 'text-red-600 bg-red-50 dark:bg-red-900/20 dark:text-red-400';
+      default: return 'text-gray-600 bg-gray-50 dark:bg-gray-900/20';
+    }
+  };
+
+  // Show loading state
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-600" />
+          <p className="text-gray-600 dark:text-gray-400">Loading sprint details...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Show error state
+  if (error || !sprint) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <div className="w-16 h-16 bg-red-100 dark:bg-red-900/20 rounded-full flex items-center justify-center mx-auto mb-4">
+            <X className="w-8 h-8 text-red-600 dark:text-red-400" />
+          </div>
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">Error Loading Sprint</h2>
+          <p className="text-gray-600 dark:text-gray-400 mb-4">
+            {error || 'Failed to load sprint details'}
+          </p>
+          <Link
+            href={`/project/${projectId}/sprint`}
+            className="inline-flex items-center gap-2 text-blue-600 hover:text-blue-700 dark:text-blue-400"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Back to Sprints
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -1261,27 +2100,27 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
           <div className="flex-1">
             <div className="flex items-center gap-3 mb-2">
               <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-                {sprint.name}
+                {sprint.sprint_name}
               </h1>
               <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(sprint.status)}`}>
                 {getStatusIcon(sprint.status)}
                 {sprint.status.charAt(0).toUpperCase() + sprint.status.slice(1)}
               </span>
             </div>
-            <p className="text-gray-600 dark:text-gray-400 mb-4">{sprint.goal}</p>
+            <p className="text-gray-600 dark:text-gray-400 mb-4">{sprint.sprint_goal}</p>
             <div className="flex items-center gap-6 text-sm text-gray-600 dark:text-gray-400">
               <span className="flex items-center gap-1">
                 <Calendar className="w-4 h-4" />
-                {new Date(sprint.startDate).toLocaleDateString()} - {new Date(sprint.endDate).toLocaleDateString()}
+                {new Date(sprint.start_date).toLocaleDateString()} - {new Date(sprint.end_date).toLocaleDateString()}
               </span>
               <span className="flex items-center gap-1">
                 <Users className="w-4 h-4" />
-                {sprint.teamMembers.length} members
+                {sprint.teamMembers?.length} members
               </span>
               {sprint.status === 'active' && (
                 <span className="flex items-center gap-1">
                   <Clock className="w-4 h-4" />
-                  {getDaysRemaining(sprint.endDate)} days remaining
+                  {getDaysRemaining(sprint.end_date)} days remaining
                 </span>
               )}
             </div>
@@ -1347,16 +2186,16 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Capacity Used</p>
             <div className="flex items-center gap-2">
               <span className="text-2xl font-bold text-gray-900 dark:text-white">
-                {sprint.totalStoryPoints} / {sprint.capacity}
+                {sprint.totalStoryPoints} / {sprint.sprint_capacity}
               </span>
               <div className="flex-1 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                 <div 
                   className="bg-purple-600 h-2 rounded-full" 
-                  style={{ width: `${calculateProgress(sprint.totalStoryPoints, sprint.capacity)}%` }}
+                  style={{ width: `${calculateProgress(sprint.totalStoryPoints, sprint.sprint_capacity)}%` }}
                 ></div>
               </div>
               <span className="text-sm text-gray-600 dark:text-gray-400">
-                {calculateProgress(sprint.totalStoryPoints, sprint.capacity)}%
+                {calculateProgress(sprint.totalStoryPoints, sprint.sprint_capacity)}%
               </span>
             </div>
           </div>
@@ -1380,14 +2219,13 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
       <div className="border-b border-gray-200 dark:border-gray-700">
         <nav className="-mb-px flex space-x-8">
           {[
-            { id: 'overview', label: 'Overview', icon: <BarChart3 className="w-4 h-4" /> },
             { id: 'backlog', label: 'Sprint Backlog', icon: <FileText className="w-4 h-4" /> },
             { id: 'burndown', label: 'Burndown Chart', icon: <TrendingUp className="w-4 h-4" /> },
             { id: 'team', label: 'Team', icon: <Users className="w-4 h-4" /> }
           ].map((tab) => (
             <button
               key={tab.id}
-              onClick={() => setActiveTab(tab.id as any)}
+              onClick={() => setActiveTab(tab.id as 'backlog' | 'burndown' | 'team')}
               className={`flex items-center gap-2 py-2 px-1 border-b-2 font-medium text-sm ${
                 activeTab === tab.id
                   ? 'border-blue-500 text-blue-600 dark:text-blue-400'
@@ -1403,39 +2241,6 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
 
       {/* Tab Content */}
       <div className="space-y-6">
-        {activeTab === 'overview' && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Sprint Goal */}
-            <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Sprint Goal</h3>
-              <p className="text-gray-600 dark:text-gray-400">{sprint.goal}</p>
-            </div>
-
-            {/* Key Metrics */}
-            <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Key Metrics</h3>
-              <div className="space-y-4">
-                <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">Stories Completed</span>
-                  <span className="font-medium text-gray-900 dark:text-white">{sprint.completedStories} / {sprint.totalStories}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">Story Points Completed</span>
-                  <span className="font-medium text-gray-900 dark:text-white">{sprint.completedStoryPoints} / {sprint.totalStoryPoints}</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">Team Velocity</span>
-                  <span className="font-medium text-gray-900 dark:text-white">{sprint.velocity} pts</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-gray-600 dark:text-gray-400">Sprint Duration</span>
-                  <span className="font-medium text-gray-900 dark:text-white">14 days</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
         {activeTab === 'backlog' && (
           <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
             <div className="p-6 border-b border-gray-200 dark:border-gray-700">
@@ -1461,11 +2266,11 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
             </div>
             <div className="p-6">
               <div className="space-y-4">
-                {sprint.stories.map((story) => (
+                {sprint.stories?.map((story) => (
                   <div 
                     key={story.id} 
                     className={`border rounded-lg p-4 hover:shadow-md transition-all ${
-                      recentlyAddedStories.has(story.id)
+                      recentlyAddedStories.has(story.id.toString())
                         ? 'border-green-500 bg-green-50 dark:bg-green-900/20 shadow-md animate-pulse'
                         : 'border-gray-200 dark:border-gray-700'
                     }`}
@@ -1482,20 +2287,27 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                           </span>
                         </div>
                         <p className="text-sm text-gray-600 dark:text-gray-400 mb-2">
-                          <span className="font-medium">As a</span> {story.asA}, <span className="font-medium">I want</span> {story.iWant}, <span className="font-medium">so that</span> {story.soThat}
+                          {story.description}
                         </p>
                         <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
                           <span className="flex items-center gap-1">
                             <Target className="w-3 h-3" />
-                            {story.storyPoints} pts
+                            {story.story_point} pts
                           </span>
-                          {story.assignee && (
+                          {story.label && (
                             <span className="flex items-center gap-1">
                               <User className="w-3 h-3" />
-                              {story.assignee}
+                              {story.label}
                             </span>
                           )}
                         </div>
+                      </div>
+                      <div className="flex flex-wrap gap-1 mb-3">
+                        {story.label && story.label.split(',').map((label, index) => (
+                          <span key={index} className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-xs rounded">
+                            {label.trim()}
+                          </span>
+                        ))}
                       </div>
                       <div className="flex items-center gap-2 ml-4">
                         <button
@@ -1514,38 +2326,56 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                         </button>
                       </div>
                     </div>
-                    <div className="flex flex-wrap gap-1 mb-3">
-                      {story.labels.map((label, index) => (
-                        <span key={index} className="px-2 py-1 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400 text-xs rounded">
-                          {label}
-                        </span>
-                      ))}
-                    </div>
                     
                     {/* Tasks Section */}
                     {(() => {
-                      const storyTasks = getTasksForStory(story.id);
+                      const storyTasks = getTasksForStory(story.id.toString());
                       return storyTasks.length > 0 ? (
                         <div className="mt-4 pt-3 border-t border-gray-100 dark:border-gray-700">
                           <div className="flex items-center justify-between mb-2">
                             <h5 className="text-sm font-medium text-gray-700 dark:text-gray-300">Tasks ({storyTasks.length})</h5>
                             <button
-                              onClick={() => openCreateTaskModal(story)}
+                              onClick={() => {
+                                // Convert ProductBacklogItem to BacklogItem for the modal
+                                const backlogItem: BacklogItem = {
+                                  id: story.id,
+                                  title: story.title,
+                                  description: story.description,
+                                  status: BacklogStatus.TODO,
+                                  story_point: story.story_point,
+                                  priority: story.priority,
+                                  label: story.label,
+                                  item_type: story.item_type,
+                                  project_id: story.project_id,
+                                  sprint_id: undefined,
+                                  created_at: story.created_at,
+                                  updated_at: story.updated_at,
+                                  acceptance_criteria: []
+                                };
+                                openCreateTaskModal(backlogItem);
+                              }}
                               className="text-xs text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 flex items-center gap-1"
                             >
-                              <Plus className="w-3 h-3" />
+                              <Plus className="w-4 h-4" />
                               Add Task
                             </button>
                           </div>
                           <div className="space-y-2">
-                            {storyTasks.map((task) => (
+                            {storyTasks.map((task: Task) => (
                               <div key={task.id} className="bg-gray-50 dark:bg-gray-700 rounded-md p-3">
                                 <div className="flex items-start justify-between mb-1">
                                   <h6 className="text-sm font-medium text-gray-900 dark:text-white">{task.title}</h6>
                                   <div className="flex items-center gap-2">
                                     <span className={`px-2 py-1 rounded text-xs font-medium ${getTaskStatusColor(task.status)}`}>
-                                      {task.status.replace('-', ' ').toUpperCase()}
+                                      {task.status.replace('_', ' ').toUpperCase()}
                                     </span>
+                                    <button
+                                      onClick={() => openEditTaskModal(task)}
+                                      className="text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 p-1 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                                      title="Edit task"
+                                    >
+                                      <Edit2 className="w-3 h-3" />
+                                    </button>
                                     <button
                                       onClick={() => confirmDeleteTask(task)}
                                       className="text-gray-400 hover:text-red-600 dark:hover:text-red-400 p-1 rounded hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
@@ -1564,7 +2394,7 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                                       <div className="flex items-center gap-1 flex-wrap">
                                         <User className="w-3 h-3" />
                                         <div className="flex flex-wrap gap-1">
-                                          {task.assignees.map((assignee, idx) => (
+                                          {task.assignees.map((assignee: string, idx: number) => (
                                             <span key={assignee} className="inline-flex items-center">
                                               {assignee}
                                               {idx < task.assignees.length - 1 && <span className="ml-1 mr-1">,</span>}
@@ -1584,7 +2414,25 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                       ) : (
                         <div className="mt-3 pt-3 border-t border-gray-100 dark:border-gray-700">
                           <button
-                            onClick={() => openCreateTaskModal(story)}
+                            onClick={() => {
+                              // Convert ProductBacklogItem to BacklogItem for the modal
+                              const backlogItem: BacklogItem = {
+                                id: story.id,
+                                title: story.title,
+                                description: story.description,
+                                status: BacklogStatus.TODO,
+                                story_point: story.story_point,
+                                priority: story.priority,
+                                label: story.label,
+                                item_type: story.item_type,
+                                project_id: story.project_id,
+                                sprint_id: undefined,
+                                created_at: story.created_at,
+                                updated_at: story.updated_at,
+                                acceptance_criteria: []
+                              };
+                              openCreateTaskModal(backlogItem);
+                            }}
                             className="w-full text-sm text-gray-500 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 py-2 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg hover:border-blue-300 dark:hover:border-blue-500 transition-colors flex items-center justify-center gap-2"
                           >
                             <Plus className="w-4 h-4" />
@@ -1593,6 +2441,58 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                         </div>
                       );
                     })()}
+                    <div className="flex items-center gap-2 ml-4">
+                      <button
+                        onClick={() => {
+                          // Convert ProductBacklogItem to BacklogItem for the modal
+                          const backlogItem: BacklogItem = {
+                            id: story.id,
+                            title: story.title,
+                            description: story.description,
+                            status: BacklogStatus.TODO,
+                            story_point: story.story_point,
+                            priority: story.priority,
+                            label: story.label,
+                            item_type: story.item_type,
+                            project_id: story.project_id,
+                            sprint_id: undefined,
+                            created_at: story.created_at,
+                            updated_at: story.updated_at,
+                            acceptance_criteria: []
+                          };
+                          openCreateTaskModal(backlogItem);
+                        }}
+                        className="text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 p-2 rounded-lg hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                        title="Create task"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                      <button
+                        onClick={() => {
+                          // Convert ProductBacklogItem to BacklogItem for the modal
+                          const backlogItem: BacklogItem = {
+                            id: story.id,
+                            title: story.title,
+                            description: story.description,
+                            status: BacklogStatus.TODO,
+                            story_point: story.story_point,
+                            priority: story.priority,
+                            label: story.label,
+                            item_type: story.item_type,
+                            project_id: story.project_id,
+                            sprint_id: undefined,
+                            created_at: story.created_at,
+                            updated_at: story.updated_at,
+                            acceptance_criteria: []
+                          };
+                          confirmDeleteStory(backlogItem);
+                        }}
+                        className="text-gray-400 hover:text-red-600 dark:hover:text-red-400 p-2 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                        title="Remove from sprint"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1603,37 +2503,65 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
         {activeTab === 'burndown' && (
           <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Burndown Chart</h3>
-            <div className="h-64 flex items-end justify-between gap-2">
-              {burndownData.map((data, index) => (
-                <div key={index} className="flex-1 flex flex-col items-center">
-                  <div className="w-full h-48 relative flex items-end justify-center">
-                    <div 
-                      className="w-2 bg-blue-500 mr-1" 
-                      style={{ height: `${(data.ideal / 42) * 100}%` }}
-                      title={`Ideal: ${data.ideal}`}
-                    ></div>
-                    <div 
-                      className="w-2 bg-red-500" 
-                      style={{ height: `${(data.actual / 42) * 100}%` }}
-                      title={`Actual: ${data.actual}`}
-                    ></div>
+            {sprint && sprint.stories && sprint.stories.length > 0 ? (
+              <div className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <div className="text-2xl font-bold text-blue-600">{sprint.totalStoryPoints || 0}</div>
+                    <div className="text-sm text-gray-600 dark:text-gray-400">Total Story Points</div>
                   </div>
-                  <span className="text-xs text-gray-600 dark:text-gray-400 mt-2">
-                    {data.day}
-                  </span>
+                  <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <div className="text-2xl font-bold text-green-600">{sprint.completedStoryPoints || 0}</div>
+                    <div className="text-sm text-gray-600 dark:text-gray-400">Completed Points</div>
+                  </div>
+                  <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <div className="text-2xl font-bold text-orange-600">
+                      {(sprint.totalStoryPoints || 0) - (sprint.completedStoryPoints || 0)}
+                    </div>
+                    <div className="text-sm text-gray-600 dark:text-gray-400">Remaining Points</div>
+                  </div>
                 </div>
-              ))}
-            </div>
-            <div className="flex justify-center mt-4 gap-6">
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-blue-500 rounded"></div>
-                <span className="text-sm text-gray-600 dark:text-gray-400">Ideal</span>
+                
+                <div className="h-64 flex items-end justify-between gap-2">
+                  {burndownData.map((data, index) => (
+                    <div key={index} className="flex-1 flex flex-col items-center">
+                      <div className="w-full h-48 relative flex items-end justify-center">
+                        <div 
+                          className="w-2 bg-blue-500 mr-1" 
+                          style={{ height: `${(data.ideal / Math.max(sprint.totalStoryPoints || 1, 1)) * 100}%` }}
+                          title={`Ideal: ${data.ideal}`}
+                        ></div>
+                        <div 
+                          className="w-2 bg-red-500" 
+                          style={{ height: `${(data.actual / Math.max(sprint.totalStoryPoints || 1, 1)) * 100}%` }}
+                          title={`Actual: ${data.actual}`}
+                        ></div>
+                      </div>
+                      <span className="text-xs text-gray-600 dark:text-gray-400 mt-2">
+                        {data.day}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <div className="flex justify-center mt-4 gap-6">
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 bg-blue-500 rounded"></div>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">Ideal</span>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="w-3 h-3 bg-red-500 rounded"></div>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">Actual</span>
+                  </div>
+                </div>
               </div>
-              <div className="flex items-center gap-2">
-                <div className="w-3 h-3 bg-red-500 rounded"></div>
-                <span className="text-sm text-gray-600 dark:text-gray-400">Actual</span>
+            ) : (
+              <div className="text-center py-8">
+                <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <TrendingUp className="w-8 h-8 text-gray-400" />
+                </div>
+                <p className="text-gray-500 dark:text-gray-400">No stories in sprint to display burndown chart</p>
               </div>
-            </div>
+            )}
           </div>
         )}
 
@@ -1641,10 +2569,10 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
           <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Team Members</h3>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {sprint.teamMembers.map((member, index) => {
-                const memberStories = sprint.stories.filter(s => s.assignee === member);
-                const memberPoints = memberStories.reduce((sum, s) => sum + s.storyPoints, 0);
-                const completedPoints = memberStories.filter(s => s.status === 'done').reduce((sum, s) => sum + s.storyPoints, 0);
+              {sprint.teamMembers?.map((member, index) => {
+                const memberStories = (sprint.stories || []).filter(s => s.label && s.label.includes(member));
+                const memberPoints = memberStories.reduce((sum, s) => sum + (s.story_point || 0), 0);
+                const completedPoints = memberStories.filter(s => s.status === BacklogStatus.DONE).reduce((sum, s) => sum + (s.story_point || 0), 0);
                 
                 return (
                   <div key={index} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
@@ -1687,11 +2615,16 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
         onClose={() => setIsAddStoryModalOpen(false)}
         onAddStories={handleAddStories}
         availableStories={availableStories.filter(story => 
-          !sprint.stories.some(sprintStory => sprintStory.id === story.id)
+          !(sprint.stories || []).some(sprintStory => sprintStory.id === story.id)
         )}
-        currentCapacity={sprint.capacity}
-        usedCapacity={sprint.totalStoryPoints}
+        currentCapacity={sprint.sprint_capacity || 0}
+        usedCapacity={sprint.totalStoryPoints || 0}
         projectId={projectId}
+        getTasksForStory={getTasksForStory}
+        openCreateTaskModal={openCreateTaskModal}
+        getTaskStatusColor={getTaskStatusColor}
+        confirmDeleteTask={confirmDeleteTask}
+        confirmDeleteStory={confirmDeleteStory}
       />
 
       {/* Edit Sprint Modal */}
@@ -1711,9 +2644,23 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
             setSelectedStoryForTask(null);
           }}
           onSubmit={handleCreateTask}
-          storyId={selectedStoryForTask.id}
+          storyId={selectedStoryForTask.id.toString()}
           storyTitle={selectedStoryForTask.title}
-          teamMembers={sprint.teamMembers}
+          teamMembers={sprint.teamMembers || []}
+        />
+      )}
+
+      {/* Edit Task Modal */}
+      {selectedTaskForEdit && (
+        <EditTaskModal
+          isOpen={isEditTaskModalOpen}
+          onClose={() => {
+            setIsEditTaskModalOpen(false);
+            setSelectedTaskForEdit(null);
+          }}
+          onSubmit={handleUpdateTask}
+          task={selectedTaskForEdit}
+          teamMembers={sprint.teamMembers || []}
         />
       )}
 
@@ -1739,7 +2686,7 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                 <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3">
                   <div className="flex items-center justify-between text-sm">
                     <span className="text-gray-600 dark:text-gray-400">Story Points:</span>
-                    <span className="font-medium text-gray-900 dark:text-white">{storyToDelete.storyPoints} pts</span>
+                    <span className="font-medium text-gray-900 dark:text-white">{storyToDelete.story_point} pts</span>
                   </div>
                   <div className="flex items-center justify-between text-sm mt-1">
                     <span className="text-gray-600 dark:text-gray-400">Status:</span>
@@ -1796,7 +2743,7 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                   <div className="flex items-center justify-between text-sm mb-2">
                     <span className="text-gray-600 dark:text-gray-400">Status:</span>
                     <span className={`px-2 py-1 rounded text-xs font-medium ${getTaskStatusColor(taskToDelete.status)}`}>
-                      {taskToDelete.status.replace('-', ' ').toUpperCase()}
+                      {taskToDelete.status.replace('_', ' ').toUpperCase()}
                     </span>
                   </div>
                   {taskToDelete.description && (
@@ -1809,7 +2756,7 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                     <div className="flex items-center justify-between text-sm mt-2">
                       <span className="text-gray-600 dark:text-gray-400">Assignees:</span>
                       <div className="flex flex-wrap gap-1">
-                        {taskToDelete.assignees.map((assignee, idx) => (
+                        {taskToDelete.assignees.map((assignee: string, idx: number) => (
                           <span key={assignee} className="text-gray-900 dark:text-white">
                             {assignee}
                             {idx < taskToDelete.assignees.length - 1 && ', '}

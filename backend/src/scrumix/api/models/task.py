@@ -35,11 +35,13 @@ class Task(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     
-    # Foreign keys to sprint 
+    # Foreign keys to sprint and backlog
     sprint_id = Column(Integer, ForeignKey("sprints.id"), nullable=False, index=True)
+    backlog_id = Column(Integer, ForeignKey("backlogs.id"), nullable=False, index=True)
 
-    # Relationship to sprint
+    # Relationships
     sprint = relationship("Sprint", back_populates="tasks")
+    backlog = relationship("Backlog", back_populates="tasks")
     user_tasks = relationship("UserTask", back_populates="task", cascade="all, delete-orphan")
     users = relationship("User", secondary="user_task", back_populates="tasks", overlaps="user_tasks")
     tag_tasks = relationship("TagTask", back_populates="task", cascade="all, delete-orphan")

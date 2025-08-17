@@ -181,6 +181,8 @@ export interface ApiBacklog {
   path: string;
   root_id: number;
   acceptance_criteria: ApiAcceptanceCriteria[];
+  label?: string;
+  assigned_to_id?: number;
 }
 
 export enum BacklogStatus {

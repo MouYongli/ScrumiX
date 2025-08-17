@@ -353,11 +353,14 @@ export const api = {
   sprints: {
     getAll: () => jsonFetch<ApiSprint[]>('/api/v1/sprints/'),
     getByProject: (project_id: number) => jsonFetch<ApiSprint[]>(`/api/v1/sprints/?project_id=${project_id}`),
+    getById: (id: number) => jsonFetch<ApiSprint>(`/api/v1/sprints/${id}`),
     create: (data: {
       sprint_name: string;
       sprint_goal?: string;
       start_date: string;
       end_date: string;
+      status?: string;
+      sprint_capacity?: number;
       project_id: number;
     }) => 
       jsonFetch<ApiSprint>('/api/v1/sprints/', {
@@ -365,6 +368,125 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       }),
+    
+    update: (id: number, data: {
+      sprint_name?: string;
+      sprint_goal?: string;
+      start_date?: string;
+      end_date?: string;
+      status?: string;
+      sprint_capacity?: number;
+    }) => 
+      jsonFetch<ApiSprint>(`/api/v1/sprints/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+    
+    delete: (id: number) => jsonFetch<void>(`/api/v1/sprints/${id}`, {
+      method: 'DELETE',
+    }),
+    
+    start: (id: number) => jsonFetch<ApiSprint>(`/api/v1/sprints/${id}/start`, {
+      method: 'POST',
+    }),
+    
+    close: (id: number) => jsonFetch<ApiSprint>(`/api/v1/sprints/${id}/close`, {
+      method: 'POST',
+    }),
+    
+    getByStatus: (status: string, params?: { skip?: number; limit?: number }) => {
+      const searchParams = new URLSearchParams();
+      if (params?.skip) searchParams.append('skip', params.skip.toString());
+      if (params?.limit) searchParams.append('limit', params.limit.toString());
+      return jsonFetch<ApiSprint[]>(`/api/v1/sprints/status/${status}?${searchParams.toString()}`);
+    },
+    
+    getActive: (params?: { skip?: number; limit?: number }) => {
+      const searchParams = new URLSearchParams();
+      if (params?.skip) searchParams.append('skip', params.skip.toString());
+      if (params?.limit) searchParams.append('limit', params.limit.toString());
+      return jsonFetch<ApiSprint[]>(`/api/v1/sprints/active/current?${searchParams.toString()}`);
+    },
+    
+    getUpcoming: (days_ahead: number = 30, params?: { skip?: number; limit?: number }) => {
+      const searchParams = new URLSearchParams();
+      searchParams.append('days_ahead', days_ahead.toString());
+      if (params?.skip) searchParams.append('skip', params.skip.toString());
+      if (params?.limit) searchParams.append('limit', params.limit.toString());
+      return jsonFetch<ApiSprint[]>(`/api/v1/sprints/upcoming/scheduled?${searchParams.toString()}`);
+    },
+    
+    getByDateRange: (start_date: Date, end_date: Date, params?: { skip?: number; limit?: number }) => {
+      const searchParams = new URLSearchParams();
+      searchParams.append('start_date', start_date.toISOString());
+      searchParams.append('end_date', end_date.toISOString());
+      if (params?.skip) searchParams.append('skip', params.skip.toString());
+      if (params?.limit) searchParams.append('limit', params.limit.toString());
+      return jsonFetch<ApiSprint[]>(`/api/v1/sprints/range/dates?${searchParams.toString()}`);
+    },
+    
+    getStatistics: () => jsonFetch<any>('/api/v1/sprints/statistics/overview'),
+    
+    // Sprint Backlog Management
+    getSprintBacklog: (sprintId: number, params?: { 
+      skip?: number; 
+      limit?: number;
+      include_acceptance_criteria?: boolean;
+    }) => {
+      const searchParams = new URLSearchParams();
+      if (params?.skip) searchParams.append('skip', params.skip.toString());
+      if (params?.limit) searchParams.append('limit', params.limit.toString());
+      if (params?.include_acceptance_criteria) searchParams.append('include_acceptance_criteria', params.include_acceptance_criteria.toString());
+      return jsonFetch<any[]>(`/api/v1/sprints/${sprintId}/backlog?${searchParams.toString()}`);
+    },
+    
+    getAvailableBacklogItems: (sprintId: number, projectId: number, params?: { 
+      skip?: number; 
+      limit?: number;
+      item_type?: string;
+      include_acceptance_criteria?: boolean;
+    }) => {
+      const searchParams = new URLSearchParams();
+      searchParams.append('project_id', projectId.toString());
+      if (params?.skip) searchParams.append('skip', params.skip.toString());
+      if (params?.limit) searchParams.append('limit', params.limit.toString());
+      if (params?.item_type) searchParams.append('item_type', params.item_type);
+      if (params?.include_acceptance_criteria) searchParams.append('include_acceptance_criteria', params.include_acceptance_criteria.toString());
+      return jsonFetch<any[]>(`/api/v1/sprints/${sprintId}/backlog/available?${searchParams.toString()}`);
+    },
+    
+    addBacklogItemToSprint: (sprintId: number, backlogId: number) => 
+      jsonFetch<any>(`/api/v1/sprints/${sprintId}/backlog/${backlogId}`, {
+        method: 'POST',
+      }),
+    
+    removeBacklogItemFromSprint: (sprintId: number, backlogId: number) => 
+      jsonFetch<any>(`/api/v1/sprints/${sprintId}/backlog/${backlogId}`, {
+        method: 'DELETE',
+      }),
+    
+    createTaskForBacklogItem: (sprintId: number, backlogId: number, taskData: any) => 
+      jsonFetch<any>(`/api/v1/sprints/${sprintId}/backlog/${backlogId}/tasks`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(taskData),
+      }),
+    
+    updateTask: (sprintId: number, taskId: number, taskData: any) => 
+      jsonFetch<any>(`/api/v1/sprints/${sprintId}/tasks/${taskId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(taskData),
+      }),
+    
+    deleteTask: (sprintId: number, taskId: number) => 
+      jsonFetch<any>(`/api/v1/sprints/${sprintId}/tasks/${taskId}`, {
+        method: 'DELETE',
+      }),
+    
+    getSprintStatistics: (sprintId: number) => 
+      jsonFetch<any>(`/api/v1/sprints/${sprintId}/statistics`),
   },
 
   backlogs: {
@@ -377,6 +499,7 @@ export const api = {
       search?: string;
       skip?: number;
       limit?: number;
+      sprint_id?: number;
     }) => {
       const searchParams = new URLSearchParams();
       if (params?.project_id) searchParams.append('project_id', params.project_id.toString());
@@ -387,6 +510,7 @@ export const api = {
       if (params?.search) searchParams.append('search', params.search);
       if (params?.skip) searchParams.append('skip', params.skip.toString());
       if (params?.limit) searchParams.append('limit', params.limit.toString());
+      if (params?.sprint_id) searchParams.append('sprint_id', params.sprint_id.toString());
       
       return jsonFetch<ApiBacklog[]>(`/api/v1/backlogs/?${searchParams.toString()}`);
     },

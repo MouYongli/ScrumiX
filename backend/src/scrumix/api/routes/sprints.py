@@ -16,6 +16,9 @@ from scrumix.api.schemas.sprint import (
 )
 from scrumix.api.models.sprint import SprintStatus
 from scrumix.api.crud.sprint import sprint_crud
+from scrumix.api.crud.sprint_backlog import sprint_backlog_crud
+from scrumix.api.models.backlog import Backlog
+from scrumix.api.models.task import Task
 
 router = APIRouter()
 
@@ -240,6 +243,298 @@ def get_sprint_statistics(
     """
     try:
         stats = sprint_crud.get_sprint_statistics(db)
+        return stats
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching sprint statistics: {str(e)}")
+
+# Sprint Backlog Management Endpoints
+
+@router.get("/{sprint_id}/backlog", response_model=List[dict])
+def get_sprint_backlog(
+    sprint_id: int,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(1000, ge=1, le=1000),
+    db: Session = Depends(get_db),
+    current_user: UserInDB = Depends(get_current_user)
+):
+    """
+    Get all backlog items assigned to a specific sprint
+    """
+    try:
+        backlog_items = sprint_backlog_crud.get_sprint_backlog_items(
+            db, sprint_id, skip=skip, limit=limit
+        )
+        
+        # Convert to response format with tasks
+        result = []
+        for item in backlog_items:
+            item_data = {
+                "id": item.id,
+                "title": item.title,
+                "description": item.description,
+                "status": item.status.value,
+                "story_point": item.story_point,
+                "priority": item.priority.value,
+                "label": item.label,
+                "item_type": item.item_type.value,
+                "project_id": item.project_id,
+                "sprint_id": item.sprint_id,
+                "created_at": item.created_at,
+                "updated_at": item.updated_at,
+                "acceptance_criteria": [
+                    {
+                        "id": ac.id,
+                        "title": ac.title,
+                        "description": ac.description,
+                        "is_met": ac.is_met,
+                        "created_at": ac.created_at,
+                        "updated_at": ac.updated_at
+                    }
+                    for ac in item.acceptance_criteria
+                ],
+                "tasks": [
+                    {
+                        "id": task.id,
+                        "title": task.title,
+                        "description": task.description,
+                        "status": task.status.value,
+                        "priority": task.priority.value,
+                        "story_point": task.story_point,
+                        "created_at": task.created_at,
+                        "updated_at": task.updated_at,
+                        "assignees": [
+                            {
+                                "id": ut.user.id,
+                                "username": ut.user.username,
+                                "full_name": ut.user.full_name
+                            }
+                            for ut in task.user_tasks
+                        ]
+                    }
+                    for task in item.tasks
+                ]
+            }
+            result.append(item_data)
+        
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching sprint backlog: {str(e)}")
+
+@router.get("/{sprint_id}/backlog/available", response_model=List[dict])
+def get_available_backlog_items(
+    sprint_id: int,
+    project_id: int = Query(..., gt=0),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(1000, ge=1, le=1000),
+    db: Session = Depends(get_db),
+    current_user: UserInDB = Depends(get_current_user)
+):
+    """
+    Get backlog items that are not assigned to any sprint (available for selection)
+    """
+    try:
+        available_items = sprint_backlog_crud.get_available_backlog_items(
+            db, project_id, None, skip=skip, limit=limit
+        )
+        
+        # Convert to response format
+        result = []
+        for item in available_items:
+            item_data = {
+                "id": item.id,
+                "title": item.title,
+                "description": item.description,
+                "status": item.status.value,
+                "story_point": item.story_point,
+                "priority": item.priority.value,
+                "label": item.label,
+                "item_type": item.item_type.value,
+                "project_id": item.project_id,
+                "created_at": item.created_at,
+                "updated_at": item.updated_at,
+                "acceptance_criteria": [
+                    {
+                        "id": ac.id,
+                        "title": ac.title,
+                        "description": ac.description,
+                        "is_met": ac.is_met,
+                        "created_at": ac.created_at,
+                        "updated_at": ac.updated_at
+                    }
+                    for ac in item.acceptance_criteria
+                ]
+            }
+            result.append(item_data)
+        
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching available backlog items: {str(e)}")
+
+@router.post("/{sprint_id}/backlog/{backlog_id}", response_model=dict)
+def add_backlog_item_to_sprint(
+    sprint_id: int,
+    backlog_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserInDB = Depends(get_current_user)
+):
+    """
+    Add a backlog item to a sprint
+    """
+    try:
+        backlog_item = sprint_backlog_crud.add_backlog_item_to_sprint(
+            db, sprint_id, backlog_id
+        )
+        if not backlog_item:
+            raise HTTPException(status_code=404, detail="Backlog item not found")
+        
+        return {
+            "message": "Backlog item added to sprint successfully",
+            "backlog_item_id": backlog_item.id,
+            "sprint_id": sprint_id
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error adding backlog item to sprint: {str(e)}")
+
+@router.delete("/{sprint_id}/backlog/{backlog_id}")
+def remove_backlog_item_from_sprint(
+    sprint_id: int,
+    backlog_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserInDB = Depends(get_current_user)
+):
+    """
+    Remove a backlog item from a sprint (and delete associated tasks)
+    """
+    try:
+        success = sprint_backlog_crud.remove_backlog_item_from_sprint(
+            db, sprint_id, backlog_id
+        )
+        if not success:
+            raise HTTPException(status_code=404, detail="Backlog item not found in sprint")
+        
+        return {
+            "message": "Backlog item removed from sprint successfully",
+            "backlog_item_id": backlog_id,
+            "sprint_id": sprint_id
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error removing backlog item from sprint: {str(e)}")
+
+@router.post("/{sprint_id}/backlog/{backlog_id}/tasks", response_model=dict)
+def create_task_for_backlog_item(
+    sprint_id: int,
+    backlog_id: int,
+    task_data: dict,
+    db: Session = Depends(get_db),
+    current_user: UserInDB = Depends(get_current_user)
+):
+    """
+    Create a new task for a backlog item in a sprint
+    """
+    try:
+        # Validate that the backlog item is in this sprint
+        backlog_item = db.query(Backlog).filter(
+            Backlog.id == backlog_id,
+            Backlog.sprint_id == sprint_id
+        ).first()
+        
+        if not backlog_item:
+            raise HTTPException(status_code=404, detail="Backlog item not found in sprint")
+        
+        # Create task
+        task = sprint_backlog_crud.create_task_for_backlog_item(
+            db, task_data, backlog_id, sprint_id
+        )
+        
+        return {
+            "message": "Task created successfully",
+            "task_id": task.id,
+            "backlog_id": backlog_id,
+            "sprint_id": sprint_id
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error creating task: {str(e)}")
+
+@router.put("/{sprint_id}/tasks/{task_id}", response_model=dict)
+def update_task(
+    sprint_id: int,
+    task_id: int,
+    task_data: dict,
+    db: Session = Depends(get_db),
+    current_user: UserInDB = Depends(get_current_user)
+):
+    """
+    Update an existing task in a sprint
+    """
+    try:
+        # Validate that the task belongs to this sprint
+        task = db.query(Task).filter(
+            Task.id == task_id,
+            Task.sprint_id == sprint_id
+        ).first()
+        
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found in sprint")
+        
+        # Update task
+        updated_task = sprint_backlog_crud.update_task(db, task_id, task_data)
+        if not updated_task:
+            raise HTTPException(status_code=404, detail="Task not found")
+        
+        return {
+            "message": "Task updated successfully",
+            "task_id": task_id,
+            "sprint_id": sprint_id
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating task: {str(e)}")
+
+@router.delete("/{sprint_id}/tasks/{task_id}")
+def delete_task(
+    sprint_id: int,
+    task_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserInDB = Depends(get_current_user)
+):
+    """
+    Delete a task from a sprint
+    """
+    try:
+        # Validate that the task belongs to this sprint
+        task = db.query(Task).filter(
+            Task.id == task_id,
+            Task.sprint_id == sprint_id
+        ).first()
+        
+        if not task:
+            raise HTTPException(status_code=404, detail="Task not found in sprint")
+        
+        # Delete task
+        success = sprint_backlog_crud.delete_task(db, task_id)
+        if not success:
+            raise HTTPException(status_code=404, detail="Task not found")
+        
+        return {
+            "message": "Task deleted successfully",
+            "task_id": task_id,
+            "sprint_id": sprint_id
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error deleting task: {str(e)}")
+
+@router.get("/{sprint_id}/statistics")
+def get_sprint_backlog_statistics(
+    sprint_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserInDB = Depends(get_current_user)
+):
+    """
+    Get detailed statistics for a specific sprint
+    """
+    try:
+        stats = sprint_backlog_crud.get_sprint_statistics(db, sprint_id)
         return stats
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching sprint statistics: {str(e)}") 
