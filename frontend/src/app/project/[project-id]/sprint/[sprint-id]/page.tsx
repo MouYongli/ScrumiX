@@ -21,7 +21,7 @@ interface Task {
   sprint_id: number;
   created_at: string;
   updated_at: string;
-  assignees: number[];
+  assignees: number[]; // This should match what the backend returns
 }
 
 interface BacklogItem {
@@ -118,7 +118,8 @@ const AddStoryModal: React.FC<{
   getTaskStatusColor: (status: string) => string;
   confirmDeleteTask: (task: Task) => void;
   confirmDeleteStory: (story: BacklogItem) => void;
-}> = ({ isOpen, onClose, onAddStories, availableStories, currentCapacity, usedCapacity, projectId, getTasksForStory, openCreateTaskModal, getTaskStatusColor, confirmDeleteTask, confirmDeleteStory }) => {
+  getUserDisplayName: (userId: number) => string;
+}> = ({ isOpen, onClose, onAddStories, availableStories, currentCapacity, usedCapacity, projectId, getTasksForStory, openCreateTaskModal, getTaskStatusColor, confirmDeleteTask, confirmDeleteStory, getUserDisplayName }) => {
   const [selectedStoryIds, setSelectedStoryIds] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -1663,42 +1664,60 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
         }
 
         if (sprintBacklogResponse.data) {
-          const sprintStories: BacklogItem[] = sprintBacklogResponse.data.map(item => ({
-            id: item.id,
-            title: item.title,
-            description: item.description,
-            status: item.status,
-            story_point: item.story_point,
-            priority: item.priority,
-            label: item.label,
-            item_type: item.item_type,
-            parent_id: item.parent_id,
-            assigned_to_id: item.assigned_to_id,
-            project_id: item.project_id,
-            sprint_id: item.sprint_id,
-            created_at: item.created_at,
-            updated_at: item.updated_at,
-            acceptance_criteria: item.acceptance_criteria?.map((ac: any) => ({
-              id: ac.id,
-              backlog_id: ac.backlog_id,
-              title: ac.title,
-              description: '',
-              is_met: false,
-              created_at: ac.created_at,
-              updated_at: ac.updated_at
-            })) || [],
-            tasks: item.tasks?.map((task: any) => ({
-              id: task.id,
-              title: task.title,
-              description: task.description,
-              status: task.status,
-              priority: task.priority,
-              sprint_id: parseInt(sprintId, 10),
-              created_at: task.created_at,
-              updated_at: task.updated_at,
-              assignees: task.assignees?.map((assignee: any) => assignee.full_name || assignee.username || 'Unknown') || []
-            })) || []
-          }));
+          console.log('Raw sprint backlog response data:', sprintBacklogResponse.data);
+          const sprintStories: BacklogItem[] = sprintBacklogResponse.data.map(item => {
+            console.log('Processing backlog item:', item.title, 'with tasks:', item.tasks);
+            return {
+              id: item.id,
+              title: item.title,
+              description: item.description,
+              status: item.status,
+              story_point: item.story_point,
+              priority: item.priority,
+              label: item.label,
+              item_type: item.item_type,
+              parent_id: item.parent_id,
+              assigned_to_id: item.assigned_to_id,
+              project_id: item.project_id,
+              sprint_id: item.sprint_id,
+              created_at: item.created_at,
+              updated_at: item.updated_at,
+              acceptance_criteria: item.acceptance_criteria?.map((ac: any) => ({
+                id: ac.id,
+                backlog_id: ac.backlog_id,
+                title: ac.title,
+                description: '',
+                is_met: false,
+                created_at: ac.created_at,
+                updated_at: ac.updated_at
+              })) || [],
+              tasks: item.tasks?.map((task: any) => {
+                console.log('Processing task:', task.title, 'with assignees:', task.assignees);
+                console.log('Full task object:', task);
+                
+                // Backend now returns assignees as user objects with {id, username, full_name, email}
+                const mappedAssignees = task.assignees?.map((assignee: any) => {
+                  // Extract user ID from assignee object
+                  const userId = assignee.id;
+                  console.log('Mapping assignee object:', assignee, 'to user ID:', userId);
+                  return userId;
+                }) || [];
+                console.log('Mapped assignees for task:', task.title, ':', mappedAssignees);
+                
+                return {
+                  id: task.id,
+                  title: task.title,
+                  description: task.description,
+                  status: task.status,
+                  priority: task.priority,
+                  sprint_id: parseInt(sprintId, 10),
+                  created_at: task.created_at,
+                  updated_at: task.updated_at,
+                  assignees: mappedAssignees
+                };
+              }) || []
+            };
+          });
 
           setSprint(prevSprint => {
             if (!prevSprint) return prevSprint;
@@ -1764,8 +1783,13 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
 
   // Helper function to get user display name
   const getUserDisplayName = (userId: number) => {
+    console.log('getUserDisplayName called with userId:', userId, 'type:', typeof userId);
+    console.log('Available project users:', projectUsers);
     const user = projectUsers.find(u => u.id === userId);
-    return user ? (user.full_name || user.username || user.email) : 'Unknown User';
+    console.log('Found user for ID', userId, ':', user);
+    const result = user ? (user.full_name || user.username || user.email) : 'Unknown User';
+    console.log('Returning display name:', result);
+    return result;
   };
 
   // Add handler for sprint updates
@@ -1925,22 +1949,36 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
       console.log('Creating task with data:', taskData);
       console.log('Selected story:', selectedStoryForTask);
       
+      const taskPayload = {
+        title: taskData.title,
+        description: taskData.description,
+        status: taskData.status,
+        priority: taskData.priority,
+        assignees: taskData.assignees || []
+      };
+      
+      console.log('Task creation payload:', taskPayload);
+      console.log('taskData.assignees (raw):', taskData.assignees);
+      console.log('Sending assignees to backend:', taskData.assignees);
+      
       const response = await api.sprints.createTaskForBacklogItem(
         parseInt(sprintId, 10),
         selectedStoryForTask.id,
-        {
-          title: taskData.title,
-          description: taskData.description,
-          status: taskData.status,
-          priority: taskData.priority
-        }
+        taskPayload
       );
       
       console.log('Task creation response:', response);
+      console.log('Response data structure:', response.data);
+      console.log('Response status:', response.data?.status);
+      console.log('Response headers:', response.data?.headers);
+      console.log('Response error:', response.error);
       
       if (response.error) {
+        console.error('Task creation failed with error:', response.error);
         throw new Error(response.error);
       }
+      
+      console.log('Task created successfully, response data:', response.data);
       
       // Create the new task object with the response data
       const newTask: Task = {
@@ -1956,7 +1994,6 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
       };
       
       console.log('New task object:', newTask);
-      console.log('Response data structure:', response.data);
       
       // Update the sprint state to include the new task
       if (sprint) {
@@ -2009,20 +2046,28 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
     if (!selectedTaskForEdit) return;
     
     try {
+      const taskUpdatePayload = {
+        title: taskData.title,
+        description: taskData.description,
+        status: taskData.status,
+        priority: taskData.priority,
+        assignees: taskData.assignees || []
+      };
+      
+      console.log('Task update payload:', taskUpdatePayload);
+      
       const response = await api.sprints.updateTask(
         parseInt(sprintId, 10),
         selectedTaskForEdit.id,
-        {
-          title: taskData.title,
-          description: taskData.description,
-          status: taskData.status,
-          priority: taskData.priority
-        }
+        taskUpdatePayload
       );
       
       if (response.error) {
+        console.error('Task update failed with error:', response.error);
         throw new Error(response.error);
       }
+      
+      console.log('Task updated successfully, response data:', response.data);
       
       // Update the task in the sprint state
       if (sprint) {
@@ -2664,6 +2709,7 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
         getTaskStatusColor={getTaskStatusColor}
         confirmDeleteTask={confirmDeleteTask}
         confirmDeleteStory={confirmDeleteStory}
+        getUserDisplayName={getUserDisplayName}
       />
 
       {/* Edit Sprint Modal */}

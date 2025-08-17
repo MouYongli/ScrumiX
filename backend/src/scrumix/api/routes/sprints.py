@@ -356,7 +356,8 @@ def get_sprint_backlog(
                             {
                                 "id": ut.user.id,
                                 "username": ut.user.username,
-                                "full_name": ut.user.full_name
+                                "full_name": ut.user.full_name,
+                                "email": ut.user.email
                             }
                             for ut in task.user_tasks
                         ]

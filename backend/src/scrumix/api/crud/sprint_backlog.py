@@ -8,6 +8,7 @@ from sqlalchemy import and_
 from scrumix.api.models.backlog import Backlog
 from scrumix.api.models.task import Task
 from scrumix.api.models.sprint import Sprint
+from .user_task import user_task_crud
 
 
 class SprintBacklogCRUD:
@@ -138,6 +139,10 @@ class SprintBacklogCRUD:
         sprint_id: int
     ) -> Task:
         """Create a new task for a backlog item in a sprint"""
+        # Extract assignees from task_data if present
+        assignees = task_data.pop('assignees', [])
+        
+        # Create task without assignees field
         task = Task(
             **task_data,
             backlog_id=backlog_id,
@@ -145,6 +150,12 @@ class SprintBacklogCRUD:
         )
         
         db.add(task)
+        db.flush()  # Get task ID without committing
+        
+        # Handle assignees if provided
+        if assignees:
+            user_task_crud.set_task_assignees(db, task.id, assignees)
+        
         db.commit()
         db.refresh(task)
         return task
@@ -160,9 +171,17 @@ class SprintBacklogCRUD:
         if not task:
             return None
         
+        # Extract assignees from task_data if present
+        assignees = task_data.pop('assignees', None)
+        
+        # Update task fields (excluding assignees)
         for field, value in task_data.items():
             if hasattr(task, field):
                 setattr(task, field, value)
+        
+        # Handle assignees update if provided
+        if assignees is not None:
+            user_task_crud.set_task_assignees(db, task_id, assignees)
         
         db.commit()
         db.refresh(task)

@@ -12,6 +12,13 @@ export interface ApiUser {
   updated_at?: string;
 }
 
+export interface ApiTaskAssignee {
+  id: number;
+  username: string;
+  full_name: string;
+  email: string;
+}
+
 export interface ApiTask {
   id: number;
   title: string;
@@ -21,8 +28,8 @@ export interface ApiTask {
   sprint_id: number;
   created_at: string;
   updated_at: string;
-  // Note: Backend relationships might be populated differently
-  assignedUsers?: ApiUser[];
+  // Backend returns assignees as user objects
+  assignees: ApiTaskAssignee[];
 }
 
 export interface ApiMeeting {
