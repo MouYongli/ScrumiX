@@ -50,10 +50,15 @@ const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
           sprint.projectId === parseInt(projectId)
         ) || [];
         
-        // Find current sprint
-        const currentSprint = projectSprints
-          .filter(sprint => new Date(sprint.endDate) >= new Date())
-          .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime())[0];
+        // Find current sprint - prioritize active status over date-based logic
+        let currentSprint = projectSprints.find(sprint => sprint.status === 'active');
+        
+        // If no active sprint, fall back to date-based logic for planning sprints
+        if (!currentSprint) {
+          currentSprint = projectSprints
+            .filter(sprint => sprint.status === 'planning' && new Date(sprint.endDate) >= new Date())
+            .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime())[0];
+        }
 
         // Calculate project progress by getting tasks from project sprints
         const projectSprintIds = projectSprints.map(sprint => sprint.id);
@@ -204,10 +209,27 @@ const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
                     <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(project.status)}`}>
                       {getStatusText(project.status)}
                     </span>
-                    <span className="text-xs text-gray-500 dark:text-gray-400">
-                      {project.currentSprint || 'No Active Sprint'}
-                    </span>
                   </div>
+                  
+                  {/* Enhanced Current Sprint Display */}
+                  {project.currentSprint && (
+                    <div className="mb-3 p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                      <div className="flex items-center gap-2 mb-1">
+                        <Zap className="w-3 h-3 text-blue-600 dark:text-blue-400" />
+                        <span className="text-xs font-medium text-blue-800 dark:text-blue-300">Current Sprint</span>
+                      </div>
+                      <div className="text-xs text-blue-700 dark:text-blue-400 font-medium truncate mb-2">
+                        {project.currentSprint}
+                      </div>
+                      <Link
+                        href={`/project/${projectId}/sprint`}
+                        className="block w-full text-center text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 bg-blue-100 dark:bg-blue-800/50 hover:bg-blue-200 dark:hover:bg-blue-800 rounded px-2 py-1 transition-colors"
+                      >
+                        View Sprint
+                      </Link>
+                    </div>
+                  )}
+                  
                   <div className="mb-2">
                     <div className="flex justify-between text-xs text-gray-600 dark:text-gray-400 mb-1">
                       <span>Project Progress</span>

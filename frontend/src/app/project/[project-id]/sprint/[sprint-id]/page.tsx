@@ -1405,6 +1405,9 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
     role: string;
   }>>([]);
 
+  // Add project name state
+  const [projectName, setProjectName] = useState<string>('Loading...');
+
   // Add new state for modals
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isAddStoryModalOpen, setIsAddStoryModalOpen] = useState(false);
@@ -1421,7 +1424,7 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
   // Breadcrumb navigation
   const breadcrumbItems = [
     { label: 'Projects', href: '/project', icon: <FolderOpen className="w-4 h-4" /> },
-    { label: 'Project Name', href: `/project/${projectId}/dashboard` },
+    { label: projectName, href: `/project/${projectId}/dashboard` },
     { label: 'Sprints', href: `/project/${projectId}/sprint`, icon: <Zap className="w-4 h-4" /> },
     { label: sprint?.sprint_name || 'Loading...' }
   ];
@@ -1584,6 +1587,17 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
         };
         
         setSprint(convertedSprint);
+
+        // Fetch project data to get the real project name
+        try {
+          const projectResponse = await api.projects.getById(projectIdNum);
+          if (projectResponse.data) {
+            setProjectName(projectResponse.data.name);
+          }
+        } catch (projectError) {
+          console.warn('Failed to fetch project data:', projectError);
+          setProjectName('Project');
+        }
 
         // Fetch backlog items for this project (stories and bugs)
         // Fetch stories and bugs separately since the API expects single item_type values
