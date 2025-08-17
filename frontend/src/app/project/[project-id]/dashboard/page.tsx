@@ -119,10 +119,64 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
   });
   const [draggedItem, setDraggedItem] = useState<any>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
+  const [isUpdatingTask, setIsUpdatingTask] = useState<number | null>(null); // Track which task is being updated
+  const [updateMessage, setUpdateMessage] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [tempDragState, setTempDragState] = useState<{
+    task: any;
+    sourceColumn: string;
+    targetColumn: string;
+  } | null>(null);
   
   // Timeline reference
   const timelineRef = useRef<HTMLDivElement>(null);
   const timelineInstance = useRef<Timeline | null>(null);
+
+  // Helper function to format assignee display based on backend user_task.py structure
+  // This function handles the assignee data structure returned by the backend:
+  // - Backend uses UserTask model to manage task assignments
+  // - get_task_assignee_details() returns: {id, username, full_name, email, role, assigned_at}
+  // - Multiple users can be assigned to a single task
+  // - Priority: full_name > username > email (extracted name) > fallback
+  const getAssigneeDisplay = (assignees: any[]): string => {
+    if (!assignees || assignees.length === 0) {
+      return 'Unassigned';
+    }
+    
+    // Handle backend assignee structure from user_task.py
+    // Backend returns assignees as objects with: {id, username, full_name, email, role, assigned_at}
+    const users = assignees.map(assignee => {
+      if (typeof assignee === 'object') {
+        // Backend provides full user details
+        if (assignee.full_name && assignee.full_name.trim()) {
+          return assignee.full_name;
+        } else if (assignee.username && assignee.username.trim()) {
+          return assignee.username;
+        } else if (assignee.email) {
+          // Extract name from email if no name/username available
+          return assignee.email.split('@')[0];
+        }
+      } else if (typeof assignee === 'number') {
+        // If it's just a user ID, we can't display the name here
+        // This might happen if backend hasn't been updated yet
+        console.warn(`Task has assignee ID ${assignee} but no user details. Backend may need update.`);
+        return `User ${assignee}`;
+      }
+      return 'Unknown User';
+    });
+    
+    // Filter out any undefined or empty names
+    const validUsers = users.filter(name => name && name.trim() !== '');
+    
+    if (validUsers.length === 0) {
+      return 'Unassigned';
+    } else if (validUsers.length === 1) {
+      return validUsers[0];
+    } else if (validUsers.length === 2) {
+      return `${validUsers[0]} & ${validUsers[1]}`;
+    } else {
+      return `${validUsers[0]} +${validUsers.length - 1} more`;
+    }
+  };
 
   // Fetch dashboard data
   useEffect(() => {
@@ -282,7 +336,30 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
         const inProgressTasks = tasksWithAssignees.filter(task => task.status === TaskStatus.IN_PROGRESS);
         const pendingTasks = tasksWithAssignees.filter(task => task.status === TaskStatus.TODO);
         
-        // Prepare kanban data (without story points)
+        // Debug: Log task counts and check for duplicates
+        console.log('Task filtering results:', {
+          total: tasksWithAssignees.length,
+          completed: completedTasks.length,
+          inProgress: inProgressTasks.length,
+          pending: pendingTasks.length
+        });
+        
+        // Check for duplicate task IDs across all statuses
+        const allTaskIds = [
+          ...completedTasks.map(t => t.id),
+          ...inProgressTasks.map(t => t.id),
+          ...pendingTasks.map(t => t.id)
+        ];
+        const uniqueTaskIds = new Set(allTaskIds);
+        if (allTaskIds.length !== uniqueTaskIds.size) {
+          console.warn('Duplicate task IDs detected:', {
+            total: allTaskIds.length,
+            unique: uniqueTaskIds.size,
+            duplicates: allTaskIds.filter((id, index) => allTaskIds.indexOf(id) !== index)
+          });
+        }
+        
+        // Prepare kanban data (without story points) - ensure no duplicates
         const sprintKanbanData = {
           todo: pendingTasks.map(task => ({
             id: task.id,
@@ -304,52 +381,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
           }))
         };
         
-        // Helper function to format assignee display based on backend user_task.py structure
-        // This function handles the assignee data structure returned by the backend:
-        // - Backend uses UserTask model to manage task assignments
-        // - get_task_assignee_details() returns: {id, username, full_name, email, role, assigned_at}
-        // - Multiple users can be assigned to a single task
-        // - Priority: full_name > username > email (extracted name) > fallback
-        function getAssigneeDisplay(assignees: any[]): string {
-          if (!assignees || assignees.length === 0) {
-            return 'Unassigned';
-          }
-          
-          // Handle backend assignee structure from user_task.py
-          // Backend returns assignees as objects with: {id, username, full_name, email, role, assigned_at}
-          const users = assignees.map(assignee => {
-            if (typeof assignee === 'object') {
-              // Backend provides full user details
-              if (assignee.full_name && assignee.full_name.trim()) {
-                return assignee.full_name;
-              } else if (assignee.username && assignee.username.trim()) {
-                return assignee.username;
-              } else if (assignee.email) {
-                // Extract name from email if no name/username available
-                return assignee.email.split('@')[0];
-              }
-            } else if (typeof assignee === 'number') {
-              // If it's just a user ID, we can't display the name here
-              // This might happen if backend hasn't been updated yet
-              console.warn(`Task has assignee ID ${assignee} but no user details. Backend may need update.`);
-              return `User ${assignee}`;
-            }
-            return 'Unknown User';
-          });
-          
-          // Filter out any undefined or empty names
-          const validUsers = users.filter(name => name && name.trim() !== '');
-          
-          if (validUsers.length === 0) {
-            return 'Unassigned';
-          } else if (validUsers.length === 1) {
-            return validUsers[0];
-          } else if (validUsers.length === 2) {
-            return `${validUsers[0]} & ${validUsers[1]}`;
-          } else {
-            return `${validUsers[0]} +${validUsers.length - 1} more`;
-          }
-        }
+
         
                  // Prepare recent activities (simplified - using task updates)
          const recentActivities = tasksWithAssignees
@@ -410,8 +442,15 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
           sprintKanbanData
         });
         
-        // Update kanban data state
-        setKanbanData(sprintKanbanData);
+        // Update kanban data state using synchronization function
+        syncKanbanData(sprintKanbanData);
+        
+        // Debug: Log the final kanban data structure
+        console.log('Final kanban data structure:', {
+          todo: sprintKanbanData.todo.map(t => ({ id: t.id, title: t.title })),
+          inProgress: sprintKanbanData.inProgress.map(t => ({ id: t.id, title: t.title })),
+          done: sprintKanbanData.done.map(t => ({ id: t.id, title: t.title }))
+        });
         
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to fetch dashboard data');
@@ -422,6 +461,211 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
     
     fetchDashboardData();
   }, [projectId]);
+
+  // Function to refresh dashboard data
+  const refreshDashboardData = () => {
+    // Trigger a re-fetch of dashboard data
+    window.location.reload(); // Simple approach for now, could be optimized later
+  };
+
+  // Function to refresh only the kanban data without page reload
+  const refreshKanbanData = async () => {
+    try {
+      console.log('Refreshing kanban data...');
+      
+      // Fetch fresh task data for the current project
+      const tasksResponse = await api.tasks.getAll({ 
+        limit: 100 
+      });
+      
+      if (tasksResponse.error) {
+        console.warn('Failed to refresh tasks, using current data:', tasksResponse.error);
+        return;
+      }
+      
+      const allTasks = tasksResponse.data?.tasks || [];
+      
+      // Filter tasks by project (assuming tasks have project_id field)
+      const tasks = allTasks.filter(task => {
+        return (task as any).project_id === parseInt(projectId) || !(task as any).project_id;
+      });
+      
+      // Re-categorize tasks by status
+      const completedTasks = tasks.filter(task => task.status === TaskStatus.DONE);
+      const inProgressTasks = tasks.filter(task => task.status === TaskStatus.IN_PROGRESS);
+      const pendingTasks = tasks.filter(task => task.status === TaskStatus.TODO);
+      
+      // Create new kanban data
+      const newKanbanData = {
+        todo: pendingTasks.map(task => ({
+          id: task.id,
+          title: task.title,
+          priority: task.priority,
+          assignee: getAssigneeDisplay(task.assignees || [])
+        })),
+        inProgress: inProgressTasks.map(task => ({
+          id: task.id,
+          title: task.title,
+          priority: task.priority,
+          assignee: getAssigneeDisplay(task.assignees || [])
+        })),
+        done: completedTasks.map(task => ({
+          id: task.id,
+          title: task.title,
+          priority: task.priority,
+          assignee: getAssigneeDisplay(task.assignees || [])
+        }))
+      };
+      
+      // Update kanban data state
+      setKanbanData(newKanbanData);
+      
+      // Update dashboard data counts
+      setDashboardData(prev => ({
+        ...prev,
+        tasks: {
+          total: tasks.length,
+          completed: completedTasks.length,
+          inProgress: inProgressTasks.length,
+          pending: pendingTasks.length
+        },
+        sprintKanbanData: newKanbanData
+      }));
+      
+      console.log('Kanban data refreshed successfully:', {
+        total: tasks.length,
+        todo: newKanbanData.todo.length,
+        inProgress: newKanbanData.inProgress.length,
+        done: newKanbanData.done.length
+      });
+      
+    } catch (error) {
+      console.error('Failed to refresh kanban data:', error);
+      // Don't show error to user for background refresh
+    }
+  };
+
+  // Function to refresh specific dashboard metrics without full reload
+  const refreshDashboardMetrics = async () => {
+    try {
+      console.log('Refreshing dashboard metrics...');
+      
+      // Update task counts from current kanban data
+      const totalTasks = kanbanData.todo.length + kanbanData.inProgress.length + kanbanData.done.length;
+      
+      setDashboardData(prev => ({
+        ...prev,
+        tasks: {
+          total: totalTasks,
+          completed: kanbanData.done.length,
+          inProgress: kanbanData.inProgress.length,
+          pending: kanbanData.todo.length
+        }
+      }));
+      
+      console.log('Dashboard metrics refreshed successfully');
+      
+    } catch (error) {
+      console.error('Failed to refresh dashboard metrics:', error);
+    }
+  };
+
+  // Function to synchronize kanban data with dashboard data
+  const syncKanbanData = (dashboardKanbanData: DashboardData['sprintKanbanData']) => {
+    // Validate the data structure first
+    if (!validateKanbanData(dashboardKanbanData)) {
+      console.error('Invalid kanban data structure, skipping synchronization');
+      return;
+    }
+    
+    // Ensure no duplicates exist in the new data
+    const todo = dashboardKanbanData.todo.filter((task, index, self) => 
+      index === self.findIndex(t => t.id === task.id)
+    );
+    const inProgress = dashboardKanbanData.inProgress.filter((task, index, self) => 
+      index === self.findIndex(t => t.id === task.id)
+    );
+    const done = dashboardKanbanData.done.filter((task, index, self) => 
+      index === self.findIndex(t => t.id === task.id)
+    );
+    
+    // Update kanban data with deduplicated data
+    setKanbanData({ todo, inProgress, done });
+    
+    console.log('Kanban data synchronized:', { todo: todo.length, inProgress: inProgress.length, done: done.length });
+  };
+
+  // Function to validate kanban data structure
+  const validateKanbanData = (data: any): boolean => {
+    if (!data || typeof data !== 'object') {
+      console.error('Invalid kanban data structure:', data);
+      return false;
+    }
+    
+    const requiredColumns = ['todo', 'inProgress', 'done'];
+    for (const column of requiredColumns) {
+      if (!Array.isArray(data[column])) {
+        console.error(`Column ${column} is not an array:`, data[column]);
+        return false;
+      }
+    }
+    
+    // Check for duplicate task IDs across all columns
+    const allTaskIds = [
+      ...data.todo.map((t: any) => t.id),
+      ...data.inProgress.map((t: any) => t.id),
+      ...data.done.map((t: any) => t.id)
+    ];
+    
+    const uniqueTaskIds = new Set(allTaskIds);
+    if (allTaskIds.length !== uniqueTaskIds.size) {
+      console.warn('Duplicate task IDs detected during validation:', {
+        total: allTaskIds.length,
+        unique: uniqueTaskIds.size,
+        duplicates: allTaskIds.filter((id, index) => allTaskIds.indexOf(id) !== index)
+      });
+      return false;
+    }
+    
+    return true;
+  };
+
+  // Ensure kanban data consistency and remove duplicates
+  useEffect(() => {
+    // Don't run cleanup during drag operations
+    if (draggedItem || isUpdatingTask || tempDragState) {
+      return;
+    }
+    
+    if (kanbanData.todo.length > 0 || kanbanData.inProgress.length > 0 || kanbanData.done.length > 0) {
+      // Check for duplicate task IDs across all columns
+      const allTaskIds = [
+        ...kanbanData.todo.map(t => t.id),
+        ...kanbanData.inProgress.map(t => t.id),
+        ...kanbanData.done.map(t => t.id)
+      ];
+      
+      const uniqueTaskIds = new Set(allTaskIds);
+      if (allTaskIds.length !== uniqueTaskIds.size) {
+        console.warn('Duplicate task IDs detected in kanban data, cleaning up...');
+        
+        // Remove duplicates by keeping only the first occurrence of each task ID
+        const cleanedKanbanData = {
+          todo: kanbanData.todo.filter((task, index, self) => 
+            index === self.findIndex(t => t.id === task.id)
+          ),
+          inProgress: kanbanData.inProgress.filter((task, index, self) => 
+            index === self.findIndex(t => t.id === task.id)
+          ),
+          done: kanbanData.done.filter((task, index, self) => 
+            index === self.findIndex(t => t.id === task.id)
+          )
+        };
+        
+        setKanbanData(cleanedKanbanData);
+      }
+    }
+  }, [kanbanData, draggedItem, isUpdatingTask, tempDragState]);
 
   // Drag and drop handlers
   const handleDragStart = (e: React.DragEvent, task: any, sourceColumn: string) => {
@@ -440,7 +684,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
     setDragOverColumn(null);
   };
 
-  const handleDrop = (e: React.DragEvent, targetColumn: string) => {
+  const handleDrop = async (e: React.DragEvent, targetColumn: string) => {
     e.preventDefault();
     setDragOverColumn(null);
 
@@ -448,6 +692,26 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
       return;
     }
 
+    // Prevent dropping if the task is already in the target column
+    const isAlreadyInTarget = kanbanData[targetColumn as keyof typeof kanbanData]
+      .some(task => task.id === draggedItem.task.id);
+    
+    if (isAlreadyInTarget) {
+      console.warn('Task already exists in target column:', draggedItem.task.id);
+      return;
+    }
+
+    // Set temporary drag state for visual feedback
+    setTempDragState({
+      task: draggedItem.task,
+      sourceColumn: draggedItem.sourceColumn,
+      targetColumn: targetColumn
+    });
+
+    // Store the original kanban data for potential rollback
+    const originalKanbanData = { ...kanbanData };
+    
+    // Create new kanban data with the task moved
     const newKanbanData = { ...kanbanData };
     
     // Remove task from source column
@@ -461,8 +725,158 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
       draggedItem.task
     ];
 
-    setKanbanData(newKanbanData);
-    setDraggedItem(null);
+    // Update task status in backend FIRST, before updating UI
+    if (draggedItem.task.id) {
+      setIsUpdatingTask(draggedItem.task.id);
+      
+      // Log the request details for debugging
+      const targetStatus = targetColumn === 'todo' ? TaskStatus.TODO :
+                          targetColumn === 'inProgress' ? TaskStatus.IN_PROGRESS :
+                          TaskStatus.DONE;
+      
+      console.log('Updating task status:', {
+        taskId: draggedItem.task.id,
+        taskTitle: draggedItem.task.title,
+        fromStatus: draggedItem.sourceColumn,
+        toStatus: targetColumn,
+        targetStatus: targetStatus,
+        apiEndpoint: `/api/v1/tasks/${draggedItem.task.id}/status?status=${targetStatus}`
+      });
+      
+      try {
+        const updateResponse = await api.tasks.updateStatus(draggedItem.task.id, targetStatus);
+
+        if (updateResponse.error) {
+          throw new Error(updateResponse.error);
+        }
+        
+        // Log the response for debugging
+        console.log('Task status update response:', updateResponse);
+        
+        if (!updateResponse.data) {
+          throw new Error('No data received from task status update');
+        }
+        
+        console.log('Task status updated successfully:', updateResponse.data);
+        
+        // Only update the UI AFTER successful backend update
+        setKanbanData(newKanbanData);
+        
+        // Clear temporary drag state
+        setTempDragState(null);
+        
+        // Show success feedback
+        setUpdateMessage({ type: 'success', message: `Task "${draggedItem.task.title}" moved to ${targetColumn === 'todo' ? 'To Do' : targetColumn === 'inProgress' ? 'In Progress' : 'Done'}` });
+        
+        // Clear success message after 3 seconds
+        setTimeout(() => {
+          setUpdateMessage(null);
+        }, 3000);
+        
+        // Update dashboard metrics immediately for better UX
+        refreshDashboardMetrics();
+        
+        // Refresh the kanban data in the background to ensure consistency with backend
+        setTimeout(() => {
+          refreshKanbanData();
+        }, 1000); // Slightly longer delay to ensure backend has processed the update
+        
+      } catch (err) {
+        console.error('Failed to update task status with dedicated endpoint, trying fallback:', err);
+        
+        // Try fallback using the regular update endpoint
+        try {
+          console.log('Attempting fallback update using regular task update endpoint...');
+          
+          const fallbackResponse = await api.tasks.update(draggedItem.task.id, {
+            status: targetStatus
+          });
+          
+          if (fallbackResponse.error) {
+            throw new Error(`Fallback also failed: ${fallbackResponse.error}`);
+          }
+          
+          console.log('Fallback update successful:', fallbackResponse.data);
+          
+          // Update the UI after successful fallback update
+          setKanbanData(newKanbanData);
+          setTempDragState(null);
+          
+          setUpdateMessage({ type: 'success', message: `Task "${draggedItem.task.title}" moved to ${targetColumn === 'todo' ? 'To Do' : targetColumn === 'inProgress' ? 'In Progress' : 'Done'}` });
+          
+          setTimeout(() => {
+            setUpdateMessage(null);
+          }, 3000);
+          
+          // Update dashboard metrics immediately for better UX
+          refreshDashboardMetrics();
+          
+          // Refresh the kanban data in the background to ensure consistency with backend
+          setTimeout(() => {
+            refreshKanbanData();
+          }, 1000);
+          
+        } catch (fallbackErr) {
+          console.error('Fallback update also failed:', fallbackErr);
+          
+          // Both attempts failed, revert the UI
+          setKanbanData(originalKanbanData);
+          setTempDragState(null);
+          
+          // Show error message to user with proper error handling
+          let errorMessage = 'Unknown error occurred';
+          
+          // Handle different error types more specifically
+          if (fallbackErr instanceof Error) {
+            errorMessage = fallbackErr.message;
+          } else if (typeof fallbackErr === 'string') {
+            errorMessage = fallbackErr;
+          } else if (fallbackErr && typeof fallbackErr === 'object') {
+            // Try to extract meaningful error information
+            if ('message' in fallbackErr && typeof fallbackErr.message === 'string') {
+              errorMessage = fallbackErr.message;
+            } else if ('detail' in fallbackErr && typeof fallbackErr.detail === 'string') {
+              errorMessage = fallbackErr.detail;
+            } else if ('status' in fallbackErr && typeof fallbackErr.status === 'number') {
+              // Handle HTTP status errors
+              const status = fallbackErr.status;
+              if (status === 422) {
+                errorMessage = 'Invalid request format. Please try again.';
+              } else if (status === 404) {
+                errorMessage = 'Task not found. It may have been deleted.';
+              } else if (status === 403) {
+                errorMessage = 'You do not have permission to update this task.';
+              } else if (status >= 500) {
+                errorMessage = 'Server error. Please try again later.';
+              } else {
+                errorMessage = `Request failed with status ${status}`;
+              }
+            } else {
+              // Last resort: try to stringify the error object
+              try {
+                errorMessage = JSON.stringify(fallbackErr);
+              } catch {
+                errorMessage = 'An unexpected error occurred';
+              }
+            }
+          }
+          
+          setUpdateMessage({ type: 'error', message: `Failed to update task status: ${errorMessage}` });
+          
+          // Clear error message after 5 seconds
+          setTimeout(() => {
+            setUpdateMessage(null);
+          }, 5000);
+        }
+      } finally {
+        setIsUpdatingTask(null);
+        setDraggedItem(null);
+      }
+    } else {
+      // If no task ID, just clear the dragged item and temp state
+      setDraggedItem(null);
+      setTempDragState(null);
+    }
   };
 
   const handleDragEnd = () => {
@@ -598,6 +1012,29 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
         <Breadcrumb items={[]} />
         <div className="text-center py-8">
           <p className="text-gray-600 dark:text-gray-400">Project not found</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Validate kanban data before rendering
+  if (!kanbanData || typeof kanbanData !== 'object') {
+    console.error('Invalid kanban data:', kanbanData);
+    return (
+      <div className="space-y-8">
+        <Breadcrumb items={[]} />
+        <div className="text-center py-8 bg-white dark:bg-gray-800 rounded-lg border border-yellow-200 dark:border-yellow-900">
+          <AlertTriangle className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-yellow-600 dark:text-yellow-400 mb-2">
+            Data Loading Issue
+          </h3>
+          <p className="text-gray-600 dark:text-gray-400">Kanban data is not properly loaded. Please refresh the page.</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-4 px-4 py-2 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg transition-colors"
+          >
+            Refresh Page
+          </button>
         </div>
       </div>
     );
@@ -903,9 +1340,39 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                 </button>
               </div>
 
+              {/* Status Messages */}
+              {updateMessage && (
+                <div className={`mb-4 p-3 rounded-lg text-sm ${
+                  updateMessage.type === 'success' 
+                    ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-300 border border-green-200 dark:border-green-800' 
+                    : 'bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-300 border border-red-200 dark:border-red-800'
+                }`}>
+                  {updateMessage.message}
+                </div>
+              )}
+
+              {/* Processing Indicator */}
+              {tempDragState && (
+                <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                  <div className="flex items-center gap-2">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
+                    <p className="text-sm text-blue-700 dark:text-blue-300">
+                      Moving task "{tempDragState.task.title}" to {tempDragState.targetColumn === 'todo' ? 'To Do' : tempDragState.targetColumn === 'inProgress' ? 'In Progress' : 'Done'}...
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Kanban Instructions */}
+              <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
+                <p className="text-sm text-blue-700 dark:text-blue-300">
+                  💡 <strong>Tip:</strong> Drag and drop tasks between columns to update their status. Changes are automatically saved to the backend.
+                </p>
+              </div>
+
               {/* Kanban View */}
               {sprintViewType === 'kanban' && (
-                <div className="grid grid-cols-2 gap-6">
+                <div className="grid grid-cols-3 gap-6">
                   {/* To Do Column */}
                   <div 
                     className={`bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4 transition-colors ${
@@ -917,18 +1384,18 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                   >
                     <h5 className="font-medium text-gray-700 dark:text-gray-300 text-sm mb-4 flex items-center gap-2">
                       <div className="w-2 h-2 bg-gray-400 rounded-full"></div>
-                      To Do ({kanbanData.todo.length})
+                      To Do ({Array.isArray(kanbanData.todo) ? kanbanData.todo.length : 0})
                     </h5>
                     <div className="space-y-3 max-h-64 overflow-y-auto">
-                      {kanbanData.todo.map((task) => (
+                      {Array.isArray(kanbanData.todo) && kanbanData.todo.map((task, index) => (
                         <div 
-                          key={task.id} 
+                          key={`todo-${task.id}-${index}`}
                           draggable
                           onDragStart={(e) => handleDragStart(e, task, 'todo')}
                           onDragEnd={handleDragEnd}
                           className={`bg-white dark:bg-gray-800 p-3 rounded border border-gray-200 dark:border-gray-700 shadow-sm cursor-move hover:shadow-md transition-shadow ${
                             draggedItem?.task.id === task.id ? 'opacity-50' : ''
-                          }`}
+                          } ${isUpdatingTask === task.id ? 'ring-2 ring-blue-400 bg-blue-50 dark:bg-blue-900/20' : ''}`}
                         >
                           <h6 className="text-xs font-medium text-gray-900 dark:text-white mb-2 line-clamp-2">
                             {task.title}
@@ -936,6 +1403,9 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                           <div className="flex justify-between items-center text-xs">
                             <span className="text-gray-500 dark:text-gray-400">{task.assignee}</span>
                             <div className="flex items-center gap-1">
+                              {isUpdatingTask === task.id && (
+                                <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-500"></div>
+                              )}
                               <span className={`px-1.5 py-0.5 rounded text-xs ${
                                 task.priority === 'high' ? 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400' :
                                 task.priority === 'medium' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-400' :
@@ -948,7 +1418,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                           </div>
                         </div>
                       ))}
-                      {kanbanData.todo.length === 0 && (
+                      {(!Array.isArray(kanbanData.todo) || kanbanData.todo.length === 0) && (
                         <div className="text-center py-8 text-gray-500 dark:text-gray-400 text-sm">
                           No tasks in To Do
                         </div>
@@ -967,18 +1437,18 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                   >
                     <h5 className="font-medium text-blue-700 dark:text-blue-300 text-sm mb-4 flex items-center gap-2">
                       <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
-                      In Progress ({kanbanData.inProgress.length})
+                      In Progress ({Array.isArray(kanbanData.inProgress) ? kanbanData.inProgress.length : 0})
                     </h5>
                     <div className="space-y-3 max-h-64 overflow-y-auto">
-                      {kanbanData.inProgress.map((task) => (
+                      {Array.isArray(kanbanData.inProgress) && kanbanData.inProgress.map((task, index) => (
                         <div 
-                          key={task.id} 
+                          key={`inProgress-${task.id}-${index}`}
                           draggable
                           onDragStart={(e) => handleDragStart(e, task, 'inProgress')}
                           onDragEnd={handleDragEnd}
                           className={`bg-white dark:bg-gray-800 p-3 rounded border border-gray-200 dark:border-gray-700 shadow-sm cursor-move hover:shadow-md transition-shadow ${
                             draggedItem?.task.id === task.id ? 'opacity-50' : ''
-                          }`}
+                          } ${isUpdatingTask === task.id ? 'ring-2 ring-blue-400 bg-blue-50 dark:bg-blue-900/20' : ''}`}
                         >
                           <h6 className="text-xs font-medium text-gray-900 dark:text-white mb-2 line-clamp-2">
                             {task.title}
@@ -986,6 +1456,9 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                           <div className="flex justify-between items-center text-xs">
                             <span className="text-gray-500 dark:text-gray-400">{task.assignee}</span>
                             <div className="flex items-center gap-1">
+                              {isUpdatingTask === task.id && (
+                                <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-500"></div>
+                              )}
                               <span className={`px-1.5 py-0.5 rounded text-xs ${
                                 task.priority === 'high' ? 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400' :
                                 task.priority === 'medium' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-400' :
@@ -998,9 +1471,62 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                           </div>
                         </div>
                       ))}
-                      {kanbanData.inProgress.length === 0 && (
+                      {(!Array.isArray(kanbanData.inProgress) || kanbanData.inProgress.length === 0) && (
                         <div className="text-center py-8 text-gray-500 dark:text-gray-400 text-sm">
                           No tasks in progress
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Done Column */}
+                  <div 
+                    className={`bg-green-50 dark:bg-green-900/20 rounded-lg p-4 transition-colors ${
+                      dragOverColumn === 'done' ? 'bg-green-100 dark:bg-green-800/30 ring-2 ring-green-400' : ''
+                    }`}
+                    onDragOver={(e) => handleDragOver(e, 'done')}
+                    onDragLeave={handleDragLeave}
+                    onDrop={(e) => handleDrop(e, 'done')}
+                  >
+                    <h5 className="font-medium text-green-700 dark:text-green-300 text-sm mb-4 flex items-center gap-2">
+                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                      Done ({Array.isArray(kanbanData.done) ? kanbanData.done.length : 0})
+                    </h5>
+                    <div className="space-y-3 max-h-64 overflow-y-auto">
+                      {Array.isArray(kanbanData.done) && kanbanData.done.map((task, index) => (
+                        <div 
+                          key={`done-${task.id}-${index}`}
+                          draggable
+                          onDragStart={(e) => handleDragStart(e, task, 'done')}
+                          onDragEnd={handleDragEnd}
+                          className={`bg-white dark:bg-gray-800 p-3 rounded border border-gray-200 dark:border-gray-700 shadow-sm cursor-move hover:shadow-md transition-shadow ${
+                            draggedItem?.task.id === task.id ? 'opacity-50' : ''
+                          } ${isUpdatingTask === task.id ? 'ring-2 ring-blue-400 bg-blue-50 dark:bg-blue-900/20' : ''}`}
+                        >
+                          <h6 className="text-xs font-medium text-gray-900 dark:text-white mb-2 line-clamp-2">
+                            {task.title}
+                          </h6>
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="text-gray-500 dark:text-gray-400">{task.assignee}</span>
+                            <div className="flex items-center gap-1">
+                              {isUpdatingTask === task.id && (
+                                <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-500"></div>
+                              )}
+                              <span className={`px-1.5 py-0.5 rounded text-xs ${
+                                task.priority === 'high' ? 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400' :
+                                task.priority === 'medium' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-400' :
+                                'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400'
+                              }`}>
+                                {task.priority}
+                              </span>
+                              <span className="text-gray-500 dark:text-gray-400">Task</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                      {(!Array.isArray(kanbanData.done) || kanbanData.done.length === 0) && (
+                        <div className="text-center py-8 text-gray-500 dark:text-gray-400 text-sm">
+                          No completed tasks
                         </div>
                       )}
                     </div>

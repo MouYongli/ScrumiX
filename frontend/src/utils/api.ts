@@ -1,4 +1,4 @@
-import { TaskStatus, ProjectStatus } from '@/types/enums';
+import { TaskStatus, TaskPriority, ProjectStatus } from '@/types/enums';
 import { 
   ApiUser, ApiTask, ApiMeeting, ApiMeetingAgenda, ApiProject, ApiSprint, ApiBacklog, ApiAcceptanceCriteria,
   TaskListResponse, MeetingListResponse, ApiError, ScrumRole, ProjectMemberResponse
@@ -186,6 +186,26 @@ export const api = {
       jsonFetch<ApiTask[]>(`/api/v1/tasks/status/${status}`),
       
     getRecent: () => jsonFetch<ApiTask[]>('/api/v1/tasks/recent/list'),
+    
+    getById: (id: number) => jsonFetch<ApiTask>(`/api/v1/tasks/${id}`),
+    
+    update: (id: number, data: Partial<{
+      title: string;
+      description: string;
+      status: TaskStatus;
+      priority: TaskPriority;
+    }>) => jsonFetch<ApiTask>(`/api/v1/tasks/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }),
+    
+    updateStatus: (id: number, status: TaskStatus) => 
+      jsonFetch<ApiTask>(`/api/v1/tasks/${id}/status?status=${status}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        // No body needed since status is sent as query parameter
+      }),
   },
   
   meetings: {
