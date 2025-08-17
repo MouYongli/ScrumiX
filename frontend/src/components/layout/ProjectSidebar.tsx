@@ -1,6 +1,28 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+/**
+ * ProjectSidebar Component
+ * 
+ * Features:
+ * - Displays current project information
+ * - Shows current sprint status with real-time updates
+ * - Automatically refreshes sprint data every 30 seconds
+ * - Provides manual refresh functionality
+ * 
+ * Usage from parent component:
+ * ```tsx
+ * const sidebarRef = useRef<ProjectSidebarRef>(null);
+ * 
+ * // Trigger refresh when sprint status changes
+ * const handleSprintStatusChange = () => {
+ *   sidebarRef.current?.refreshSprintData();
+ * };
+ * 
+ * <ProjectSidebar ref={sidebarRef} projectId={projectId} ... />
+ * ```
+ */
+
+import React, { useState, useEffect, useImperativeHandle, forwardRef } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { 
@@ -17,75 +39,123 @@ interface ProjectSidebarProps {
   onToggle: () => void;
 }
 
+interface ProjectSidebarRef {
+  refreshSprintData: () => Promise<void>;
+}
+
 interface ProjectData extends ApiProject {
   currentSprint: string | null;
+  sprintContext: 'active' | 'planning' | 'completed' | null;
   progress: number;
   color: string;
 }
 
-const ProjectSidebar: React.FC<ProjectSidebarProps> = ({ 
+const ProjectSidebar = forwardRef<ProjectSidebarRef, ProjectSidebarProps>(({ 
   projectId, 
   isCollapsed, 
   onToggle 
-}) => {
+}, ref) => {
   const pathname = usePathname();
   const [project, setProject] = useState<ProjectData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  // Function to refresh project data (can be called externally)
+  const refreshProjectData = async () => {
+    if (!projectId) return;
+    
+    try {
+      setIsRefreshing(true);
+      // Fetch project data
+      const projectResponse = await api.projects.getById(parseInt(projectId));
+      if (projectResponse.error) throw new Error(projectResponse.error);
+      
+      // Fetch current sprint
+      const sprintsResponse = await api.sprints.getAll();
+      if (sprintsResponse.error) throw new Error(sprintsResponse.error);
+      
+      const projectSprints = sprintsResponse.data?.filter(sprint => 
+        sprint.projectId === parseInt(projectId)
+      ) || [];
+      
+      // Enhanced sprint detection logic
+      let currentSprint = null;
+      let sprintContext = null;
+      
+      // First priority: Find active sprint
+      currentSprint = projectSprints.find(sprint => sprint.status === 'active');
+      if (currentSprint) {
+        sprintContext = 'active';
+      }
+      
+      // Second priority: Find planning sprint that hasn't ended yet
+      if (!currentSprint) {
+        const now = new Date();
+        currentSprint = projectSprints
+          .filter(sprint => 
+            sprint.status === 'planning' && 
+            new Date(sprint.endDate) >= now
+          )
+          .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime())[0];
+        if (currentSprint) {
+          sprintContext = 'planning';
+        }
+      }
+      
+      // Third priority: Find recently completed sprint (within last 7 days) for reference
+      if (!currentSprint) {
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        currentSprint = projectSprints
+          .filter(sprint => 
+            sprint.status === 'completed' && 
+            new Date(sprint.endDate) >= sevenDaysAgo
+          )
+          .sort((a, b) => new Date(b.endDate).getTime() - new Date(a.endDate).getTime())[0];
+        if (currentSprint) {
+          sprintContext = 'completed';
+        }
+      }
+
+      // Calculate project progress by getting tasks from project sprints
+      const projectSprintIds = projectSprints.map(sprint => sprint.id);
+      const tasksResponse = await api.tasks.getAll({ limit: 100 });
+      const projectTasks = tasksResponse.data?.tasks.filter(task => 
+        projectSprintIds.includes(task.sprint_id)
+      ) || [];
+      
+      const progress = projectTasks.length > 0
+        ? Math.round((projectTasks.filter(task => task.status === 'done').length / projectTasks.length) * 100)
+        : 0;
+
+      setProject({
+        ...projectResponse.data,
+        currentSprint: currentSprint ? currentSprint.sprintName : null,
+        sprintContext: sprintContext as 'active' | 'planning' | 'completed' | null,
+        progress,
+        color: 'bg-blue-500' // You can map this based on project status or type
+      });
+    } catch (error) {
+      console.error('Error fetching project data:', error);
+    } finally {
+      setIsRefreshing(false);
+      setIsLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchProjectData = async () => {
-      if (!projectId) return;
-      
-      try {
-        setIsLoading(true);
-        // Fetch project data
-        const projectResponse = await api.projects.getById(parseInt(projectId));
-        if (projectResponse.error) throw new Error(projectResponse.error);
-        
-        // Fetch current sprint
-        const sprintsResponse = await api.sprints.getAll();
-        if (sprintsResponse.error) throw new Error(sprintsResponse.error);
-        
-        const projectSprints = sprintsResponse.data?.filter(sprint => 
-          sprint.projectId === parseInt(projectId)
-        ) || [];
-        
-        // Find current sprint - prioritize active status over date-based logic
-        let currentSprint = projectSprints.find(sprint => sprint.status === 'active');
-        
-        // If no active sprint, fall back to date-based logic for planning sprints
-        if (!currentSprint) {
-          currentSprint = projectSprints
-            .filter(sprint => sprint.status === 'planning' && new Date(sprint.endDate) >= new Date())
-            .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime())[0];
-        }
+    refreshProjectData();
 
-        // Calculate project progress by getting tasks from project sprints
-        const projectSprintIds = projectSprints.map(sprint => sprint.id);
-        const tasksResponse = await api.tasks.getAll({ limit: 100 });
-        const projectTasks = tasksResponse.data?.tasks.filter(task => 
-          projectSprintIds.includes(task.sprint_id)
-        ) || [];
-        
-        const progress = projectTasks.length > 0
-          ? Math.round((projectTasks.filter(task => task.status === 'done').length / projectTasks.length) * 100)
-          : 0;
+    // Set up interval to refresh sprint data every 30 seconds
+    const intervalId = setInterval(refreshProjectData, 30000);
 
-        setProject({
-          ...projectResponse.data,
-          currentSprint: currentSprint ? currentSprint.sprintName : null,
-          progress,
-          color: 'bg-blue-500' // You can map this based on project status or type
-        });
-      } catch (error) {
-        console.error('Error fetching project data:', error);
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchProjectData();
+    // Cleanup interval on unmount
+    return () => clearInterval(intervalId);
   }, [projectId]);
+
+  useImperativeHandle(ref, () => ({
+    refreshSprintData: refreshProjectData,
+  }));
 
   const navigationItems = [
     {
@@ -212,20 +282,107 @@ const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
                   </div>
                   
                   {/* Enhanced Current Sprint Display */}
-                  {project.currentSprint && (
-                    <div className="mb-3 p-2 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                      <div className="flex items-center gap-2 mb-1">
-                        <Zap className="w-3 h-3 text-blue-600 dark:text-blue-400" />
-                        <span className="text-xs font-medium text-blue-800 dark:text-blue-300">Current Sprint</span>
+                  {project.currentSprint ? (
+                    <div className={`mb-3 p-2 rounded-lg border transition-colors ${
+                      project.sprintContext === 'active' 
+                        ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+                        : project.sprintContext === 'planning'
+                        ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
+                        : 'bg-gray-50 dark:bg-gray-900/20 border-gray-200 dark:border-gray-800'
+                    }`}>
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          <Zap className={`w-3 h-3 ${
+                            project.sprintContext === 'active'
+                              ? 'text-green-600 dark:text-green-400'
+                              : project.sprintContext === 'planning'
+                              ? 'text-blue-600 dark:text-blue-400'
+                              : 'text-gray-500 dark:text-gray-400'
+                          }`} />
+                          <span className={`text-xs font-medium ${
+                            project.sprintContext === 'active'
+                              ? 'text-green-800 dark:text-green-300'
+                              : project.sprintContext === 'planning'
+                              ? 'text-blue-800 dark:text-blue-300'
+                              : 'text-gray-600 dark:text-gray-400'
+                          }`}>
+                            {project.sprintContext === 'active' ? 'Active Sprint' :
+                             project.sprintContext === 'planning' ? 'Planning Sprint' :
+                             project.sprintContext === 'completed' ? 'Recent Sprint' : 'Current Sprint'}
+                          </span>
+                        </div>
+                        <button
+                          onClick={refreshProjectData}
+                          disabled={isRefreshing}
+                          className={`p-1 rounded transition-colors ${
+                            project.sprintContext === 'active'
+                              ? 'text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:bg-green-100 dark:hover:bg-green-800/50'
+                              : project.sprintContext === 'planning'
+                              ? 'text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800/50'
+                              : 'text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                          } ${isRefreshing ? 'opacity-50 cursor-not-allowed' : ''}`}
+                          title="Refresh sprint data"
+                        >
+                          {isRefreshing ? (
+                            <svg className="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                          ) : (
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                            </svg>
+                          )}
+                        </button>
                       </div>
-                      <div className="text-xs text-blue-700 dark:text-blue-400 font-medium truncate mb-2">
+                      <div className={`text-xs font-medium truncate mb-2 ${
+                        project.sprintContext === 'active'
+                          ? 'text-green-700 dark:text-green-400'
+                          : project.sprintContext === 'planning'
+                          ? 'text-blue-700 dark:text-blue-400'
+                          : 'text-gray-600 dark:text-gray-400'
+                      }`}>
                         {project.currentSprint}
                       </div>
                       <Link
                         href={`/project/${projectId}/sprint`}
-                        className="block w-full text-center text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 bg-blue-100 dark:bg-blue-800/50 hover:bg-blue-200 dark:hover:bg-blue-800 rounded px-2 py-1 transition-colors"
+                        className={`block w-full text-center text-xs rounded px-2 py-1 transition-colors ${
+                          project.sprintContext === 'active'
+                            ? 'text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 bg-green-100 dark:bg-green-800/50 hover:bg-green-200 dark:hover:bg-green-800'
+                            : project.sprintContext === 'planning'
+                            ? 'text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 bg-blue-100 dark:bg-blue-800/50 hover:bg-blue-200 dark:hover:bg-blue-800'
+                            : 'text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 bg-gray-100 dark:bg-gray-700 hover:bg-blue-100 dark:hover:bg-blue-800/50'
+                        }`}
                       >
-                        View Sprint
+                        {project.sprintContext === 'active' ? 'View Active Sprint' :
+                         project.sprintContext === 'planning' ? 'View Planning Sprint' :
+                         project.sprintContext === 'completed' ? 'View Sprint Details' : 'View Sprint'}
+                      </Link>
+                    </div>
+                  ) : (
+                    <div className="mb-3 p-2 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center justify-between mb-1">
+                        <div className="flex items-center gap-2">
+                          <Zap className="w-3 h-3 text-gray-500 dark:text-gray-400" />
+                          <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Current Sprint</span>
+                        </div>
+                        <button
+                          onClick={refreshProjectData}
+                          className="text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                          title="Refresh sprint data"
+                        >
+                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                          </svg>
+                        </button>
+                      </div>
+                      <div className="text-xs text-gray-500 dark:text-gray-400 text-center mb-2">
+                        No active sprint
+                      </div>
+                      <Link
+                        href={`/project/${projectId}/sprint`}
+                        className="block w-full text-center text-xs text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 bg-gray-100 dark:bg-gray-700 hover:bg-blue-100 dark:hover:bg-blue-800/50 rounded px-2 py-1 transition-colors"
+                      >
+                        Manage Sprints
                       </Link>
                     </div>
                   )}
@@ -338,6 +495,6 @@ const ProjectSidebar: React.FC<ProjectSidebarProps> = ({
       )}
     </div>
   );
-};
+});
 
 export default ProjectSidebar; 
