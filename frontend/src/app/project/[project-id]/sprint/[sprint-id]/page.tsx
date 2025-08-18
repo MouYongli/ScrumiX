@@ -1115,7 +1115,17 @@ const EditSprintModal: React.FC<{
   onClose: () => void;
   onSubmit: (sprintData: Sprint) => void;
   sprint: Sprint;
-}> = ({ isOpen, onClose, onSubmit, sprint }) => {
+  projectDevelopers: Array<{
+    id: number;
+    email: string;
+    username?: string;
+    full_name?: string;
+    avatar_url?: string;
+    role: string;
+    joined_at: string;
+    is_admin: boolean;
+  }>;
+}> = ({ isOpen, onClose, onSubmit, sprint, projectDevelopers }) => {
   const [formData, setFormData] = useState<Sprint>(sprint);
   const [isTeamDropdownOpen, setIsTeamDropdownOpen] = useState(false);
 
@@ -1124,17 +1134,8 @@ const EditSprintModal: React.FC<{
     setFormData(sprint);
   }, [sprint]);
 
-  // Mock team members - in real app, this would come from API
-  const availableTeamMembers = [
-    'Sarah Johnson',
-    'Mike Chen', 
-    'Emily Rodriguez',
-    'David Park',
-    'Lisa Wang',
-    'James Smith',
-    'Maria Gonzalez',
-    'Alex Kim'
-  ];
+  // Team members are now fetched from the API via projectDevelopers
+  const availableTeamMembers = projectDevelopers.map((dev: any) => dev.full_name || dev.username || dev.email);
 
   const statusOptions = [
     { value: 'planning', label: 'Planning' },
@@ -1169,7 +1170,7 @@ const EditSprintModal: React.FC<{
     setFormData(prev => ({
       ...prev,
       teamMembers: prev.teamMembers ? prev.teamMembers.includes(member)
-        ? prev.teamMembers.filter(m => m !== member)
+        ? prev.teamMembers.filter((m: string) => m !== member)
         : [...prev.teamMembers, member]
       : []
     }));
@@ -1178,7 +1179,7 @@ const EditSprintModal: React.FC<{
   const removeTeamMember = (member: string) => {
     setFormData(prev => ({
       ...prev,
-      teamMembers: prev.teamMembers ? prev.teamMembers.filter(m => m !== member)
+      teamMembers: prev.teamMembers ? prev.teamMembers.filter((m: string) => m !== member)
       : []
     }));
   };
@@ -1405,6 +1406,18 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
     role: string;
   }>>([]);
 
+  // Add project developers state
+  const [projectDevelopers, setProjectDevelopers] = useState<Array<{
+    id: number;
+    email: string;
+    username?: string;
+    full_name?: string;
+    avatar_url?: string;
+    role: string;
+    joined_at: string;
+    is_admin: boolean;
+  }>>([]);
+
   // Add project name state
   const [projectName, setProjectName] = useState<string>('Loading...');
 
@@ -1581,7 +1594,7 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
           completedStoryPoints: 0,
           totalStories: 0,
           completedStories: 0,
-          teamMembers: ['Sarah Johnson', 'Mike Chen', 'Emily Rodriguez', 'David Park'],
+          teamMembers: [], // No longer used - replaced with projectDevelopers from API
           velocity: 0,
           stories: []
         };
@@ -1755,6 +1768,24 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
           setProjectUsers([]);
         } else {
           setProjectUsers(projectUsersResponse.data || []);
+        }
+
+        // Fetch project developers for team display
+        try {
+          const projectMembersResponse = await api.projects.getMembers(projectIdNum);
+          if (projectMembersResponse.error) {
+            console.warn('Failed to fetch project members:', projectMembersResponse.error);
+            setProjectDevelopers([]);
+          } else {
+            // Filter only developers from the project members
+            const developers = (projectMembersResponse.data || []).filter(
+              (member: any) => member.role === 'developer'
+            );
+            setProjectDevelopers(developers);
+          }
+        } catch (memberError) {
+          console.warn('Failed to fetch project members:', memberError);
+          setProjectDevelopers([]);
         }
 
       } catch (err) {
@@ -2264,7 +2295,7 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
               </span>
               <span className="flex items-center gap-1">
                 <Users className="w-4 h-4" />
-                {sprint.teamMembers?.length} members
+                {projectDevelopers.length} developers
               </span>
               {sprint.status === 'active' && (
                 <span className="flex items-center gap-1">
@@ -2666,43 +2697,67 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
         {activeTab === 'team' && (
           <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Team Members</h3>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {sprint.teamMembers?.map((member, index) => {
-                const memberStories = (sprint.stories || []).filter(s => s.label && s.label.includes(member));
-                const memberPoints = memberStories.reduce((sum, s) => sum + (s.story_point || 0), 0);
-                const completedPoints = memberStories.filter(s => s.status === BacklogStatus.DONE).reduce((sum, s) => sum + (s.story_point || 0), 0);
-                
-                return (
-                  <div key={index} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
-                    <div className="flex items-center gap-3 mb-3">
-                      <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white font-medium">
-                        {member.split(' ').map(n => n[0]).join('')}
+            {projectDevelopers.length > 0 ? (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {projectDevelopers.map((developer, index) => {
+                  // Get developer's display name
+                  const developerName = developer.full_name || developer.username || developer.email;
+                  const initials = developerName.split(' ').map(n => n[0]).join('').toUpperCase();
+                  
+                  // Find stories assigned to this developer (by label or other criteria)
+                  const developerStories = (sprint?.stories || []).filter(s => 
+                    s.label && s.label.toLowerCase().includes(developerName.toLowerCase())
+                  );
+                  const developerPoints = developerStories.reduce((sum, s) => sum + (s.story_point || 0), 0);
+                  const completedPoints = developerStories.filter(s => s.status === BacklogStatus.DONE).reduce((sum, s) => sum + (s.story_point || 0), 0);
+                  
+                  return (
+                    <div key={developer.id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
+                      <div className="flex items-center gap-3 mb-3">
+                        <div className="w-10 h-10 bg-blue-500 rounded-full flex items-center justify-center text-white font-medium">
+                          {initials}
+                        </div>
+                        <div>
+                          <h4 className="font-medium text-gray-900 dark:text-white">{developerName}</h4>
+                          <p className="text-sm text-gray-600 dark:text-gray-400 capitalize">
+                            {developer.role.replace('_', ' ')}
+                          </p>
+                        </div>
                       </div>
-                      <div>
-                        <h4 className="font-medium text-gray-900 dark:text-white">{member}</h4>
-                        <p className="text-sm text-gray-600 dark:text-gray-400">Team Member</p>
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600 dark:text-gray-400">Stories Assigned</span>
+                          <span className="font-medium text-gray-900 dark:text-white">{developerStories.length}</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-gray-600 dark:text-gray-400">Story Points</span>
+                          <span className="font-medium text-gray-900 dark:text-white">{completedPoints} / {developerPoints}</span>
+                        </div>
+                        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                          <div 
+                            className="bg-green-600 h-2 rounded-full" 
+                            style={{ width: `${developerPoints > 0 ? (completedPoints / developerPoints) * 100 : 0}%` }}
+                          ></div>
+                        </div>
+                        <div className="text-xs text-gray-500 dark:text-gray-400">
+                          Joined: {new Date(developer.joined_at).toLocaleDateString()}
+                        </div>
                       </div>
                     </div>
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600 dark:text-gray-400">Stories Assigned</span>
-                        <span className="font-medium text-gray-900 dark:text-white">{memberStories.length}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-gray-600 dark:text-gray-400">Story Points</span>
-                        <span className="font-medium text-gray-900 dark:text-white">{completedPoints} / {memberPoints}</span>
-                      </div>
-                      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                        <div 
-                          className="bg-green-600 h-2 rounded-full" 
-                          style={{ width: `${memberPoints > 0 ? (completedPoints / memberPoints) * 100 : 0}%` }}
-                        ></div>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="text-center py-8">
+                <div className="w-16 h-16 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Users className="w-8 h-8 text-gray-400" />
+                </div>
+                <p className="text-gray-500 dark:text-gray-400">No developers found for this project</p>
+                <p className="text-sm text-gray-400 dark:text-gray-500 mt-2">
+                  Developers need to be added to the project to appear here
+                </p>
+              </div>
+            )}
           </div>
         )}
       </div>
@@ -2732,6 +2787,7 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
         onClose={() => setIsEditModalOpen(false)}
         onSubmit={handleUpdateSprint}
         sprint={sprint}
+        projectDevelopers={projectDevelopers}
       />
 
       {/* Create Task Modal */}
