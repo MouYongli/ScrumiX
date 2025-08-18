@@ -1,22 +1,27 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Plus, User, Calendar, Flag, MoreHorizontal, Filter, Search, FolderOpen, Kanban, X, ChevronDown, Clock, CalendarDays, LayoutGrid } from 'lucide-react';
+import { Plus, User, Calendar, Flag, MoreHorizontal, Filter, Search, FolderOpen, Kanban, X, ChevronDown, Clock, CalendarDays, LayoutGrid, RotateCcw } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
+import { api } from '@/utils/api';
+import { mapApiUserToDomain } from '@/utils/mappers';
+import { ApiBacklog, ApiUser } from '@/types/api';
+import { TaskStatus } from '@/types/enums';
 import 'vis-timeline/styles/vis-timeline-graph2d.css';
 
 interface Task {
-  id: string;
+  id: number;
   title: string;
   description: string;
   assignees: string[];
-  priority: 'low' | 'medium' | 'high' | 'urgent';
+  priority: 'low' | 'medium' | 'high' | 'critical';
   storyPoints: number;
-  status: 'todo' | 'in-progress' | 'review' | 'done';
+  status: 'todo' | 'in_progress' | 'done';
   labels: string[];
   dueDate?: string;
   epic?: string;
-  sprintId?: string;
+  sprintId?: number;
+  backlogId: number;
 }
 
 interface Column {
@@ -29,7 +34,7 @@ interface Column {
 
 const mockTasks: Task[] = [
   {
-    id: '1',
+    id: 1,
     title: 'User Login Page Design',
     description: 'Design user-friendly login interface with form validation and error handling',
     assignees: ['John Smith'],
@@ -39,48 +44,52 @@ const mockTasks: Task[] = [
     labels: ['UI/UX', 'Frontend'],
     dueDate: '2024-03-20',
     epic: 'User Authentication System',
-    sprintId: '1',
+    sprintId: 1,
+    backlogId: 1,
   },
   {
-    id: '2',
+    id: 2,
     title: 'Password Reset Feature Development',
     description: 'Implement email verification password reset flow',
     assignees: ['Sarah Johnson'],
     priority: 'medium',
     storyPoints: 8,
-    status: 'in-progress',
+    status: 'in_progress',
     labels: ['Backend', 'API'],
     dueDate: '2024-03-25',
     epic: 'User Authentication System',
-    sprintId: '1',
+    sprintId: 1,
+    backlogId: 2,
   },
   {
-    id: '3',
+    id: 3,
     title: 'Product List Page Optimization',
     description: 'Optimize product list loading performance and user experience',
     assignees: ['Mike Chen'],
     priority: 'medium',
     storyPoints: 3,
-    status: 'review',
+    status: 'in_progress',
     labels: ['Frontend', 'Performance'],
     dueDate: '2024-03-18',
     epic: 'Product Management',
-    sprintId: '1',
+    sprintId: 1,
+    backlogId: 3,
   },
   {
-    id: '4',
+    id: 4,
     title: 'Payment API Integration',
     description: 'Integrate third-party payment platform API',
     assignees: ['Emily Rodriguez'],
-    priority: 'urgent',
+    priority: 'critical',
     storyPoints: 13,
     status: 'done',
     labels: ['Backend', 'Payment'],
     epic: 'Order System',
-    sprintId: '1',
+    sprintId: 1,
+    backlogId: 4,
   },
   {
-    id: '5',
+    id: 5,
     title: 'Shopping Cart Testing',
     description: 'Write unit tests and integration tests',
     assignees: ['David Park'],
@@ -90,26 +99,27 @@ const mockTasks: Task[] = [
     labels: ['Testing'],
     dueDate: '2024-03-30',
     epic: 'Shopping System',
-    sprintId: '1',
+    sprintId: 1,
+    backlogId: 5,
   },
   {
-    id: '6',
+    id: 6,
     title: 'Database Performance Optimization',
     description: 'Optimize product query SQL and add indexes',
     assignees: ['Sarah Johnson', 'Mike Chen'],
     priority: 'high',
     storyPoints: 5,
-    status: 'in-progress',
+    status: 'in_progress',
     labels: ['Backend', 'Database'],
     epic: 'Performance Optimization',
-    sprintId: '1',
+    sprintId: 1,
+    backlogId: 6,
   },
 ];
 
 const columns: Column[] = [
   { id: 'todo', title: 'To Do', color: 'bg-gray-100 dark:bg-gray-700', tasks: [] },
-  { id: 'in-progress', title: 'In Progress', color: 'bg-blue-100 dark:bg-blue-900/20', tasks: [] },
-  { id: 'review', title: 'Awaiting Review', color: 'bg-yellow-100 dark:bg-yellow-900/20', tasks: [] },
+  { id: 'in_progress', title: 'In Progress', color: 'bg-blue-100 dark:bg-blue-900/20', tasks: [] },
   { id: 'done', title: 'Completed', color: 'bg-green-100 dark:bg-green-900/20', tasks: [] },
 ];
 
@@ -600,11 +610,6 @@ const TimelineView: React.FC<{
           border-left: 4px solid #3b82f6 !important;
         }
         
-        .story-timeline-item.status-review {
-          background: linear-gradient(135deg, #fef3c7, #fde68a) !important;
-          border-left: 4px solid #f59e0b !important;
-        }
-        
         .story-timeline-item.status-done {
           background: linear-gradient(135deg, #dcfce7, #bbf7d0) !important;
           border-left: 4px solid #10b981 !important;
@@ -752,10 +757,6 @@ const TimelineView: React.FC<{
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 bg-blue-200 border-l-2 border-blue-600 rounded"></div>
               <span className="text-gray-600 dark:text-gray-400">In Progress</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-yellow-200 border-l-2 border-yellow-600 rounded"></div>
-              <span className="text-gray-600 dark:text-gray-400">Review</span>
             </div>
             <div className="flex items-center gap-2">
               <div className="w-3 h-3 bg-green-200 border-l-2 border-green-600 rounded"></div>
@@ -911,8 +912,7 @@ const CalendarView: React.FC<{
                       key={task.id}
                       className={`text-xs p-1 rounded truncate ${
                         task.status === 'done' ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400' :
-                        task.status === 'in-progress' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400' :
-                        task.status === 'review' ? 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400' :
+                        task.status === 'in_progress' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400' :
                         'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
                       }`}
                       title={task.title}
@@ -955,8 +955,10 @@ const KanbanView: React.FC<{
   getPriorityIcon: (priority: string) => string;
   columns: Column[];
   getTasksByStatus: (status: string) => Task[];
-}> = ({ tasks, setTasks, onCreateTask, getPriorityColor, getPriorityIcon, columns, getTasksByStatus }) => {
+  onTaskStatusUpdate?: (taskId: number, newStatus: string) => Promise<void>;
+}> = ({ tasks, setTasks, onCreateTask, getPriorityColor, getPriorityIcon, columns, getTasksByStatus, onTaskStatusUpdate }) => {
   const [draggedTask, setDraggedTask] = useState<Task | null>(null);
+  const [isUpdating, setIsUpdating] = useState<number | null>(null);
 
   const handleDragStart = (e: React.DragEvent, task: Task) => {
     setDraggedTask(task);
@@ -968,16 +970,39 @@ const KanbanView: React.FC<{
     e.dataTransfer.dropEffect = 'move';
   };
 
-  const handleDrop = (e: React.DragEvent, newStatus: string) => {
+  const handleDrop = async (e: React.DragEvent, newStatus: string) => {
     e.preventDefault();
     if (draggedTask && draggedTask.status !== newStatus) {
-      setTasks(prevTasks =>
-        prevTasks.map(task =>
-          task.id === draggedTask.id
-            ? { ...task, status: newStatus as Task['status'] }
-            : task
-        )
-      );
+      const taskId = draggedTask.id;
+      setIsUpdating(taskId);
+      
+      try {
+        // Update local state immediately for responsive UI
+        setTasks(prevTasks =>
+          prevTasks.map(task =>
+            task.id === draggedTask.id
+              ? { ...task, status: newStatus as Task['status'] }
+              : task
+          )
+        );
+
+        // Call API to update task status if callback provided
+        if (onTaskStatusUpdate) {
+          await onTaskStatusUpdate(taskId, newStatus);
+        }
+      } catch (error) {
+        console.error('Error updating task status:', error);
+        // Revert local state on error
+        setTasks(prevTasks =>
+          prevTasks.map(task =>
+            task.id === draggedTask.id
+              ? { ...task, status: draggedTask.status }
+              : task
+          )
+        );
+      } finally {
+        setIsUpdating(null);
+      }
     }
     setDraggedTask(null);
   };
@@ -1016,10 +1041,19 @@ const KanbanView: React.FC<{
             {getTasksByStatus(column.id).map(task => (
               <div
                 key={task.id}
-                draggable
+                draggable={!isUpdating || isUpdating !== task.id}
                 onDragStart={(e) => handleDragStart(e, task)}
-                className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 cursor-move hover:shadow-md transition-shadow border-l-4 border-l-blue-500"
+                className={`bg-gray-50 dark:bg-gray-700 rounded-lg p-4 cursor-move hover:shadow-md transition-shadow border-l-4 border-l-blue-500 ${
+                  isUpdating === task.id ? 'opacity-50 cursor-not-allowed' : ''
+                }`}
               >
+                {/* Loading indicator for status update */}
+                {isUpdating === task.id && (
+                  <div className="absolute top-2 right-2">
+                    <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                  </div>
+                )}
+
                 {/* 任务头部 */}
                 <div className="flex items-start justify-between mb-3">
                   <h4 className="font-medium text-gray-900 dark:text-white text-sm line-clamp-2">
@@ -1161,7 +1195,8 @@ const CreateTaskModal: React.FC<{
       status: formData.status,
       storyPoints: 1, // Default story points
       labels: formData.labels,
-      sprintId: '1' // Default sprint ID
+      sprintId: 1, // Default sprint ID
+      backlogId: 1 // Default backlog ID
     });
     
     // Reset form
@@ -1355,7 +1390,7 @@ const CreateTaskModal: React.FC<{
                 <option value="low">Low</option>
                 <option value="medium">Medium</option>
                 <option value="high">High</option>
-                <option value="urgent">Urgent</option>
+                <option value="critical">Critical</option>
               </select>
             </div>
 
@@ -1370,8 +1405,7 @@ const CreateTaskModal: React.FC<{
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               >
                 <option value="todo">To Do</option>
-                <option value="in-progress">In Progress</option>
-                <option value="review">Awaiting Review</option>
+                <option value="in_progress">In Progress</option>
                 <option value="done">Completed</option>
               </select>
             </div>
@@ -1451,11 +1485,18 @@ interface TaskBoardProps {
 const TaskBoard: React.FC<TaskBoardProps> = ({ params }) => {
   const resolvedParams = React.use(params);
   const projectId = resolvedParams['project-id'];
-  const [tasks, setTasks] = useState(mockTasks);
+  const [tasks, setTasks] = useState<Task[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedAssignee, setSelectedAssignee] = useState('');
   const [selectedPriority, setSelectedPriority] = useState('');
   const [currentView, setCurrentView] = useState<ViewType>('kanban');
+  
+  // API integration state
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [currentSprint, setCurrentSprint] = useState<any>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
+  const [updateMessage, setUpdateMessage] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   
   // Task creation modal state
   const [isCreateTaskModalOpen, setIsCreateTaskModalOpen] = useState(false);
@@ -1468,12 +1509,180 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ params }) => {
     { label: 'Task Board', icon: <Kanban className="w-4 h-4" /> }
   ];
 
+  // Fetch sprint tasks data from backend
+  const fetchSprintTasks = async () => {
+    if (!projectId) return;
+    
+    try {
+      setIsLoading(true);
+      setError(null);
+      
+      // First, get project sprints to find the current/active sprint
+      const sprintsResponse = await api.sprints.getAll();
+      if (sprintsResponse.error) throw new Error(sprintsResponse.error);
+      
+      const projectSprints = sprintsResponse.data?.filter(sprint => 
+        sprint.projectId === parseInt(projectId)
+      ) || [];
+      
+      // Find current sprint (active or most recent)
+      let activeSprint = projectSprints.find(sprint => sprint.status === 'active');
+      if (!activeSprint) {
+        // If no active sprint, get the most recent one
+        activeSprint = projectSprints
+          .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime())[0];
+      }
+      
+      if (!activeSprint) {
+        // No sprints found, use mock data
+        setTasks(mockTasks);
+        setIsLoading(false);
+        return;
+      }
+      
+      setCurrentSprint(activeSprint);
+      
+      // Fetch tasks for the current sprint instead of backlog items
+      // Since the backend doesn't support filtering tasks by sprint_id yet,
+      // we'll use the sprint backlog endpoint and extract the tasks
+      const backlogResponse = await api.sprints.getSprintBacklog(activeSprint.id);
+      if (backlogResponse.error) throw new Error(backlogResponse.error);
+      
+      // Extract all tasks from backlog items
+      const allTasks: any[] = [];
+      (backlogResponse.data || []).forEach((backlogItem: any) => {
+        if (backlogItem.tasks && Array.isArray(backlogItem.tasks)) {
+          allTasks.push(...backlogItem.tasks);
+        }
+      });
+      
+      console.log(`Found ${allTasks.length} tasks in sprint ${activeSprint.id}`);
+      
+      if (allTasks.length === 0) {
+        // No tasks found, use mock data
+        setTasks(mockTasks);
+        setIsLoading(false);
+        return;
+      }
+      
+      // Get project users for assignee details
+      let projectUsers: any[] = [];
+      try {
+        const usersResponse = await api.sprints.getProjectUsers(activeSprint.id);
+        if (!usersResponse.error && usersResponse.data) {
+          projectUsers = usersResponse.data;
+        }
+      } catch (error) {
+        console.warn('Could not fetch project users for assignee details:', error);
+      }
+      
+      // Helper function to get user display name
+      const getUserDisplayName = (userId: number): string => {
+        const user = projectUsers.find(u => u.id === userId);
+        if (user) {
+          if (user.full_name && user.full_name.trim()) {
+            return user.full_name;
+          } else if (user.username && user.username.trim()) {
+            return user.username;
+          } else if (user.email) {
+            return user.email.split('@')[0];
+          }
+        }
+        return `User ${userId}`;
+      };
+      
+      // Transform backend task data to frontend Task format
+      const transformedTasks: Task[] = (allTasks || []).map((apiTask: any) => {
+        console.log('Processing task:', {
+          id: apiTask.id,
+          title: apiTask.title,
+          status: apiTask.status,
+          assignees: apiTask.assignees
+        });
+        
+        // Map backend status to frontend status
+        let mappedStatus: Task['status'] = 'todo';
+        if (apiTask.status) {
+          switch (apiTask.status.toLowerCase()) {
+            case 'todo':
+              mappedStatus = 'todo';
+              break;
+            case 'in_progress':
+              mappedStatus = 'in_progress';
+              break;
+            case 'done':
+              mappedStatus = 'done';
+              break;
+            default:
+              mappedStatus = 'todo';
+          }
+        }
+        
+        // Extract assignee names from the backend assignee objects
+        const assigneeNames: string[] = [];
+        
+        if (apiTask.assignees && Array.isArray(apiTask.assignees)) {
+          apiTask.assignees.forEach((assignee: any) => {
+            if (assignee.full_name && assignee.full_name.trim()) {
+              assigneeNames.push(assignee.full_name);
+            } else if (assignee.username && assignee.username.trim()) {
+              assigneeNames.push(assignee.username);
+            } else if (assignee.email) {
+              assigneeNames.push(assignee.email.split('@')[0]);
+            }
+          });
+        }
+        
+        // Remove duplicates
+        const uniqueAssigneeNames = [...new Set(assigneeNames)];
+        console.log(`Final assignees for ${apiTask.title}:`, uniqueAssigneeNames);
+        
+        return {
+          id: apiTask.id,
+          title: apiTask.title,
+          description: apiTask.description || '',
+          assignees: uniqueAssigneeNames,
+          priority: apiTask.priority?.toLowerCase() || 'medium',
+          storyPoints: apiTask.story_point || 1,
+          status: mappedStatus,
+          labels: [], // Tasks don't have labels in the current model
+          dueDate: undefined, // Tasks don't have due dates in the current model
+          epic: undefined, // Tasks don't have epics in the current model
+          sprintId: activeSprint.id,
+          backlogId: apiTask.backlog_id || 0,
+        };
+      });
+      
+      setTasks(transformedTasks.length > 0 ? transformedTasks : mockTasks);
+      
+    } catch (err) {
+      console.error('Error fetching sprint tasks:', err);
+      setError(err instanceof Error ? err.message : 'Failed to fetch sprint tasks');
+      // Fallback to mock data
+      setTasks(mockTasks);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Refresh data
+  const refreshData = async () => {
+    setIsRefreshing(true);
+    await fetchSprintTasks();
+    setIsRefreshing(false);
+  };
+
+  // Initial data fetch
+  useEffect(() => {
+    fetchSprintTasks();
+  }, [projectId]);
+
   const getPriorityColor = (priority: string) => {
     const colors = {
       low: 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400',
       medium: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400',
       high: 'bg-orange-100 text-orange-800 dark:bg-orange-900/20 dark:text-orange-400',
-      urgent: 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400',
+      critical: 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400',
     };
     return colors[priority as keyof typeof colors];
   };
@@ -1483,7 +1692,7 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ params }) => {
       low: '🟢',
       medium: '🟡',
       high: '🟠',
-      urgent: '🔴',
+      critical: '🔴',
     };
     return icons[priority as keyof typeof icons];
   };
@@ -1505,14 +1714,44 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ params }) => {
     .filter(Boolean);
 
   // Task creation handlers
-  const handleCreateTask = (taskData: Omit<Task, 'id'>) => {
-    const newTask: Task = {
-      ...taskData,
-      id: `task-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
-    };
+  const handleCreateTask = async (taskData: Omit<Task, 'id' | 'backlogId'>) => {
+    if (!currentSprint) {
+      alert('No active sprint found. Please create a sprint first.');
+      return;
+    }
     
-    setTasks(prev => [...prev, newTask]);
-    setIsCreateTaskModalOpen(false);
+    try {
+      // Create task in backend
+      const newTaskData = {
+        title: taskData.title,
+        description: taskData.description,
+        status: taskData.status,
+        priority: taskData.priority,
+        sprint_id: currentSprint.id,
+        backlog_id: 1, // TODO: Get actual backlog ID or create new backlog item
+      };
+      
+      // For now, add to local state (in real implementation, this would be an API call)
+      const newTask: Task = {
+        ...taskData,
+        id: tasks.length + 1, // Simple ID generation
+        backlogId: 1, // TODO: Get actual backlog ID
+      };
+      
+      setTasks(prev => [...prev, newTask]);
+      setIsCreateTaskModalOpen(false);
+      
+      // TODO: Implement actual API call to create task
+      // const response = await api.tasks.create(newTaskData);
+      // if (response.error) throw new Error(response.error);
+      // 
+      // // Refresh data to get the new task with proper ID
+      // await fetchSprintBacklog();
+      
+    } catch (error) {
+      console.error('Error creating task:', error);
+      alert('Failed to create task. Please try again.');
+    }
   };
 
   const openCreateTaskModal = (status: string = 'todo') => {
@@ -1535,9 +1774,23 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ params }) => {
              currentView === 'timeline' ? 'View tasks organized by timeline and due dates' :
              'View tasks in a calendar format to track deadlines'}
           </p>
+          {currentSprint && (
+            <div className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+              Current Sprint: <span className="font-medium">{currentSprint.sprintName}</span>
+              {currentSprint.sprintGoal && ` - ${currentSprint.sprintGoal}`}
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-4">
           <ViewSelector currentView={currentView} onViewChange={setCurrentView} />
+          <button 
+            onClick={refreshData}
+            disabled={isRefreshing}
+            className="px-3 py-2 text-gray-600 dark:text-gray-400 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors disabled:opacity-50"
+            title="Refresh data"
+          >
+            <RotateCcw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+          </button>
           <button 
             onClick={() => openCreateTaskModal()}
             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
@@ -1548,82 +1801,302 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ params }) => {
         </div>
       </div>
 
-      {/* 筛选器 */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-        <div className="flex flex-wrap gap-4 items-center">
+      {/* Error Display */}
+      {error && (
+        <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
           <div className="flex items-center gap-2">
-            <Search className="w-4 h-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search tasks..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-            />
-          </div>
-          
-          <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4 text-gray-400" />
-            <select
-              value={selectedAssignee}
-              onChange={(e) => setSelectedAssignee(e.target.value)}
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+            <div className="w-5 h-5 bg-red-500 rounded-full flex items-center justify-center">
+              <span className="text-white text-xs">!</span>
+            </div>
+            <div>
+              <h3 className="text-sm font-medium text-red-800 dark:text-red-200">Error loading data</h3>
+              <p className="text-sm text-red-700 dark:text-red-300">{error}</p>
+            </div>
+            <button
+              onClick={() => setError(null)}
+              className="ml-auto text-red-400 hover:text-red-600 dark:hover:text-red-300"
             >
-              <option value="">All Members</option>
-              {uniqueAssignees.map(assignee => (
-                <option key={assignee} value={assignee}>
-                  {assignee}
-                </option>
-              ))}
-            </select>
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Update Message Display */}
+      {updateMessage && (
+        <div className={`${
+          updateMessage.type === 'success' 
+            ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800' 
+            : 'bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800'
+        } border rounded-lg p-4`}>
+          <div className="flex items-center gap-2">
+            <div className={`w-5 h-5 rounded-full flex items-center justify-center ${
+              updateMessage.type === 'success' ? 'bg-green-500' : 'bg-red-500'
+            }`}>
+              <span className="text-white text-xs">
+                {updateMessage.type === 'success' ? '✓' : '!'}
+              </span>
+            </div>
+            <div>
+              <h3 className={`text-sm font-medium ${
+                updateMessage.type === 'success' 
+                  ? 'text-green-800 dark:text-green-200' 
+                  : 'text-red-800 dark:text-red-200'
+              }`}>
+                {updateMessage.type === 'success' ? 'Success' : 'Error'}
+              </h3>
+              <p className={`text-sm ${
+                updateMessage.type === 'success' 
+                  ? 'text-green-700 dark:text-green-300' 
+                  : 'text-red-700 dark:text-red-300'
+              }`}>
+                {updateMessage.message}
+              </p>
+            </div>
+            <button
+              onClick={() => setUpdateMessage(null)}
+              className={`ml-auto hover:opacity-70 ${
+                updateMessage.type === 'success' 
+                  ? 'text-green-400 hover:text-green-600 dark:hover:text-green-300' 
+                  : 'text-red-400 hover:text-red-600 dark:hover:text-red-300'
+              }`}
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Loading State */}
+      {isLoading && (
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-8">
+          <div className="text-center">
+            <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-gray-600 dark:text-gray-400">Loading sprint tasks...</p>
+          </div>
+        </div>
+      )}
+
+      {/* Content - only show when not loading */}
+      {!isLoading && (
+        <>
+          {/* Sprint Info */}
+          {currentSprint && (
+            <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+              <div className="flex items-center gap-3">
+                <div className="w-3 h-3 bg-blue-500 rounded-full"></div>
+                <div>
+                  <h3 className="font-medium text-blue-900 dark:text-blue-100">
+                    Current Sprint: {currentSprint.sprintName}
+                  </h3>
+                  {currentSprint.sprintGoal && (
+                    <p className="text-sm text-blue-700 dark:text-blue-200 mt-1">
+                      {currentSprint.sprintGoal}
+                    </p>
+                  )}
+                  <div className="flex items-center gap-4 mt-2 text-xs text-blue-600 dark:text-blue-300">
+                    <span>Start: {new Date(currentSprint.startDate).toLocaleDateString()}</span>
+                    <span>End: {new Date(currentSprint.endDate).toLocaleDateString()}</span>
+                    <span>Status: {currentSprint.status}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* No Sprint Warning */}
+          {!currentSprint && (
+            <div className="bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg p-4">
+              <div className="flex items-center gap-3">
+                <div className="w-5 h-5 bg-yellow-500 rounded-full flex items-center justify-center">
+                  <span className="text-white text-xs">!</span>
+                </div>
+                <div>
+                  <h3 className="font-medium text-yellow-900 dark:text-yellow-100">
+                    No Active Sprint
+                  </h3>
+                  <p className="text-sm text-yellow-700 dark:text-yellow-200 mt-1">
+                    This project doesn't have an active sprint. Tasks are displayed from mock data.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 筛选器 */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+            <div className="flex flex-wrap gap-4 items-center">
+              <div className="flex items-center gap-2">
+                <Search className="w-4 h-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search tasks..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
+                />
+              </div>
+              
+              <div className="flex items-center gap-2">
+                <Filter className="w-4 h-4 text-gray-400" />
+                <select
+                  value={selectedAssignee}
+                  onChange={(e) => setSelectedAssignee(e.target.value)}
+                  className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                >
+                  <option value="">All Members</option>
+                  {uniqueAssignees.map(assignee => (
+                    <option key={assignee} value={assignee}>
+                      {assignee}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <select
+                value={selectedPriority}
+                onChange={(e) => setSelectedPriority(e.target.value)}
+                className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+              >
+                <option value="">All Priorities</option>
+                <option value="critical">Critical</option>
+                <option value="high">High</option>
+                <option value="medium">Medium</option>
+                <option value="low">Low</option>
+              </select>
+            </div>
           </div>
 
-          <select
-            value={selectedPriority}
-            onChange={(e) => setSelectedPriority(e.target.value)}
-            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
-          >
-            <option value="">All Priorities</option>
-            <option value="urgent">Urgent</option>
-            <option value="high">High</option>
-            <option value="medium">Medium</option>
-            <option value="low">Low</option>
-          </select>
-        </div>
-      </div>
-
-      {/* View Content */}
-      <div>
-        {currentView === 'kanban' && (
-          <KanbanView
-            tasks={filteredTasks}
-            setTasks={setTasks}
-            onCreateTask={openCreateTaskModal}
-            getPriorityColor={getPriorityColor}
-            getPriorityIcon={getPriorityIcon}
-            columns={columns}
-            getTasksByStatus={getTasksByStatus}
-          />
-        )}
-        
-        {currentView === 'timeline' && (
-          <TimelineView
-            tasks={filteredTasks}
-            onCreateTask={openCreateTaskModal}
-            getPriorityColor={getPriorityColor}
-            getPriorityIcon={getPriorityIcon}
-          />
-        )}
-        
-        {currentView === 'calendar' && (
-          <CalendarView
-            tasks={filteredTasks}
-            onCreateTask={openCreateTaskModal}
-            getPriorityColor={getPriorityColor}
-            getPriorityIcon={getPriorityIcon}
-          />
-        )}
-      </div>
+          {/* View Content */}
+          <div>
+            {currentView === 'kanban' && (
+              <KanbanView
+                tasks={filteredTasks}
+                setTasks={setTasks}
+                onCreateTask={openCreateTaskModal}
+                getPriorityColor={getPriorityColor}
+                getPriorityIcon={getPriorityIcon}
+                columns={columns}
+                getTasksByStatus={getTasksByStatus}
+                onTaskStatusUpdate={async (taskId, newStatus) => {
+                  try {
+                    console.log('Starting status update for task:', { taskId, newStatus });
+                    
+                    // Check if the status is actually changing
+                    const currentTask = tasks.find(t => t.id === taskId);
+                    if (!currentTask) {
+                      throw new Error('Task not found');
+                    }
+                    
+                    if (currentTask.status === newStatus) {
+                      console.log('Status already matches, no update needed');
+                      return;
+                    }
+                    
+                    // Validate task ID is a positive number
+                    if (!taskId || taskId <= 0) {
+                      throw new Error(`Invalid task ID: ${taskId}`);
+                    }
+                    
+                    // Since we're now working with actual tasks, we need to update the task status
+                    // Map the frontend status to backend TaskStatus enum
+                    const statusMap: Record<string, TaskStatus> = {
+                      'todo': TaskStatus.TODO,
+                      'in_progress': TaskStatus.IN_PROGRESS,
+                      'done': TaskStatus.DONE
+                    };
+                    
+                    const mappedStatus = statusMap[newStatus];
+                    if (!mappedStatus) {
+                      throw new Error(`Invalid status: ${newStatus}`);
+                    }
+                    
+                    console.log('Mapped status:', { newStatus, mappedStatus });
+                    console.log('Calling API:', `/api/v1/tasks/${taskId}/status?status=${mappedStatus}`);
+                    
+                    // Update the task status in the backend
+                    const response = await api.tasks.updateStatus(taskId, mappedStatus);
+                    console.log('API response:', response);
+                    
+                    if (response.error) {
+                      throw new Error(response.error);
+                    }
+                    
+                    // Status update successful, local state already updated
+                    console.log(`Task ${taskId} status updated to ${mappedStatus}`);
+                    
+                    // Show success message
+                    const task = tasks.find(t => t.id === taskId);
+                    const statusDisplay = {
+                      'todo': 'To Do',
+                      'in_progress': 'In Progress',
+                      'done': 'Done'
+                    };
+                    
+                    setUpdateMessage({
+                      type: 'success',
+                      message: `"${task?.title || 'Task'}" moved to ${statusDisplay[newStatus as keyof typeof statusDisplay]}`
+                    });
+                    
+                    // Clear success message after 3 seconds
+                    setTimeout(() => {
+                      setUpdateMessage(null);
+                    }, 3000);
+                    
+                  } catch (error) {
+                    console.error('Error updating task status:', error);
+                    
+                    // Log more details about the error
+                    if (error instanceof Error) {
+                      console.error('Error details:', {
+                        message: error.message,
+                        name: error.name,
+                        stack: error.stack
+                      });
+                    }
+                    
+                    // Show error message
+                    setUpdateMessage({
+                      type: 'error',
+                      message: `Failed to update task status: ${error instanceof Error ? error.message : 'Unknown error'}`
+                    });
+                    
+                    // Clear error message after 5 seconds
+                    setTimeout(() => {
+                      setUpdateMessage(null);
+                    }, 5000);
+                    
+                    // Revert local state on API error
+                    setTasks(prevTasks =>
+                      prevTasks.map(task =>
+                        task.id === taskId ? { ...task, status: task.status } : task
+                      )
+                    );
+                  }
+                }}
+              />
+            )}
+            
+            {currentView === 'timeline' && (
+              <TimelineView
+                tasks={filteredTasks}
+                onCreateTask={openCreateTaskModal}
+                getPriorityColor={getPriorityColor}
+                getPriorityIcon={getPriorityIcon}
+              />
+            )}
+            
+            {currentView === 'calendar' && (
+              <CalendarView
+                tasks={filteredTasks}
+                onCreateTask={openCreateTaskModal}
+                getPriorityColor={getPriorityColor}
+                getPriorityIcon={getPriorityIcon}
+              />
+            )}
+          </div>
+        </>
+      )}
 
       {/* Create Task Modal */}
       <CreateTaskModal

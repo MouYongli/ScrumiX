@@ -172,12 +172,14 @@ export const api = {
       search?: string;
       skip?: number;
       limit?: number;
+      sprint_id?: number;
     }) => {
       const searchParams = new URLSearchParams();
       if (params?.status) searchParams.append('status', params.status);
       if (params?.search) searchParams.append('search', params.search);
       if (params?.skip) searchParams.append('skip', params.skip.toString());
       if (params?.limit) searchParams.append('limit', params.limit.toString());
+      if (params?.sprint_id) searchParams.append('sprint_id', params.sprint_id.toString());
       
       return jsonFetch<TaskListResponse>(`/api/v1/tasks/?${searchParams.toString()}`);
     },
@@ -204,7 +206,6 @@ export const api = {
       jsonFetch<ApiTask>(`/api/v1/tasks/${id}/status?status=${status}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        // No body needed since status is sent as query parameter
       }),
   },
   
@@ -514,34 +515,35 @@ export const api = {
 
   backlogs: {
     getAll: (params?: { 
-      project_id?: number; 
+      status?: string;
+      priority?: string;
+      item_type?: string;
+      project_id?: number;
+      sprint_id?: number;
+      assigned_to_id?: number;
+      search?: string;
       include_children?: boolean;
       include_acceptance_criteria?: boolean;
-      status?: string;
-      item_type?: string;
-      search?: string;
       skip?: number;
       limit?: number;
-      sprint_id?: number;
     }) => {
       const searchParams = new URLSearchParams();
+      if (params?.status) searchParams.append('status', params.status);
+      if (params?.priority) searchParams.append('priority', params.priority);
+      if (params?.item_type) searchParams.append('item_type', params.item_type);
       if (params?.project_id) searchParams.append('project_id', params.project_id.toString());
+      if (params?.sprint_id) searchParams.append('sprint_id', params.sprint_id.toString());
+      if (params?.assigned_to_id) searchParams.append('assigned_to_id', params.assigned_to_id.toString());
+      if (params?.search) searchParams.append('search', params.search);
       if (params?.include_children) searchParams.append('include_children', params.include_children.toString());
       if (params?.include_acceptance_criteria) searchParams.append('include_acceptance_criteria', params.include_acceptance_criteria.toString());
-      if (params?.status) searchParams.append('status', params.status);
-      if (params?.item_type) searchParams.append('item_type', params.item_type);
-      if (params?.search) searchParams.append('search', params.search);
       if (params?.skip) searchParams.append('skip', params.skip.toString());
       if (params?.limit) searchParams.append('limit', params.limit.toString());
-      if (params?.sprint_id) searchParams.append('sprint_id', params.sprint_id.toString());
       
       return jsonFetch<ApiBacklog[]>(`/api/v1/backlogs/?${searchParams.toString()}`);
     },
     
     getById: (id: number) => jsonFetch<ApiBacklog>(`/api/v1/backlogs/${id}`),
-    
-    getEpics: (project_id: number) => 
-      jsonFetch<ApiBacklog[]>(`/api/v1/backlogs/?project_id=${project_id}&item_type=epic`),
     
     create: (data: Omit<ApiBacklog, 'id' | 'created_at' | 'updated_at' | 'level' | 'path' | 'root_id' | 'acceptance_criteria'>) => 
       jsonFetch<ApiBacklog>('/api/v1/backlogs/', {
@@ -555,6 +557,13 @@ export const api = {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
+      }),
+    
+    updateStatus: (id: number, status: string) => 
+      jsonFetch<ApiBacklog>(`/api/v1/backlogs/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
       }),
     
     delete: (id: number) => jsonFetch<void>(`/api/v1/backlogs/${id}`, {
