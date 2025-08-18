@@ -59,6 +59,7 @@ const ProjectSidebar = forwardRef<ProjectSidebarRef, ProjectSidebarProps>(({
   const [project, setProject] = useState<ProjectData | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isPreviewCollapsed, setIsPreviewCollapsed] = useState(false);
 
   // Function to refresh project data (can be called externally)
   const refreshProjectData = async () => {
@@ -152,6 +153,24 @@ const ProjectSidebar = forwardRef<ProjectSidebarRef, ProjectSidebarProps>(({
     // Cleanup interval on unmount
     return () => clearInterval(intervalId);
   }, [projectId]);
+
+  // Auto-collapse preview box on smaller screens
+  useEffect(() => {
+    const handleResize = () => {
+      if (window.innerWidth < 768) { // md breakpoint
+        setIsPreviewCollapsed(true);
+      }
+    };
+
+    // Set initial state
+    handleResize();
+
+    // Add event listener
+    window.addEventListener('resize', handleResize);
+
+    // Cleanup
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   useImperativeHandle(ref, () => ({
     refreshSprintData: refreshProjectData,
@@ -257,157 +276,205 @@ const ProjectSidebar = forwardRef<ProjectSidebarRef, ProjectSidebarProps>(({
           </button>
         </div>
 
-        {/* Project Info Card */}
+                {/* Project Info Card */}
         {!isCollapsed && (
-          <div className="p-4 pt-0">
-            <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3">
+          <div className="p-3 pt-0">
+            <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-2">
               {isLoading ? (
-                <div className="animate-pulse space-y-3">
-                  <div className="h-4 bg-gray-200 dark:bg-gray-700 rounded w-3/4"></div>
-                  <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-1/2"></div>
+                <div className="animate-pulse space-y-2">
+                  <div className="h-3 bg-gray-200 dark:bg-gray-700 rounded w-3/4"></div>
+                  <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded w-1/2"></div>
                   <div className="h-2 bg-gray-200 dark:bg-gray-700 rounded w-full"></div>
                 </div>
               ) : project ? (
                 <>
-                  <div className="flex items-center mb-2">
-                    <div className={`w-3 h-3 ${project.color} rounded-full mr-2`}></div>
-                    <h3 className="font-semibold text-gray-900 dark:text-white text-sm truncate">
-                      {project.name}
-                    </h3>
-                  </div>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className={`px-2 py-1 text-xs font-medium rounded-full ${getStatusColor(project.status)}`}>
-                      {getStatusText(project.status)}
-                    </span>
+                  {/* Project Header with Collapse Toggle */}
+                  <div className="flex items-center justify-between mb-1">
+                    <div className="flex items-center">
+                      <div className={`w-3 h-3 ${project.color} rounded-full mr-2`}></div>
+                      <h3 className="font-semibold text-gray-900 dark:text-white text-sm truncate">
+                        {project.name}
+                      </h3>
+                    </div>
+                    <button
+                      onClick={() => setIsPreviewCollapsed(!isPreviewCollapsed)}
+                      className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors"
+                      title={isPreviewCollapsed ? "Expand preview" : "Collapse preview"}
+                    >
+                      <svg 
+                        className={`w-3 h-3 text-gray-500 dark:text-gray-400 transition-transform duration-200 ${
+                          isPreviewCollapsed ? 'rotate-180' : ''
+                        }`} 
+                        fill="none" 
+                        stroke="currentColor" 
+                        viewBox="0 0 24 24"
+                      >
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                      </svg>
+                    </button>
                   </div>
                   
-                  {/* Enhanced Current Sprint Display */}
-                  {project.currentSprint ? (
-                    <div className={`mb-3 p-2 rounded-lg border transition-colors ${
-                      project.sprintContext === 'active' 
-                        ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
-                        : project.sprintContext === 'planning'
-                        ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
-                        : 'bg-gray-50 dark:bg-gray-900/20 border-gray-200 dark:border-gray-800'
-                    }`}>
-                      <div className="flex items-center justify-between mb-1">
-                        <div className="flex items-center gap-2">
-                          <Zap className={`w-3 h-3 ${
-                            project.sprintContext === 'active'
-                              ? 'text-green-600 dark:text-green-400'
-                              : project.sprintContext === 'planning'
-                              ? 'text-blue-600 dark:text-blue-400'
-                              : 'text-gray-500 dark:text-gray-400'
-                          }`} />
-                          <span className={`text-xs font-medium ${
-                            project.sprintContext === 'active'
-                              ? 'text-green-800 dark:text-green-300'
-                              : project.sprintContext === 'planning'
-                              ? 'text-blue-800 dark:text-blue-300'
-                              : 'text-gray-600 dark:text-gray-400'
-                          }`}>
-                            {project.sprintContext === 'active' ? 'Active Sprint' :
-                             project.sprintContext === 'planning' ? 'Planning Sprint' :
-                             project.sprintContext === 'completed' ? 'Recent Sprint' : 'Current Sprint'}
-                          </span>
+                  {/* Status Badge */}
+                  <div className="flex items-center justify-between mb-1">
+                    <span className={`px-2 py-0.5 text-xs font-medium rounded-full ${getStatusColor(project.status)}`}>
+                      {getStatusText(project.status)}
+                    </span>
+                    {/* Collapsed indicator */}
+                    {isPreviewCollapsed && (
+                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                        Click to expand
+                      </span>
+                    )}
+                  </div>
+                  
+                  {/* Collapsible Content */}
+                  <div className={`overflow-hidden transition-all duration-300 ${
+                    isPreviewCollapsed ? 'max-h-0 opacity-0' : 'max-h-96 opacity-100'
+                  }`}>
+                    
+                    {/* Collapsed Summary */}
+                    {isPreviewCollapsed && (
+                      <div className="text-xs text-gray-500 dark:text-gray-400 text-center py-1">
+                        {project.currentSprint ? (
+                          <span>Active: {project.currentSprint} • {project.progress}% complete</span>
+                        ) : (
+                          <span>{project.progress}% complete • No active sprint</span>
+                        )}
+                      </div>
+                    )}
+                    
+                    {/* Expanded Content */}
+                    <div className={`${isPreviewCollapsed ? 'hidden' : 'block'}`}>
+                    {/* Enhanced Current Sprint Display */}
+                    {project.currentSprint ? (
+                      <div className={`mb-2 p-1.5 rounded-lg border transition-colors ${
+                        project.sprintContext === 'active' 
+                          ? 'bg-green-50 dark:bg-green-900/20 border-green-200 dark:border-green-800'
+                          : project.sprintContext === 'planning'
+                          ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800'
+                          : 'bg-gray-50 dark:bg-gray-900/20 border-gray-200 dark:border-gray-800'
+                      }`}>
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-1.5">
+                            <Zap className={`w-3 h-3 ${
+                              project.sprintContext === 'active'
+                                ? 'text-green-600 dark:text-green-400'
+                                : project.sprintContext === 'planning'
+                                ? 'text-blue-600 dark:text-blue-400'
+                                : 'text-gray-500 dark:text-gray-400'
+                            }`} />
+                            <span className={`text-xs font-medium ${
+                              project.sprintContext === 'active'
+                                ? 'text-green-800 dark:text-green-300'
+                                : project.sprintContext === 'planning'
+                                ? 'text-blue-800 dark:text-blue-300'
+                                : 'text-gray-600 dark:text-gray-400'
+                            }`}>
+                              {project.sprintContext === 'active' ? 'Active Sprint' :
+                               project.sprintContext === 'planning' ? 'Planning Sprint' :
+                               project.sprintContext === 'completed' ? 'Recent Sprint' : 'Current Sprint'}
+                            </span>
+                          </div>
+                          <button
+                            onClick={refreshProjectData}
+                            disabled={isRefreshing}
+                            className={`p-0.5 rounded transition-colors ${
+                              project.sprintContext === 'active'
+                                ? 'text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:bg-green-100 dark:hover:bg-green-800/50'
+                                : project.sprintContext === 'planning'
+                                ? 'text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800/50'
+                                : 'text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
+                            } ${isRefreshing ? 'opacity-50 cursor-not-allowed' : ''}`}
+                            title="Refresh sprint data"
+                          >
+                            {isRefreshing ? (
+                              <svg className="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                              </svg>
+                            ) : (
+                              <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                              </svg>
+                            )}
+                          </button>
                         </div>
-                        <button
-                          onClick={refreshProjectData}
-                          disabled={isRefreshing}
-                          className={`p-1 rounded transition-colors ${
+                        <div className={`text-xs font-medium truncate mb-1 ${
+                          project.sprintContext === 'active'
+                            ? 'text-green-700 dark:text-green-400'
+                            : project.sprintContext === 'planning'
+                            ? 'text-blue-700 dark:text-blue-400'
+                            : 'text-gray-600 dark:text-gray-400'
+                        }`}>
+                          {project.currentSprint}
+                        </div>
+                        <Link
+                          href={`/project/${projectId}/sprint`}
+                          className={`block w-full text-center text-xs rounded px-1.5 py-0.5 transition-colors ${
                             project.sprintContext === 'active'
-                              ? 'text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 hover:bg-green-100 dark:hover:bg-green-800/50'
+                              ? 'text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 bg-green-100 dark:bg-green-800/50 hover:bg-green-200 dark:hover:bg-green-800'
                               : project.sprintContext === 'planning'
-                              ? 'text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 hover:bg-blue-100 dark:hover:bg-blue-800/50'
-                              : 'text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700'
-                          } ${isRefreshing ? 'opacity-50 cursor-not-allowed' : ''}`}
-                          title="Refresh sprint data"
+                              ? 'text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 bg-blue-100 dark:bg-blue-800/50 hover:bg-blue-200 dark:hover:bg-blue-800'
+                              : 'text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 bg-gray-100 dark:bg-gray-700 hover:bg-blue-100 dark:hover:bg-blue-800/50'
+                          }`}
                         >
-                          {isRefreshing ? (
-                            <svg className="w-3 h-3 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                            </svg>
-                          ) : (
+                          {project.sprintContext === 'active' ? 'View Active Sprint' :
+                           project.sprintContext === 'planning' ? 'View Planning Sprint' :
+                           project.sprintContext === 'completed' ? 'View Sprint Details' : 'View Sprint'}
+                        </Link>
+                      </div>
+                    ) : (
+                      <div className="mb-2 p-1.5 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
+                        <div className="flex items-center justify-between mb-1">
+                          <div className="flex items-center gap-1.5">
+                            <Zap className="w-3 h-3 text-gray-500 dark:text-gray-400" />
+                            <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Current Sprint</span>
+                          </div>
+                          <button
+                            onClick={refreshProjectData}
+                            className="text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-0.5 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                            title="Refresh sprint data"
+                          >
                             <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                             </svg>
-                          )}
-                        </button>
-                      </div>
-                      <div className={`text-xs font-medium truncate mb-2 ${
-                        project.sprintContext === 'active'
-                          ? 'text-green-700 dark:text-green-400'
-                          : project.sprintContext === 'planning'
-                          ? 'text-blue-700 dark:text-blue-400'
-                          : 'text-gray-600 dark:text-gray-400'
-                      }`}>
-                        {project.currentSprint}
-                      </div>
-                      <Link
-                        href={`/project/${projectId}/sprint`}
-                        className={`block w-full text-center text-xs rounded px-2 py-1 transition-colors ${
-                          project.sprintContext === 'active'
-                            ? 'text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 bg-green-100 dark:bg-green-800/50 hover:bg-green-200 dark:hover:bg-green-800'
-                            : project.sprintContext === 'planning'
-                            ? 'text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 bg-blue-100 dark:bg-blue-800/50 hover:bg-blue-200 dark:hover:bg-blue-800'
-                            : 'text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 bg-gray-100 dark:bg-gray-700 hover:bg-blue-100 dark:hover:bg-blue-800/50'
-                        }`}
-                      >
-                        {project.sprintContext === 'active' ? 'View Active Sprint' :
-                         project.sprintContext === 'planning' ? 'View Planning Sprint' :
-                         project.sprintContext === 'completed' ? 'View Sprint Details' : 'View Sprint'}
-                      </Link>
-                    </div>
-                  ) : (
-                    <div className="mb-3 p-2 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-                      <div className="flex items-center justify-between mb-1">
-                        <div className="flex items-center gap-2">
-                          <Zap className="w-3 h-3 text-gray-500 dark:text-gray-400" />
-                          <span className="text-xs font-medium text-gray-600 dark:text-gray-400">Current Sprint</span>
+                          </button>
                         </div>
-                        <button
-                          onClick={refreshProjectData}
-                          className="text-gray-500 dark:text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 p-1 rounded hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                          title="Refresh sprint data"
+                        <div className="text-xs text-gray-500 dark:text-gray-400 text-center mb-1">
+                          No active sprint
+                        </div>
+                        <Link
+                          href={`/project/${projectId}/sprint`}
+                          className="block w-full text-center text-xs text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 bg-gray-100 dark:bg-gray-700 hover:bg-blue-100 dark:hover:bg-blue-800/50 rounded px-1.5 py-0.5 transition-colors"
                         >
-                          <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                          </svg>
-                        </button>
+                          Manage Sprints
+                        </Link>
                       </div>
-                      <div className="text-xs text-gray-500 dark:text-gray-400 text-center mb-2">
-                        No active sprint
-                      </div>
-                      <Link
-                        href={`/project/${projectId}/sprint`}
-                        className="block w-full text-center text-xs text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 bg-gray-100 dark:bg-gray-700 hover:bg-blue-100 dark:hover:bg-blue-800/50 rounded px-2 py-1 transition-colors"
-                      >
-                        Manage Sprints
-                      </Link>
-                    </div>
-                  )}
-                  
-                  <div className="mb-2">
-                    <div className="flex justify-between text-xs text-gray-600 dark:text-gray-400 mb-1">
-                      <span>Project Progress</span>
-                      <span>{project.progress}%</span>
-                    </div>
-                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1.5">
-                      <div 
-                        className="bg-blue-600 h-1.5 rounded-full transition-all duration-300" 
-                        style={{ width: `${project.progress}%` }}
-                      ></div>
-                    </div>
-                  </div>
-                </>
-              ) : (
-                <div className="text-center text-sm text-gray-500 dark:text-gray-400">
-                  Project not found
-                </div>
-              )}
-            </div>
-          </div>
-        )}
+                    )}
+                    
+                                         {/* Project Progress */}
+                     <div className="mb-1">
+                       <div className="flex justify-between text-xs text-gray-600 dark:text-gray-400 mb-0.5">
+                         <span>Project Progress</span>
+                         <span>{project.progress}%</span>
+                       </div>
+                       <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-1">
+                         <div 
+                           className="bg-blue-600 h-1 rounded-full transition-all duration-300" 
+                           style={{ width: `${project.progress}%` }}
+                         ></div>
+                       </div>
+                     </div>
+                   </div>
+                 </div>
+               </>
+             ) : (
+               <div className="text-center text-sm text-gray-500 dark:text-gray-400">
+                 Project not found
+               </div>
+             )}
+           </div>
+         </div>
+       )}
       </div>
 
       {/* Navigation Items */}

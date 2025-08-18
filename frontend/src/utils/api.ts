@@ -1,6 +1,6 @@
 import { TaskStatus, TaskPriority, ProjectStatus } from '@/types/enums';
 import { 
-  ApiUser, ApiTask, ApiMeeting, ApiMeetingAgenda, ApiProject, ApiSprint, ApiBacklog, ApiAcceptanceCriteria,
+  ApiUser, ApiTask, ApiMeeting, ApiMeetingAgenda, ApiMeetingNote, ApiMeetingActionItem, ApiProject, ApiSprint, ApiBacklog, ApiAcceptanceCriteria,
   TaskListResponse, MeetingListResponse, ApiError, ScrumRole, ProjectMemberResponse
 } from '@/types/api';
 import { authenticatedFetch } from '@/utils/auth';
