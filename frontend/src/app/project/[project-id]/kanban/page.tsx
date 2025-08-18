@@ -32,166 +32,10 @@ interface Column {
   limit?: number;
 }
 
-const mockTasks: Task[] = [
-  {
-    id: 1,
-    title: 'User Login Page Design',
-    description: 'Design user-friendly login interface with form validation and error handling',
-    assignees: ['John Smith'],
-    priority: 'high',
-    storyPoints: 5,
-    status: 'todo',
-    labels: ['UI/UX', 'Frontend'],
-    dueDate: '2024-03-20',
-    epic: 'User Authentication System',
-    sprintId: 1,
-    backlogId: 1,
-  },
-  {
-    id: 2,
-    title: 'Password Reset Feature Development',
-    description: 'Implement email verification password reset flow',
-    assignees: ['Sarah Johnson'],
-    priority: 'medium',
-    storyPoints: 8,
-    status: 'in_progress',
-    labels: ['Backend', 'API'],
-    dueDate: '2024-03-25',
-    epic: 'User Authentication System',
-    sprintId: 1,
-    backlogId: 2,
-  },
-  {
-    id: 3,
-    title: 'Product List Page Optimization',
-    description: 'Optimize product list loading performance and user experience',
-    assignees: ['Mike Chen'],
-    priority: 'medium',
-    storyPoints: 3,
-    status: 'in_progress',
-    labels: ['Frontend', 'Performance'],
-    dueDate: '2024-03-18',
-    epic: 'Product Management',
-    sprintId: 1,
-    backlogId: 3,
-  },
-  {
-    id: 4,
-    title: 'Payment API Integration',
-    description: 'Integrate third-party payment platform API',
-    assignees: ['Emily Rodriguez'],
-    priority: 'critical',
-    storyPoints: 13,
-    status: 'done',
-    labels: ['Backend', 'Payment'],
-    epic: 'Order System',
-    sprintId: 1,
-    backlogId: 4,
-  },
-  {
-    id: 5,
-    title: 'Shopping Cart Testing',
-    description: 'Write unit tests and integration tests',
-    assignees: ['David Park'],
-    priority: 'low',
-    storyPoints: 2,
-    status: 'todo',
-    labels: ['Testing'],
-    dueDate: '2024-03-30',
-    epic: 'Shopping System',
-    sprintId: 1,
-    backlogId: 5,
-  },
-  {
-    id: 6,
-    title: 'Database Performance Optimization',
-    description: 'Optimize product query SQL and add indexes',
-    assignees: ['Sarah Johnson', 'Mike Chen'],
-    priority: 'high',
-    storyPoints: 5,
-    status: 'in_progress',
-    labels: ['Backend', 'Database'],
-    epic: 'Performance Optimization',
-    sprintId: 1,
-    backlogId: 6,
-  },
-];
-
 const columns: Column[] = [
   { id: 'todo', title: 'To Do', color: 'bg-gray-100 dark:bg-gray-700', tasks: [] },
   { id: 'in_progress', title: 'In Progress', color: 'bg-blue-100 dark:bg-blue-900/20', tasks: [] },
   { id: 'done', title: 'Completed', color: 'bg-green-100 dark:bg-green-900/20', tasks: [] },
-];
-
-// Mock user stories for task creation
-const mockUserStories = [
-  { id: '1', title: 'User Authentication System' },
-  { id: '2', title: 'Product Management' },
-  { id: '3', title: 'Order System' },
-  { id: '4', title: 'Shopping System' },
-  { id: '5', title: 'Performance Optimization' },
-];
-
-// Mock team members
-const mockTeamMembers = [
-  'John Smith',
-  'Sarah Johnson', 
-  'Mike Chen',
-  'Emily Rodriguez',
-  'David Park',
-  'Lisa Wang'
-];
-
-// Mock sprint backlog items for demonstration
-const mockSprintBacklogItems = [
-  {
-    id: 1,
-    title: 'User Authentication System',
-    description: 'Complete user authentication and authorization system',
-    status: 'in_progress',
-    priority: 'high',
-    created_at: '2024-03-15T10:00:00Z',
-    assigned_to_id: 1,
-    tasks: [],
-    startDate: '2024-03-01T00:00:00Z',
-    endDate: '2024-03-31T23:59:59Z'
-  },
-  {
-    id: 2,
-    title: 'Product Management Features',
-    description: 'Product catalog and management features',
-    status: 'todo',
-    priority: 'medium',
-    created_at: '2024-03-16T14:30:00Z',
-    assigned_to_id: 2,
-    tasks: [],
-    startDate: '2024-03-01T00:00:00Z',
-    endDate: '2024-03-31T23:59:59Z'
-  },
-  {
-    id: 3,
-    title: 'Order Processing System',
-    description: 'Complete order processing and payment system',
-    status: 'in_progress',
-    priority: 'critical',
-    created_at: '2024-03-17T09:15:00Z',
-    assigned_to_id: 3,
-    tasks: [],
-    startDate: '2024-03-01T00:00:00Z',
-    endDate: '2024-03-31T23:59:59Z'
-  },
-  {
-    id: 4,
-    title: 'Performance Optimization',
-    description: 'System performance improvements and optimizations',
-    status: 'todo',
-    priority: 'low',
-    created_at: '2024-03-18T16:45:00Z',
-    assigned_to_id: 4,
-    tasks: [],
-    startDate: '2024-03-01T00:00:00Z',
-    endDate: '2024-03-31T23:59:59Z'
-  }
 ];
 
 // View types
@@ -245,62 +89,103 @@ const TimelineView: React.FC<{
 }> = ({ tasks, onCreateTask, getPriorityColor, getPriorityIcon, currentSprint, sprintBacklogItems, searchTerm, selectedAssignee, selectedPriority }) => {
   const timelineRef = useRef<HTMLDivElement>(null);
   const [timelineInstance, setTimelineInstance] = useState<any>(null);
+  const [isTimelineLoading, setIsTimelineLoading] = useState(false);
+  const [epics, setEpics] = useState<any[]>([]);
+  const [isEpicsLoading, setIsEpicsLoading] = useState(false);
 
-  // Mock epics data (normally this would come from your API)
-  const mockEpics = [
-    {
-      id: 'epic-1',
-      title: 'User Authentication System',
-      description: 'Complete user authentication and authorization system',
-      priority: 'high',
-      progress: 75,
-      startDate: '2024-03-01',
-      endDate: '2024-03-20',
-      color: '#3b82f6'
-    },
-    {
-      id: 'epic-2', 
-      title: 'Product Management',
-      description: 'Product catalog and management features',
-      priority: 'medium',
-      progress: 45,
-      startDate: '2024-03-05',
-      endDate: '2024-03-25',
-      color: '#10b981'
-    },
-    {
-      id: 'epic-3',
-      title: 'Order System',
-      description: 'Complete order processing and payment system',
-      priority: 'urgent',
-      progress: 30,
-      startDate: '2024-03-10',
-      endDate: '2024-03-30',
-      color: '#f59e0b'
-    },
-    {
-      id: 'epic-4',
-      title: 'Performance Optimization',
-      description: 'System performance improvements and optimizations',
-      priority: 'low',
-      progress: 60,
-      startDate: '2024-03-15',
-      endDate: '2024-04-05',
-      color: '#8b5cf6'
+  // Fetch epics from API when component mounts or project changes
+  useEffect(() => {
+    let isMounted = true;
+    
+    const fetchEpics = async () => {
+      if (!currentSprint?.projectId || !isMounted) return;
+      
+      try {
+        setIsEpicsLoading(true);
+        const response = await api.backlogs.getEpics(currentSprint.projectId);
+        if (response.error) {
+          console.warn('Could not fetch epics:', response.error);
+          if (isMounted) setEpics([]);
+          return;
+        }
+        
+        // Transform API epics to timeline format
+        const transformedEpics = (response.data || []).map((epic: any) => ({
+          id: `epic-${epic.id}`,
+          title: epic.title,
+          description: epic.description,
+          priority: epic.priority?.toLowerCase() || 'medium',
+          progress: calculateEpicProgress(epic),
+          startDate: epic.created_at ? new Date(epic.created_at) : new Date(),
+          endDate: epic.updated_at ? new Date(epic.updated_at) : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000), // 30 days from now if no end date
+          color: getEpicColor(epic.priority),
+          status: epic.status
+        }));
+        
+        if (isMounted) {
+          setEpics(transformedEpics);
+        }
+      } catch (error) {
+        console.error('Error fetching epics:', error);
+        if (isMounted) setEpics([]);
+      } finally {
+        if (isMounted) {
+          setIsEpicsLoading(false);
+        }
+      }
+    };
+
+    fetchEpics();
+    
+    return () => {
+      isMounted = false;
+    };
+  }, [currentSprint?.projectId]);
+
+  // Cleanup timeline when component unmounts
+  useEffect(() => {
+    return () => {
+      if (timelineInstance && timelineInstance.dom && timelineInstance.dom.container) {
+        try {
+          timelineInstance.destroy();
+        } catch (error) {
+          console.warn('Error destroying timeline on unmount:', error);
+        }
+        setTimelineInstance(null);
+      }
+    };
+  }, [timelineInstance]);
+
+  // Helper function to calculate epic progress based on child items
+  const calculateEpicProgress = (epic: any): number => {
+    if (!epic.children || epic.children.length === 0) return 0;
+    
+    const totalItems = epic.children.length;
+    const completedItems = epic.children.filter((child: any) => 
+      child.status === 'done' || child.status === 'completed'
+    ).length;
+    
+    return Math.round((completedItems / totalItems) * 100);
+  };
+
+  // Helper function to get epic color based on priority
+  const getEpicColor = (priority: string): string => {
+    switch (priority?.toLowerCase()) {
+      case 'critical': return '#dc2626';
+      case 'high': return '#ea580c';
+      case 'medium': return '#3b82f6';
+      case 'low': return '#10b981';
+      default: return '#6b7280';
     }
-  ];
+  };
 
   // Filter epics based on search only (priority filter does NOT apply to epics)
-  const filteredEpics = mockEpics.filter(epic => {
+  const filteredEpics = epics.filter(epic => {
     const matchesSearch = !searchTerm || 
       epic.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
       epic.description.toLowerCase().includes(searchTerm.toLowerCase());
     
-    // Priority filter does NOT apply to epics - they are always visible
-    // const matchesPriority = !selectedPriority || 
-    //   epic.priority.toLowerCase() === selectedPriority.toLowerCase();
-    
-    return matchesSearch; // Removed priority filtering for epics
+    return matchesSearch;
   });
 
   // Filter tasks based on search, assignee, and priority
@@ -318,13 +203,62 @@ const TimelineView: React.FC<{
     return matchesSearch && matchesAssignee && matchesPriority;
   });
 
+  // Create timeline only when necessary data changes
   useEffect(() => {
+    let isMounted = true;
+    let currentTimeline: any = null;
+    
+    // Cleanup function for this effect
+    const cleanup = () => {
+      isMounted = false;
+      
+      // Safely destroy timeline
+      if (currentTimeline && currentTimeline.dom && currentTimeline.dom.container) {
+        try {
+          currentTimeline.destroy();
+        } catch (error) {
+          console.warn('Error destroying timeline during cleanup:', error);
+        }
+      }
+      
+      if (timelineInstance && timelineInstance.dom && timelineInstance.dom.container) {
+        try {
+          timelineInstance.destroy();
+        } catch (error) {
+          console.warn('Error destroying timeline instance during cleanup:', error);
+        }
+        setTimelineInstance(null);
+      }
+    };
+
     const loadTimeline = async () => {
-      if (!timelineRef.current) return;
+      // Check if component is still mounted and DOM element exists
+      if (!isMounted || !timelineRef.current || isTimelineLoading) return;
 
       try {
+        setIsTimelineLoading(true);
+        
+        // Safely destroy existing timeline if it exists
+        if (timelineInstance && timelineInstance.dom && timelineInstance.dom.container) {
+          try {
+            timelineInstance.destroy();
+          } catch (error) {
+            console.warn('Error destroying timeline:', error);
+          }
+          setTimelineInstance(null);
+        }
+
+        // Wait a bit to ensure DOM is ready and stable
+        await new Promise(resolve => setTimeout(resolve, 150));
+
+        // Check again if component is still mounted and DOM element exists
+        if (!isMounted || !timelineRef.current) return;
+
         // Dynamic import to avoid SSR issues
         const { DataSet, Timeline } = await import('vis-timeline/standalone');
+
+        // Check again if component is still mounted
+        if (!isMounted) return;
 
         // Prepare timeline items
         const items = new DataSet<any>();
@@ -346,7 +280,7 @@ const TimelineView: React.FC<{
 
           // Add epic as timeline item
           items.add({
-            id: `epic-${epic.id}`,
+            id: epic.id,
             group: epic.id,
             content: `
               <div class="epic-timeline-content">
@@ -359,39 +293,75 @@ const TimelineView: React.FC<{
                 </div>
               </div>
             `,
-            start: new Date(epic.startDate),
-            end: new Date(epic.endDate),
+            start: epic.startDate,
+            end: epic.endDate,
             type: 'range',
             className: `epic-timeline-item priority-${epic.priority}`,
             title: epic.description
           });
         });
 
-        // Add user story groups
+        // Add user story groups (sprint backlog items)
         const userStoryGroup = 'user-stories';
         groups.add({
           id: userStoryGroup,
           content: `
             <div class="stories-group-content">
               <div class="stories-title">User Stories</div>
-              <div class="stories-count">${filteredTasks.length} stories</div>
+              <div class="stories-count">${sprintBacklogItems.length} stories</div>
             </div>
           `,
           className: 'stories-group',
           order: 2
         });
 
-        // Add user stories (tasks) to the timeline
+        // Add user stories (sprint backlog items) to the timeline
+        sprintBacklogItems.forEach((backlogItem: any) => {
+          // Use sprint dates if available, otherwise use created/updated dates
+          const startDate = currentSprint?.startDate ? 
+            new Date(currentSprint.startDate) : 
+            new Date(backlogItem.created_at);
+          
+          const endDate = currentSprint?.endDate ? 
+            new Date(currentSprint.endDate) : 
+            new Date(backlogItem.updated_at || Date.now());
+
+          items.add({
+            id: `backlog-${backlogItem.id}`,
+            group: userStoryGroup,
+            content: `
+              <div class="story-timeline-content">
+                <div class="story-timeline-title">${backlogItem.title}</div>
+                <div class="story-timeline-meta">
+                  <span class="story-priority">${getPriorityIcon(backlogItem.priority || 'medium')} ${(backlogItem.priority || 'medium').toUpperCase()}</span>
+                  <span class="story-points">${backlogItem.story_point || 1}SP</span>
+                  <span class="story-status">${backlogItem.status || 'todo'}</span>
+                </div>
+                ${backlogItem.description ? `
+                  <div class="story-description">${backlogItem.description}</div>
+                ` : ''}
+              </div>
+            `,
+            start: startDate,
+            end: endDate,
+            type: 'range',
+            className: `story-timeline-item status-${backlogItem.status || 'todo'} priority-${backlogItem.priority || 'medium'}`,
+            title: backlogItem.description || backlogItem.title
+          });
+        });
+
+        // Add individual tasks to the timeline (only if they have due dates or are in progress)
         filteredTasks
-          .filter(task => task.dueDate) // Only show tasks with due dates
+          .filter(task => task.status === 'in_progress' || task.dueDate)
           .forEach((task) => {
-            const startDate = new Date(task.dueDate!);
-            // Create end date based on story points (1 point = 1 day)
-            const endDate = new Date(startDate);
-            endDate.setDate(startDate.getDate() + (task.storyPoints || 1));
+            const startDate = task.dueDate ? new Date(task.dueDate) : new Date();
+            // Create end date based on story points (1 point = 1 day) or use due date
+            const endDate = task.dueDate ? 
+              new Date(task.dueDate) : 
+              new Date(startDate.getTime() + (task.storyPoints || 1) * 24 * 60 * 60 * 1000);
 
             items.add({
-              id: task.id,
+              id: `task-${task.id}`,
               group: userStoryGroup,
               content: `
                 <div class="story-timeline-content">
@@ -451,9 +421,23 @@ const TimelineView: React.FC<{
           }
         };
 
+        // Check again if component is still mounted and DOM element exists
+        if (!isMounted || !timelineRef.current) return;
+
+        // Additional safety check - ensure the container element is properly mounted
+        if (!timelineRef.current.parentElement || !document.contains(timelineRef.current)) {
+          console.warn('Timeline container not properly mounted, skipping timeline creation');
+          return;
+        }
+
         // Create timeline
         const timeline = new Timeline(timelineRef.current, items, groups, options);
-        setTimelineInstance(timeline);
+        currentTimeline = timeline;
+        
+        // Only set the timeline instance if component is still mounted
+        if (isMounted) {
+          setTimelineInstance(timeline);
+        }
 
         // Add click handler for timeline items
         timeline.on('select', (selection: any) => {
@@ -461,14 +445,21 @@ const TimelineView: React.FC<{
             const itemId = selection.items[0];
             if (itemId.startsWith('epic-')) {
               const epicId = itemId.replace('epic-', '');
-              const epic = mockEpics.find(e => e.id === epicId);
+              const epic = epics.find(e => e.id === itemId);
               if (epic) {
                 console.log('Selected epic:', epic);
               }
-            } else {
-              const task = tasks.find(t => t.id === itemId);
+            } else if (itemId.startsWith('backlog-')) {
+              const backlogId = itemId.replace('backlog-', '');
+              const backlogItem = sprintBacklogItems.find(b => b.id === parseInt(backlogId));
+              if (backlogItem) {
+                console.log('Selected backlog item:', backlogItem);
+              }
+            } else if (itemId.startsWith('task-')) {
+              const taskId = itemId.replace('task-', '');
+              const task = tasks.find(t => t.id === parseInt(taskId));
               if (task) {
-                console.log('Selected user story:', task);
+                console.log('Selected task:', task);
               }
             }
           }
@@ -476,18 +467,49 @@ const TimelineView: React.FC<{
 
       } catch (error) {
         console.error('Error loading timeline:', error);
+      } finally {
+        if (isMounted) {
+          setIsTimelineLoading(false);
+        }
       }
     };
 
-    loadTimeline();
+    // Only load timeline when we have the necessary data and it's not already loading
+    // Also ensure we have a valid DOM element
+    if ((filteredEpics.length > 0 || sprintBacklogItems.length > 0 || filteredTasks.length > 0) && 
+        timelineRef.current && 
+        !isTimelineLoading) {
+      loadTimeline();
+    }
 
-    // Cleanup
-    return () => {
-      if (timelineInstance) {
-        timelineInstance.destroy();
-      }
-    };
-  }, [filteredTasks, filteredEpics, getPriorityIcon]);
+    // Cleanup function
+    return cleanup;
+  }, [filteredEpics, sprintBacklogItems, filteredTasks, currentSprint, getPriorityIcon]); // Fixed dependency array
+
+  // Show loading state while epics are being fetched
+  if (isEpicsLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="flex justify-between items-center">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Timeline View</h3>
+          <button
+            onClick={() => onCreateTask()}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+          >
+            <Plus className="w-4 h-4" />
+            New Task
+          </button>
+        </div>
+        
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-8">
+          <div className="text-center">
+            <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-gray-600 dark:text-gray-400">Loading timeline data...</p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
@@ -524,7 +546,7 @@ const TimelineView: React.FC<{
               </span>
             )}
             <span className="ml-auto text-xs">
-              Showing {filteredEpics.length} epics and {filteredTasks.filter(t => t.dueDate).length} user stories with due dates
+              Showing {filteredEpics.length} epics, {sprintBacklogItems.length} user stories, and {filteredTasks.filter(t => t.status === 'in_progress' || t.dueDate).length} active tasks
             </span>
           </div>
         </div>
@@ -532,11 +554,19 @@ const TimelineView: React.FC<{
 
       {/* Timeline Container */}
       <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-        <div 
-          ref={timelineRef}
-          className="w-full timeline-container"
-          style={{ minHeight: '500px' }}
-        />
+        {isTimelineLoading ? (
+          <div className="text-center py-8">
+            <div className="w-8 h-8 border-4 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+            <p className="text-gray-600 dark:text-gray-400">Building timeline...</p>
+          </div>
+        ) : (
+          <div 
+            ref={timelineRef}
+            className="w-full timeline-container"
+            style={{ minHeight: '500px' }}
+            key={`timeline-${filteredEpics.length}-${sprintBacklogItems.length}-${filteredTasks.length}`}
+          />
+        )}
       </div>
 
       {/* Custom Timeline Styles */}
@@ -910,11 +940,13 @@ const TimelineView: React.FC<{
       </div>
 
       {/* Empty state */}
-      {filteredTasks.filter(task => task.dueDate).length === 0 && filteredEpics.length === 0 && (
+      {filteredEpics.length === 0 && sprintBacklogItems.length === 0 && filteredTasks.filter(t => t.status === 'in_progress' || t.dueDate).length === 0 && (
         <div className="text-center py-12 text-gray-500 dark:text-gray-400">
           <Clock className="w-12 h-12 mx-auto mb-4 opacity-50" />
-          <p className="text-lg mb-2">No items found</p>
-          <p className="text-sm">Try adjusting your filters or add new items</p>
+          <p className="text-lg mb-2">No timeline items found</p>
+          <p className="text-sm">
+            {!currentSprint ? 'Create a sprint first to see timeline items' : 'Try adjusting your filters or add new epics, user stories, or tasks'}
+          </p>
         </div>
       )}
     </div>
@@ -1569,7 +1601,8 @@ const CreateTaskModal: React.FC<{
   onClose: () => void;
   onSubmit: (task: Omit<Task, 'id'>) => void;
   initialStatus?: string;
-}> = ({ isOpen, onClose, onSubmit, initialStatus = 'todo' }) => {
+  teamMembers: string[];
+}> = ({ isOpen, onClose, onSubmit, initialStatus = 'todo', teamMembers }) => {
   const [formData, setFormData] = useState<{
     title: string;
     description: string;
@@ -1754,7 +1787,7 @@ const CreateTaskModal: React.FC<{
               
               {isAssigneeDropdownOpen && (
                 <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                  {mockTeamMembers.map(member => (
+                  {teamMembers.map(member => (
                     <label key={member} className="flex items-center px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-600 cursor-pointer">
                       <input
                         type="checkbox"
@@ -1950,9 +1983,9 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ params }) => {
       }
       
       if (!activeSprint) {
-        // No sprints found, use mock data
-        setTasks(mockTasks);
-        setSprintBacklogItems(mockSprintBacklogItems);
+        // No sprints found, set empty data
+        setTasks([]);
+        setSprintBacklogItems([]);
         setIsLoading(false);
         return;
       }
@@ -1979,9 +2012,9 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ params }) => {
       console.log(`Found ${allTasks.length} tasks in sprint ${activeSprint.id}`);
       
       if (allTasks.length === 0) {
-        // No tasks found, use mock data
-        setTasks(mockTasks);
-        setSprintBacklogItems(mockSprintBacklogItems);
+        // No tasks found, set empty data
+        setTasks([]);
+        setSprintBacklogItems([]);
         setIsLoading(false);
         return;
       }
@@ -2074,14 +2107,14 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ params }) => {
         };
       });
       
-      setTasks(transformedTasks.length > 0 ? transformedTasks : mockTasks);
+      setTasks(transformedTasks.length > 0 ? transformedTasks : []);
       
     } catch (err) {
       console.error('Error fetching sprint tasks:', err);
       setError(err instanceof Error ? err.message : 'Failed to fetch sprint tasks');
-      // Fallback to mock data
-      setTasks(mockTasks);
-      setSprintBacklogItems(mockSprintBacklogItems);
+      // Fallback to empty data
+      setTasks([]);
+      setSprintBacklogItems([]);
     } finally {
       setIsLoading(false);
     }
@@ -2536,6 +2569,7 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ params }) => {
         onClose={() => setIsCreateTaskModalOpen(false)}
         onSubmit={handleCreateTask}
         initialStatus={initialTaskStatus}
+        teamMembers={uniqueAssignees}
       />
     </div>
   );
