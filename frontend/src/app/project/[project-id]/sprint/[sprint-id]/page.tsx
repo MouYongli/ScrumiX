@@ -6,7 +6,7 @@ import {
   ArrowLeft, Calendar, Target, Users, Clock, TrendingUp, 
   CheckCircle, Play, Square, Edit2, Plus,
   FolderOpen, Zap, FileText, User, X, ChevronDown,
-  Search, ExternalLink, Archive, Trash2, Loader2
+  Search, ExternalLink, Archive, Trash2, Loader2, Info
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
 import { api } from '@/utils/api';
@@ -81,6 +81,8 @@ interface BurndownData {
   actual: number;
   workingDay: boolean;
   dayOfWeek: string;
+  completedPoints: number; // Story points completed on this specific day
+  cumulativeCompleted: number; // Total story points completed up to this day
 }
 
 interface ProductBacklogItem {
@@ -1396,7 +1398,7 @@ const generateBurndownData = (
   startDate: string, 
   endDate: string, 
   totalStoryPoints: number,
-  completedStoryPoints: number = 0
+  stories: BacklogItem[] = []
 ): BurndownData[] => {
   const start = new Date(startDate);
   const end = new Date(endDate);
@@ -1406,24 +1408,68 @@ const generateBurndownData = (
     return [];
   }
   
-  // Calculate ideal burndown (linear decrease)
-  const idealPointsPerWorkingDay = totalStoryPoints / workingDays.length;
+  // Calculate ideal burndown using the linear function from the image
+  // idealPoints = totalPoints - (totalPoints / (sprintDuration - 1)) * currentDay
+  const sprintDuration = workingDays.length;
+  
+  // Track story completion by day
+  const completionByDay: { [date: string]: number } = {};
+  
+  // Process each story to track when it was completed
+  stories.forEach(story => {
+    if (story.status === 'done') {
+      let completionDate: Date;
+      let dateKey: string;
+      
+      if (story.updated_at) {
+        completionDate = new Date(story.updated_at);
+        dateKey = completionDate.toISOString().split('T')[0];
+        
+        // Only count completions within the sprint period
+        if (completionDate >= start && completionDate <= end) {
+          const storyPoints = story.story_point || 0;
+          completionByDay[dateKey] = (completionByDay[dateKey] || 0) + storyPoints;
+        } else {
+          // If updated_at is outside sprint period but story is done, attribute to first day
+          const firstDay = start.toISOString().split('T')[0];
+          const storyPoints = story.story_point || 0;
+          completionByDay[firstDay] = (completionByDay[firstDay] || 0) + storyPoints;
+        }
+      } else {
+        // If no updated_at but story is done, attribute to first day as fallback
+        const firstDay = start.toISOString().split('T')[0];
+        const storyPoints = story.story_point || 0;
+        completionByDay[firstDay] = (completionByDay[firstDay] || 0) + storyPoints;
+      }
+    }
+  });
+  
+  let cumulativeCompleted = 0;
   
   return workingDays.map((date, index) => {
-    // Ideal: linear decrease from total to 0
-    const ideal = Math.max(0, totalStoryPoints - (index * idealPointsPerWorkingDay));
+    const dateKey = date.toISOString().split('T')[0];
+    const currentDay = index + 1;
     
-    // Actual: for now, show completed points as remaining
-    // In a real implementation, this would track daily progress
-    const actual = Math.max(0, totalStoryPoints - completedStoryPoints);
+    // Ideal burndown: linear decrease from total to 0
+    // Using the formula: idealPoints = totalPoints - (totalStoryPoints / (sprintDuration - 1)) * currentDay
+    const ideal = Math.max(0, totalStoryPoints - (totalStoryPoints / (sprintDuration - 1)) * (currentDay - 1));
+    
+    // Actual progress: track completed points for this specific day
+    const completedToday = completionByDay[dateKey] || 0;
+    cumulativeCompleted += completedToday;
+    
+    // Actual remaining points = total - cumulative completed
+    const actual = Math.max(0, totalStoryPoints - cumulativeCompleted);
     
     return {
-      day: index + 1,
-      date: date.toISOString().split('T')[0],
+      day: currentDay,
+      date: dateKey,
       ideal: Math.round(ideal * 100) / 100,
       actual: Math.round(actual * 100) / 100,
       workingDay: true,
-      dayOfWeek: date.toLocaleDateString('en-US', { weekday: 'short' })
+      dayOfWeek: date.toLocaleDateString('en-US', { weekday: 'short' }),
+      completedPoints: completedToday,
+      cumulativeCompleted: cumulativeCompleted
     };
   });
 };
@@ -1469,6 +1515,14 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
   const [recentlyAddedStories, setRecentlyAddedStories] = useState<Set<string>>(new Set());
   const [storyToDelete, setStoryToDelete] = useState<BacklogItem | null>(null);
   
+  // Add state for frontend messages
+  const [frontendMessage, setFrontendMessage] = useState<{
+    type: 'success' | 'warning' | 'error' | 'info';
+    title: string;
+    message: string;
+    show: boolean;
+  } | null>(null);
+  
   // Task modal state
   const [isCreateTaskModalOpen, setIsCreateTaskModalOpen] = useState(false);
   const [isEditTaskModalOpen, setIsEditTaskModalOpen] = useState(false);
@@ -1507,9 +1561,10 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
   const getStoryStatusColor = (status: string) => {
     switch (status) {
       case 'todo': return 'text-gray-600 bg-gray-50 dark:bg-gray-900/20 dark:text-gray-400';
-      case 'in-progress': return 'text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-400';
-      case 'review': return 'text-yellow-600 bg-yellow-50 dark:bg-yellow-900/20 dark:text-yellow-400';
+      case 'in_progress': return 'text-blue-600 bg-blue-50 dark:bg-blue-900/20 dark:text-blue-400';
+      case 'in_review': return 'text-yellow-600 bg-yellow-50 dark:bg-yellow-900/20 dark:text-yellow-400';
       case 'done': return 'text-green-600 bg-green-50 dark:bg-green-900/20 dark:text-green-400';
+      case 'cancelled': return 'text-red-600 bg-red-50 dark:bg-red-900/20 dark:text-red-400';
       default: return 'text-gray-600 bg-gray-50 dark:bg-gray-900/20';
     }
   };
@@ -1870,16 +1925,16 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
 
   // Generate burndown data when sprint data changes
   useEffect(() => {
-    if (sprint && sprint.start_date && sprint.end_date && sprint.totalStoryPoints) {
+    if (sprint && sprint.start_date && sprint.end_date && sprint.totalStoryPoints && sprint.stories) {
       const newBurndownData = generateBurndownData(
         sprint.start_date,
         sprint.end_date,
         sprint.totalStoryPoints,
-        sprint.completedStoryPoints || 0
+        sprint.stories
       );
       setBurndownData(newBurndownData);
     }
-  }, [sprint?.start_date, sprint?.end_date, sprint?.totalStoryPoints, sprint?.completedStoryPoints]);
+  }, [sprint?.start_date, sprint?.end_date, sprint?.totalStoryPoints, sprint?.stories]);
 
   // Calculate current sprint progress
   const getCurrentSprintProgress = () => {
@@ -1901,30 +1956,42 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
   const getSprintVelocity = () => {
     if (!sprint || !sprint.totalStoryPoints || !burndownData.length) return 0;
     
-    const workingDays = burndownData.length;
-    const totalPoints = sprint.totalStoryPoints;
+    // Calculate velocity based on actual completed story points
+    const totalCompleted = burndownData.reduce((sum, data) => sum + data.completedPoints, 0);
+    const workingDaysElapsed = Math.max(1, getCurrentWorkingDay());
     
-    return Math.round((totalPoints / workingDays) * 100) / 100;
+    return Math.round((totalCompleted / workingDaysElapsed) * 100) / 100;
   };
 
   // Calculate burndown trend (ahead/behind/on track)
   const getBurndownTrend = () => {
-    if (!sprint || !sprint.totalStoryPoints || !sprint.completedStoryPoints || !burndownData.length) {
+    if (!sprint || !sprint.totalStoryPoints || !burndownData.length) {
       return { status: 'neutral', text: 'No data', color: 'text-gray-500' };
     }
     
     const totalPoints = sprint.totalStoryPoints;
-    const completedPoints = sprint.completedStoryPoints;
-    const remainingPoints = totalPoints - completedPoints;
+    const currentDay = getCurrentWorkingDay();
     
-    // Calculate expected progress based on time elapsed
-    const progress = getCurrentSprintProgress();
-    const expectedCompleted = (progress / 100) * totalPoints;
-    const actualCompleted = completedPoints;
+    if (currentDay === 0) {
+      return { status: 'neutral', text: 'Sprint not started', color: 'text-gray-500' };
+    }
     
-    if (actualCompleted > expectedCompleted + 2) {
+    // Get the current day's data
+    const currentDayData = burndownData[currentDay - 1];
+    if (!currentDayData) {
+      return { status: 'neutral', text: 'No data', color: 'text-gray-500' };
+    }
+    
+    const idealPoints = currentDayData.ideal;
+    const actualPoints = currentDayData.actual;
+    const difference = idealPoints - actualPoints;
+
+    // Dynamic tolerance: 10% of ideal points or at least 2 points
+    const tolerance = Math.max(2, idealPoints * 0.1);
+
+    if (difference > tolerance) {
       return { status: 'ahead', text: 'Ahead of Schedule', color: 'text-green-600' };
-    } else if (actualCompleted < expectedCompleted - 2) {
+    } else if (difference < -tolerance) {
       return { status: 'behind', text: 'Behind Schedule', color: 'text-red-600' };
     } else {
       return { status: 'on-track', text: 'On Track', color: 'text-blue-600' };
@@ -1951,6 +2018,26 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
     }
     
     return workingDays;
+  };
+  
+  // Get current day's remaining story points
+  const getCurrentDayRemainingPoints = () => {
+    if (!burndownData.length) return 0;
+    
+    const currentDay = getCurrentWorkingDay();
+    if (currentDay === 0) return sprint?.totalStoryPoints || 0;
+    
+    const currentDayData = burndownData[currentDay - 1];
+    return currentDayData ? currentDayData.actual : 0;
+  };
+
+  // Calculate X-axis label step based on sprint length for scalability
+  const getXAxisLabelStep = () => {
+    const sprintLength = burndownData.length;
+    if (sprintLength <= 14) return 1; // Show every day for short sprints
+    if (sprintLength <= 21) return 2; // Show every 2 days
+    if (sprintLength <= 35) return 3; // Show every 3 days
+    return Math.ceil(sprintLength / 10); // Show ~10 labels for very long sprints
   };
 
   // Helper function to get user display name
@@ -2038,9 +2125,20 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
       }
       
       setIsAddStoryModalOpen(false);
+      
+      // Show success message
+      showMessage(
+        'success',
+        'Stories Added',
+        `Successfully added ${newStories.length} ${newStories.length === 1 ? 'story' : 'stories'} to the sprint`
+      );
     } catch (err) {
       console.error('Error adding stories to sprint:', err);
-      alert(`Failed to add stories to sprint: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      showMessage(
+        'error',
+        'Failed to Add Stories',
+        `Failed to add stories to sprint: ${err instanceof Error ? err.message : 'Unknown error'}`
+      );
     }
   };
 
@@ -2103,9 +2201,20 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
         );
       });
       setStoryToDelete(null);
+      
+      // Show success message
+      showMessage(
+        'success',
+        'Story Removed',
+        `Successfully removed "${storyToRemove.title}" from the sprint`
+      );
     } catch (err) {
       console.error('Error removing story from sprint:', err);
-      alert(`Failed to remove story from sprint: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      showMessage(
+        'error',
+        'Failed to Remove Story',
+        `Failed to remove story from sprint: ${err instanceof Error ? err.message : 'Unknown error'}`
+      );
     }
   };
 
@@ -2208,9 +2317,20 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
       
       setIsCreateTaskModalOpen(false);
       setSelectedStoryForTask(null);
+      
+      // Show success message
+      showMessage(
+        'success',
+        'Task Created',
+        `Successfully created task "${taskData.title}" for "${selectedStoryForTask?.title}"`
+      );
     } catch (err) {
       console.error('Error creating task:', err);
-      alert(`Failed to create task: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      showMessage(
+        'error',
+        'Failed to Create Task',
+        `Failed to create task: ${err instanceof Error ? err.message : 'Unknown error'}`
+      );
     }
   };
 
@@ -2275,9 +2395,20 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
       
       setIsEditTaskModalOpen(false);
       setSelectedTaskForEdit(null);
+      
+      // Show success message
+      showMessage(
+        'success',
+        'Task Updated',
+        `Successfully updated task "${taskData.title}"`
+      );
     } catch (err) {
       console.error('Error updating task:', err);
-      alert(`Failed to update task: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      showMessage(
+        'error',
+        'Failed to Update Task',
+        `Failed to update task: ${err instanceof Error ? err.message : 'Unknown error'}`
+      );
     }
   };
 
@@ -2311,9 +2442,19 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
       }
       
       setTaskToDelete(null);
+      
+      // Show success message
+      showMessage(
+        'success',
+        'Task Deleted',
+        `Successfully deleted task "${taskToRemove.title}"`
+      );
     } catch (err) {
       console.error('Error deleting task:', err);
-      alert(`Failed to delete task: ${err instanceof Error ? err.message : 'Unknown error'}`);
+      showMessage(
+        'error',
+        'Failed to Delete Task',
+        `Failed to delete task: ${err instanceof Error ? err.message : 'Unknown error'}`);
     }
   };
 
@@ -2361,6 +2502,88 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
     }
   };
 
+  // Helper function to show frontend messages
+  const showMessage = (type: 'success' | 'warning' | 'error' | 'info', title: string, message: string) => {
+    setFrontendMessage({ type, title, message, show: true });
+    // Auto-hide after 5 seconds
+    setTimeout(() => {
+      setFrontendMessage(null);
+    }, 5000);
+  };
+
+  // Handler for updating backlog item status
+  const handleUpdateBacklogStatus = async (story: BacklogItem, newStatus: string) => {
+    try {
+      // Check if the story has tasks for validation
+      const storyTasks = getTasksForStory(story.id.toString());
+      
+      // Frontend validation for IN_REVIEW and DONE statuses
+      if ((newStatus === 'in_review' || newStatus === 'done')) {
+        if (storyTasks.length === 0) {
+          showMessage(
+            'warning',
+            'Status Change Blocked',
+            `Cannot set status to "${newStatus.replace('_', ' ').toUpperCase()}" because this backlog item has no tasks. Please add at least one task first.`
+          );
+          return;
+        }
+        
+        const incompleteTasks = storyTasks.filter(task => task.status !== 'done');
+        if (incompleteTasks.length > 0) {
+          const taskList = incompleteTasks.slice(0, 3).map(task => task.title).join(', ');
+          const extraCount = incompleteTasks.length > 3 ? ` and ${incompleteTasks.length - 3} more` : '';
+          showMessage(
+            'warning',
+            'Status Change Blocked',
+            `Cannot set status to "${newStatus.replace('_', ' ').toUpperCase()}" because not all tasks are completed. Incomplete tasks: ${taskList}${extraCount}`
+          );
+          return;
+        }
+      }
+      
+      // Call the API to update the status
+      const response = await api.sprints.updateBacklogItemStatus(
+        parseInt(sprintId, 10),
+        story.id,
+        newStatus
+      );
+      
+      if (response.error) {
+        // Show backend validation error message
+        showMessage('error', 'Status Update Failed', response.error);
+        return;
+      }
+      
+      // Update the local state if successful
+      if (sprint) {
+        const updatedStories = sprint.stories?.map(s => 
+          s.id === story.id ? { ...s, status: newStatus as BacklogStatus } : s
+        ) || [];
+        
+        setSprint(prevSprint => {
+          if (!prevSprint) return prevSprint;
+          return {
+            ...prevSprint,
+            stories: updatedStories,
+            completedStories: updatedStories.filter(s => s.status === BacklogStatus.DONE).length,
+            completedStoryPoints: updatedStories.filter(s => s.status === BacklogStatus.DONE).reduce((sum, s) => sum + (s.story_point || 0), 0)
+          };
+        });
+        
+        // Show success message
+        showMessage(
+          'success',
+          'Status Updated',
+          `Successfully updated "${story.title}" status to ${newStatus.replace('_', ' ').toUpperCase()}`
+        );
+      }
+      
+    } catch (error) {
+      console.error('Error updating backlog item status:', error);
+      showMessage('error', 'Status Update Failed', `Failed to update status: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    }
+  };
+
   // Show loading state
   if (loading) {
     return (
@@ -2400,6 +2623,48 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
   return (
     <div className="space-y-8">
       <Breadcrumb items={breadcrumbItems} />
+      
+      {/* Frontend Message Display */}
+      {frontendMessage && (
+        <div className={`fixed top-4 right-4 z-[200] max-w-md animate-in slide-in-from-right-2 duration-300`}>
+          <div className={`rounded-lg border p-4 shadow-lg ${
+            frontendMessage.type === 'success' 
+              ? 'bg-green-50 border-green-200 text-green-800 dark:bg-green-900/20 dark:border-green-800 dark:text-green-200'
+              : frontendMessage.type === 'warning'
+              ? 'bg-yellow-50 border-yellow-200 text-yellow-800 dark:bg-yellow-900/20 dark:border-yellow-800 dark:text-yellow-200'
+              : frontendMessage.type === 'error'
+              ? 'bg-red-50 border-red-200 text-red-800 dark:bg-red-900/20 dark:border-red-800 dark:text-red-200'
+              : 'bg-blue-50 border-blue-200 text-blue-800 dark:bg-blue-900/20 dark:border-blue-800 dark:text-blue-200'
+          }`}>
+            <div className="flex items-start gap-3">
+              <div className="flex-shrink-0">
+                {frontendMessage.type === 'success' && (
+                  <CheckCircle className="w-5 h-5 text-green-600 dark:text-green-400" />
+                )}
+                {frontendMessage.type === 'warning' && (
+                  <Clock className="w-5 h-5 text-yellow-600 dark:text-yellow-400" />
+                )}
+                {frontendMessage.type === 'error' && (
+                  <X className="w-5 h-5 text-red-600 dark:text-red-400" />
+                )}
+                {frontendMessage.type === 'info' && (
+                  <Info className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                )}
+              </div>
+              <div className="flex-1">
+                <h4 className="font-medium">{frontendMessage.title}</h4>
+                <p className="text-sm mt-1 opacity-90">{frontendMessage.message}</p>
+              </div>
+              <button
+                onClick={() => setFrontendMessage(null)}
+                className="flex-shrink-0 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* Sprint Header */}
       <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
@@ -2586,9 +2851,18 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                       <div className="flex-1">
                         <div className="flex items-center gap-2 mb-2">
                           <h4 className="font-medium text-gray-900 dark:text-white">{story.title}</h4>
-                          <span className={`px-2 py-1 rounded text-xs font-medium ${getStoryStatusColor(story.status)}`}>
-                            {story.status.replace('-', ' ').toUpperCase()}
-                          </span>
+                          {/* Status Dropdown */}
+                          <select
+                            value={story.status}
+                            onChange={(e) => handleUpdateBacklogStatus(story, e.target.value)}
+                            className={`px-2 py-1 rounded text-xs font-medium border-0 focus:ring-2 focus:ring-blue-500 focus:outline-none cursor-pointer ${getStoryStatusColor(story.status)}`}
+                          >
+                            <option value="todo">TO DO</option>
+                            <option value="in_progress">IN PROGRESS</option>
+                            <option value="in_review">IN REVIEW</option>
+                            <option value="done">DONE</option>
+                            <option value="cancelled">CANCELLED</option>
+                          </select>
                           <span className={`px-2 py-1 rounded text-xs font-medium ${getPriorityColor(story.priority)}`}>
                             {story.priority.toUpperCase()}
                           </span>
@@ -2775,12 +3049,14 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                     <div className="text-sm text-gray-600 dark:text-gray-400">Total Story Points</div>
                   </div>
                   <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                    <div className="text-2xl font-bold text-green-600">{sprint.completedStoryPoints || 0}</div>
+                    <div className="text-2xl font-bold text-green-600">
+                      {burndownData.length > 0 ? (sprint.totalStoryPoints || 0) - getCurrentDayRemainingPoints() : 0}
+                    </div>
                     <div className="text-sm text-gray-600 dark:text-gray-400">Completed Points</div>
                   </div>
                   <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
                     <div className="text-2xl font-bold text-orange-600">
-                      {(sprint.totalStoryPoints || 0) - (sprint.completedStoryPoints || 0)}
+                      {getCurrentDayRemainingPoints()}
                     </div>
                     <div className="text-sm text-gray-600 dark:text-gray-400">Remaining Points</div>
                   </div>
@@ -2795,53 +3071,126 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                 </div>
                 
                 {/* Burndown Chart */}
-                <div className="relative h-80 bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
+                <div className="relative h-[600px] bg-gray-50 dark:bg-gray-900 rounded-lg p-6">
                   {burndownData.length > 0 ? (
                     <svg
                       className="w-full h-full"
-                      viewBox={`0 0 ${Math.max(400, burndownData.length * 40)} 300`}
+                      viewBox={`0 0 ${Math.max(500, burndownData.length * 50 + 120)} 500`}
                       preserveAspectRatio="xMidYMid meet"
                     >
-                      {/* Grid lines */}
+                      {/* Y-axis and horizontal grid lines */}
                       {Array.from({ length: Math.ceil((sprint.totalStoryPoints || 0) / 5) + 1 }, (_, i) => (
                         <g key={`grid-${i}`}>
                           <line
-                            x1="0"
-                            y1={300 - (i * 5 * 300 / (sprint.totalStoryPoints || 1))}
-                            x2={Math.max(400, burndownData.length * 40)}
-                            y2={300 - (i * 5 * 300 / (sprint.totalStoryPoints || 1))}
+                            x1="80"
+                            y1={400 - (i * 5 * 350 / (sprint.totalStoryPoints || 1))}
+                            x2={Math.max(500, burndownData.length * 50 + 120) - 40}
+                            y2={400 - (i * 5 * 350 / (sprint.totalStoryPoints || 1))}
                             stroke="rgba(156, 163, 175, 0.3)"
                             strokeWidth="1"
                           />
                           <text
-                            x="5"
-                            y={300 - (i * 5 * 300 / (sprint.totalStoryPoints || 1)) - 5}
+                            x="65"
+                            y={405 - (i * 5 * 350 / (sprint.totalStoryPoints || 1))}
                             fontSize="12"
                             fill="rgba(156, 163, 175, 0.8)"
+                            textAnchor="end"
                           >
                             {i * 5}
                           </text>
                         </g>
                       ))}
                       
+                      {/* Y-axis label */}
+                      <text
+                        x="25"
+                        y="250"
+                        fontSize="14"
+                        fill="rgba(156, 163, 175, 0.8)"
+                        textAnchor="middle"
+                        transform="rotate(-90, 25, 250)"
+                        fontWeight="600"
+                      >
+                        Story Points
+                      </text>
+                      
+                      {/* Y-axis line */}
+                      <line
+                        x1="80"
+                        y1="50"
+                        x2="80"
+                        y2="400"
+                        stroke="rgba(156, 163, 175, 0.5)"
+                        strokeWidth="2"
+                      />
+                      
+                      {/* X-axis line */}
+                      <line
+                        x1="80"
+                        y1="400"
+                        x2={Math.max(500, burndownData.length * 50 + 120) - 40}
+                        y2="400"
+                        stroke="rgba(156, 163, 175, 0.5)"
+                        strokeWidth="2"
+                      />
+                      
                       {/* X-axis labels */}
-                      {burndownData.map((data, index) => (
-                        <text
-                          key={`x-label-${index}`}
-                          x={index * 40 + 20}
-                          y="320"
-                          fontSize="10"
-                          fill="rgba(156, 163, 175, 0.8)"
-                          textAnchor="middle"
-                        >
-                          {data.dayOfWeek}
-                        </text>
-                      ))}
+                      {burndownData.map((data, index) => {
+                        const labelStep = getXAxisLabelStep();
+                        const shouldShowLabel = index % labelStep === 0 || index === burndownData.length - 1;
+                        
+                        return shouldShowLabel ? (
+                          <g key={`x-label-${index}`}>
+                                                                                    {/* X-axis tick mark */}
+                            <line
+                              x1={index * 50 + 105}
+                              y1="400"
+                              x2={index * 50 + 105}
+                              y2="405"
+                              stroke="rgba(156, 163, 175, 0.5)"
+                              strokeWidth="1"
+                            />
+                            {/* Day number */}
+                            <text
+                              x={index * 50 + 105}
+                              y="420"
+                              fontSize="11"
+                              fill="rgba(156, 163, 175, 0.8)"
+                              textAnchor="middle"
+                              fontWeight="500"
+                            >
+                              Day {data.day}
+                            </text>
+                            {/* Date */}
+                            <text
+                              x={index * 50 + 105}
+                              y="435"
+                              fontSize="10"
+                              fill="rgba(156, 163, 175, 0.6)"
+                              textAnchor="middle"
+                            >
+                              {new Date(data.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                            </text>
+                          </g>
+                        ) : null;
+                      }).filter(Boolean)}
+                      
+                      {/* X-axis title */}
+                      <text
+                        x={Math.max(500, burndownData.length * 50 + 120) / 2}
+                        y="460"
+                        fontSize="14"
+                        fill="rgba(156, 163, 175, 0.8)"
+                        textAnchor="middle"
+                        fontWeight="600"
+                      >
+                        Sprint Days
+                      </text>
                       
                       {/* Ideal burndown line */}
                       <polyline
                         points={burndownData.map((data, index) => 
-                          `${index * 40 + 20},${300 - (data.ideal * 300 / (sprint.totalStoryPoints || 1))}`
+                          `${index * 50 + 105},${400 - (data.ideal * 350 / (sprint.totalStoryPoints || 1))}`
                         ).join(' ')}
                         fill="none"
                         stroke="#3B82F6"
@@ -2849,57 +3198,74 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                         strokeDasharray="5,5"
                       />
                       
-                      {/* Actual burndown line */}
+                      {/* Actual burndown line - only show points up to current day with completions */}
                       <polyline
-                        points={burndownData.map((data, index) => 
-                          `${index * 40 + 20},${300 - (data.actual * 300 / (sprint.totalStoryPoints || 1))}`
-                        ).join(' ')}
+                        points={burndownData
+                          .filter((data, index) => {
+                            const currentDay = getCurrentWorkingDay();
+                            const today = new Date().toISOString().split('T')[0];
+                            // Show points for days up to today or days with actual completions
+                            return index < currentDay || data.date <= today || data.completedPoints > 0;
+                          })
+                          .map((data, originalIndex) => {
+                            const actualIndex = burndownData.findIndex(d => d.date === data.date);
+                            return `${actualIndex * 50 + 105},${400 - (data.actual * 350 / (sprint.totalStoryPoints || 1))}`;
+                          })
+                          .join(' ')}
                         fill="none"
                         stroke="#EF4444"
                         strokeWidth="3"
                       />
                       
                       {/* Data points */}
-                      {burndownData.map((data, index) => (
+                      {burndownData.map((data, index) => {
+                        const currentDay = getCurrentWorkingDay();
+                        const today = new Date().toISOString().split('T')[0];
+                        const shouldShowActualPoint = index < currentDay || data.date <= today || data.completedPoints > 0;
+                        
+                        return (
                         <g key={`point-${index}`}>
-                          {/* Ideal point */}
-                          <circle
-                            cx={index * 40 + 20}
-                            cy={300 - (data.ideal * 300 / (sprint.totalStoryPoints || 1))}
-                            r="3"
-                            fill="#3B82F6"
-                            className="cursor-pointer hover:r-4 transition-all"
-                          >
-                            <title>{`Day ${data.day} (${data.dayOfWeek}): Ideal: ${data.ideal} points`}</title>
-                          </circle>
-                          {/* Actual point */}
-                          <circle
-                            cx={index * 40 + 20}
-                            cy={300 - (data.actual * 300 / (sprint.totalStoryPoints || 1))}
-                            r="4"
-                            fill="#EF4444"
-                            className="cursor-pointer hover:r-5 transition-all"
-                          >
-                            <title>{`Day ${data.day} (${data.dayOfWeek}): Actual: ${data.actual} points remaining`}</title>
-                          </circle>
+                                                      {/* Ideal point */}
+                            <circle
+                              cx={index * 50 + 105}
+                              cy={400 - (data.ideal * 350 / (sprint.totalStoryPoints || 1))}
+                              r="4"
+                              fill="#3B82F6"
+                              className="cursor-pointer hover:r-5 transition-all"
+                            >
+                              <title>{`Day ${data.day}: Ideal: ${data.ideal} points`}</title>
+                            </circle>
+                            {/* Actual point - only show for past days or days with completions */}
+                            {shouldShowActualPoint && (
+                              <circle
+                                cx={index * 50 + 105}
+                                cy={400 - (data.actual * 350 / (sprint.totalStoryPoints || 1))}
+                                r="5"
+                                fill="#EF4444"
+                                className="cursor-pointer hover:r-5 transition-all"
+                              >
+                                <title>{`Day ${data.day}: ${data.actual} points remaining${data.completedPoints > 0 ? `, ${data.completedPoints} points completed today` : ''}`}</title>
+                              </circle>
+                            )}
                         </g>
-                      ))}
+                        );
+                      })}
                       
                       {/* Current day indicator */}
                       {getCurrentWorkingDay() > 0 && getCurrentWorkingDay() <= burndownData.length && (
                         <g>
                           <line
-                            x1={(getCurrentWorkingDay() - 1) * 40 + 20}
-                            y1="0"
-                            x2={(getCurrentWorkingDay() - 1) * 40 + 20}
-                            y2="300"
+                            x1={(getCurrentWorkingDay() - 1) * 50 + 105}
+                            y1="50"
+                            x2={(getCurrentWorkingDay() - 1) * 50 + 105}
+                            y2="400"
                             stroke="#10B981"
                             strokeWidth="2"
                             strokeDasharray="5,5"
                           />
                           <text
-                            x={(getCurrentWorkingDay() - 1) * 40 + 20}
-                            y="15"
+                            x={(getCurrentWorkingDay() - 1) * 50 + 105}
+                            y="35"
                             fontSize="12"
                             fill="#10B981"
                             textAnchor="middle"
@@ -2927,6 +3293,31 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                   <div className="flex items-center gap-2">
                     <div className="w-3 h-3 bg-red-500 rounded"></div>
                     <span className="text-sm text-gray-600 dark:text-gray-400">Actual Progress</span>
+                  </div>
+                </div>
+                
+                {/* Daily Completion Details */}
+                <div className="mt-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                  <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-3">Daily Progress Breakdown</h4>
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
+                    {burndownData.filter(data => data.completedPoints > 0).map((data, index) => (
+                      <div key={index} className="text-center p-2 bg-white dark:bg-gray-700 rounded border">
+                        <div className="font-medium text-gray-900 dark:text-white">
+                          {new Date(data.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                        </div>
+                        <div className="text-green-600 dark:text-green-400 font-bold">
+                          +{data.completedPoints} pts
+                        </div>
+                        <div className="text-gray-500 dark:text-gray-400">
+                          {data.dayOfWeek}
+                        </div>
+                      </div>
+                    ))}
+                    {burndownData.filter(data => data.completedPoints > 0).length === 0 && (
+                      <div className="col-span-full text-center text-gray-500 dark:text-gray-400 py-4">
+                        No story points completed yet
+                      </div>
+                    )}
                   </div>
                 </div>
                 

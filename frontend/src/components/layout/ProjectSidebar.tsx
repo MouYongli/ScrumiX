@@ -48,6 +48,15 @@ interface ProjectData extends ApiProject {
   sprintContext: 'active' | 'planning' | 'completed' | null;
   progress: number;
   color: string;
+  totalBacklogItems: number;
+  completedBacklogItems: number;
+  backlogStatusBreakdown: {
+    todo: number;
+    in_progress: number;
+    in_review: number;
+    done: number;
+    cancelled: number;
+  };
 }
 
 const ProjectSidebar = forwardRef<ProjectSidebarRef, ProjectSidebarProps>(({ 
@@ -118,23 +127,38 @@ const ProjectSidebar = forwardRef<ProjectSidebarRef, ProjectSidebarProps>(({
         }
       }
 
-      // Calculate project progress by getting tasks from project sprints
-      const projectSprintIds = projectSprints.map(sprint => sprint.id);
-      const tasksResponse = await api.tasks.getAll({ limit: 100 });
-      const projectTasks = tasksResponse.data?.tasks.filter(task => 
-        projectSprintIds.includes(task.sprint_id)
-      ) || [];
+      // Calculate project progress by getting backlog items for the project
+      const backlogResponse = await api.backlogs.getAll({ 
+        project_id: parseInt(projectId),
+        limit: 1000 
+      });
+      const projectBacklogItems = backlogResponse.data || [];
       
-      const progress = projectTasks.length > 0
-        ? Math.round((projectTasks.filter(task => task.status === 'done').length / projectTasks.length) * 100)
+      // Calculate progress based on completed backlog items (status = 'done')
+      const totalBacklogItems = projectBacklogItems.length;
+      const completedBacklogItems = projectBacklogItems.filter(item => item.status === 'done').length;
+      const progress = totalBacklogItems > 0
+        ? Math.round((completedBacklogItems / totalBacklogItems) * 100)
         : 0;
+      
+      // Calculate status breakdown
+      const backlogStatusBreakdown = {
+        todo: projectBacklogItems.filter(item => item.status === 'todo').length,
+        in_progress: projectBacklogItems.filter(item => item.status === 'in_progress').length,
+        in_review: projectBacklogItems.filter(item => item.status === 'in_review').length,
+        done: completedBacklogItems,
+        cancelled: projectBacklogItems.filter(item => item.status === 'cancelled').length
+      };
 
       setProject({
         ...projectResponse.data,
         currentSprint: currentSprint ? currentSprint.sprintName : null,
         sprintContext: sprintContext as 'active' | 'planning' | 'completed' | null,
         progress,
-        color: 'bg-blue-500' // You can map this based on project status or type
+        color: 'bg-blue-500', // You can map this based on project status or type
+        totalBacklogItems,
+        completedBacklogItems,
+        backlogStatusBreakdown
       });
     } catch (error) {
       console.error('Error fetching project data:', error);
@@ -336,9 +360,9 @@ const ProjectSidebar = forwardRef<ProjectSidebarRef, ProjectSidebarProps>(({
                     {isPreviewCollapsed && (
                       <div className="text-xs text-gray-500 dark:text-gray-400 text-center py-1">
                         {project.currentSprint ? (
-                          <span>Active: {project.currentSprint} • {project.progress}% complete</span>
+                          <span>Active: {project.currentSprint} • {project.completedBacklogItems}/{project.totalBacklogItems} items</span>
                         ) : (
-                          <span>{project.progress}% complete • No active sprint</span>
+                          <span>{project.completedBacklogItems}/{project.totalBacklogItems} items • {project.progress}% complete</span>
                         )}
                       </div>
                     )}

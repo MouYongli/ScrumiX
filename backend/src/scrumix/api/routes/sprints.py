@@ -464,6 +464,84 @@ def add_backlog_item_to_sprint(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error adding backlog item to sprint: {str(e)}")
 
+@router.put("/{sprint_id}/backlog/{backlog_id}/status", response_model=dict)
+def update_backlog_item_status(
+    sprint_id: int,
+    backlog_id: int,
+    status_data: dict,
+    db: Session = Depends(get_db),
+    current_user: UserInDB = Depends(get_current_user)
+):
+    """
+    Update the status of a backlog item with validation based on task completion
+    """
+    try:
+        from ..models.backlog import Backlog, BacklogStatus
+        from ..models.task import Task, TaskStatus
+        
+        # Validate the new status
+        new_status = status_data.get("status")
+        if not new_status:
+            raise HTTPException(status_code=400, detail="Status is required")
+        
+        try:
+            new_status_enum = BacklogStatus(new_status)
+        except ValueError:
+            raise HTTPException(
+                status_code=400, 
+                detail=f"Invalid status. Must be one of: {', '.join([s.value for s in BacklogStatus])}"
+            )
+        
+        # Get the backlog item
+        backlog_item = db.query(Backlog).filter(
+            Backlog.id == backlog_id,
+            Backlog.sprint_id == sprint_id
+        ).first()
+        
+        if not backlog_item:
+            raise HTTPException(status_code=404, detail="Backlog item not found in this sprint")
+        
+        # Check if the status change requires task completion validation
+        if new_status_enum in [BacklogStatus.IN_REVIEW, BacklogStatus.DONE]:
+            # Get all tasks for this backlog item
+            tasks = db.query(Task).filter(Task.backlog_id == backlog_id).all()
+            
+            if not tasks:
+                raise HTTPException(
+                    status_code=400, 
+                    detail=f"Cannot set status to '{new_status}' because this backlog item has no tasks. Please add at least one task first."
+                )
+            
+            # Check if all tasks are done
+            incomplete_tasks = [task for task in tasks if task.status != TaskStatus.DONE]
+            if incomplete_tasks:
+                incomplete_task_titles = [task.title for task in incomplete_tasks[:3]]  # Show max 3 task titles
+                task_list = ", ".join(incomplete_task_titles)
+                if len(incomplete_tasks) > 3:
+                    task_list += f" and {len(incomplete_tasks) - 3} more"
+                
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Cannot set status to '{new_status}' because not all tasks are completed. Incomplete tasks: {task_list}"
+                )
+        
+        # Update the backlog item status
+        backlog_item.status = new_status_enum
+        db.commit()
+        db.refresh(backlog_item)
+        
+        return {
+            "message": "Backlog item status updated successfully",
+            "backlog_item_id": backlog_id,
+            "new_status": new_status,
+            "sprint_id": sprint_id
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error updating backlog item status: {str(e)}")
+
 @router.delete("/{sprint_id}/backlog/{backlog_id}")
 def remove_backlog_item_from_sprint(
     sprint_id: int,

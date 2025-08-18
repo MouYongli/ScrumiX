@@ -487,6 +487,13 @@ export const api = {
         method: 'DELETE',
       }),
     
+    updateBacklogItemStatus: (sprintId: number, backlogId: number, status: string) => 
+      jsonFetch<any>(`/api/v1/sprints/${sprintId}/backlog/${backlogId}/status`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      }),
+    
     createTaskForBacklogItem: (sprintId: number, backlogId: number, taskData: any) => 
       jsonFetch<any>(`/api/v1/sprints/${sprintId}/backlog/${backlogId}/tasks`, {
         method: 'POST',
