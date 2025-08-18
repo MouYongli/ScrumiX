@@ -298,8 +298,47 @@ const ProjectsPage = () => {
 
         if (error) throw new Error(error);
 
+        // Fetch backlog items for each project to calculate progress
+        const projectsWithProgress = await Promise.all(
+          data.map(async (project) => {
+            try {
+              const backlogResponse = await api.backlogs.getAll({ 
+                project_id: project.id,
+                limit: 1000 
+              });
+              const projectBacklogItems = backlogResponse.data || [];
+              
+              // Calculate progress based on completed backlog items (status = 'done')
+              const totalBacklogItems = projectBacklogItems.length;
+              const completedBacklogItems = projectBacklogItems.filter(item => item.status === 'done').length;
+              const progress = totalBacklogItems > 0
+                ? Math.round((completedBacklogItems / totalBacklogItems) * 100)
+                : 0;
+
+              return {
+                ...project,
+                progress,
+                tasks: {
+                  total: totalBacklogItems,
+                  completed: completedBacklogItems
+                }
+              };
+            } catch (err) {
+              console.error(`Error fetching backlog for project ${project.id}:`, err);
+              return {
+                ...project,
+                progress: 0,
+                tasks: {
+                  total: 0,
+                  completed: 0
+                }
+              };
+            }
+          })
+        );
+
         // Convert API response to frontend Project format
-        const formattedProjects = data.map(project => ({
+        const formattedProjects = projectsWithProgress.map(project => ({
           ...project,
           id: project.id.toString(),
           startDate: project.start_date || '',

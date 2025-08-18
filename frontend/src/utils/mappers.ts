@@ -25,11 +25,18 @@ export const mapApiTaskToDomain = (apiTask: ApiTask): Task => ({
   description: apiTask.description,
   status: apiTask.status,
   priority: apiTask.priority,
-  storyPoint: apiTask.story_point,
   sprintId: apiTask.sprint_id,
   createdAt: new Date(apiTask.created_at),
   updatedAt: new Date(apiTask.updated_at),
-  assignedUsers: apiTask.assignedUsers?.map(mapApiUserToDomain) || [],
+  assignedUsers: apiTask.assignees?.map(assignee => ({
+    id: assignee.id,
+    username: assignee.username,
+    email: assignee.email,
+    firstName: assignee.full_name?.split(' ')[0] || '',
+    lastName: assignee.full_name?.split(' ').slice(1).join(' ') || '',
+    displayName: assignee.full_name || assignee.username,
+    isActive: true
+  })) || [],
   // Computed UI properties
   priorityColor: getPriorityColor(apiTask.priority),
 });
@@ -133,9 +140,11 @@ const formatProjectStatus = (status: string): string => {
 export const createProjectWithDetails = (
   project: Project,
   tasks: Task[],
-  meetings: Meeting[]
+  meetings: Meeting[],
+  calculatedProgress?: number
 ): ProjectWithDetails => ({
   ...project,
+  progress: calculatedProgress !== undefined ? calculatedProgress : project.progress,
   tasks,
   upcomingMeetings: meetings,
   todoTasks: tasks.filter(task => task.status === 'todo'),

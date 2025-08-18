@@ -52,7 +52,7 @@ const MyWorkspacePage = () => {
         sprints.forEach((sprint: Sprint) => sprintToProject.set(sprint.id, sprint.projectId));
 
         // Create projects with properly scoped tasks and meetings
-        const projectsWithDetails = projects.map((project: any) => {
+        const projectsWithDetails = await Promise.all(projects.map(async (project: any) => {
           // Filter tasks by project (via sprint relationship)
           const projectTasks = allTasks.filter((task: any) => 
             sprintToProject.get(task.sprintId) === project.id
@@ -69,8 +69,27 @@ const MyWorkspacePage = () => {
             meeting.projectId === project.id
           );
 
-          return createProjectWithDetails(project, userTasks, projectMeetings);
-        });
+          // Calculate project progress based on backlog items
+          let progress = 0;
+          try {
+            const backlogResponse = await api.backlogs.getAll({ 
+              project_id: project.id,
+              limit: 1000 
+            });
+            const projectBacklogItems = backlogResponse.data || [];
+            
+            const totalBacklogItems = projectBacklogItems.length;
+            const completedBacklogItems = projectBacklogItems.filter((item: any) => item.status === 'done').length;
+            progress = totalBacklogItems > 0
+              ? Math.round((completedBacklogItems / totalBacklogItems) * 100)
+              : 0;
+          } catch (err) {
+            console.error(`Error fetching backlog for project ${project.id}:`, err);
+            progress = 0;
+          }
+
+          return createProjectWithDetails(project, userTasks, projectMeetings, progress);
+        }));
 
         setProjects(projectsWithDetails);
       } catch (err) {

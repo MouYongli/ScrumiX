@@ -159,8 +159,8 @@ const ProjectSettings: React.FC<ProjectSettingsProps> = ({ params }) => {
       const updated = { ...defaultUISettings, ...resp.data };
       setProjectData(updated);
       setInitialProjectData(updated);
-      setUnsavedChanges(false);
-      setIsEditing(false);
+    setUnsavedChanges(false);
+    setIsEditing(false);
       setError(null);
     } catch (e: any) {
       setError(e?.message || 'Failed to save project');
@@ -302,7 +302,7 @@ const ProjectSettings: React.FC<ProjectSettingsProps> = ({ params }) => {
                     projectData.color === color.value ? 'border-gray-900 dark:border-white' : 'border-transparent hover:border-gray-300 dark:hover:border-gray-600'
                   }`}
                   title={color.label}
-                  disabled={!isEditing}
+              disabled={!isEditing}
                 />
               ))}
             </div>
@@ -628,7 +628,7 @@ const ProjectSettings: React.FC<ProjectSettingsProps> = ({ params }) => {
                     ) : (
                       <>
                         <Trash2 className="w-4 h-4" />
-                        Delete Project
+                    Delete Project
                       </>
                     )}
                   </button>
@@ -678,46 +678,46 @@ const ProjectSettings: React.FC<ProjectSettingsProps> = ({ params }) => {
       
       {!isLoading && !error && (
         <>
-          {/* Page Header */}
-          <div className="flex justify-between items-start">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-                Project Settings
-              </h1>
-              <p className="text-gray-600 dark:text-gray-400 mt-2">
-                Manage your project configuration, team members, and integrations
-              </p>
-            </div>
-          </div>
+      {/* Page Header */}
+      <div className="flex justify-between items-start">
+        <div>
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
+            Project Settings
+          </h1>
+          <p className="text-gray-600 dark:text-gray-400 mt-2">
+            Manage your project configuration, team members, and integrations
+          </p>
+        </div>
+      </div>
 
-          {/* Tab Navigation */}
-          <div className="border-b border-gray-200 dark:border-gray-700">
-            <nav className="-mb-px flex space-x-8">
-              {tabs.map((tab) => (
-                <button
-                  key={tab.id}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
-                    activeTab === tab.id
-                      ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-                      : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 hover:border-gray-300'
-                  }`}
-                >
-                  {tab.icon}
-                  {tab.label}
-                </button>
-              ))}
-            </nav>
-          </div>
+      {/* Tab Navigation */}
+      <div className="border-b border-gray-200 dark:border-gray-700">
+        <nav className="-mb-px flex space-x-8">
+          {tabs.map((tab) => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${
+                activeTab === tab.id
+                  ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 hover:border-gray-300'
+              }`}
+            >
+              {tab.icon}
+              {tab.label}
+            </button>
+          ))}
+        </nav>
+      </div>
 
-          {/* Tab Content */}
-          <div>
-            {activeTab === 'general' && renderGeneralTab()}
-            {activeTab === 'team' && renderTeamTab()}
-            {activeTab === 'notifications' && renderNotificationsTab()}
-            {activeTab === 'integrations' && renderIntegrationsTab()}
-            {activeTab === 'danger' && renderDangerTab()}
-          </div>
+      {/* Tab Content */}
+      <div>
+        {activeTab === 'general' && renderGeneralTab()}
+        {activeTab === 'team' && renderTeamTab()}
+        {activeTab === 'notifications' && renderNotificationsTab()}
+        {activeTab === 'integrations' && renderIntegrationsTab()}
+        {activeTab === 'danger' && renderDangerTab()}
+      </div>
         </>
       )}
     </div>
