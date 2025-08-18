@@ -310,12 +310,12 @@ class UserSessionCRUD:
         ).first()
         
         if session:
-            return self.get(db, session.user_id)
+            return user_crud.get(db, session.user_id)
         return None
     
     def update_activity(self, db: Session, user_id: int) -> Optional[User]:
         """Update user's last activity timestamp"""
-        user = self.get(db, user_id)
+        user = user_crud.get(db, user_id)
         if user:
             user.last_activity_at = datetime.now()
             db.commit()

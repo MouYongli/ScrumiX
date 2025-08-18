@@ -12,6 +12,10 @@ class UserBase(BaseModel):
     username: Optional[str] = None
     full_name: Optional[str] = None
     avatar_url: Optional[str] = None
+    phone: Optional[str] = None
+    department: Optional[str] = None
+    location: Optional[str] = None
+    bio: Optional[str] = None
     timezone: str = "UTC"
     language: str = "zh-CN"
 
@@ -25,6 +29,10 @@ class UserUpdate(BaseModel):
     username: Optional[str] = None
     full_name: Optional[str] = None
     avatar_url: Optional[str] = None
+    phone: Optional[str] = None
+    department: Optional[str] = None
+    location: Optional[str] = None
+    bio: Optional[str] = None
     timezone: Optional[str] = None
     language: Optional[str] = None
 
@@ -104,6 +112,39 @@ class ChangePasswordRequest(BaseModel):
     """Change password request"""
     current_password: str
     new_password: str
+
+class ProfileUpdate(BaseModel):
+    """Profile update request"""
+    full_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    phone: Optional[str] = None
+    department: Optional[str] = None
+    location: Optional[str] = None
+    bio: Optional[str] = None
+    timezone: Optional[str] = None
+    language: Optional[str] = None
+
+class ProfileResponse(BaseModel):
+    """Profile response"""
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: int
+    email: str
+    username: Optional[str] = None
+    full_name: Optional[str] = None
+    avatar_url: Optional[str] = None
+    phone: Optional[str] = None
+    department: Optional[str] = None
+    location: Optional[str] = None
+    bio: Optional[str] = None
+    timezone: str
+    language: str
+    is_active: bool
+    is_verified: bool
+    provider: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    last_login_at: Optional[datetime] = None
 
 class UserSessionResponse(BaseModel):
     """User session response"""

@@ -39,6 +39,10 @@ class User(Base):
     
     # Personal information
     avatar_url = Column(String(500), nullable=True)
+    phone = Column(String(20), nullable=True)
+    department = Column(String(100), nullable=True)
+    location = Column(String(100), nullable=True)
+    bio = Column(Text, nullable=True)
     timezone = Column(String(100), default="UTC")
     language = Column(String(10), default="en")
     

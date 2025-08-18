@@ -84,6 +84,30 @@ export const api = {
     ), // Auth verification endpoint
   },
   
+  users: {
+    getProfile: () => deduplicateRequest('users:getProfile', () => 
+      jsonFetch<any>('/api/v1/users/me/profile')
+    ),
+    updateProfile: (profileData: any) => {
+      // Clear cache for profile-related requests after update
+      inFlightRequests.delete('users:getProfile');
+      inFlightRequests.delete('auth:getCurrentUser');
+      inFlightRequests.delete('auth:verifyAuth');
+      
+      return jsonFetch<any>('/api/v1/users/me/profile', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(profileData)
+      });
+    },
+    changePassword: (passwordData: { current_password: string; new_password: string }) => 
+      jsonFetch<any>('/api/v1/users/me/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(passwordData)
+      }),
+  },
+  
   workspace: {
     getOverview: () => deduplicateRequest('workspace:getOverview', () => 
       jsonFetch<any>('/api/v1/workspace/overview')
