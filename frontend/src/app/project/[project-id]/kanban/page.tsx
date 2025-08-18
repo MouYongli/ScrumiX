@@ -142,6 +142,58 @@ const mockTeamMembers = [
   'Lisa Wang'
 ];
 
+// Mock sprint backlog items for demonstration
+const mockSprintBacklogItems = [
+  {
+    id: 1,
+    title: 'User Authentication System',
+    description: 'Complete user authentication and authorization system',
+    status: 'in_progress',
+    priority: 'high',
+    created_at: '2024-03-15T10:00:00Z',
+    assigned_to_id: 1,
+    tasks: [],
+    startDate: '2024-03-01T00:00:00Z',
+    endDate: '2024-03-31T23:59:59Z'
+  },
+  {
+    id: 2,
+    title: 'Product Management Features',
+    description: 'Product catalog and management features',
+    status: 'todo',
+    priority: 'medium',
+    created_at: '2024-03-16T14:30:00Z',
+    assigned_to_id: 2,
+    tasks: [],
+    startDate: '2024-03-01T00:00:00Z',
+    endDate: '2024-03-31T23:59:59Z'
+  },
+  {
+    id: 3,
+    title: 'Order Processing System',
+    description: 'Complete order processing and payment system',
+    status: 'in_progress',
+    priority: 'critical',
+    created_at: '2024-03-17T09:15:00Z',
+    assigned_to_id: 3,
+    tasks: [],
+    startDate: '2024-03-01T00:00:00Z',
+    endDate: '2024-03-31T23:59:59Z'
+  },
+  {
+    id: 4,
+    title: 'Performance Optimization',
+    description: 'System performance improvements and optimizations',
+    status: 'todo',
+    priority: 'low',
+    created_at: '2024-03-18T16:45:00Z',
+    assigned_to_id: 4,
+    tasks: [],
+    startDate: '2024-03-01T00:00:00Z',
+    endDate: '2024-03-31T23:59:59Z'
+  }
+];
+
 // View types
 type ViewType = 'kanban' | 'timeline' | 'calendar';
 
@@ -185,7 +237,12 @@ const TimelineView: React.FC<{
   onCreateTask: (status?: string) => void;
   getPriorityColor: (priority: string) => string;
   getPriorityIcon: (priority: string) => string;
-}> = ({ tasks, onCreateTask, getPriorityColor, getPriorityIcon }) => {
+  currentSprint: any;
+  sprintBacklogItems: any[];
+  searchTerm: string;
+  selectedAssignee: string;
+  selectedPriority: string;
+}> = ({ tasks, onCreateTask, getPriorityColor, getPriorityIcon, currentSprint, sprintBacklogItems, searchTerm, selectedAssignee, selectedPriority }) => {
   const timelineRef = useRef<HTMLDivElement>(null);
   const [timelineInstance, setTimelineInstance] = useState<any>(null);
 
@@ -233,6 +290,34 @@ const TimelineView: React.FC<{
     }
   ];
 
+  // Filter epics based on search only (priority filter does NOT apply to epics)
+  const filteredEpics = mockEpics.filter(epic => {
+    const matchesSearch = !searchTerm || 
+      epic.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      epic.description.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    // Priority filter does NOT apply to epics - they are always visible
+    // const matchesPriority = !selectedPriority || 
+    //   epic.priority.toLowerCase() === selectedPriority.toLowerCase();
+    
+    return matchesSearch; // Removed priority filtering for epics
+  });
+
+  // Filter tasks based on search, assignee, and priority
+  const filteredTasks = tasks.filter(task => {
+    const matchesSearch = !searchTerm || 
+      task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      task.description.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchesAssignee = !selectedAssignee || 
+      task.assignees.includes(selectedAssignee);
+    
+    const matchesPriority = !selectedPriority || 
+      task.priority === selectedPriority;
+    
+    return matchesSearch && matchesAssignee && matchesPriority;
+  });
+
   useEffect(() => {
     const loadTimeline = async () => {
       if (!timelineRef.current) return;
@@ -246,7 +331,7 @@ const TimelineView: React.FC<{
         const groups = new DataSet<any>();
 
         // Add epic groups
-        mockEpics.forEach((epic) => {
+        filteredEpics.forEach((epic) => {
           groups.add({
             id: epic.id,
             content: `
@@ -289,7 +374,7 @@ const TimelineView: React.FC<{
           content: `
             <div class="stories-group-content">
               <div class="stories-title">User Stories</div>
-              <div class="stories-count">${tasks.length} stories</div>
+              <div class="stories-count">${filteredTasks.length} stories</div>
             </div>
           `,
           className: 'stories-group',
@@ -297,7 +382,7 @@ const TimelineView: React.FC<{
         });
 
         // Add user stories (tasks) to the timeline
-        tasks
+        filteredTasks
           .filter(task => task.dueDate) // Only show tasks with due dates
           .forEach((task) => {
             const startDate = new Date(task.dueDate!);
@@ -402,7 +487,7 @@ const TimelineView: React.FC<{
         timelineInstance.destroy();
       }
     };
-  }, [tasks, getPriorityIcon]);
+  }, [filteredTasks, filteredEpics, getPriorityIcon]);
 
   return (
     <div className="space-y-6">
@@ -416,6 +501,34 @@ const TimelineView: React.FC<{
           New Task
         </button>
       </div>
+
+      {/* Filter Summary */}
+      {(searchTerm || selectedAssignee || selectedPriority) && (
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+          <div className="flex items-center gap-2 text-sm text-blue-700 dark:text-blue-300">
+            <Filter className="w-4 h-4" />
+            <span className="font-medium">Active Filters:</span>
+            {searchTerm && (
+              <span className="bg-blue-200 dark:bg-blue-800 text-blue-800 dark:text-blue-200 px-2 py-1 rounded text-xs">
+                Search: "{searchTerm}"
+              </span>
+            )}
+            {selectedAssignee && (
+              <span className="bg-blue-200 dark:bg-blue-800 text-blue-800 dark:text-blue-200 px-2 py-1 rounded text-xs">
+                Assignee: {selectedAssignee}
+              </span>
+            )}
+            {selectedPriority && (
+              <span className="bg-blue-200 dark:bg-blue-800 text-blue-800 dark:text-blue-200 px-2 py-1 rounded text-xs">
+                Priority: {selectedPriority} (Tasks only, not user stories)
+              </span>
+            )}
+            <span className="ml-auto text-xs">
+              Showing {filteredEpics.length} epics and {filteredTasks.filter(t => t.dueDate).length} user stories with due dates
+            </span>
+          </div>
+        </div>
+      )}
 
       {/* Timeline Container */}
       <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
@@ -746,32 +859,62 @@ const TimelineView: React.FC<{
         {/* User Stories Legend */}
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
           <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-            <div className="w-3 h-3 bg-yellow-500 rounded"></div>
-            User Stories Status
+            <span>📋</span>
+            User Stories (Sprint Backlog Items)
           </h4>
           <div className="grid grid-cols-2 gap-3 text-xs">
             <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-gray-400 border-l-2 border-gray-600 rounded"></div>
-              <span className="text-gray-600 dark:text-gray-400">To Do</span>
+              <div className="w-3 h-3 bg-red-500 rounded"></div>
+              <span className="text-gray-600 dark:text-gray-400">Critical</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-blue-200 border-l-2 border-blue-600 rounded"></div>
-              <span className="text-gray-600 dark:text-gray-400">In Progress</span>
+              <div className="w-3 h-3 bg-orange-500 rounded"></div>
+              <span className="text-gray-600 dark:text-gray-400">High</span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-green-200 border-l-2 border-green-600 rounded"></div>
-              <span className="text-gray-600 dark:text-gray-400">Done</span>
+              <div className="w-3 h-3 bg-blue-500 rounded"></div>
+              <span className="text-gray-600 dark:text-gray-400">Medium</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 bg-green-500 rounded"></div>
+              <span className="text-gray-600 dark:text-gray-400">Low</span>
             </div>
           </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+            Shown for every day within the sprint/month time span
+          </p>
+          <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+            ⚡ Filters apply: Search, Assignee (Priority only affects tasks)
+          </p>
+        </div>
+
+        {/* Tasks Legend */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+          <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+            <span>⚡</span>
+            In-Progress Tasks
+          </h4>
+          <div className="grid grid-cols-1 gap-3 text-xs">
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 bg-blue-500 rounded"></div>
+              <span className="text-gray-600 dark:text-gray-400">In Progress</span>
+            </div>
+          </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+            Only shows tasks currently being worked on
+          </p>
+          <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+            ⚡ Filters apply: Search, Assignee, Priority
+          </p>
         </div>
       </div>
 
       {/* Empty state */}
-      {tasks.filter(task => task.dueDate).length === 0 && (
+      {filteredTasks.filter(task => task.dueDate).length === 0 && filteredEpics.length === 0 && (
         <div className="text-center py-12 text-gray-500 dark:text-gray-400">
           <Clock className="w-12 h-12 mx-auto mb-4 opacity-50" />
-          <p className="text-lg mb-2">No user stories with due dates</p>
-          <p className="text-sm">Add due dates to your user stories to see them in the timeline</p>
+          <p className="text-lg mb-2">No items found</p>
+          <p className="text-sm">Try adjusting your filters or add new items</p>
         </div>
       )}
     </div>
@@ -784,7 +927,12 @@ const CalendarView: React.FC<{
   onCreateTask: (status?: string) => void;
   getPriorityColor: (priority: string) => string;
   getPriorityIcon: (priority: string) => string;
-}> = ({ tasks, onCreateTask, getPriorityColor, getPriorityIcon }) => {
+  currentSprint: any;
+  sprintBacklogItems: any[];
+  searchTerm: string;
+  selectedAssignee: string;
+  selectedPriority: string;
+}> = ({ tasks, onCreateTask, getPriorityColor, getPriorityIcon, currentSprint, sprintBacklogItems, searchTerm, selectedAssignee, selectedPriority }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
   
   // Get current month info
@@ -804,17 +952,151 @@ const CalendarView: React.FC<{
     currentDay.setDate(currentDay.getDate() + 1);
   }
   
-  // Group tasks by date
-  const tasksByDate = tasks.reduce((groups, task) => {
-    if (task.dueDate) {
-      const date = task.dueDate;
-      if (!groups[date]) {
-        groups[date] = [];
+  // Filter items based on search, assignee, and priority
+  const filteredSprintBacklogItems = sprintBacklogItems.filter((backlogItem: any) => {
+    const matchesSearch = !searchTerm || 
+      backlogItem.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (backlogItem.description && backlogItem.description.toLowerCase().includes(searchTerm.toLowerCase()));
+    
+    const matchesAssignee = !selectedAssignee || 
+      (backlogItem.assigned_to_id && `User ${backlogItem.assigned_to_id}` === selectedAssignee);
+    
+    // Priority filter does NOT apply to user stories - they are always visible
+    // const matchesPriority = !selectedPriority || 
+    //   (backlogItem.priority && backlogItem.priority.toLowerCase() === selectedPriority.toLowerCase());
+    
+    return matchesSearch && matchesAssignee; // Removed priority filtering for user stories
+  });
+  
+  const filteredTasks = tasks.filter((task) => {
+    const matchesSearch = !searchTerm || 
+      task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      task.description.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    const matchesAssignee = !selectedAssignee || 
+      task.assignees.includes(selectedAssignee);
+    
+    const matchesPriority = !selectedPriority || 
+      task.priority === selectedPriority;
+    
+    const matchesStatus = task.status === 'in_progress';
+    
+    return matchesSearch && matchesAssignee && matchesPriority && matchesStatus;
+  });
+  
+  // Group items by date - include both filtered backlog items and filtered tasks
+  const itemsByDate = new Map<string, Array<{
+    type: 'backlog' | 'task';
+    item: any;
+    displayTitle: string;
+    priority: string;
+    status: string;
+    assignees: string[];
+    parentStory?: string;
+  }>>();
+  
+  // Add filtered sprint backlog items (user stories) - show for every day within sprint time span
+  if (filteredSprintBacklogItems && filteredSprintBacklogItems.length > 0) {
+    if (currentSprint) {
+      // Real sprint data - show for every day within sprint time span
+      const sprintStartDate = new Date(currentSprint.startDate);
+      const sprintEndDate = new Date(currentSprint.endDate);
+      
+      // Generate all dates within the sprint
+      const sprintDates: string[] = [];
+      const currentDate = new Date(sprintStartDate);
+      
+      while (currentDate <= sprintEndDate) {
+        sprintDates.push(currentDate.toISOString().split('T')[0]);
+        currentDate.setDate(currentDate.getDate() + 1);
       }
-      groups[date].push(task);
+      
+      // Add each filtered backlog item to every day within the sprint
+      filteredSprintBacklogItems.forEach((backlogItem: any) => {
+        sprintDates.forEach(dateStr => {
+          if (!itemsByDate.has(dateStr)) {
+            itemsByDate.set(dateStr, []);
+          }
+          
+          itemsByDate.get(dateStr)!.push({
+            type: 'backlog',
+            item: backlogItem,
+            displayTitle: backlogItem.title,
+            priority: backlogItem.priority || 'medium',
+            status: backlogItem.status || 'todo',
+            assignees: backlogItem.assigned_to_id ? [`User ${backlogItem.assigned_to_id}`] : [],
+            parentStory: undefined // Backlog items are the parent stories
+          });
+        });
+      });
+    } else {
+      // Mock data - show for every day within the month being viewed
+      const monthStart = new Date(year, month, 1);
+      const monthEnd = new Date(year, month + 1, 0);
+      
+      // Generate all dates within the viewed month
+      const monthDates: string[] = [];
+      const currentDate = new Date(monthStart);
+      
+      while (currentDate <= monthEnd) {
+        monthDates.push(currentDate.toISOString().split('T')[0]);
+        currentDate.setDate(currentDate.getDate() + 1);
+      }
+      
+      // Add each filtered backlog item to every day within the month
+      filteredSprintBacklogItems.forEach((backlogItem: any) => {
+        monthDates.forEach(dateStr => {
+          if (!itemsByDate.has(dateStr)) {
+            itemsByDate.set(dateStr, []);
+          }
+          
+          itemsByDate.get(dateStr)!.push({
+            type: 'backlog',
+            item: backlogItem,
+            displayTitle: backlogItem.title,
+            priority: backlogItem.priority || 'medium',
+            status: backlogItem.status || 'todo',
+            assignees: backlogItem.assigned_to_id ? [`User ${backlogItem.assigned_to_id}`] : [],
+            parentStory: undefined // Backlog items are the parent stories
+          });
+        });
+      });
     }
-    return groups;
-  }, {} as Record<string, Task[]>);
+  }
+  
+  // Add filtered in-progress tasks only
+  filteredTasks.forEach((task) => {
+    // Only show tasks that are "in_progress"
+    if (task.status === 'in_progress') {
+      // Use dueDate if available, otherwise use current date
+      const taskDate = task.dueDate || new Date().toISOString().split('T')[0];
+      
+      if (!itemsByDate.has(taskDate)) {
+        itemsByDate.set(taskDate, []);
+      }
+      
+      // Find the parent backlog item for this task
+      let parentStory = 'Unknown Story';
+      if (filteredSprintBacklogItems && filteredSprintBacklogItems.length > 0) {
+        const parentBacklog = filteredSprintBacklogItems.find((backlog: any) => 
+          backlog.tasks && backlog.tasks.some((t: any) => t.id === task.id)
+        );
+        if (parentBacklog) {
+          parentStory = parentBacklog.title;
+        }
+      }
+      
+      itemsByDate.get(taskDate)!.push({
+        type: 'task',
+        item: task,
+        displayTitle: task.title,
+        priority: task.priority,
+        status: task.status,
+        assignees: task.assignees,
+        parentStory: parentStory
+      });
+    }
+  });
   
   const formatDate = (date: Date) => {
     return date.toISOString().split('T')[0];
@@ -835,6 +1117,35 @@ const CalendarView: React.FC<{
       newDate.setMonth(prev.getMonth() + (direction === 'next' ? 1 : -1));
       return newDate;
     });
+  };
+
+  // Helper function to get display color based on type and priority
+  const getDisplayColor = (type: 'backlog' | 'task', priority: string, status: string) => {
+    if (type === 'backlog') {
+      // Backlog items (user stories) get distinct colors
+      switch (priority.toLowerCase()) {
+        case 'critical': return 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-400 border-l-red-500';
+        case 'high': return 'bg-orange-100 text-orange-800 dark:bg-orange-900/20 dark:text-orange-400 border-l-orange-500';
+        case 'medium': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400 border-l-blue-500';
+        case 'low': return 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400 border-l-green-500';
+        default: return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300 border-l-gray-500';
+      }
+    } else {
+      // Tasks get status-based colors
+      switch (status) {
+        case 'in_progress': return 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400 border-l-blue-500';
+        default: return 'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300 border-l-gray-500';
+      }
+    }
+  };
+
+  // Helper function to get icon based on type
+  const getDisplayIcon = (type: 'backlog' | 'task', priority: string) => {
+    if (type === 'backlog') {
+      return getPriorityIcon(priority);
+    } else {
+      return '⚡'; // Lightning bolt for in-progress tasks
+    }
   };
 
   return (
@@ -870,6 +1181,34 @@ const CalendarView: React.FC<{
         </button>
       </div>
 
+      {/* Filter Summary */}
+      {(searchTerm || selectedAssignee || selectedPriority) && (
+        <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
+          <div className="flex items-center gap-2 text-sm text-blue-700 dark:text-blue-300">
+            <Filter className="w-4 h-4" />
+            <span className="font-medium">Active Filters:</span>
+            {searchTerm && (
+              <span className="bg-blue-200 dark:bg-blue-800 text-blue-800 dark:text-blue-200 px-2 py-1 rounded text-xs">
+                Search: "{searchTerm}"
+              </span>
+            )}
+            {selectedAssignee && (
+              <span className="bg-blue-200 dark:bg-blue-800 text-blue-800 dark:text-blue-200 px-2 py-1 rounded text-xs">
+                Assignee: {selectedAssignee}
+              </span>
+            )}
+            {selectedPriority && (
+              <span className="bg-blue-200 dark:bg-blue-800 text-blue-800 dark:text-blue-200 px-2 py-1 rounded text-xs">
+                Priority: {selectedPriority} (Tasks only, not user stories)
+              </span>
+            )}
+            <span className="ml-auto text-xs">
+              Showing {filteredSprintBacklogItems.length} user stories and {filteredTasks.filter(t => t.status === 'in_progress').length} in-progress tasks
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Calendar Grid */}
       <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
         {/* Days of week header */}
@@ -885,14 +1224,14 @@ const CalendarView: React.FC<{
         <div className="grid grid-cols-7">
           {calendarDays.map((date, index) => {
             const dateStr = formatDate(date);
-            const dayTasks = tasksByDate[dateStr] || [];
+            const dayItems = itemsByDate.get(dateStr) || [];
             const isCurrentMonthDay = isCurrentMonth(date);
             const isTodayDate = isToday(date);
             
             return (
               <div
                 key={index}
-                className={`min-h-[120px] border-b border-r border-gray-200 dark:border-gray-700 p-2 ${
+                className={`min-h-[140px] border-b border-r border-gray-200 dark:border-gray-700 p-2 ${
                   !isCurrentMonthDay ? 'bg-gray-50 dark:bg-gray-800' : 'bg-white dark:bg-gray-800'
                 }`}
               >
@@ -907,24 +1246,45 @@ const CalendarView: React.FC<{
                 </div>
                 
                 <div className="space-y-1">
-                  {dayTasks.slice(0, 3).map(task => (
+                  {dayItems.slice(0, 4).map((item, itemIndex) => (
                     <div
-                      key={task.id}
-                      className={`text-xs p-1 rounded truncate ${
-                        task.status === 'done' ? 'bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400' :
-                        task.status === 'in_progress' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400' :
-                        'bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300'
-                      }`}
-                      title={task.title}
+                      key={`${item.type}-${item.item.id}-${itemIndex}`}
+                      className={`text-xs p-2 rounded border-l-4 ${getDisplayColor(item.type, item.priority, item.status)}`}
+                      title={`${item.type === 'backlog' ? 'User Story' : 'Task'}: ${item.displayTitle}${item.parentStory ? ` (from: ${item.parentStory})` : ''}`}
                     >
-                      <span className="mr-1">{getPriorityIcon(task.priority)}</span>
-                      {task.title}
+                      <div className="flex items-center gap-1 mb-1">
+                        <span className="font-medium">{getDisplayIcon(item.type, item.priority)}</span>
+                        <span className="text-xs opacity-75">
+                          {item.type === 'backlog' ? '📋' : '⚡'}
+                        </span>
+                        {item.type === 'backlog' && (
+                          <span 
+                            className="text-xs opacity-75 text-blue-600 dark:text-blue-400 cursor-help"
+                            title="User story visible throughout sprint/month"
+                          >
+                            📅
+                          </span>
+                        )}
+                      </div>
+                      <div className="font-medium truncate" title={item.displayTitle}>
+                        {item.displayTitle}
+                      </div>
+                      {item.parentStory && (
+                        <div className="text-xs opacity-75 truncate" title={`From: ${item.parentStory}`}>
+                          📖 {item.parentStory}
+                        </div>
+                      )}
+                      {item.assignees.length > 0 && (
+                        <div className="text-xs opacity-75 truncate" title={`Assigned to: ${item.assignees.join(', ')}`}>
+                          👤 {item.assignees.join(', ')}
+                        </div>
+                      )}
                     </div>
                   ))}
                   
-                  {dayTasks.length > 3 && (
+                  {dayItems.length > 4 && (
                     <div className="text-xs text-gray-500 dark:text-gray-400 p-1">
-                      +{dayTasks.length - 3} more
+                      +{dayItems.length - 4} more
                     </div>
                   )}
                 </div>
@@ -934,12 +1294,67 @@ const CalendarView: React.FC<{
         </div>
       </div>
       
-      {/* Tasks Summary */}
-      {tasks.length === 0 && (
+      {/* Legend */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* User Stories Legend */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+          <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+            <span>📋</span>
+            User Stories (Sprint Backlog Items)
+          </h4>
+          <div className="grid grid-cols-2 gap-3 text-xs">
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 bg-red-500 rounded"></div>
+              <span className="text-gray-600 dark:text-gray-400">Critical</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 bg-orange-500 rounded"></div>
+              <span className="text-gray-600 dark:text-gray-400">High</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 bg-blue-500 rounded"></div>
+              <span className="text-gray-600 dark:text-gray-400">Medium</span>
+            </div>
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 bg-green-500 rounded"></div>
+              <span className="text-gray-600 dark:text-gray-400">Low</span>
+            </div>
+          </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+            Shown for every day within the sprint/month time span
+          </p>
+          <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+            ⚡ Filters apply: Search, Assignee (Priority only affects tasks)
+          </p>
+        </div>
+
+        {/* Tasks Legend */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+          <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+            <span>⚡</span>
+            In-Progress Tasks
+          </h4>
+          <div className="grid grid-cols-1 gap-3 text-xs">
+            <div className="flex items-center gap-2">
+              <div className="w-3 h-3 bg-blue-500 rounded"></div>
+              <span className="text-gray-600 dark:text-gray-400">In Progress</span>
+            </div>
+          </div>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+            Only shows tasks currently being worked on
+          </p>
+          <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+            ⚡ Filters apply: Search, Assignee, Priority
+          </p>
+        </div>
+      </div>
+      
+      {/* Empty state */}
+      {Array.from(itemsByDate.values()).every(items => items.length === 0) && (
         <div className="text-center py-12 text-gray-500 dark:text-gray-400">
           <CalendarDays className="w-12 h-12 mx-auto mb-4 opacity-50" />
-          <p className="text-lg mb-2">No tasks scheduled</p>
-          <p className="text-sm">Create tasks with due dates to see them on the calendar</p>
+          <p className="text-lg mb-2">No items scheduled</p>
+          <p className="text-sm">Create user stories and tasks to see them on the calendar</p>
         </div>
       )}
     </div>
@@ -1497,6 +1912,7 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ params }) => {
   const [currentSprint, setCurrentSprint] = useState<any>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [updateMessage, setUpdateMessage] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [sprintBacklogItems, setSprintBacklogItems] = useState<any[]>([]);
   
   // Task creation modal state
   const [isCreateTaskModalOpen, setIsCreateTaskModalOpen] = useState(false);
@@ -1536,6 +1952,7 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ params }) => {
       if (!activeSprint) {
         // No sprints found, use mock data
         setTasks(mockTasks);
+        setSprintBacklogItems(mockSprintBacklogItems);
         setIsLoading(false);
         return;
       }
@@ -1547,6 +1964,9 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ params }) => {
       // we'll use the sprint backlog endpoint and extract the tasks
       const backlogResponse = await api.sprints.getSprintBacklog(activeSprint.id);
       if (backlogResponse.error) throw new Error(backlogResponse.error);
+      
+      // Store the backlog items for calendar view
+      setSprintBacklogItems(backlogResponse.data || []);
       
       // Extract all tasks from backlog items
       const allTasks: any[] = [];
@@ -1561,6 +1981,7 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ params }) => {
       if (allTasks.length === 0) {
         // No tasks found, use mock data
         setTasks(mockTasks);
+        setSprintBacklogItems(mockSprintBacklogItems);
         setIsLoading(false);
         return;
       }
@@ -1660,6 +2081,7 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ params }) => {
       setError(err instanceof Error ? err.message : 'Failed to fetch sprint tasks');
       // Fallback to mock data
       setTasks(mockTasks);
+      setSprintBacklogItems(mockSprintBacklogItems);
     } finally {
       setIsLoading(false);
     }
@@ -2083,6 +2505,11 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ params }) => {
                 onCreateTask={openCreateTaskModal}
                 getPriorityColor={getPriorityColor}
                 getPriorityIcon={getPriorityIcon}
+                currentSprint={currentSprint}
+                sprintBacklogItems={sprintBacklogItems}
+                searchTerm={searchTerm}
+                selectedAssignee={selectedAssignee}
+                selectedPriority={selectedPriority}
               />
             )}
             
@@ -2092,6 +2519,11 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ params }) => {
                 onCreateTask={openCreateTaskModal}
                 getPriorityColor={getPriorityColor}
                 getPriorityIcon={getPriorityIcon}
+                currentSprint={currentSprint}
+                sprintBacklogItems={sprintBacklogItems}
+                searchTerm={searchTerm}
+                selectedAssignee={selectedAssignee}
+                selectedPriority={selectedPriority}
               />
             )}
           </div>

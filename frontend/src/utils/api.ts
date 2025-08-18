@@ -569,6 +569,9 @@ export const api = {
     delete: (id: number) => jsonFetch<void>(`/api/v1/backlogs/${id}`, {
       method: 'DELETE',
     }),
+    
+    getEpics: (projectId: number) => 
+      jsonFetch<ApiBacklog[]>(`/api/v1/backlogs/?project_id=${projectId}&item_type=epic&include_children=true`),
   },
 
   acceptanceCriteria: {
