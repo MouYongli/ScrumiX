@@ -326,6 +326,7 @@ def get_sprint_backlog(
                 "description": item.description,
                 "status": item.status.value,
                 "priority": item.priority.value,
+                "story_point": item.story_point,  
                 "label": item.label,
                 "item_type": item.item_type.value,
                 "project_id": item.project_id,
@@ -349,7 +350,7 @@ def get_sprint_backlog(
                         "title": task.title,
                         "description": task.description,
                         "status": task.status.value,
-                        "priority": task.priority.value,
+                        "priority": task.priority.value,  
                         "created_at": task.created_at,
                         "updated_at": task.updated_at,
                         "assignees": [
@@ -412,6 +413,7 @@ def get_available_backlog_items(
                 "description": item.description,
                 "status": item.status.value,
                 "priority": item.priority.value,
+                "story_point": item.story_point,  # Add missing story_point field
                 "label": item.label,
                 "item_type": item.item_type.value,
                 "project_id": item.project_id,

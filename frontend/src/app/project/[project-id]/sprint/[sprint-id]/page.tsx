@@ -361,7 +361,7 @@ const AddStoryModal: React.FC<{
                       <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
                         <span className="flex items-center gap-1">
                           <Target className="w-3 h-3" />
-                          {story.story_point} pts
+                          {typeof story.story_point === 'number' ? story.story_point : 0} pts
                         </span>
                         {story.label && (
                           <span className="flex items-center gap-1">
@@ -1741,7 +1741,7 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
               title: item.title,
               description: item.description,
               status: item.status,
-              story_point: item.story_point,
+              story_point: item.story_point || 0, // Ensure story_point is always a number
               priority: item.priority,
               label: item.label,
               item_type: item.item_type,
@@ -2599,7 +2599,7 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                         <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400">
                           <span className="flex items-center gap-1">
                             <Target className="w-3 h-3" />
-                            {story.story_point} pts
+                            {typeof story.story_point === 'number' ? story.story_point : 0} pts
                           </span>
                           {story.label && (
                             <span className="flex items-center gap-1">
