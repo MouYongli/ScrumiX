@@ -625,7 +625,6 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
 
   // Breadcrumb navigation
   const breadcrumbItems = [
-    { label: 'Projects', href: '/project', icon: <FolderOpen className="w-4 h-4" /> },
     { label: projectName, href: `/project/${projectId}/dashboard` },
     { label: 'Sprints', icon: <Zap className="w-4 h-4" /> }
   ];

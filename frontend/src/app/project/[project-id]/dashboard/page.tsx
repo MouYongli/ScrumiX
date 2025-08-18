@@ -970,11 +970,17 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
     };
   }, [sprintViewType, dashboardData.currentSprint, dashboardData.sprintKanbanData, dashboardData.tasks]);
 
+  // Breadcrumb items should always follow: home icon > project name > current route
+  const breadcrumbItems = [
+    { label: dashboardData.project?.name || 'Project', href: `/project/${projectId}/dashboard` },
+    { label: 'Project Dashboard', icon: <LayoutDashboard className="w-4 h-4" /> }
+  ];
+
   // Loading state
   if (isLoading) {
     return (
       <div className="space-y-8">
-        <Breadcrumb items={[]} />
+        <Breadcrumb items={breadcrumbItems} />
         <div className="text-center py-12">
           <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
           <p className="mt-4 text-gray-600 dark:text-gray-400">Loading project dashboard...</p>
@@ -987,7 +993,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
   if (error) {
     return (
       <div className="space-y-8">
-        <Breadcrumb items={[]} />
+        <Breadcrumb items={breadcrumbItems} />
         <div className="text-center py-8 bg-white dark:bg-gray-800 rounded-lg border border-red-200 dark:border-red-900">
           <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
           <h3 className="text-lg font-semibold text-red-600 dark:text-red-400 mb-2">
@@ -1009,7 +1015,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
   if (!dashboardData.project) {
     return (
       <div className="space-y-8">
-        <Breadcrumb items={[]} />
+        <Breadcrumb items={breadcrumbItems} />
         <div className="text-center py-8">
           <p className="text-gray-600 dark:text-gray-400">Project not found</p>
         </div>
@@ -1022,7 +1028,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
     console.error('Invalid kanban data:', kanbanData);
     return (
       <div className="space-y-8">
-        <Breadcrumb items={[]} />
+        <Breadcrumb items={breadcrumbItems} />
         <div className="text-center py-8 bg-white dark:bg-gray-800 rounded-lg border border-yellow-200 dark:border-yellow-900">
           <AlertTriangle className="w-12 h-12 text-yellow-500 mx-auto mb-4" />
           <h3 className="text-lg font-semibold text-yellow-600 dark:text-yellow-400 mb-2">
@@ -1056,11 +1062,6 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
   };
 
   // Breadcrumb navigation
-  const breadcrumbItems = [
-    { label: 'Projects', href: '/project', icon: <FolderOpen className="w-4 h-4" /> },
-    { label: project.name, href: `/project/${projectId}/dashboard` },
-    { label: 'Project Dashboard', icon: <LayoutDashboard className="w-4 h-4" /> }
-  ];
 
   return (
     <div className="space-y-8">

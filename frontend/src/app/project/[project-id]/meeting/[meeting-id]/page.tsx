@@ -1266,8 +1266,6 @@ const MeetingDetail = () => {
 
   // Breadcrumb data with icons
   const breadcrumbItems = [
-    { label: 'Home', href: '/' },
-    { label: 'Projects', href: '/project' },
     { label: projectName, href: `/project/${projectId}/dashboard` },
     { label: 'Meetings', href: `/project/${projectId}/meeting` },
     { label: meeting.title, current: true }

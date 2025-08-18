@@ -152,8 +152,6 @@ const ProjectMeetings = () => {
 
   // Breadcrumb data with icons
   const breadcrumbItems = [
-    { label: 'Home', href: '/', icon: <FolderOpen className="w-4 h-4" /> },
-    { label: 'Projects', href: '/project', icon: <FolderOpen className="w-4 h-4" /> },
     { label: projectName, href: `/project/${projectId}/dashboard` },
     { label: 'Meetings', icon: <Calendar className="w-4 h-4" /> }
   ];

@@ -1532,7 +1532,6 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
 
   // Breadcrumb navigation
   const breadcrumbItems = [
-    { label: 'Projects', href: '/project', icon: <FolderOpen className="w-4 h-4" /> },
     { label: projectName, href: `/project/${projectId}/dashboard` },
     { label: 'Sprints', href: `/project/${projectId}/sprint`, icon: <Zap className="w-4 h-4" /> },
     { label: sprint?.sprint_name || 'Loading...' }

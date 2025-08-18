@@ -7,6 +7,7 @@ import {
   BookOpen, Filter as FilterIcon, ChevronDown, X
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
+import { api } from '@/utils/api';
 
 interface DocumentItem {
   id: string;
@@ -361,11 +362,25 @@ const ProjectDocumentation: React.FC<ProjectDocumentationProps> = ({ params }) =
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'create' | 'edit'>('create');
   const [editingDocument, setEditingDocument] = useState<DocumentItem | undefined>();
-
+  const [projectName, setProjectName] = useState<string>('Project');
+  // Fetch current project name for breadcrumb
+  React.useEffect(() => {
+    const fetchProjectName = async () => {
+      if (!projectId) return;
+      try {
+        const response = await api.projects.getById(parseInt(projectId));
+        if (!response.error && response.data && response.data.name) {
+          setProjectName(response.data.name);
+        }
+      } catch (e) {
+        // Silently ignore; fallback 'Project' will be shown
+      }
+    };
+    fetchProjectName();
+  }, [projectId]);
   // Breadcrumb navigation
   const breadcrumbItems = [
-    { label: 'Projects', href: '/project', icon: <FolderOpen className="w-4 h-4" /> },
-    { label: 'Project Name', href: `/project/${projectId}/dashboard` },
+    { label: projectName, href: `/project/${projectId}/dashboard` },
     { label: 'Documentation', icon: <BookOpen className="w-4 h-4" /> }
   ];
 

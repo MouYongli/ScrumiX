@@ -269,7 +269,6 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
 
   // Breadcrumb navigation
   const breadcrumbItems = [
-    { label: 'Workspace', href: '/workspace' },
     { label: project?.name || 'Project', href: `/project/${projectId}` },
     { label: 'Product Backlog', href: `/project/${projectId}/backlog` }
   ];
