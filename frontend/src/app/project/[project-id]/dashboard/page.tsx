@@ -36,6 +36,7 @@ interface DashboardData {
     totalDays: number;
     startDate: string;
     endDate: string;
+    status: string;
   } | null;
   team: {
     totalMembers: number;
@@ -360,7 +361,12 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
         }
         
         // Prepare kanban data (without story points) - ensure no duplicates
-        const sprintKanbanData = {
+        // Clear tasks if sprint is completed
+        const sprintKanbanData = currentSprint && currentSprint.status === 'completed' ? {
+          todo: [],
+          inProgress: [],
+          done: []
+        } : {
           todo: pendingTasks.map(task => ({
             id: task.id,
             title: task.title,
@@ -425,7 +431,8 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
             daysLeft: Math.max(0, sprintDaysLeft),
             totalDays: sprintTotalDays,
             startDate: currentSprint.startDate,
-            endDate: currentSprint.endDate
+            endDate: currentSprint.endDate,
+            status: currentSprint.status || 'active'
           } : null,
           team: {
             totalMembers: project.members,
@@ -1294,7 +1301,12 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
             {dashboardData.currentSprint && (
             <div className="border-t border-gray-200 dark:border-gray-700 pt-6">
               <div className="flex justify-between items-center mb-4">
-                <h4 className="font-medium text-gray-900 dark:text-white">Sprint Preview</h4>
+                <h4 className="font-medium text-gray-900 dark:text-white">
+                  Sprint Preview
+                  {dashboardData.currentSprint.status === 'completed' && (
+                    <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">(Completed)</span>
+                  )}
+                </h4>
                 <Link 
                   href={`/project/${projectId}/kanban`}
                   className="text-blue-600 hover:text-blue-700 flex items-center gap-1 text-sm"
@@ -1364,12 +1376,20 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                 </div>
               )}
 
-              {/* Kanban Instructions */}
-              <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg border border-blue-200 dark:border-blue-800">
-                <p className="text-sm text-blue-700 dark:text-blue-300">
-                  💡 <strong>Tip:</strong> Drag and drop tasks between columns to update their status. Changes are automatically saved to the backend.
-                </p>
-              </div>
+              {/* Sprint Status Message */}
+              {dashboardData.currentSprint?.status === 'completed' ? (
+                <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800 rounded-lg">
+                  <p className="text-sm text-gray-700 dark:text-gray-300">
+                    📋 <strong>Sprint Completed:</strong> This sprint has been completed. All tasks have been cleared from the board.
+                  </p>
+                </div>
+              ) : (
+                <div className="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                  <p className="text-sm text-blue-700 dark:text-blue-300">
+                    💡 <strong>Tip:</strong> Drag and drop tasks between columns to update their status. Changes are automatically saved to the backend.
+                  </p>
+                </div>
+              )}
 
               {/* Kanban View */}
               {sprintViewType === 'kanban' && (

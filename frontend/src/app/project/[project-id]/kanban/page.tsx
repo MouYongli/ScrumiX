@@ -1483,7 +1483,7 @@ const KanbanView: React.FC<{
             </button>
           </div>
 
-          {/* 任务卡片 */}
+          {/* Task card*/}
           <div className="space-y-3">
             {getTasksByStatus(column.id).map(task => (
               <div
@@ -1501,7 +1501,7 @@ const KanbanView: React.FC<{
                   </div>
                 )}
 
-                {/* 任务头部 */}
+                {/* Task header */}
                 <div className="flex items-start justify-between mb-3">
                   <h4 className="font-medium text-gray-900 dark:text-white text-sm line-clamp-2">
                     {task.title}
@@ -1511,12 +1511,12 @@ const KanbanView: React.FC<{
                   </button>
                 </div>
 
-                {/* 任务描述 */}
+                {/* Task description */}
                 <p className="text-xs text-gray-600 dark:text-gray-400 mb-3 line-clamp-2">
                   {task.description}
                 </p>
 
-                {/* 标签 */}
+                {/* Tagsl*/}
                 {task.labels.length > 0 && (
                   <div className="flex flex-wrap gap-1 mb-3">
                     {task.labels.map(label => (
@@ -1530,7 +1530,7 @@ const KanbanView: React.FC<{
                   </div>
                 )}
 
-                {/* 任务信息 */}
+                {/* Task Information */}
                 <div className="flex items-center justify-between text-xs text-gray-500 dark:text-gray-400">
                   <div className="flex items-center gap-2">
                     <span className={`px-2 py-1 rounded-full ${getPriorityColor(task.priority)}`}>
@@ -1540,7 +1540,7 @@ const KanbanView: React.FC<{
                   </div>
                 </div>
 
-                {/* 任务底部 */}
+                {/* Bottom of the task */}
                 <div className="flex items-center justify-between mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
                   <div className="flex items-center gap-2">
                     <div className="w-6 h-6 bg-gray-300 dark:bg-gray-600 rounded-full flex items-center justify-center">
@@ -1559,7 +1559,7 @@ const KanbanView: React.FC<{
                   )}
                 </div>
 
-                {/* Epic信息 */}
+                {/* Epic Information */}
                 {task.epic && (
                   <div className="mt-2 pt-2 border-t border-gray-200 dark:border-gray-600">
                     <div className="flex items-center gap-1">
@@ -1951,7 +1951,7 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ params }) => {
   const [isCreateTaskModalOpen, setIsCreateTaskModalOpen] = useState(false);
   const [initialTaskStatus, setInitialTaskStatus] = useState<string>('todo');
 
-  // 面包屑导航
+  // Breadcrumb navigation
   const breadcrumbItems = [
     { label: 'Project', href: '/project', icon: <FolderOpen className="w-4 h-4" /> },
     { label: 'Mobile App Development', href: `/project/${projectId}/dashboard` },
@@ -1991,6 +1991,14 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ params }) => {
       }
       
       setCurrentSprint(activeSprint);
+      
+      // Clear tasks if sprint is completed
+      if (activeSprint.status === 'completed') {
+        setTasks([]);
+        setSprintBacklogItems([]);
+        setIsLoading(false);
+        return;
+      }
       
       // Fetch tasks for the current sprint instead of backlog items
       // Since the backend doesn't support filtering tasks by sprint_id yet,
@@ -2153,6 +2161,11 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ params }) => {
   };
 
   const filteredTasks = tasks.filter(task => {
+    // Don't show tasks if sprint is completed
+    if (currentSprint && currentSprint.status === 'completed') {
+      return false;
+    }
+    
     const matchesSearch = task.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          task.description.toLowerCase().includes(searchTerm.toLowerCase());
     const matchesAssignee = !selectedAssignee || task.assignees.includes(selectedAssignee);
@@ -2218,7 +2231,7 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ params }) => {
     <div className="space-y-6">
       <Breadcrumb items={breadcrumbItems} />
       
-      {/* 页面头部 */}
+      {/* Page Header */}
       <div className="flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
@@ -2378,6 +2391,25 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ params }) => {
             </div>
           )}
 
+          {/* Completed Sprint Warning */}
+          {currentSprint && currentSprint.status === 'completed' && (
+            <div className="bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800 rounded-lg p-4">
+              <div className="flex items-center gap-3">
+                <div className="w-5 h-5 bg-gray-500 rounded-full flex items-center justify-center">
+                  <span className="text-white text-xs">✓</span>
+                </div>
+                <div>
+                  <h3 className="font-medium text-gray-900 dark:text-gray-100">
+                    Sprint Completed
+                  </h3>
+                  <p className="text-sm text-gray-700 dark:text-gray-200 mt-1">
+                    Sprint "{currentSprint.sprintName}" has been completed. All tasks have been cleared from the board.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* 筛选器 */}
           <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
             <div className="flex flex-wrap gap-4 items-center">
@@ -2424,140 +2456,162 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ params }) => {
 
           {/* View Content */}
           <div>
-            {currentView === 'kanban' && (
-              <KanbanView
-                tasks={filteredTasks}
-                setTasks={setTasks}
-                onCreateTask={openCreateTaskModal}
-                getPriorityColor={getPriorityColor}
-                getPriorityIcon={getPriorityIcon}
-                columns={columns}
-                getTasksByStatus={getTasksByStatus}
-                onTaskStatusUpdate={async (taskId, newStatus) => {
-                  try {
-                    console.log('Starting status update for task:', { taskId, newStatus });
-                    
-                    // Check if the status is actually changing
-                    const currentTask = tasks.find(t => t.id === taskId);
-                    if (!currentTask) {
-                      throw new Error('Task not found');
-                    }
-                    
-                    if (currentTask.status === newStatus) {
-                      console.log('Status already matches, no update needed');
-                      return;
-                    }
-                    
-                    // Validate task ID is a positive number
-                    if (!taskId || taskId <= 0) {
-                      throw new Error(`Invalid task ID: ${taskId}`);
-                    }
-                    
-                    // Since we're now working with actual tasks, we need to update the task status
-                    // Map the frontend status to backend TaskStatus enum
-                    const statusMap: Record<string, TaskStatus> = {
-                      'todo': TaskStatus.TODO,
-                      'in_progress': TaskStatus.IN_PROGRESS,
-                      'done': TaskStatus.DONE
-                    };
-                    
-                    const mappedStatus = statusMap[newStatus];
-                    if (!mappedStatus) {
-                      throw new Error(`Invalid status: ${newStatus}`);
-                    }
-                    
-                    console.log('Mapped status:', { newStatus, mappedStatus });
-                    console.log('Calling API:', `/api/v1/tasks/${taskId}/status?status=${mappedStatus}`);
-                    
-                    // Update the task status in the backend
-                    const response = await api.tasks.updateStatus(taskId, mappedStatus);
-                    console.log('API response:', response);
-                    
-                    if (response.error) {
-                      throw new Error(response.error);
-                    }
-                    
-                    // Status update successful, local state already updated
-                    console.log(`Task ${taskId} status updated to ${mappedStatus}`);
-                    
-                    // Show success message
-                    const task = tasks.find(t => t.id === taskId);
-                    const statusDisplay = {
-                      'todo': 'To Do',
-                      'in_progress': 'In Progress',
-                      'done': 'Done'
-                    };
-                    
-                    setUpdateMessage({
-                      type: 'success',
-                      message: `"${task?.title || 'Task'}" moved to ${statusDisplay[newStatus as keyof typeof statusDisplay]}`
-                    });
-                    
-                    // Clear success message after 3 seconds
-                    setTimeout(() => {
-                      setUpdateMessage(null);
-                    }, 3000);
-                    
-                  } catch (error) {
-                    console.error('Error updating task status:', error);
-                    
-                    // Log more details about the error
-                    if (error instanceof Error) {
-                      console.error('Error details:', {
-                        message: error.message,
-                        name: error.name,
-                        stack: error.stack
-                      });
-                    }
-                    
-                    // Show error message
-                    setUpdateMessage({
-                      type: 'error',
-                      message: `Failed to update task status: ${error instanceof Error ? error.message : 'Unknown error'}`
-                    });
-                    
-                    // Clear error message after 5 seconds
-                    setTimeout(() => {
-                      setUpdateMessage(null);
-                    }, 5000);
-                    
-                    // Revert local state on API error
-                    setTasks(prevTasks =>
-                      prevTasks.map(task =>
-                        task.id === taskId ? { ...task, status: task.status } : task
-                      )
-                    );
-                  }
-                }}
-              />
-            )}
-            
-            {currentView === 'timeline' && (
-              <TimelineView
-                tasks={filteredTasks}
-                onCreateTask={openCreateTaskModal}
-                getPriorityColor={getPriorityColor}
-                getPriorityIcon={getPriorityIcon}
-                currentSprint={currentSprint}
-                sprintBacklogItems={sprintBacklogItems}
-                searchTerm={searchTerm}
-                selectedAssignee={selectedAssignee}
-                selectedPriority={selectedPriority}
-              />
-            )}
-            
-            {currentView === 'calendar' && (
-              <CalendarView
-                tasks={filteredTasks}
-                onCreateTask={openCreateTaskModal}
-                getPriorityColor={getPriorityColor}
-                getPriorityIcon={getPriorityIcon}
-                currentSprint={currentSprint}
-                sprintBacklogItems={sprintBacklogItems}
-                searchTerm={searchTerm}
-                selectedAssignee={selectedAssignee}
-                selectedPriority={selectedPriority}
-              />
+            {/* Show completed sprint message if applicable */}
+            {currentSprint && currentSprint.status === 'completed' ? (
+              <div className="bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800 rounded-lg p-8">
+                <div className="text-center">
+                  <div className="w-16 h-16 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <span className="text-2xl">✓</span>
+                  </div>
+                  <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+                    Sprint Completed
+                  </h3>
+                  <p className="text-gray-600 dark:text-gray-400 mb-4">
+                    Sprint "{currentSprint.sprintName}" has been completed. All tasks have been cleared from the board.
+                  </p>
+                  <p className="text-sm text-gray-500 dark:text-gray-500">
+                    Create a new active sprint to continue managing tasks.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <>
+                {currentView === 'kanban' && (
+                  <KanbanView
+                    tasks={filteredTasks}
+                    setTasks={setTasks}
+                    onCreateTask={openCreateTaskModal}
+                    getPriorityColor={getPriorityColor}
+                    getPriorityIcon={getPriorityIcon}
+                    columns={columns}
+                    getTasksByStatus={getTasksByStatus}
+                    onTaskStatusUpdate={async (taskId, newStatus) => {
+                      try {
+                        console.log('Starting status update for task:', { taskId, newStatus });
+                        
+                        // Check if the status is actually changing
+                        const currentTask = tasks.find(t => t.id === taskId);
+                        if (!currentTask) {
+                          throw new Error('Task not found');
+                        }
+                        
+                        if (currentTask.status === newStatus) {
+                          console.log('Status already matches, no update needed');
+                          return;
+                        }
+                        
+                        // Validate task ID is a positive number
+                        if (!taskId || taskId <= 0) {
+                          throw new Error(`Invalid task ID: ${taskId}`);
+                        }
+                        
+                        // Since we're now working with actual tasks, we need to update the task status
+                        // Map the frontend status to backend TaskStatus enum
+                        const statusMap: Record<string, TaskStatus> = {
+                          'todo': TaskStatus.TODO,
+                          'in_progress': TaskStatus.IN_PROGRESS,
+                          'done': TaskStatus.DONE
+                        };
+                        
+                        const mappedStatus = statusMap[newStatus];
+                        if (!mappedStatus) {
+                          throw new Error(`Invalid status: ${newStatus}`);
+                        }
+                        
+                        console.log('Mapped status:', { newStatus, mappedStatus });
+                        console.log('Calling API:', `/api/v1/tasks/${taskId}/status?status=${mappedStatus}`);
+                        
+                        // Update the task status in the backend
+                        const response = await api.tasks.updateStatus(taskId, mappedStatus);
+                        console.log('API response:', response);
+                        
+                        if (response.error) {
+                          throw new Error(response.error);
+                        }
+                        
+                        // Status update successful, local state already updated
+                        console.log(`Task ${taskId} status updated to ${mappedStatus}`);
+                        
+                        // Show success message
+                        const task = tasks.find(t => t.id === taskId);
+                        const statusDisplay = {
+                          'todo': 'To Do',
+                          'in_progress': 'In Progress',
+                          'done': 'Done'
+                        };
+                        
+                        setUpdateMessage({
+                          type: 'success',
+                          message: `"${task?.title || 'Task'}" moved to ${statusDisplay[newStatus as keyof typeof statusDisplay]}`
+                        });
+                        
+                        // Clear success message after 3 seconds
+                        setTimeout(() => {
+                          setUpdateMessage(null);
+                        }, 3000);
+                        
+                      } catch (error) {
+                        console.error('Error updating task status:', error);
+                        
+                        // Log more details about the error
+                        if (error instanceof Error) {
+                          console.error('Error details:', {
+                            message: error.message,
+                            name: error.name,
+                            stack: error.stack
+                          });
+                        }
+                        
+                        // Show error message
+                        setUpdateMessage({
+                          type: 'error',
+                          message: `Failed to update task status: ${error instanceof Error ? error.message : 'Unknown error'}`
+                        });
+                        
+                        // Clear error message after 5 seconds
+                        setTimeout(() => {
+                          setUpdateMessage(null);
+                        }, 5000);
+                        
+                        // Revert local state on API error
+                        setTasks(prevTasks =>
+                          prevTasks.map(task =>
+                            task.id === taskId ? { ...task, status: task.status } : task
+                          )
+                        );
+                      }
+                    }}
+                  />
+                )}
+                
+                {currentView === 'timeline' && (
+                  <TimelineView
+                    tasks={filteredTasks}
+                    onCreateTask={openCreateTaskModal}
+                    getPriorityColor={getPriorityColor}
+                    getPriorityIcon={getPriorityIcon}
+                    currentSprint={currentSprint}
+                    sprintBacklogItems={sprintBacklogItems}
+                    searchTerm={searchTerm}
+                    selectedAssignee={selectedAssignee}
+                    selectedPriority={selectedPriority}
+                  />
+                )}
+                
+                {currentView === 'calendar' && (
+                  <CalendarView
+                    tasks={filteredTasks}
+                    onCreateTask={openCreateTaskModal}
+                    getPriorityColor={getPriorityColor}
+                    getPriorityIcon={getPriorityIcon}
+                    currentSprint={currentSprint}
+                    sprintBacklogItems={sprintBacklogItems}
+                    searchTerm={searchTerm}
+                    selectedAssignee={selectedAssignee}
+                    selectedPriority={selectedPriority}
+                  />
+                )}
+              </>
             )}
           </div>
         </>
