@@ -1641,15 +1641,51 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
             </div>
           </div>
 
+
+        </div>
+
+        {/* Sidebar */}
+        <div className="space-y-6">
+          {/* Upcoming Meetings */}
+          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+            <div className="mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                Upcoming Meetings
+              </h3>
+            </div>
+
+            <div className="space-y-3">
+              {dashboardData.upcomingMeetings.map((meeting) => (
+                <Link 
+                  key={meeting.id} 
+                  href={`/project/${projectId}/meeting/${meeting.id}`}
+                  className="block p-3 border border-gray-200 dark:border-gray-700 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors cursor-pointer"
+                >
+                  <h4 className="font-medium text-gray-900 dark:text-white text-sm">
+                    {meeting.title}
+                  </h4>
+                  <div className="flex justify-between items-center mt-2">
+                    <p className="text-xs text-gray-600 dark:text-gray-400">
+                      {meeting.time}
+                    </p>
+                    <p className="text-xs text-gray-500 dark:text-gray-400">
+                      {meeting.attendees} attendees
+                    </p>
+                  </div>
+                </Link>
+              ))}
+            </div>
+          </div>
+
           {/* Recent Activities */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6 mt-6">
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
+          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                 Recent Activities
               </h3>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-3">
               {dashboardData.recentActivities.map((activity) => (
                 <div key={activity.id} className="flex items-start gap-3">
                   <div className="p-2 rounded-lg bg-gray-50 dark:bg-gray-700">
@@ -1667,69 +1703,6 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                   </div>
                 </div>
               ))}
-            </div>
-          </div>
-        </div>
-
-        {/* Sidebar */}
-        <div className="space-y-6">
-          {/* Upcoming Meetings */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                Upcoming Meetings
-              </h3>
-              <Link 
-                href={`/project/${projectId}/meeting`}
-                className="text-blue-600 hover:text-blue-700"
-              >
-                <Plus className="w-5 h-5" />
-              </Link>
-            </div>
-
-            <div className="space-y-3">
-              {dashboardData.upcomingMeetings.map((meeting) => (
-                <div key={meeting.id} className="p-3 border border-gray-200 dark:border-gray-700 rounded-lg">
-                  <h4 className="font-medium text-gray-900 dark:text-white text-sm">
-                    {meeting.title}
-                  </h4>
-                  <div className="flex justify-between items-center mt-2">
-                    <p className="text-xs text-gray-600 dark:text-gray-400">
-                      {meeting.time}
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {meeting.attendees} attendees
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          {/* Quick Actions */}
-          <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
-              Quick Actions
-            </h3>
-            <div className="space-y-2">
-              <Link
-                href={`/project/${projectId}/backlog`}
-                className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors"
-              >
-                📋 Manage Product Backlog
-              </Link>
-              <Link
-                href={`/project/${projectId}/documentation`}
-                className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors"
-              >
-                📝 View Documentation
-              </Link>
-              <Link
-                href={`/project/${projectId}/meeting`}
-                className="block w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors"
-              >
-                📅 Schedule Meeting
-              </Link>
             </div>
           </div>
 
