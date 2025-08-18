@@ -79,6 +79,8 @@ interface BurndownData {
   date: string;
   ideal: number;
   actual: number;
+  workingDay: boolean;
+  dayOfWeek: string;
 }
 
 interface ProductBacklogItem {
@@ -1370,29 +1372,69 @@ const EditSprintModal: React.FC<{
   );
 };
 
+// Helper functions for burndown chart
+const isWorkingDay = (date: Date): boolean => {
+  const dayOfWeek = date.getDay();
+  return dayOfWeek !== 0 && dayOfWeek !== 6; // 0 = Sunday, 6 = Saturday
+};
+
+const getWorkingDaysBetween = (startDate: Date, endDate: Date): Date[] => {
+  const workingDays: Date[] = [];
+  const currentDate = new Date(startDate);
+  
+  while (currentDate <= endDate) {
+    if (isWorkingDay(currentDate)) {
+      workingDays.push(new Date(currentDate));
+    }
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+  
+  return workingDays;
+};
+
+const generateBurndownData = (
+  startDate: string, 
+  endDate: string, 
+  totalStoryPoints: number,
+  completedStoryPoints: number = 0
+): BurndownData[] => {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const workingDays = getWorkingDaysBetween(start, end);
+  
+  if (workingDays.length === 0) {
+    return [];
+  }
+  
+  // Calculate ideal burndown (linear decrease)
+  const idealPointsPerWorkingDay = totalStoryPoints / workingDays.length;
+  
+  return workingDays.map((date, index) => {
+    // Ideal: linear decrease from total to 0
+    const ideal = Math.max(0, totalStoryPoints - (index * idealPointsPerWorkingDay));
+    
+    // Actual: for now, show completed points as remaining
+    // In a real implementation, this would track daily progress
+    const actual = Math.max(0, totalStoryPoints - completedStoryPoints);
+    
+    return {
+      day: index + 1,
+      date: date.toISOString().split('T')[0],
+      ideal: Math.round(ideal * 100) / 100,
+      actual: Math.round(actual * 100) / 100,
+      workingDay: true,
+      dayOfWeek: date.toLocaleDateString('en-US', { weekday: 'short' })
+    };
+  });
+};
+
 const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
   const resolvedParams = React.use(params);
   const projectId = resolvedParams['project-id'];
   const sprintId = resolvedParams['sprint-id'];
 
   const [sprint, setSprint] = useState<Sprint | null>(null);
-  const [burndownData, setBurndownData] = useState<BurndownData[]>([
-    { day: 0, date: '2024-03-01', ideal: 42, actual: 42 },
-    { day: 1, date: '2024-03-02', ideal: 39, actual: 42 },
-    { day: 2, date: '2024-03-03', ideal: 36, actual: 38 },
-    { day: 3, date: '2024-03-04', ideal: 33, actual: 35 },
-    { day: 4, date: '2024-03-05', ideal: 30, actual: 32 },
-    { day: 5, date: '2024-03-06', ideal: 27, actual: 28 },
-    { day: 6, date: '2024-03-07', ideal: 24, actual: 28 },
-    { day: 7, date: '2024-03-08', ideal: 21, actual: 25 },
-    { day: 8, date: '2024-03-09', ideal: 18, actual: 20 },
-    { day: 9, date: '2024-03-10', ideal: 15, actual: 18 },
-    { day: 10, date: '2024-03-11', ideal: 12, actual: 14 },
-    { day: 11, date: '2024-03-12', ideal: 9, actual: 14 },
-    { day: 12, date: '2024-03-13', ideal: 6, actual: 14 },
-    { day: 13, date: '2024-03-14', ideal: 3, actual: 14 },
-    { day: 14, date: '2024-03-15', ideal: 0, actual: 14 }
-  ]);
+  const [burndownData, setBurndownData] = useState<BurndownData[]>([]);
   const [activeTab, setActiveTab] = useState<'backlog' | 'burndown' | 'team'>('backlog');
   const [availableStories, setAvailableStories] = useState<ProductBacklogItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -1825,6 +1867,91 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
       }
     }
   }, [sprint]);
+
+  // Generate burndown data when sprint data changes
+  useEffect(() => {
+    if (sprint && sprint.start_date && sprint.end_date && sprint.totalStoryPoints) {
+      const newBurndownData = generateBurndownData(
+        sprint.start_date,
+        sprint.end_date,
+        sprint.totalStoryPoints,
+        sprint.completedStoryPoints || 0
+      );
+      setBurndownData(newBurndownData);
+    }
+  }, [sprint?.start_date, sprint?.end_date, sprint?.totalStoryPoints, sprint?.completedStoryPoints]);
+
+  // Calculate current sprint progress
+  const getCurrentSprintProgress = () => {
+    if (!sprint || !sprint.start_date || !sprint.end_date) return 0;
+    
+    const start = new Date(sprint.start_date);
+    const end = new Date(sprint.end_date);
+    const today = new Date();
+    
+    if (today < start) return 0;
+    if (today > end) return 100;
+    
+    const totalDuration = end.getTime() - start.getTime();
+    const elapsed = today.getTime() - start.getTime();
+    return Math.round((elapsed / totalDuration) * 100);
+  };
+
+  // Calculate sprint velocity (story points per working day)
+  const getSprintVelocity = () => {
+    if (!sprint || !sprint.totalStoryPoints || !burndownData.length) return 0;
+    
+    const workingDays = burndownData.length;
+    const totalPoints = sprint.totalStoryPoints;
+    
+    return Math.round((totalPoints / workingDays) * 100) / 100;
+  };
+
+  // Calculate burndown trend (ahead/behind/on track)
+  const getBurndownTrend = () => {
+    if (!sprint || !sprint.totalStoryPoints || !sprint.completedStoryPoints || !burndownData.length) {
+      return { status: 'neutral', text: 'No data', color: 'text-gray-500' };
+    }
+    
+    const totalPoints = sprint.totalStoryPoints;
+    const completedPoints = sprint.completedStoryPoints;
+    const remainingPoints = totalPoints - completedPoints;
+    
+    // Calculate expected progress based on time elapsed
+    const progress = getCurrentSprintProgress();
+    const expectedCompleted = (progress / 100) * totalPoints;
+    const actualCompleted = completedPoints;
+    
+    if (actualCompleted > expectedCompleted + 2) {
+      return { status: 'ahead', text: 'Ahead of Schedule', color: 'text-green-600' };
+    } else if (actualCompleted < expectedCompleted - 2) {
+      return { status: 'behind', text: 'Behind Schedule', color: 'text-red-600' };
+    } else {
+      return { status: 'on-track', text: 'On Track', color: 'text-blue-600' };
+    }
+  };
+
+  // Get current working day in the sprint
+  const getCurrentWorkingDay = () => {
+    if (!sprint || !sprint.start_date || !sprint.end_date || !burndownData.length) return 0;
+    
+    const start = new Date(sprint.start_date);
+    const today = new Date();
+    
+    if (today < start) return 0;
+    
+    let workingDays = 0;
+    let currentDate = new Date(start);
+    
+    while (currentDate <= today && currentDate <= new Date(sprint.end_date)) {
+      if (isWorkingDay(currentDate)) {
+        workingDays++;
+      }
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+    
+    return workingDays;
+  };
 
   // Helper function to get user display name
   const getUserDisplayName = (userId: number) => {
@@ -2631,10 +2758,18 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
 
         {activeTab === 'burndown' && (
           <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-6">Burndown Chart</h3>
+            <div className="flex justify-between items-center mb-6">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Burndown Chart</h3>
+              <div className="flex items-center gap-2">
+                <span className="text-sm text-gray-600 dark:text-gray-400">Status:</span>
+                <span className={`px-3 py-1 rounded-full text-sm font-medium ${getBurndownTrend().color} bg-opacity-10`}>
+                  {getBurndownTrend().text}
+                </span>
+              </div>
+            </div>
             {sprint && sprint.stories && sprint.stories.length > 0 ? (
               <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                   <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
                     <div className="text-2xl font-bold text-blue-600">{sprint.totalStoryPoints || 0}</div>
                     <div className="text-sm text-gray-600 dark:text-gray-400">Total Story Points</div>
@@ -2649,37 +2784,179 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                     </div>
                     <div className="text-sm text-gray-600 dark:text-gray-400">Remaining Points</div>
                   </div>
+                  <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <div className="text-2xl font-bold text-purple-600">{getCurrentSprintProgress()}%</div>
+                    <div className="text-sm text-gray-600 dark:text-gray-400">Sprint Progress</div>
+                  </div>
+                  <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <div className="text-2xl font-bold text-indigo-600">{getSprintVelocity()}</div>
+                    <div className="text-sm text-gray-600 dark:text-gray-400">Points/Day</div>
+                  </div>
                 </div>
                 
-                <div className="h-64 flex items-end justify-between gap-2">
-                  {burndownData.map((data, index) => (
-                    <div key={index} className="flex-1 flex flex-col items-center">
-                      <div className="w-full h-48 relative flex items-end justify-center">
-                        <div 
-                          className="w-2 bg-blue-500 mr-1" 
-                          style={{ height: `${(data.ideal / Math.max(sprint.totalStoryPoints || 1, 1)) * 100}%` }}
-                          title={`Ideal: ${data.ideal}`}
-                        ></div>
-                        <div 
-                          className="w-2 bg-red-500" 
-                          style={{ height: `${(data.actual / Math.max(sprint.totalStoryPoints || 1, 1)) * 100}%` }}
-                          title={`Actual: ${data.actual}`}
-                        ></div>
+                {/* Burndown Chart */}
+                <div className="relative h-80 bg-gray-50 dark:bg-gray-900 rounded-lg p-4">
+                  {burndownData.length > 0 ? (
+                    <svg
+                      className="w-full h-full"
+                      viewBox={`0 0 ${Math.max(400, burndownData.length * 40)} 300`}
+                      preserveAspectRatio="xMidYMid meet"
+                    >
+                      {/* Grid lines */}
+                      {Array.from({ length: Math.ceil((sprint.totalStoryPoints || 0) / 5) + 1 }, (_, i) => (
+                        <g key={`grid-${i}`}>
+                          <line
+                            x1="0"
+                            y1={300 - (i * 5 * 300 / (sprint.totalStoryPoints || 1))}
+                            x2={Math.max(400, burndownData.length * 40)}
+                            y2={300 - (i * 5 * 300 / (sprint.totalStoryPoints || 1))}
+                            stroke="rgba(156, 163, 175, 0.3)"
+                            strokeWidth="1"
+                          />
+                          <text
+                            x="5"
+                            y={300 - (i * 5 * 300 / (sprint.totalStoryPoints || 1)) - 5}
+                            fontSize="12"
+                            fill="rgba(156, 163, 175, 0.8)"
+                          >
+                            {i * 5}
+                          </text>
+                        </g>
+                      ))}
+                      
+                      {/* X-axis labels */}
+                      {burndownData.map((data, index) => (
+                        <text
+                          key={`x-label-${index}`}
+                          x={index * 40 + 20}
+                          y="320"
+                          fontSize="10"
+                          fill="rgba(156, 163, 175, 0.8)"
+                          textAnchor="middle"
+                        >
+                          {data.dayOfWeek}
+                        </text>
+                      ))}
+                      
+                      {/* Ideal burndown line */}
+                      <polyline
+                        points={burndownData.map((data, index) => 
+                          `${index * 40 + 20},${300 - (data.ideal * 300 / (sprint.totalStoryPoints || 1))}`
+                        ).join(' ')}
+                        fill="none"
+                        stroke="#3B82F6"
+                        strokeWidth="2"
+                        strokeDasharray="5,5"
+                      />
+                      
+                      {/* Actual burndown line */}
+                      <polyline
+                        points={burndownData.map((data, index) => 
+                          `${index * 40 + 20},${300 - (data.actual * 300 / (sprint.totalStoryPoints || 1))}`
+                        ).join(' ')}
+                        fill="none"
+                        stroke="#EF4444"
+                        strokeWidth="3"
+                      />
+                      
+                      {/* Data points */}
+                      {burndownData.map((data, index) => (
+                        <g key={`point-${index}`}>
+                          {/* Ideal point */}
+                          <circle
+                            cx={index * 40 + 20}
+                            cy={300 - (data.ideal * 300 / (sprint.totalStoryPoints || 1))}
+                            r="3"
+                            fill="#3B82F6"
+                            className="cursor-pointer hover:r-4 transition-all"
+                          >
+                            <title>{`Day ${data.day} (${data.dayOfWeek}): Ideal: ${data.ideal} points`}</title>
+                          </circle>
+                          {/* Actual point */}
+                          <circle
+                            cx={index * 40 + 20}
+                            cy={300 - (data.actual * 300 / (sprint.totalStoryPoints || 1))}
+                            r="4"
+                            fill="#EF4444"
+                            className="cursor-pointer hover:r-5 transition-all"
+                          >
+                            <title>{`Day ${data.day} (${data.dayOfWeek}): Actual: ${data.actual} points remaining`}</title>
+                          </circle>
+                        </g>
+                      ))}
+                      
+                      {/* Current day indicator */}
+                      {getCurrentWorkingDay() > 0 && getCurrentWorkingDay() <= burndownData.length && (
+                        <g>
+                          <line
+                            x1={(getCurrentWorkingDay() - 1) * 40 + 20}
+                            y1="0"
+                            x2={(getCurrentWorkingDay() - 1) * 40 + 20}
+                            y2="300"
+                            stroke="#10B981"
+                            strokeWidth="2"
+                            strokeDasharray="5,5"
+                          />
+                          <text
+                            x={(getCurrentWorkingDay() - 1) * 40 + 20}
+                            y="15"
+                            fontSize="12"
+                            fill="#10B981"
+                            textAnchor="middle"
+                            fontWeight="bold"
+                          >
+                            TODAY
+                          </text>
+                        </g>
+                      )}
+                    </svg>
+                  ) : (
+                    <div className="flex items-center justify-center h-full">
+                      <div className="text-center">
+                        <TrendingUp className="w-12 h-12 text-gray-400 mx-auto mb-2" />
+                        <p className="text-gray-500 dark:text-gray-400">Generating burndown chart...</p>
                       </div>
-                      <span className="text-xs text-gray-600 dark:text-gray-400 mt-2">
-                        {data.day}
-                      </span>
                     </div>
-                  ))}
+                  )}
                 </div>
                 <div className="flex justify-center mt-4 gap-6">
                   <div className="flex items-center gap-2">
                     <div className="w-3 h-3 bg-blue-500 rounded"></div>
-                    <span className="text-sm text-gray-600 dark:text-gray-400">Ideal</span>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">Ideal Burndown</span>
                   </div>
                   <div className="flex items-center gap-2">
                     <div className="w-3 h-3 bg-red-500 rounded"></div>
-                    <span className="text-sm text-gray-600 dark:text-gray-400">Actual</span>
+                    <span className="text-sm text-gray-600 dark:text-gray-400">Actual Progress</span>
+                  </div>
+                </div>
+                
+                {/* Additional Sprint Information */}
+                <div className="mt-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
+                    <div className="text-center">
+                      <div className="font-medium text-gray-900 dark:text-white">
+                        {burndownData.length} Working Days
+                      </div>
+                      <div className="text-gray-600 dark:text-gray-400">Sprint Duration</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="font-medium text-gray-900 dark:text-white">
+                        {sprint.start_date ? new Date(sprint.start_date).toLocaleDateString() : 'N/A'}
+                      </div>
+                      <div className="text-gray-600 dark:text-gray-400">Start Date</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="font-medium text-gray-900 dark:text-white">
+                        {sprint.end_date ? new Date(sprint.end_date).toLocaleDateString() : 'N/A'}
+                      </div>
+                      <div className="text-gray-600 dark:text-gray-400">End Date</div>
+                    </div>
+                    <div className="text-center">
+                      <div className="font-medium text-gray-900 dark:text-white">
+                        Day {getCurrentWorkingDay()} of {burndownData.length}
+                      </div>
+                      <div className="text-gray-600 dark:text-gray-400">Current Progress</div>
+                    </div>
                   </div>
                 </div>
               </div>
