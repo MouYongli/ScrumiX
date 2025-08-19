@@ -99,7 +99,52 @@ const SettingsPage = () => {
       try {
         const savedSettings = localStorage.getItem('userSettings');
         if (savedSettings) {
-          setSettings(JSON.parse(savedSettings));
+          const parsedSettings = JSON.parse(savedSettings);
+          // Ensure all required properties exist with fallback values
+          setSettings({
+            profile: {
+              language: 'en-US',
+              timezone: 'America/New_York',
+              dateFormat: 'MM/DD/YYYY',
+              ...parsedSettings.profile,
+            },
+            notifications: {
+              email: {
+                projectUpdates: true,
+                taskAssignments: true,
+                sprintChanges: true,
+                meetingReminders: true,
+                weeklyDigest: false,
+                ...parsedSettings.notifications?.email,
+              },
+              push: {
+                taskDeadlines: true,
+                mentionsAndComments: true,
+                projectInvitations: true,
+                systemUpdates: false,
+                ...parsedSettings.notifications?.push,
+              },
+              inApp: {
+                realTimeUpdates: true,
+                soundNotifications: true,
+                desktopNotifications: true,
+                ...parsedSettings.notifications?.inApp,
+              },
+            },
+            privacy: {
+              profileVisibility: 'team',
+              showOnlineStatus: true,
+              allowProjectInvitations: true,
+              dataCollection: true,
+              ...parsedSettings.privacy,
+            },
+            security: {
+              twoFactorAuth: false,
+              sessionTimeout: 30,
+              loginAlerts: true,
+              ...parsedSettings.security,
+            },
+          });
         }
       } catch (error) {
         console.error('Failed to load settings:', error);
@@ -131,7 +176,7 @@ const SettingsPage = () => {
     setSettings(prev => ({
       ...prev,
       [section]: {
-        ...prev[section],
+        ...(prev[section] || {}),
         [key]: value,
       },
     }));
@@ -142,9 +187,9 @@ const SettingsPage = () => {
     setSettings(prev => ({
       ...prev,
       [section]: {
-        ...prev[section],
+        ...(prev[section] || {}),
         [subsection]: {
-          ...(prev[section] as any)[subsection],
+          ...((prev[section] as any)?.[subsection] || {}),
           [key]: value,
         },
       },
@@ -300,7 +345,7 @@ const SettingsPage = () => {
                     Language
                   </label>
                   <select
-                    value={settings.profile.language}
+                    value={settings.profile?.language || 'en-US'}
                     onChange={(e) => updateSetting('profile', 'language', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
                   >
@@ -316,7 +361,7 @@ const SettingsPage = () => {
                     Timezone
                   </label>
                   <select
-                    value={settings.profile.timezone}
+                    value={settings.profile?.timezone || 'America/New_York'}
                     onChange={(e) => updateSetting('profile', 'timezone', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
                   >
@@ -333,7 +378,7 @@ const SettingsPage = () => {
                     Date Format
                   </label>
                   <select
-                    value={settings.profile.dateFormat}
+                    value={settings.profile?.dateFormat || 'MM/DD/YYYY'}
                     onChange={(e) => updateSetting('profile', 'dateFormat', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
                   >
@@ -357,7 +402,7 @@ const SettingsPage = () => {
                     <h3 className="text-lg font-medium text-gray-900 dark:text-white">Email Notifications</h3>
                   </div>
                   <div className="space-y-3">
-                    {Object.entries(settings.notifications.email).map(([key, value]) => (
+                    {settings.notifications?.email && Object.entries(settings.notifications.email).map(([key, value]) => (
                       <div key={key} className="flex items-center justify-between py-2">
                         <span className="text-gray-700 dark:text-gray-300">
                           {key === 'projectUpdates' && 'Project Updates'}
@@ -390,7 +435,7 @@ const SettingsPage = () => {
                     <h3 className="text-lg font-medium text-gray-900 dark:text-white">Push Notifications</h3>
                   </div>
                   <div className="space-y-3">
-                    {Object.entries(settings.notifications.push).map(([key, value]) => (
+                    {settings.notifications?.push && Object.entries(settings.notifications.push).map(([key, value]) => (
                       <div key={key} className="flex items-center justify-between py-2">
                         <span className="text-gray-700 dark:text-gray-300">
                           {key === 'taskDeadlines' && 'Task Deadline Reminders'}
@@ -422,7 +467,7 @@ const SettingsPage = () => {
                     <h3 className="text-lg font-medium text-gray-900 dark:text-white">In-App Notifications</h3>
                   </div>
                   <div className="space-y-3">
-                    {Object.entries(settings.notifications.inApp).map(([key, value]) => (
+                    {settings.notifications?.inApp && Object.entries(settings.notifications.inApp).map(([key, value]) => (
                       <div key={key} className="flex items-center justify-between py-2">
                         <span className="text-gray-700 dark:text-gray-300">
                           {key === 'realTimeUpdates' && 'Real-time Updates'}
@@ -459,7 +504,7 @@ const SettingsPage = () => {
                     Profile Visibility
                   </label>
                   <select
-                    value={settings.privacy.profileVisibility}
+                    value={settings.privacy?.profileVisibility || 'team'}
                     onChange={(e) => updateSetting('privacy', 'profileVisibility', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
                   >
@@ -477,14 +522,14 @@ const SettingsPage = () => {
                       <p className="text-sm text-gray-500 dark:text-gray-400">Let other users see your online status</p>
                     </div>
                     <button
-                      onClick={() => updateSetting('privacy', 'showOnlineStatus', !settings.privacy.showOnlineStatus)}
+                      onClick={() => updateSetting('privacy', 'showOnlineStatus', !(settings.privacy?.showOnlineStatus ?? true))}
                       className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        settings.privacy.showOnlineStatus ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
+                        (settings.privacy?.showOnlineStatus ?? true) ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
                       }`}
                     >
                       <span
                         className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          settings.privacy.showOnlineStatus ? 'translate-x-6' : 'translate-x-1'
+                          (settings.privacy?.showOnlineStatus ?? true) ? 'translate-x-6' : 'translate-x-1'
                         }`}
                       />
                     </button>
@@ -496,14 +541,14 @@ const SettingsPage = () => {
                       <p className="text-sm text-gray-500 dark:text-gray-400">Other users can invite you to join projects</p>
                     </div>
                     <button
-                      onClick={() => updateSetting('privacy', 'allowProjectInvitations', !settings.privacy.allowProjectInvitations)}
+                      onClick={() => updateSetting('privacy', 'allowProjectInvitations', !(settings.privacy?.allowProjectInvitations ?? true))}
                       className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        settings.privacy.allowProjectInvitations ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
+                        (settings.privacy?.allowProjectInvitations ?? true) ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
                       }`}
                     >
                       <span
                         className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          settings.privacy.allowProjectInvitations ? 'translate-x-6' : 'translate-x-1'
+                          (settings.privacy?.allowProjectInvitations ?? true) ? 'translate-x-6' : 'translate-x-1'
                         }`}
                       />
                     </button>
@@ -515,14 +560,14 @@ const SettingsPage = () => {
                       <p className="text-sm text-gray-500 dark:text-gray-400">Allow collection of anonymous usage data to improve service</p>
                     </div>
                     <button
-                      onClick={() => updateSetting('privacy', 'dataCollection', !settings.privacy.dataCollection)}
+                      onClick={() => updateSetting('privacy', 'dataCollection', !(settings.privacy?.dataCollection ?? true))}
                       className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        settings.privacy.dataCollection ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
+                        (settings.privacy?.dataCollection ?? true) ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
                       }`}
                     >
                       <span
                         className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          settings.privacy.dataCollection ? 'translate-x-6' : 'translate-x-1'
+                          (settings.privacy?.dataCollection ?? true) ? 'translate-x-6' : 'translate-x-1'
                         }`}
                       />
                     </button>
@@ -543,14 +588,14 @@ const SettingsPage = () => {
                     <p className="text-sm text-gray-500 dark:text-gray-400">Add an extra layer of security to your account</p>
                   </div>
                   <button
-                    onClick={() => updateSetting('security', 'twoFactorAuth', !settings.security.twoFactorAuth)}
+                    onClick={() => updateSetting('security', 'twoFactorAuth', !(settings.security?.twoFactorAuth ?? false))}
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      settings.security.twoFactorAuth ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
+                      (settings.security?.twoFactorAuth ?? false) ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
                     }`}
                   >
                     <span
                       className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        settings.security.twoFactorAuth ? 'translate-x-6' : 'translate-x-1'
+                        (settings.security?.twoFactorAuth ?? false) ? 'translate-x-6' : 'translate-x-1'
                       }`}
                     />
                   </button>
@@ -562,7 +607,7 @@ const SettingsPage = () => {
                     Session Timeout (minutes)
                   </label>
                   <select
-                    value={settings.security.sessionTimeout}
+                    value={settings.security?.sessionTimeout || 30}
                     onChange={(e) => updateSetting('security', 'sessionTimeout', parseInt(e.target.value))}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
                   >
@@ -581,14 +626,14 @@ const SettingsPage = () => {
                     <p className="text-sm text-gray-500 dark:text-gray-400">Notify you when new devices sign in to your account</p>
                   </div>
                   <button
-                    onClick={() => updateSetting('security', 'loginAlerts', !settings.security.loginAlerts)}
+                    onClick={() => updateSetting('security', 'loginAlerts', !(settings.security?.loginAlerts ?? true))}
                     className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      settings.security.loginAlerts ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
+                      (settings.security?.loginAlerts ?? true) ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
                     }`}
                   >
                     <span
                       className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        settings.security.loginAlerts ? 'translate-x-6' : 'translate-x-1'
+                        (settings.security?.loginAlerts ?? true) ? 'translate-x-6' : 'translate-x-1'
                       }`}
                     />
                   </button>

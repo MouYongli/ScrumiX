@@ -127,30 +127,6 @@ const GlobalSidebar: React.FC<GlobalSidebarProps> = ({ isCollapsed, onToggle }) 
               </h3>
             </div>
           )}
-          {quickActions.map((item) => {
-            const IconComponent = item.icon;
-            const active = isActive(item.href);
-            
-            return (
-              <Link
-                key={item.name}
-                href={item.href}
-                className={`flex items-center gap-3 px-3 py-3 rounded-lg transition-colors group ${
-                  active
-                    ? 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'
-                }`}
-                title={isCollapsed ? item.name : undefined}
-              >
-                <IconComponent className={`w-5 h-5 flex-shrink-0 ${
-                  active ? 'text-green-600 dark:text-green-400' : 'text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300'
-                }`} />
-                {!isCollapsed && (
-                  <span className="font-medium truncate">{item.name}</span>
-                )}
-              </Link>
-            );
-          })}
         </div>
       </nav>
 
