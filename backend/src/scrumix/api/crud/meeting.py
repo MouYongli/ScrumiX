@@ -281,6 +281,31 @@ class CRUDMeeting(CRUDBase[Meeting, MeetingCreate, MeetingUpdate]):
         db.commit()
         db.refresh(meeting)
         return meeting
+    
+    def search_meetings_by_project(
+        self,
+        db: Session,
+        project_id: int,
+        query: str,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[Meeting]:
+        """Search meetings by project ID and search query."""
+        search_filter = or_(
+            self.model.title.ilike(f"%{query}%"),
+            self.model.description.ilike(f"%{query}%"),
+            self.model.location.ilike(f"%{query}%")
+        )
+        
+        return (
+            db.query(self.model)
+            .filter(self.model.project_id == project_id)
+            .filter(search_filter)
+            .order_by(self.model.start_datetime.desc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
 
 
 # Create instance

@@ -180,6 +180,34 @@ class BacklogCRUD(CRUDBase[Backlog, BacklogCreate, BacklogUpdate]):
         
         return query.order_by(Backlog.created_at.desc()).offset(skip).limit(limit).all()
     
+    def search_backlogs_by_project(
+        self,
+        db: Session,
+        project_id: int,
+        query: str,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[Backlog]:
+        """Search backlog items by project ID and search query."""
+        if not query:
+            return []
+        
+        search_pattern = f"%{query}%"
+        search_filter = or_(
+            Backlog.title.ilike(search_pattern),
+            Backlog.description.ilike(search_pattern)
+        )
+        
+        return (
+            db.query(Backlog)
+            .filter(Backlog.project_id == project_id)
+            .filter(search_filter)
+            .order_by(Backlog.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+    
     def get_backlogs_by_status(
         self, 
         db: Session, 

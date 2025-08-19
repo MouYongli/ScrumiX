@@ -121,6 +121,18 @@ export const api = {
     getMeetings: () => deduplicateRequest('workspace:getMeetings', () => 
       jsonFetch<ApiTask[]>('/api/v1/workspace/meetings')
     ),
+    search: (params: {
+      query: string;
+      entity_types?: string;
+      limit?: number;
+    }) => {
+      const searchParams = new URLSearchParams();
+      searchParams.append('query', params.query);
+      if (params.entity_types) searchParams.append('entity_types', params.entity_types);
+      if (params.limit) searchParams.append('limit', params.limit.toString());
+      
+      return jsonFetch<any>(`/api/v1/workspace/search?${searchParams.toString()}`);
+    },
   },
   
   projects: {

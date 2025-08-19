@@ -168,6 +168,31 @@ class CRUDTask(CRUDBase[Task, TaskCreate, TaskUpdate]):
         stats["total"] = db.query(self.model).count()
         
         return stats
+    
+    def search_tasks_by_project(
+        self,
+        db: Session,
+        project_id: int,
+        query: str,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[Task]:
+        """Search tasks by project ID and search query."""
+        search_filter = or_(
+            self.model.title.ilike(f"%{query}%"),
+            self.model.description.ilike(f"%{query}%")
+        )
+        
+        return (
+            db.query(self.model)
+            .join(self.model.sprint)
+            .filter(self.model.sprint.has(project_id=project_id))
+            .filter(search_filter)
+            .order_by(self.model.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
 
 
 # Create instance

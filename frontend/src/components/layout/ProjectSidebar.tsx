@@ -500,7 +500,7 @@ const ProjectSidebar = forwardRef<ProjectSidebarRef, ProjectSidebarProps>(({
              )}
            </div>
          </div>
-       )}
+               )}
       </div>
 
       {/* Navigation Items */}

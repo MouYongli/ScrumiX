@@ -98,6 +98,30 @@ class SprintCRUD(CRUDBase[Sprint, SprintCreate, SprintUpdate]):
         
         return query.order_by(Sprint.start_date.desc()).offset(skip).limit(limit).all()
     
+    def search_sprints_by_project(
+        self,
+        db: Session,
+        project_id: int,
+        query: str,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[Sprint]:
+        """Search sprints by project ID and search query."""
+        search_filter = or_(
+            Sprint.sprint_name.ilike(f"%{query}%"),
+            Sprint.sprint_goal.ilike(f"%{query}%")
+        )
+        
+        return (
+            db.query(Sprint)
+            .filter(Sprint.project_id == project_id)
+            .filter(search_filter)
+            .order_by(Sprint.start_date.desc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+    
     def update_sprint(self, db: Session, sprint_id: int, sprint_update: SprintUpdate) -> Optional[Sprint]:
         """Update sprint information"""
         sprint = self.get_by_id(db, sprint_id)

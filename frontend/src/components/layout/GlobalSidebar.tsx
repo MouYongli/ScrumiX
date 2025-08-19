@@ -170,13 +170,13 @@ const GlobalSidebar: React.FC<GlobalSidebarProps> = ({ isCollapsed, onToggle }) 
       {/* Sidebar Footer */}
       {!isCollapsed && (
         <div className="p-4 border-t border-gray-200 dark:border-gray-700">
-                  <div className="text-xs text-gray-500 dark:text-gray-400 text-center">
-          ScrumiX v1.0 - Global Workspace
-        </div>
+          <div className="text-xs text-gray-500 dark:text-gray-400 text-center">
+            ScrumiX v1.0 - Global Workspace
+          </div>
         </div>
       )}
     </div>
   );
 };
 
-export default GlobalSidebar; 
+export default GlobalSidebar;
