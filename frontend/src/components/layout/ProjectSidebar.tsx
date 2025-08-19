@@ -45,6 +45,7 @@ interface ProjectSidebarRef {
 
 interface ProjectData extends ApiProject {
   currentSprint: string | null;
+  currentSprintId: number | null;
   sprintContext: 'active' | 'planning' | 'completed' | null;
   progress: number;
   color: string;
@@ -153,6 +154,7 @@ const ProjectSidebar = forwardRef<ProjectSidebarRef, ProjectSidebarProps>(({
       setProject({
         ...projectResponse.data,
         currentSprint: currentSprint ? currentSprint.sprintName : null,
+        currentSprintId: currentSprint ? currentSprint.id : null,
         sprintContext: sprintContext as 'active' | 'planning' | 'completed' | null,
         progress,
         color: 'bg-blue-500', // You can map this based on project status or type
@@ -432,7 +434,7 @@ const ProjectSidebar = forwardRef<ProjectSidebarRef, ProjectSidebarProps>(({
                           {project.currentSprint}
                         </div>
                         <Link
-                          href={`/project/${projectId}/sprint`}
+                          href={project.currentSprintId ? `/project/${projectId}/sprint/${project.currentSprintId}` : `/project/${projectId}/sprint`}
                           className={`block w-full text-center text-xs rounded px-1.5 py-0.5 transition-colors ${
                             project.sprintContext === 'active'
                               ? 'text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 bg-green-100 dark:bg-green-800/50 hover:bg-green-200 dark:hover:bg-green-800'
