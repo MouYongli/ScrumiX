@@ -84,7 +84,7 @@ export const mapApiProjectToDomain = (apiProject: ApiProject): Project => ({
   tasksCompleted: apiProject.tasks.completed,
   tasksTotal: apiProject.tasks.total,
   // Computed UI properties
-  memberCount: apiProject.members,
+  memberCount: apiProject.member_count,
   isActive: apiProject.status === 'active',
   statusDisplay: formatProjectStatus(apiProject.status),
 });
@@ -136,6 +136,15 @@ const formatProjectStatus = (status: string): string => {
     .replace(/\b\w/g, l => l.toUpperCase());
 };
 
+const formatScrumRole = (role: string): string => {
+  const roleMap: Record<string, string> = {
+    'scrum_master': 'Scrum Master',
+    'product_owner': 'Product Owner',
+    'developer': 'Developer'
+  };
+  return roleMap[role] || role;
+};
+
 // Create ProjectWithDetails from Project and related data
 export const createProjectWithDetails = (
   project: Project,
@@ -151,3 +160,6 @@ export const createProjectWithDetails = (
   inProgressTasks: tasks.filter(task => task.status === 'in_progress'),
   doneTasks: tasks.filter(task => task.status === 'done'),
 });
+
+// Export utility functions for use in components
+export { formatScrumRole };

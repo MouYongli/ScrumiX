@@ -183,8 +183,8 @@ class ProjectCRUD(CRUDBase[Project, ProjectCreate, ProjectUpdate]):
                 detail="User does not have access to this project"
             )
             
-        # Get project members count
-        members_count = len(project.user_projects)
+        # Get project members count using database query for accuracy
+        members_count = db.query(UserProject).filter(UserProject.project_id == project_id).count()
         
         # Count backlog items (user stories) for progress calculation
         backlog_total = 0
@@ -210,6 +210,64 @@ class ProjectCRUD(CRUDBase[Project, ProjectCreate, ProjectUpdate]):
             "backlog_total": backlog_total,
             "progress": progress
         }
+    
+    def get_project_member_count(self, db: Session, project_id: int) -> int:
+        """Get the number of members in a project"""
+        return db.query(UserProject).filter(UserProject.project_id == project_id).count()
+    
+    def get_user_projects_with_details(
+        self, 
+        db: Session, 
+        user_id: int, 
+        skip: int = 0, 
+        limit: int = 100,
+        status: Optional[ProjectStatus] = None
+    ) -> List[Dict[str, Any]]:
+        """Get projects where the user is a member with detailed information including member count"""
+        query = db.query(self.model).join(UserProject).filter(
+            UserProject.user_id == user_id
+        )
+        
+        if status:
+            query = query.filter(self.model.status == status)
+        
+        projects = query.offset(skip).limit(limit).all()
+        
+        # Get detailed information for each project
+        projects_with_details = []
+        for project in projects:
+            # Get user's role in the project
+            user_role = user_project_crud.get_user_role(db, user_id, project.id)
+            
+            # Get project member count
+            member_count = self.get_project_member_count(db, project.id)
+            
+            # Count backlog items for progress calculation
+            backlog_total = 0
+            backlog_completed = 0
+            
+            for sprint in project.sprints:
+                for backlog_item in sprint.backlog_items:
+                    backlog_total += 1
+                    if backlog_item.status.value == "done":
+                        backlog_completed += 1
+            
+            # Calculate progress based on completed backlog items
+            if backlog_total > 0:
+                progress = int((backlog_completed / backlog_total * 100))
+            else:
+                progress = 0
+                
+            projects_with_details.append({
+                "project": project,
+                "user_role": user_role,
+                "members_count": member_count,
+                "backlog_completed": backlog_completed,
+                "backlog_total": backlog_total,
+                "progress": progress
+            })
+        
+        return projects_with_details
 
 # Create CRUD instance
 project_crud = ProjectCRUD(Project)

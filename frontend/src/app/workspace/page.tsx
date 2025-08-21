@@ -14,7 +14,8 @@ import {
   mapApiMeetingToDomain, 
   mapApiProjectToDomain,
   mapApiSprintToDomain,
-  createProjectWithDetails 
+  createProjectWithDetails,
+  formatScrumRole
 } from '@/utils/mappers';
 
 const MyWorkspacePage = () => {
@@ -31,7 +32,7 @@ const MyWorkspacePage = () => {
 
         // First fetch current user
         const userResponse = await api.auth.getCurrentUser();
-        if (userResponse.error) throw new Error(userResponse.error);
+        if (userResponse.error || !userResponse.data) throw new Error(userResponse.error || 'Failed to get current user');
         const currentUser = mapApiUserToDomain(userResponse.data);
         setCurrentUser(currentUser);
 
@@ -41,8 +42,14 @@ const MyWorkspacePage = () => {
 
         const workspaceData = workspaceResponse.data;
         
-        // Map data to domain models
-        const projects = workspaceData.projects.map(mapApiProjectToDomain);
+        // Map data to domain models and preserve additional fields from workspace API
+        const projects = workspaceData.projects.map((apiProject: any) => {
+          const domainProject = mapApiProjectToDomain(apiProject);
+          return {
+            ...domainProject,
+            role: formatScrumRole(apiProject.user_role) || 'Member'  // Add formatted role from workspace API response
+          };
+        });
         const sprints = workspaceData.active_sprints.map(mapApiSprintToDomain);
         const allTasks = workspaceData.recent_tasks.map(mapApiTaskToDomain);
         const allMeetings = workspaceData.upcoming_meetings.map(mapApiMeetingToDomain);
@@ -141,7 +148,7 @@ const MyWorkspacePage = () => {
     return (
       <div className="min-h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-white p-8 flex items-center justify-center">
         <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gray-900 dark:border-white mx-auto"></div>
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
           <p className="mt-4">Loading workspace...</p>
         </div>
       </div>

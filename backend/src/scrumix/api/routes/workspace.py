@@ -26,8 +26,9 @@ async def get_workspace_overview(
 ):
     """Get workspace overview data for the current user"""
     try:
-        # Get user's projects
-        projects = project_crud.get_user_projects(db, current_user.id, limit=100)
+        # Get user's projects with detailed information including member count
+        projects_with_details = project_crud.get_user_projects_with_details(db, current_user.id, limit=100)
+        projects = [p["project"] for p in projects_with_details]
         
         # Get user's tasks (recent and assigned)
         recent_tasks = task_crud.get_recent_tasks(db, current_user.id, limit=20)
@@ -50,6 +51,16 @@ async def get_workspace_overview(
         if total_tasks > 0:
             overall_progress = int((completed_tasks / total_tasks) * 100)
         
+        # Create project responses with member count
+        project_responses = []
+        for project_detail in projects_with_details[:5]:  # Top 5 projects
+            project_response = ProjectResponse.from_orm(project_detail["project"])
+            # Add member count to the response
+            project_response_dict = project_response.dict()
+            project_response_dict["member_count"] = project_detail["members_count"]
+            project_response_dict["user_role"] = project_detail["user_role"].value if project_detail["user_role"] else None
+            project_responses.append(project_response_dict)
+        
         return {
             "statistics": {
                 "total_projects": total_projects,
@@ -59,7 +70,7 @@ async def get_workspace_overview(
                 "upcoming_meetings": upcoming_meetings_count,
                 "overall_progress": overall_progress
             },
-            "projects": [ProjectResponse.from_orm(p) for p in projects[:5]],  # Top 5 projects
+            "projects": project_responses,
             "recent_tasks": [TaskResponse.from_orm(t) for t in recent_tasks[:10]],  # Top 10 tasks
             "upcoming_meetings": [MeetingResponse.from_orm(m) for m in upcoming_meetings[:5]],  # Top 5 meetings
             "active_sprints": [SprintResponse.from_orm(s) for s in active_sprints[:3]]  # Top 3 sprints
@@ -78,26 +89,20 @@ async def get_workspace_projects(
 ):
     """Get all projects for the current user's workspace"""
     try:
-        projects = project_crud.get_user_projects(db, current_user.id, limit=100)
+        # Get projects with detailed information including accurate member count
+        projects_with_details = project_crud.get_user_projects_with_details(db, current_user.id, limit=100)
         
         # Convert to response format with additional data
         response_projects = []
-        for project in projects:
-            # Get user's role in the project
-            user_role = user_project_crud.get_user_role(db, current_user.id, project.id)
-            
-            # Get project statistics
-            project_stats = project_crud.get_project_with_user_role(db, project.id, current_user.id)
-            
-            project_response = ProjectResponse.from_db_model(
-                project=project,
-                progress=project_stats["progress"],
-                members=project_stats["members_count"],
-                tasks_completed=project_stats["tasks_completed"],
-                tasks_total=project_stats["tasks_total"],
-                user_role=user_role
-            )
-            response_projects.append(project_response)
+        for project_detail in projects_with_details:
+            project_response = ProjectResponse.from_orm(project_detail["project"])
+            project_response_dict = project_response.dict()
+            project_response_dict["member_count"] = project_detail["members_count"]
+            project_response_dict["user_role"] = project_detail["user_role"].value if project_detail["user_role"] else None
+            project_response_dict["progress"] = project_detail["progress"]
+            project_response_dict["tasks_completed"] = project_detail["backlog_completed"]
+            project_response_dict["tasks_total"] = project_detail["backlog_total"]
+            response_projects.append(project_response_dict)
         
         return response_projects
         
