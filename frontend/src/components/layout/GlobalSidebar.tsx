@@ -58,7 +58,7 @@ const GlobalSidebar: React.FC<GlobalSidebarProps> = ({ isCollapsed, onToggle }) 
   return (
     <div className={`bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 transition-all duration-300 ${
       isCollapsed ? 'w-16' : 'w-64 lg:w-64'
-    } flex flex-col h-full`}>
+    } flex flex-col h-full`} style={{ height: 'calc(100vh - 64px)' }}>
       
       {/* Sidebar Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
