@@ -7,7 +7,7 @@ import {
   ArrowLeft, Calendar, Clock, Users, Video, Plus,
   MoreHorizontal, Play, Edit, Trash2, UserCheck,
   MessageSquare, Target, BarChart3, FolderOpen,
-  X, Save, ChevronDown, AlertCircle
+  X, Save, ChevronDown, AlertCircle, Search
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
 import ParticipantsTooltip from '@/components/common/ParticipantsTooltip';
@@ -60,6 +60,7 @@ const ProjectMeetings = () => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [selectedFilter, setSelectedFilter] = useState('all');
+  const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
@@ -180,6 +181,16 @@ const ProjectMeetings = () => {
 
   // Filter meetings
   const filteredMeetings = meetings.filter(meeting => {
+    // Search filter
+    const matchesSearch = searchTerm === '' || 
+      meeting.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      meeting.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      meetingTypes[meeting.meetingType as keyof typeof meetingTypes]?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      meeting.location?.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    if (!matchesSearch) return false;
+    
+    // Status filter
     if (selectedFilter === 'all') return true;
     const datetimeValue = meeting.startDatetime || (meeting as any).start_datetime;
     const start = parseDatetimeSafely(datetimeValue);
@@ -793,28 +804,37 @@ const ProjectMeetings = () => {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-2">
-        {[
-          { key: 'all', label: 'All' },
-          { key: 'upcoming', label: 'Upcoming' },
-          { key: 'completed', label: 'Completed' },
-          { key: MeetingType.DAILY_STANDUP, label: 'Daily Standup' },
-          { key: MeetingType.SPRINT_PLANNING, label: 'Sprint Planning' },
-          { key: MeetingType.SPRINT_REVIEW, label: 'Sprint Review' },
-          { key: MeetingType.SPRINT_RETROSPECTIVE, label: 'Sprint Retrospective' },
-        ].map((filter) => (
-          <button
-            key={filter.key}
-            onClick={() => setSelectedFilter(filter.key)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              selectedFilter === filter.key
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-            }`}
-          >
-            {filter.label}
-          </button>
-        ))}
+      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+        <div className="flex flex-wrap gap-4">
+          <div className="flex-1 min-w-[200px]">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <input
+                type="text"
+                placeholder="Search meetings..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
+            </div>
+          </div>
+          
+          <div className="flex gap-4">
+            <select
+              value={selectedFilter}
+              onChange={(e) => setSelectedFilter(e.target.value)}
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            >
+              <option value="all">All Meetings</option>
+              <option value="upcoming">Upcoming</option>
+              <option value="completed">Completed</option>
+              <option value={MeetingType.DAILY_STANDUP}>Daily Standup</option>
+              <option value={MeetingType.SPRINT_PLANNING}>Sprint Planning</option>
+              <option value={MeetingType.SPRINT_REVIEW}>Sprint Review</option>
+              <option value={MeetingType.SPRINT_RETROSPECTIVE}>Sprint Retrospective</option>
+            </select>
+          </div>
+        </div>
       </div>
 
       {/* Loading state */}
@@ -1016,11 +1036,25 @@ const ProjectMeetings = () => {
         <div className="text-center py-12">
           <Calendar className="w-16 h-16 text-gray-400 mx-auto mb-4" />
           <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-            No meetings found
+            {searchTerm ? 'No meetings found' : 'No meetings found'}
           </h3>
           <p className="text-gray-600 dark:text-gray-400">
-            No meetings found with current filter criteria. Try different filters or create a new meeting.
+            {searchTerm 
+              ? `No meetings found matching "${searchTerm}". Try adjusting your search or filters.`
+              : 'No meetings found with current filter criteria. Try different filters or create a new meeting.'
+            }
           </p>
+          {(searchTerm || selectedFilter !== 'all') && (
+            <button
+              onClick={() => {
+                setSearchTerm('');
+                setSelectedFilter('all');
+              }}
+              className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+            >
+              Clear Filters
+            </button>
+          )}
         </div>
       )}
 
@@ -1204,13 +1238,13 @@ const ProjectMeetings = () => {
                         className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
                         placeholder={`Agenda item ${index + 1}`}
                       />
-                        <button
-                          type="button"
-                          onClick={() => removeAgendaItem(index)}
-                          className="px-3 py-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                      <button
+                        type="button"
+                        onClick={() => removeAgendaItem(index)}
+                        className="px-3 py-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   ))}
                   <button
@@ -1401,13 +1435,13 @@ const ProjectMeetings = () => {
                         className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
                         placeholder={`Agenda item ${index + 1}`}
                       />
-                        <button
-                          type="button"
-                          onClick={() => removeAgendaItem(index)}
-                          className="px-3 py-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                      <button
+                        type="button"
+                        onClick={() => removeAgendaItem(index)}
+                        className="px-3 py-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
                     </div>
                   ))}
                   <button
