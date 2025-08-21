@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Eye, EyeOff, Mail, Lock, ArrowRight, Github, Shield } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, ArrowRight, Github, Shield, Home } from 'lucide-react';
 
 const LoginPage = () => {
   const router = useRouter();
@@ -183,7 +183,7 @@ const LoginPage = () => {
         <div className="relative z-10 flex flex-col justify-center px-12 text-white">
           <div className="max-w-md">
             <h1 className="text-4xl font-bold mb-6">
-              Welcome Back to Scrumix
+              Welcome Back to ScrumiX
             </h1>
             <p className="text-xl text-blue-100 mb-8">
               Efficient agile project management platform that makes team collaboration simpler
@@ -223,23 +223,39 @@ const LoginPage = () => {
       </div>
 
       {/* Right login form */}
-      <div className="flex-1 flex flex-col justify-center px-6 sm:px-12 lg:px-16 xl:px-20">
-        <div className="w-full max-w-md mx-auto">
-          {/* Top Logo */}
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center gap-2 mb-4">
-              <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-xl">S</span>
+      <div className="flex-1 flex flex-col px-6 sm:px-12 lg:px-16 xl:px-20 relative">
+        {/* Home Button - Fixed position top-right */}
+        <div className="absolute top-6 right-6 z-10">
+          <Link
+            href="/"
+            className="group inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-full shadow-sm hover:shadow-md hover:border-blue-300 dark:hover:border-blue-500 transition-all duration-200"
+            title="Back to Home"
+          >
+            <Home className="w-4 h-4 text-gray-500 dark:text-gray-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors" />
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+              Home
+            </span>
+          </Link>
+        </div>
+
+        {/* Centered form content */}
+        <div className="flex-1 flex items-center justify-center">
+          <div className="w-full max-w-md">
+            {/* Logo and title */}
+            <div className="text-center mb-8">
+              <div className="inline-flex items-center gap-2 mb-4">
+                <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
+                  <span className="text-white font-bold text-xl">S</span>
+                </div>
+                <span className="text-2xl font-bold text-gray-900 dark:text-white">ScrumiX</span>
               </div>
-              <span className="text-2xl font-bold text-gray-900 dark:text-white">Scrumix</span>
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                Sign in to your account
+              </h2>
+              <p className="text-gray-600 dark:text-gray-400 mt-2">
+                Continue your agile project management journey
+              </p>
             </div>
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-              Sign in to your account
-            </h2>
-            <p className="text-gray-600 dark:text-gray-400 mt-2">
-              Continue your agile project management journey
-            </p>
-          </div>
 
           {/* Social login */}
           <div className="space-y-3 mb-6">
@@ -413,6 +429,7 @@ const LoginPage = () => {
                 Sign up for free
               </Link>
             </p>
+          </div>
           </div>
         </div>
       </div>

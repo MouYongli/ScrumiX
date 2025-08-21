@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Eye, EyeOff, Mail, Lock, User, ArrowRight, Github, CheckCircle, Shield } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, User, ArrowRight, Github, CheckCircle, Shield, Home } from 'lucide-react';
 
 const SignupPage = () => {
   const router = useRouter();
@@ -260,23 +260,39 @@ const SignupPage = () => {
       </div>
 
       {/* Right signup form */}
-      <div className="flex-1 flex flex-col justify-center px-6 sm:px-12 lg:px-16 xl:px-20">
-        <div className="w-full max-w-md mx-auto">
-          {/* Top Logo */}
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center gap-2 mb-4">
-              <div className="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-xl">S</span>
+      <div className="flex-1 flex flex-col px-6 sm:px-12 lg:px-16 xl:px-20 relative">
+        {/* Home Button - Fixed position top-right */}
+        <div className="absolute top-6 right-6 z-10">
+          <Link
+            href="/"
+            className="group inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-full shadow-sm hover:shadow-md hover:border-indigo-300 dark:hover:border-indigo-500 transition-all duration-200"
+            title="Back to Home"
+          >
+            <Home className="w-4 h-4 text-gray-500 dark:text-gray-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors" />
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+              Home
+            </span>
+          </Link>
+        </div>
+
+        {/* Centered form content */}
+        <div className="flex-1 flex items-center justify-center py-12">
+          <div className="w-full max-w-md">
+            {/* Logo and title */}
+            <div className="text-center mb-8">
+              <div className="inline-flex items-center gap-2 mb-4">
+                <div className="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center">
+                  <span className="text-white font-bold text-xl">S</span>
+                </div>
+                <span className="text-2xl font-bold text-gray-900 dark:text-white">Scrumix</span>
               </div>
-              <span className="text-2xl font-bold text-gray-900 dark:text-white">Scrumix</span>
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                Create your account
+              </h2>
+              <p className="text-gray-600 dark:text-gray-400 mt-2">
+                Start your agile project management journey for free
+              </p>
             </div>
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-              Create your account
-            </h2>
-            <p className="text-gray-600 dark:text-gray-400 mt-2">
-              Start your agile project management journey for free
-            </p>
-          </div>
 
           {/* Social signup */}
           <div className="space-y-3 mb-6">
@@ -524,6 +540,7 @@ const SignupPage = () => {
                 Sign in
               </Link>
             </p>
+          </div>
           </div>
         </div>
       </div>
