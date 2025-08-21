@@ -14,7 +14,7 @@ import {
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
 import { api } from '@/utils/api';
-import { ApiMeeting, ApiProject, ApiMeetingAgenda, ApiMeetingActionItem, ApiMeetingNote } from '@/types/api';
+import { ApiMeeting, ApiProject, ApiMeetingAgenda, ApiMeetingActionItem, ApiMeetingNote, ApiUser } from '@/types/api';
 import { MeetingType } from '@/types/enums';
 import { ProjectMemberResponse } from '@/types/api';
 
@@ -51,6 +51,35 @@ const meetingTypes = {
     icon: MessageSquare,
   },
 };
+
+// Helper function to get user display name with fallback for current user
+function getUserDisplayName(user: any, currentUser: ApiUser | null): string {
+  // If no user information is available, check if it might be the current user
+  if (!user) {
+    if (currentUser) {
+      const fullName = currentUser.first_name && currentUser.last_name 
+        ? `${currentUser.first_name} ${currentUser.last_name}` 
+        : null;
+      return fullName || currentUser.username || currentUser.email;
+    }
+    return 'Unknown User';
+  }
+  
+  // Return the best available user name
+  return user.full_name || user.username || user.email || 'Unknown User';
+}
+
+// Helper function to get user avatar letter
+function getUserAvatarLetter(user: any, currentUser: ApiUser | null): string {
+  if (!user && currentUser) {
+    const fullName = currentUser.first_name && currentUser.last_name 
+      ? `${currentUser.first_name} ${currentUser.last_name}` 
+      : null;
+    return (fullName?.charAt(0) || currentUser.username?.charAt(0) || currentUser.email?.charAt(0) || 'U').toUpperCase();
+  }
+  
+  return (user?.full_name?.charAt(0) || user?.username?.charAt(0) || user?.email?.charAt(0) || 'U').toUpperCase();
+}
 
 // Utility function to safely parse datetime - enhanced to handle various formats
 function parseDatetimeSafely(datetimeValue: any): Date | null {
@@ -664,6 +693,7 @@ const MeetingDetail = () => {
   // State management
   const [meeting, setMeeting] = useState<ApiMeeting | null>(null);
   const [project, setProject] = useState<ApiProject | null>(null);
+  const [currentUser, setCurrentUser] = useState<ApiUser | null>(null);
   const [agendaItems, setAgendaItems] = useState<ApiMeetingAgenda[]>([]);
   const [meetingNotes, setMeetingNotes] = useState<ApiMeetingNote[]>([]);
   const [actionItems, setActionItems] = useState<ApiMeetingActionItem[]>([]);
@@ -700,6 +730,7 @@ const MeetingDetail = () => {
   // Loading states
   const [agendaLoading, setAgendaLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
+  const [notesLoading, setNotesLoading] = useState(false);
 
   // Fetch meeting data and related information
   useEffect(() => {
@@ -710,9 +741,16 @@ const MeetingDetail = () => {
         setIsLoading(true);
         setError(null);
         
+        // Fetch current user information
+        const userResponse = await api.auth.getCurrentUser();
+        if (userResponse.data) {
+          setCurrentUser(userResponse.data);
+        }
+        
         // Fetch meeting details
         const meetingResponse = await api.meetings.getById(parseInt(meetingId));
         if (meetingResponse.error) throw new Error(meetingResponse.error);
+        if (!meetingResponse.data) throw new Error('Meeting data not found');
         setMeeting(meetingResponse.data);
         
         // Set initial editing values
@@ -750,11 +788,15 @@ const MeetingDetail = () => {
           console.warn('Failed to fetch agenda items:', error);
         }
         
-        // Fetch meeting notes
+        // Fetch meeting notes using tree structure for hierarchical display
         try {
-          const notesResponse = await api.meetingNotes.getByMeeting(parseInt(meetingId));
-          if (notesResponse.data) {
-            setMeetingNotes(notesResponse.data);
+          const notesResponse = await api.meetingNotes.getTreeByMeeting(parseInt(meetingId));
+          console.log('Meeting notes response:', notesResponse);
+          if (notesResponse.data && notesResponse.data.notes) {
+            console.log('First note structure:', notesResponse.data.notes[0]);
+            setMeetingNotes(notesResponse.data.notes);
+          } else {
+            setMeetingNotes([]);
           }
         } catch (error) {
           console.warn('Failed to fetch meeting notes:', error);
@@ -834,23 +876,82 @@ const MeetingDetail = () => {
   const handleSaveNotes = async () => {
     if (!currentNote.trim()) return;
     
-    // TODO: Implement when meeting notes API is available
-    console.log('Adding new meeting note:', currentNote.trim());
-    
-    // For now, just clear the input
-    setCurrentNote('');
-    setHasUnsavedNotes(false);
+    setNotesLoading(true);
+    try {
+      const response = await api.meetingNotes.create({
+        meeting_id: parseInt(meetingId),
+        content: currentNote.trim()
+      });
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      
+      // Refresh notes by fetching the complete tree structure
+      const notesResponse = await api.meetingNotes.getTreeByMeeting(parseInt(meetingId));
+      console.log('Refreshed notes response:', notesResponse);
+      if (notesResponse.data && notesResponse.data.notes) {
+        console.log('Refreshed notes structure:', notesResponse.data.notes[0]);
+        setMeetingNotes(notesResponse.data.notes);
+      }
+      
+      // Clear the input
+      setCurrentNote('');
+      setHasUnsavedNotes(false);
+      
+      console.log('Added new meeting note:', response.data);
+      // TODO: Show success notification
+    } catch (error) {
+      console.error('Error adding meeting note:', error);
+      // TODO: Show error notification to user
+    } finally {
+      setNotesLoading(false);
+    }
   };
 
   // Reply to a note
   const handleReply = async (noteId: string) => {
-    if (!replyContent.trim()) return;
+    console.log('handleReply called with noteId:', noteId, 'replyContent:', replyContent.trim());
     
-    // TODO: Implement when meeting notes API is available
-    console.log('Adding reply to note:', noteId, replyContent.trim());
+    if (!replyContent.trim()) {
+      console.log('Reply content is empty, returning');
+      return;
+    }
     
-    setReplyContent('');
-    setReplyingTo(null);
+    if (!noteId) {
+      console.error('Note ID is undefined or empty');
+      return;
+    }
+    
+    setNotesLoading(true);
+    try {
+      console.log('Creating reply for noteId:', noteId, 'content:', replyContent.trim());
+      const response = await api.meetingNotes.createReply(parseInt(noteId), replyContent.trim());
+      console.log('CreateReply response:', response);
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      
+      // Refresh notes to show the new reply
+      console.log('Refreshing notes after reply...');
+      const notesResponse = await api.meetingNotes.getTreeByMeeting(parseInt(meetingId));
+      if (notesResponse.data && notesResponse.data.notes) {
+        setMeetingNotes(notesResponse.data.notes);
+      }
+      
+      setReplyContent('');
+      setReplyingTo(null);
+      
+      console.log('Successfully added reply to note:', response.data);
+      // TODO: Show success notification
+    } catch (error) {
+      console.error('Error adding reply:', error);
+      console.error('Error details:', error instanceof Error ? error.message : error);
+      // TODO: Show error notification to user
+    } finally {
+      setNotesLoading(false);
+    }
   };
 
   // Cancel reply
@@ -936,12 +1037,28 @@ const MeetingDetail = () => {
   };
 
   // Delete meeting notes
-  const handleDeleteNotes = () => {
-    setMeetingNotes([]);
-    setConfirmModalOpen(false);
-    setDeleteTarget(null);
-    // TODO: Implement when meeting notes API is available
-    console.log('Deleting all meeting notes');
+  const handleDeleteNotes = async () => {
+    setNotesLoading(true);
+    try {
+      const response = await api.meetingNotes.deleteAllByMeeting(parseInt(meetingId));
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      
+      // Clear local state
+      setMeetingNotes([]);
+      setConfirmModalOpen(false);
+      setDeleteTarget(null);
+      
+      console.log('Deleted all meeting notes:', response.data?.message);
+      // TODO: Show success notification
+    } catch (error) {
+      console.error('Error deleting meeting notes:', error);
+      // TODO: Show error notification to user
+    } finally {
+      setNotesLoading(false);
+    }
   };
 
   // Agenda item handlers
@@ -1746,36 +1863,63 @@ const MeetingDetail = () => {
                             setDeleteTarget({type: 'notes'});
                             setConfirmModalOpen(true);
                           }}
-                          className="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors"
+                          disabled={notesLoading}
+                          className="bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors disabled:cursor-not-allowed"
                         >
-                          <Trash2 className="w-4 h-2" />
-                          Clear All Notes
+                          {notesLoading ? (
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                          ) : (
+                            <Trash2 className="w-4 h-4" />
+                          )}
+                          {notesLoading ? 'Processing...' : 'Clear All Notes'}
                         </button>
                       )}
                     </div>
                   </div>
                   <div className="px-6 py-4 space-y-4 max-h-96 overflow-y-auto">
-                    {meetingNotes.map((note) => (
-                      <div key={`note-${note.id || note.createdAt || Math.random()}`} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                    {meetingNotes.map((note, index) => {
+                      // Handle both noteId (aliased) and id (fallback) from backend
+                      const noteId = note.noteId || (note as any).id;
+                      
+                      // Debug logging for the first note
+                      if (index === 0) {
+                        console.log('Rendering note:', note);
+                        console.log('noteId:', noteId);
+                        console.log('Available fields:', Object.keys(note));
+                      }
+                      
+                      return (
+                      <div key={`note-${noteId || (note.createdAt || note.created_at) || Math.random()}`} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
                         {/* Main note */}
                         <div className="flex items-start gap-3">
                           <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
-                            {note.author?.charAt(0) || 'U'}
+                            {getUserAvatarLetter(note.user, currentUser)}
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
-                              <span className="font-medium text-gray-900 dark:text-white">{note.author || 'Unknown User'}</span>
+                              <span className="font-medium text-gray-900 dark:text-white">
+                                {getUserDisplayName(note.user, currentUser)}
+                              </span>
+                              {note.user?.id === currentUser?.id && (
+                                <span className="text-xs bg-blue-100 dark:bg-blue-800 text-blue-600 dark:text-blue-200 px-1.5 py-0.5 rounded">
+                                  You
+                                </span>
+                              )}
                               <span className="text-sm text-gray-500 dark:text-gray-400">
-                                {note.createdAt ? new Date(note.createdAt).toLocaleString() : 'Unknown time'}
+                                {(note.createdAt || note.created_at) ? new Date(note.createdAt || note.created_at!).toLocaleString() : 'Unknown time'}
                               </span>
                             </div>
                             <div className="prose prose-sm max-w-none dark:prose-invert">
                               <MarkdownEditor value={note.content} readonly={true} />
                             </div>
-                            {statusStyle.text !== 'Completed' && (
+                            {statusStyle.text !== 'Completed' && noteId && (
                               <button
-                                onClick={() => setReplyingTo(note.id.toString())}
-                                className="mt-2 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
+                                onClick={() => {
+                                  console.log('Reply button clicked for noteId:', noteId);
+                                  setReplyingTo(noteId.toString());
+                                }}
+                                disabled={notesLoading}
+                                className="mt-2 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors disabled:text-gray-400 disabled:cursor-not-allowed"
                               >
                                 Reply
                               </button>
@@ -1783,34 +1927,51 @@ const MeetingDetail = () => {
                           </div>
                         </div>
 
-                        {/* Replies */}
-                        {note.replies && note.replies.length > 0 && (
+                        {/* Child Notes (Replies) */}
+                        {note.childNotes && note.childNotes.length > 0 && (
                           <div className="mt-4 ml-11 space-y-3">
-                            {note.replies.map((reply: any) => (
-                              <div key={`reply-${reply.id || reply.timestamp || Math.random()}`} className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
+                            {note.childNotes.map((childNote) => {
+                              const childNoteId = childNote.noteId || (childNote as any).id;
+                              return (
+                              <div key={`child-note-${childNoteId}`} className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
                                 <div className="flex items-start gap-3">
                                   <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center text-white text-xs font-medium">
-                                    {reply.author.charAt(0)}
+                                    {getUserAvatarLetter(childNote.user, currentUser)}
                                   </div>
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2 mb-1">
-                                      <span className="font-medium text-gray-900 dark:text-white text-sm">{reply.author}</span>
-                                      <span className="text-xs text-gray-500 dark:text-gray-400">{reply.timestamp}</span>
+                                      <span className="font-medium text-gray-900 dark:text-white text-sm">
+                                        {getUserDisplayName(childNote.user, currentUser)}
+                                      </span>
+                                      {childNote.user?.id === currentUser?.id && (
+                                        <span className="text-xs bg-blue-100 dark:bg-blue-800 text-blue-600 dark:text-blue-200 px-1.5 py-0.5 rounded">
+                                          You
+                                        </span>
+                                      )}
+                                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                                        {(childNote.createdAt || childNote.created_at) ? new Date(childNote.createdAt || childNote.created_at!).toLocaleString() : 'Unknown time'}
+                                      </span>
                                     </div>
                                     <div className="prose prose-sm max-w-none dark:prose-invert">
-                                      <MarkdownEditor value={reply.content} readonly={true} />
+                                      <MarkdownEditor value={childNote.content} readonly={true} />
                                     </div>
                                   </div>
                                 </div>
                               </div>
-                            ))}
+                            );
+                            })}
                           </div>
                         )}
 
                         {/* Reply input */}
-                        {replyingTo === note.id.toString() && statusStyle.text !== 'Completed' && (
+                        {replyingTo === noteId?.toString() && statusStyle.text !== 'Completed' && noteId && (
                           <div className="mt-4 ml-11">
                             <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600 p-3">
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className="text-sm text-gray-600 dark:text-gray-400">
+                                  Replying to {getUserDisplayName(note.user, currentUser)}
+                                </span>
+                              </div>
                               <textarea
                                 value={replyContent}
                                 onChange={(e) => setReplyContent(e.target.value)}
@@ -1828,18 +1989,29 @@ const MeetingDetail = () => {
                                   Cancel
                                 </button>
                                 <button
-                                  onClick={() => handleReply(note.id.toString())}
-                                  disabled={!replyContent.trim()}
-                                  className="px-3 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white text-sm rounded transition-colors"
+                                  onClick={() => {
+                                    console.log('Submit reply button clicked - noteId:', noteId, 'replyContent:', replyContent);
+                                    if (noteId) {
+                                      handleReply(noteId.toString());
+                                    } else {
+                                      console.error('Cannot submit reply: noteId is undefined');
+                                    }
+                                  }}
+                                  disabled={!replyContent.trim() || notesLoading || !noteId}
+                                  className="px-3 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white text-sm rounded transition-colors flex items-center gap-1"
                                 >
-                                  Reply
+                                  {notesLoading ? (
+                                    <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                                  ) : null}
+                                  {notesLoading ? 'Replying...' : 'Reply'}
                                 </button>
                               </div>
                             </div>
                           </div>
                         )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -1861,11 +2033,15 @@ const MeetingDetail = () => {
                     {statusStyle.text !== 'Completed' && (
                       <button 
                         onClick={handleSaveNotes}
-                        disabled={!currentNote.trim()}
+                        disabled={!currentNote.trim() || notesLoading}
                         className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors"
                       >
-                        <Save className="w-4 h-2" />
-                        Add Note
+                        {notesLoading ? (
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                        ) : (
+                          <Save className="w-4 h-4" />
+                        )}
+                        {notesLoading ? 'Saving...' : 'Add Note'}
                       </button>
                     )}
                   </div>
@@ -1885,23 +2061,7 @@ const MeetingDetail = () => {
                 </div>
               </div>
 
-              {/* Meeting Decisions Section */}
-              {/* TODO: Implement when decisions field is added to backend */}
-                <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
-                  <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-                    <h4 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                      <CheckCircle className="w-5 h-5 text-green-500" />
-                      Meeting Decisions
-                    </h4>
-                  </div>
-                  <div className="px-6 py-4">
-                  <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-                    <CheckCircle className="h-12 w-12 mx-auto mb-4 text-green-400" />
-                    <p>No decisions recorded yet</p>
-                    <p className="text-sm mt-2">Decisions functionality will be available when backend supports it</p>
-                  </div>
-                </div>
-              </div>
+
             </div>
           )}
 

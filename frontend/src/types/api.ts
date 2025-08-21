@@ -71,16 +71,24 @@ export interface ApiMeetingActionItem {
 }
 
 export interface ApiMeetingNote {
-  id: number;                      // Frontend expects 'id'
+  noteId?: number;                 // camelCase (alias for 'id' in backend) - optional for backend compatibility
+  id?: number;                     // Fallback field name in case backend doesn't use alias
+  meetingId?: number;              // camelCase (alias for 'meeting_id' in backend)
+  meeting_id?: number;             // Fallback field name
   content: string;
-  author?: string;                  // Frontend expects 'author'
-  createdAt: string;               // camelCase (alias in backend)
-  replies?: Array<{                 // Frontend expects 'replies'
+  parentNoteId?: number;           // camelCase (alias for 'parent_note_id' in backend)
+  parent_note_id?: number;         // Fallback field name
+  createdAt?: string;              // camelCase (alias for 'created_at' in backend)
+  created_at?: string;             // Fallback field name
+  updatedAt?: string;              // camelCase (alias for 'updated_at' in backend)
+  updated_at?: string;             // Fallback field name
+  user?: {                         // User who created the note
     id: number;
-    content: string;
-    author: string;
-    timestamp: string;
-  }>;
+    username?: string;
+    full_name?: string;
+    email: string;
+  };
+  childNotes?: ApiMeetingNote[];   // Optional hierarchical children for tree structure
 }
 
 export enum ScrumRole {

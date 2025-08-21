@@ -45,6 +45,16 @@ class MeetingNoteInDB(MeetingNoteBase):
     updated_at: datetime
 
 
+class MeetingNoteUserInfo(BaseModel):
+    """User information embedded in meeting note responses."""
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: int
+    username: Optional[str] = None
+    full_name: Optional[str] = None
+    email: str
+
+
 class MeetingNoteResponse(BaseModel):
     """Schema for meeting note API responses with frontend field aliasing."""
     model_config = ConfigDict(from_attributes=True)
@@ -55,6 +65,7 @@ class MeetingNoteResponse(BaseModel):
     parentNoteId: Optional[int] = Field(alias="parent_note_id")
     createdAt: datetime = Field(alias="created_at")
     updatedAt: datetime = Field(alias="updated_at")
+    user: Optional[MeetingNoteUserInfo] = None
     
     # Optional field for nested notes
     childNotes: Optional[List["MeetingNoteResponse"]] = Field(default=None, description="Child notes for hierarchical display")

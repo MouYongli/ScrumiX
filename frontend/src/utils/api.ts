@@ -368,15 +368,75 @@ export const api = {
   },
 
   meetingNotes: {
-    getByMeeting: (meeting_id: number) => 
-      jsonFetch<ApiMeetingNote[]>(`/api/v1/meeting-notes/meeting/${meeting_id}`),
+    // Get notes by meeting ID with optional filters
+    getByMeeting: (meeting_id: number, top_level_only = false, skip = 0, limit = 100) => 
+      jsonFetch<ApiMeetingNote[]>(`/api/v1/meeting-notes/meeting/${meeting_id}?top_level_only=${top_level_only}&skip=${skip}&limit=${limit}`),
     
-    create: (data: { meeting_id: number; content: string; user_id: number }) => 
+    // Get hierarchical note tree for a meeting
+    getTreeByMeeting: (meeting_id: number) => 
+      jsonFetch<{notes: ApiMeetingNote[], total: number, topLevelCount: number}>(`/api/v1/meeting-notes/meeting/${meeting_id}/tree`),
+    
+    // Create a new note
+    create: (data: { meeting_id: number; content: string; parent_note_id?: number }) => 
       jsonFetch<ApiMeetingNote>('/api/v1/meeting-notes/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       }),
+    
+    // Get a specific note by ID
+    getById: (note_id: number) => 
+      jsonFetch<ApiMeetingNote>(`/api/v1/meeting-notes/${note_id}`),
+    
+    // Update a note
+    update: (note_id: number, data: { content: string }) => 
+      jsonFetch<ApiMeetingNote>(`/api/v1/meeting-notes/${note_id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }),
+    
+    // Delete a note
+    delete: (note_id: number) => 
+      jsonFetch<void>(`/api/v1/meeting-notes/${note_id}`, {
+        method: 'DELETE',
+      }),
+    
+    // Create a reply to a note
+    createReply: (note_id: number, content: string) => 
+      jsonFetch<ApiMeetingNote>(`/api/v1/meeting-notes/${note_id}/reply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content }),
+      }),
+    
+    // Get children of a specific note
+    getChildren: (note_id: number, skip = 0, limit = 100) => 
+      jsonFetch<ApiMeetingNote[]>(`/api/v1/meeting-notes/${note_id}/children?skip=${skip}&limit=${limit}`),
+    
+    // Get the full thread of a note
+    getThread: (note_id: number) => 
+      jsonFetch<ApiMeetingNote[]>(`/api/v1/meeting-notes/${note_id}/thread`),
+    
+    // Delete all notes for a meeting
+    deleteAllByMeeting: (meeting_id: number) => 
+      jsonFetch<{message: string}>(`/api/v1/meeting-notes/meeting/${meeting_id}/all`, {
+        method: 'DELETE',
+      }),
+    
+    // Count notes for a meeting
+    countByMeeting: (meeting_id: number, top_level_only = false) => 
+      jsonFetch<{meeting_id: number, count: number, top_level_only: boolean}>(`/api/v1/meeting-notes/meeting/${meeting_id}/count?top_level_only=${top_level_only}`),
+    
+    // Search notes
+    search: (query: string, meeting_id?: number, skip = 0, limit = 100) => {
+      const params = new URLSearchParams({
+        skip: skip.toString(),
+        limit: limit.toString(),
+        ...(meeting_id && { meeting_id: meeting_id.toString() })
+      });
+      return jsonFetch<ApiMeetingNote[]>(`/api/v1/meeting-notes/search/${encodeURIComponent(query)}?${params}`);
+    },
   },
 
   meetingActionItems: {

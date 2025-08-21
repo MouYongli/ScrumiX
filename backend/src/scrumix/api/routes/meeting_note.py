@@ -1,6 +1,7 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 import math
 
 from ..core.security import get_current_user
@@ -217,10 +218,13 @@ def count_notes_by_meeting(
     }
 
 
+class ReplyRequest(BaseModel):
+    content: str
+
 @router.post("/{note_id}/reply", response_model=MeetingNoteResponse, status_code=201)
 def create_note_reply(
     note_id: int,
-    content: str,
+    reply_request: ReplyRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -234,7 +238,7 @@ def create_note_reply(
         # Create the reply note with user_id
         note_data = {
             "meeting_id": parent_note.meeting_id,
-            "content": content,
+            "content": reply_request.content,
             "parent_note_id": note_id,
             "user_id": current_user.id
         }
