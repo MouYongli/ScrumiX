@@ -80,14 +80,16 @@ const ProjectSidebar = forwardRef<ProjectSidebarRef, ProjectSidebarProps>(({
       // Fetch project data
       const projectResponse = await api.projects.getById(parseInt(projectId));
       if (projectResponse.error) throw new Error(projectResponse.error);
+      if (!projectResponse.data) throw new Error('No project data received');
       
       // Fetch current sprint
       const sprintsResponse = await api.sprints.getAll();
       if (sprintsResponse.error) throw new Error(sprintsResponse.error);
+      if (!sprintsResponse.data) throw new Error('No sprints data received');
       
-      const projectSprints = sprintsResponse.data?.filter(sprint => 
+      const projectSprints = sprintsResponse.data.filter(sprint => 
         sprint.projectId === parseInt(projectId)
-      ) || [];
+      );
       
       // Enhanced sprint detection logic
       let currentSprint = null;
@@ -133,7 +135,10 @@ const ProjectSidebar = forwardRef<ProjectSidebarRef, ProjectSidebarProps>(({
         project_id: parseInt(projectId),
         limit: 1000 
       });
-      const projectBacklogItems = backlogResponse.data || [];
+      if (backlogResponse.error) throw new Error(backlogResponse.error);
+      if (!backlogResponse.data) throw new Error('No backlog data received');
+      
+      const projectBacklogItems = backlogResponse.data;
       
       // Calculate progress based on completed backlog items (status = 'done')
       const totalBacklogItems = projectBacklogItems.length;
@@ -152,7 +157,7 @@ const ProjectSidebar = forwardRef<ProjectSidebarRef, ProjectSidebarProps>(({
       };
 
       setProject({
-        ...projectResponse.data,
+        ...projectResponse.data!,
         currentSprint: currentSprint ? currentSprint.sprintName : null,
         currentSprintId: currentSprint ? currentSprint.id : null,
         sprintContext: sprintContext as 'active' | 'planning' | 'completed' | null,

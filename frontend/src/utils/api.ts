@@ -1,12 +1,12 @@
 import { TaskStatus, TaskPriority, ProjectStatus } from '@/types/enums';
 import { 
   ApiUser, ApiTask, ApiMeeting, ApiMeetingAgenda, ApiMeetingNote, ApiMeetingActionItem, ApiProject, ApiSprint, ApiBacklog, ApiAcceptanceCriteria,
-  TaskListResponse, MeetingListResponse, ApiError, ScrumRole, ProjectMemberResponse
+  TaskListResponse, MeetingListResponse, ApiError, ScrumRole, ProjectMemberResponse, Documentation, DocumentationCreate, DocumentationUpdate
 } from '@/types/api';
 import { authenticatedFetch } from '@/utils/auth';
 
 interface ApiResponse<T> {
-  data: T;
+  data: T | null;
   error?: string;
 }
 
@@ -20,14 +20,14 @@ async function jsonFetch<T>(endpoint: string, options?: RequestInit): Promise<Ap
     
     // Handle 204 No Content responses (common for DELETE operations)
     if (response.status === 204) {
-      return { data: null as T };
+      return { data: null };
     }
     
     const data = await response.json();
     return { data };
   } catch (error) {
     return {
-      data: null as T,
+      data: null,
       error: error instanceof Error ? error.message : 'An error occurred',
     };
   }
@@ -636,5 +636,203 @@ export const api = {
       jsonFetch<void>(`/api/v1/acceptance-criteria/backlog/${backlog_id}/all`, {
         method: 'DELETE',
       }),
+  },
+};
+
+// Documentation API
+export const documentationApi = {
+  // Get all documentation with optional filters
+  getAll: async (params?: {
+    skip?: number;
+    limit?: number;
+    docType?: string;
+    search?: string;
+    projectId?: number;
+  }): Promise<ApiResponse<Documentation[]>> => {
+    try {
+      const searchParams = new URLSearchParams();
+      if (params?.skip !== undefined) searchParams.append('skip', params.skip.toString());
+      if (params?.limit !== undefined) searchParams.append('limit', params.limit.toString());
+      if (params?.docType) searchParams.append('doc_type', params.docType);
+      if (params?.search) searchParams.append('search', params.search);
+      if (params?.projectId) searchParams.append('project_id', params.projectId.toString());
+
+      const response = await authenticatedFetch(`/api/v1/documentations/?${searchParams.toString()}`);
+
+      if (!response.ok) {
+        const error: ApiError = await response.json().catch(() => ({ detail: 'Request failed' }));
+        throw new Error(error.detail || 'An error occurred');
+      }
+
+      const data = await response.json();
+      return { data };
+    } catch (error) {
+      return {
+        data: null,
+        error: error instanceof Error ? error.message : 'An error occurred',
+      };
+    }
+  },
+
+  // Get documentation by project ID
+  getByProject: async (projectId: number, params?: {
+    skip?: number;
+    limit?: number;
+    docType?: string;
+    search?: string;
+  }): Promise<ApiResponse<Documentation[]>> => {
+    try {
+      const searchParams = new URLSearchParams();
+      if (params?.skip !== undefined) searchParams.append('skip', params.skip.toString());
+      if (params?.limit !== undefined) searchParams.append('limit', params.limit.toString());
+      if (params?.docType) searchParams.append('doc_type', params.docType);
+      if (params?.search) searchParams.append('search', params.search);
+
+      const response = await authenticatedFetch(`/api/v1/documentations/project/${projectId}?${searchParams.toString()}`);
+
+      if (!response.ok) {
+        const error: ApiError = await response.json().catch(() => ({ detail: 'Request failed' }));
+        throw new Error(error.detail || 'An error occurred');
+      }
+
+      const data = await response.json();
+      return { data };
+    } catch (error) {
+      return {
+        data: null,
+        error: error instanceof Error ? error.message : 'An error occurred',
+      };
+    }
+  },
+
+  // Get documentation by ID
+  getById: async (id: number): Promise<ApiResponse<Documentation>> => {
+    try {
+      const response = await authenticatedFetch(`/api/v1/documentations/${id}`);
+
+      if (!response.ok) {
+        const error: ApiError = await response.json().catch(() => ({ detail: 'Request failed' }));
+        throw new Error(error.detail || 'An error occurred');
+      }
+
+      const data = await response.json();
+      return { data };
+    } catch (error) {
+      return {
+        data: null,
+        error: error instanceof Error ? error.message : 'An error occurred',
+      };
+    }
+  },
+
+  // Create new documentation
+  create: async (documentation: DocumentationCreate): Promise<ApiResponse<Documentation>> => {
+    try {
+      const response = await authenticatedFetch('/api/v1/documentations/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(documentation),
+      });
+
+      if (!response.ok) {
+        const error: ApiError = await response.json().catch(() => ({}));
+        throw new Error(error.detail || `HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return { data };
+    } catch (error) {
+      return {
+        data: null,
+        error: error instanceof Error ? error.message : 'An error occurred',
+      };
+    }
+  },
+
+  // Update documentation
+  update: async (id: number, documentation: DocumentationUpdate): Promise<ApiResponse<Documentation>> => {
+    try {
+      const response = await authenticatedFetch(`/api/v1/documentations/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(documentation),
+      });
+
+      if (!response.ok) {
+        const error: ApiError = await response.json().catch(() => ({}));
+        throw new Error(error.detail || `HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return { data };
+    } catch (error) {
+      return {
+        data: null,
+        error: error instanceof Error ? error.message : 'An error occurred',
+      };
+    }
+  },
+
+  // Delete documentation
+  delete: async (id: number): Promise<ApiResponse<{ message: string }>> => {
+    try {
+      const response = await authenticatedFetch(`/api/v1/documentations/${id}`, {
+        method: 'DELETE',
+      });
+
+      if (!response.ok) {
+        const error: ApiError = await response.json().catch(() => ({}));
+        throw new Error(error.detail || `HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return { data };
+    } catch (error) {
+      return {
+        data: null,
+        error: error instanceof Error ? error.message : 'An error occurred',
+      };
+    }
+  },
+
+  // Get documentation statistics
+  getStatistics: async (): Promise<ApiResponse<any>> => {
+    try {
+      const response = await authenticatedFetch('/api/v1/documentations/statistics/overview');
+
+      if (!response.ok) {
+        const error: ApiError = await response.json().catch(() => ({}));
+        throw new Error(error.detail || `HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      return { data };
+    } catch (error) {
+      return {
+        data: null,
+        error: error instanceof Error ? error.message : 'An error occurred',
+      };
+    }
+  },
+
+  getProjectUsers: async (projectId: number): Promise<ApiResponse<Array<{
+    id: number;
+    full_name: string;
+    email: string;
+    username?: string;
+  }>>> => {
+    try {
+      const response = await authenticatedFetch(`/api/v1/documentations/project/${projectId}/users`);
+
+      if (!response.ok) {
+        const error: ApiError = await response.json().catch(() => ({ detail: 'Request failed' }));
+        throw new Error(error.detail || 'An error occurred');
+      }
+
+      const data = await response.json();
+      return { data };
+    } catch (error) {
+      return { data: null, error: error instanceof Error ? error.message : 'Failed to fetch project users' };
+    }
   },
 };

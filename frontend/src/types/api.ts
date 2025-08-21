@@ -211,3 +211,56 @@ export enum BacklogType {
   STORY = 'story',
   BUG = 'bug',
 }
+
+// Documentation API types
+export enum DocumentationType {
+  SPRINT_REVIEW = "sprint_review",
+  SPRINT_RETROSPECTIVE = "sprint_retrospective",
+  REQUIREMENT = "requirement",
+  DESIGN_ARCHITECTURE = "design_architecture",
+  MEETING_REPORT = "meeting_report",
+  USER_GUIDE = "user_guide",
+  OTHER = "other"
+}
+
+export interface ApiTag {
+  id: number;
+  title: string;
+  description?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Documentation {
+  id: number;
+  title: string;
+  type: DocumentationType;
+  description?: string;
+  file_url?: string;
+  project_id: number;
+  created_at: string;
+  updated_at: string;
+  authors: Array<{
+    id: number;
+    full_name: string;
+    email: string;
+    role: string;
+  }>;
+}
+
+export interface DocumentationCreate {
+  title: string;
+  type: DocumentationType;
+  description?: string;
+  file_url?: string;
+  project_id: number;
+  author_ids?: number[];
+}
+
+export interface DocumentationUpdate {
+  title?: string;
+  type?: DocumentationType;
+  description?: string;
+  file_url?: string;
+  author_ids?: number[];
+}
