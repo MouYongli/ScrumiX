@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 from .base import CRUDBase
 from ..models.meeting import Meeting, MeetingType
-from ..models.user_meeting import UserMeeting
+from ..models.meeting_participant import MeetingParticipant
 from ..schemas.meeting import MeetingCreate, MeetingUpdate
 
 
@@ -38,10 +38,10 @@ class CRUDMeeting(CRUDBase[Meeting, MeetingCreate, MeetingUpdate]):
         end_date = now + timedelta(days=days)
         return (
             db.query(self.model)
-            .join(UserMeeting)
+            .join(MeetingParticipant)
             .filter(
                 and_(
-                    UserMeeting.user_id == user_id,
+                    MeetingParticipant.user_id == user_id,
                     self.model.start_datetime > now,
                     self.model.start_datetime <= end_date
                 )

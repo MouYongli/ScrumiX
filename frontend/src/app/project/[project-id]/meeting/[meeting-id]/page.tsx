@@ -14,8 +14,8 @@ import {
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
 import { api } from '@/utils/api';
-import { ApiMeeting, ApiProject, ApiMeetingAgenda, ApiMeetingActionItem, ApiMeetingNote, ApiUser } from '@/types/api';
-import { MeetingType } from '@/types/enums';
+import { ApiMeeting, ApiProject, ApiMeetingAgenda, ApiMeetingActionItem, ApiMeetingNote, ApiUser, ApiMeetingParticipantWithUser, MeetingParticipantsResponse } from '@/types/api';
+import { MeetingType, MeetingParticipantRole } from '@/types/enums';
 import { ProjectMemberResponse } from '@/types/api';
 
 // Meeting type configuration - maps backend enum values to display names
@@ -79,6 +79,24 @@ function getUserAvatarLetter(user: any, currentUser: ApiUser | null): string {
   }
   
   return (user?.full_name?.charAt(0) || user?.username?.charAt(0) || user?.email?.charAt(0) || 'U').toUpperCase();
+}
+
+// Helper function to format role display names
+function formatRoleDisplayName(role: string): string {
+  switch (role) {
+    case 'scrum_master':
+      return 'Scrum Master';
+    case 'product_owner':
+      return 'Product Owner';
+    case 'developer':
+      return 'Developer';
+    case 'facilitator':
+      return 'Facilitator';
+    case 'guest':
+      return 'Guest';
+    default:
+      return role.charAt(0).toUpperCase() + role.slice(1).replace(/_/g, ' ');
+  }
 }
 
 // Utility function to safely parse datetime - enhanced to handle various formats
@@ -712,8 +730,15 @@ const MeetingDetail = () => {
   const [editingDescription, setEditingDescription] = useState(false);
   const [editingParticipants, setEditingParticipants] = useState(false);
   const [tempDescription, setTempDescription] = useState('');
-  const [tempParticipants, setTempParticipants] = useState<ProjectMemberResponse[]>([]);
-  const [newParticipant, setNewParticipant] = useState('');
+  const [allProjectMembers, setAllProjectMembers] = useState<ProjectMemberResponse[]>([]);
+  const [meetingParticipants, setMeetingParticipants] = useState<ApiMeetingParticipantWithUser[]>([]);
+  const [selectedParticipants, setSelectedParticipants] = useState<ProjectMemberResponse[]>([]);
+  const [showParticipantDropdown, setShowParticipantDropdown] = useState(false);
+
+  // External participant form state
+  const [externalParticipantName, setExternalParticipantName] = useState('');
+  const [externalParticipantEmail, setExternalParticipantEmail] = useState('');
+  const [showExternalParticipantForm, setShowExternalParticipantForm] = useState(false);
 
   // Modal states
   const [agendaModalOpen, setAgendaModalOpen] = useState(false);
@@ -731,6 +756,7 @@ const MeetingDetail = () => {
   const [agendaLoading, setAgendaLoading] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
   const [notesLoading, setNotesLoading] = useState(false);
+  const [participantsLoading, setParticipantsLoading] = useState(false);
 
   // Fetch meeting data and related information
   useEffect(() => {
@@ -769,13 +795,28 @@ const MeetingDetail = () => {
           const membersResponse = await api.projects.getMembers(parseInt(projectId));
           if (membersResponse.error) {
             console.warn('Failed to fetch project members:', membersResponse.error);
-            setTempParticipants([]);
+            setAllProjectMembers([]);
+            setSelectedParticipants([]);
           } else {
-            setTempParticipants(membersResponse.data || []);
+            const members = membersResponse.data || [];
+            console.log('DEBUG: Fetched project members from API:', members);
+            members.forEach((member, index) => {
+              console.log(`DEBUG: Project member ${index}:`, {
+                id: member.id,
+                username: member.username,
+                role: member.role,
+                roleType: typeof member.role,
+                fullMember: member
+              });
+            });
+            setAllProjectMembers(members);
+            // Initialize with no participants selected by default
+            setSelectedParticipants([]);
           }
         } catch (error) {
           console.warn('Failed to fetch project members:', error);
-          setTempParticipants([]);
+          setAllProjectMembers([]);
+          setSelectedParticipants([]);
         }
         
         // Fetch agenda items
@@ -814,6 +855,30 @@ const MeetingDetail = () => {
         } catch (error) {
           console.warn('Failed to fetch action items:', error);
           setActionItems([]);
+        }
+        
+        // Fetch meeting participants
+        try {
+          const participantsResponse = await api.meetingParticipants.getByMeeting(parseInt(meetingId));
+          if (participantsResponse.data) {
+            console.log('DEBUG: Fetched meeting participants raw response:', participantsResponse.data);
+            participantsResponse.data.participants.forEach((participant, index) => {
+              console.log(`DEBUG: Participant ${index} role details:`, {
+                id: participant.id,
+                userId: participant.userId,
+                role: participant.role,
+                roleType: typeof participant.role,
+                fullName: participant.fullName,
+                username: participant.username,
+                externalName: participant.externalName,
+                fullParticipant: participant
+              });
+            });
+            setMeetingParticipants(participantsResponse.data.participants);
+          }
+        } catch (error) {
+          console.warn('Failed to fetch meeting participants:', error);
+          setMeetingParticipants([]);
         }
         
       } catch (error) {
@@ -986,54 +1051,160 @@ const MeetingDetail = () => {
 
 
 
-  const handleSaveParticipants = () => {
-    // TODO: Implement when meeting participants API is available
-    console.log('Updated participants:', tempParticipants);
-    setEditingParticipants(false);
-    setNewParticipant('');
-  };
+  const handleSaveParticipants = async () => {
+    setParticipantsLoading(true);
+    try {
+      // Convert selected participants to the format expected by the API
+      const participantsToAdd = selectedParticipants.map(member => {
+        console.log('DEBUG: Adding participant:', {
+          id: member.id,
+          username: member.username,
+          projectRole: member.role,
+          fullMemberObject: member
+        });
+        
+        // For new participants, we can use a placeholder role since the backend will fetch the actual project role
+        // The backend will ignore this and use the project role from user_project table
+        let meetingRole = MeetingParticipantRole.DEVELOPER; // Placeholder - will be overridden by project role
+        
+        console.log('DEBUG: Adding participant with placeholder role (will use project role):', {
+          userId: member.id,
+          projectRole: member.role,
+          placeholderRole: meetingRole
+        });
+        
+        return {
+          userId: member.id,
+          role: meetingRole
+        };
+      });
 
-  const handleCancelParticipants = () => {
-    // Reset to current project members
-    const fetchMembers = async () => {
-      try {
-        const membersResponse = await api.projects.getMembers(parseInt(projectId));
-        if (!membersResponse.error && membersResponse.data) {
-          setTempParticipants(membersResponse.data);
+      if (participantsToAdd.length > 0) {
+        const response = await api.meetingParticipants.addMultipleParticipants(
+          parseInt(meetingId),
+          participantsToAdd
+        );
+        
+        if (response.error) {
+          throw new Error(response.error);
         }
-      } catch (error) {
-        console.warn('Failed to fetch project members:', error);
       }
-    };
-    fetchMembers();
-    setEditingParticipants(false);
-    setNewParticipant('');
-  };
 
-  const handleAddParticipant = () => {
-    if (newParticipant.trim()) {
-      // Find the user by email or username from project members
-      const existingMember = tempParticipants.find(member => 
-        member.email === newParticipant.trim() || 
-        member.username === newParticipant.trim() ||
-        member.full_name === newParticipant.trim()
-      );
-      
-      if (existingMember) {
-        // User is already a participant
-        setNewParticipant('');
-        return;
+      // Refresh participants list
+      const participantsResponse = await api.meetingParticipants.getByMeeting(parseInt(meetingId));
+      if (participantsResponse.data) {
+        setMeetingParticipants(participantsResponse.data.participants);
       }
+
+      // Reset editing state
+      setSelectedParticipants([]);
+      setEditingParticipants(false);
+      setShowParticipantDropdown(false);
       
-      // For now, we can't add new users to the project through this interface
-      // This would require the meeting participants API
-      console.log('Cannot add new participants without meeting participants API');
-      setNewParticipant('');
+      console.log('Successfully updated participants');
+    } catch (error) {
+      console.error('Error updating participants:', error);
+      // TODO: Show error notification to user
+    } finally {
+      setParticipantsLoading(false);
     }
   };
 
-  const handleRemoveParticipant = (index: number) => {
-    setTempParticipants(tempParticipants.filter((_, i) => i !== index));
+  const handleCancelParticipants = () => {
+    // Reset to no participants (current default state)
+    setSelectedParticipants([]);
+    setEditingParticipants(false);
+    setShowParticipantDropdown(false);
+  };
+
+  const handleToggleParticipant = (member: ProjectMemberResponse) => {
+    const isSelected = selectedParticipants.some(p => p.id === member.id);
+    if (isSelected) {
+      setSelectedParticipants(selectedParticipants.filter(p => p.id !== member.id));
+    } else {
+      setSelectedParticipants([...selectedParticipants, member]);
+    }
+  };
+
+  const handleRemoveParticipant = (memberId: number) => {
+    setSelectedParticipants(selectedParticipants.filter(p => p.id !== memberId));
+  };
+
+  const handleRemoveMeetingParticipant = async (participantId: number, userId?: number) => {
+    setParticipantsLoading(true);
+    try {
+      let response;
+      if (userId) {
+        response = await api.meetingParticipants.removeParticipantByUser(parseInt(meetingId), userId);
+      } else {
+        response = await api.meetingParticipants.removeParticipant(parseInt(meetingId), participantId);
+      }
+
+      if (response.error) {
+        throw new Error(response.error);
+      }
+
+      // Refresh participants list
+      const participantsResponse = await api.meetingParticipants.getByMeeting(parseInt(meetingId));
+      if (participantsResponse.data) {
+        setMeetingParticipants(participantsResponse.data.participants);
+      }
+
+      console.log('Successfully removed participant');
+    } catch (error) {
+      console.error('Error removing participant:', error);
+      // TODO: Show error notification to user
+    } finally {
+      setParticipantsLoading(false);
+    }
+  };
+
+  const handleAddExternalParticipant = async () => {
+    if (!externalParticipantName.trim()) return;
+
+    setParticipantsLoading(true);
+    try {
+      const response = await api.meetingParticipants.addParticipant(
+        parseInt(meetingId),
+        {
+          userId: undefined,
+          externalName: externalParticipantName.trim(),
+          externalEmail: externalParticipantEmail.trim() || undefined,
+          role: MeetingParticipantRole.GUEST
+        }
+      );
+
+      if (response.error) {
+        throw new Error(response.error);
+      }
+
+      // Refresh participants list
+      const participantsResponse = await api.meetingParticipants.getByMeeting(parseInt(meetingId));
+      if (participantsResponse.data) {
+        setMeetingParticipants(participantsResponse.data.participants);
+      }
+
+      // Reset form
+      setExternalParticipantName('');
+      setExternalParticipantEmail('');
+      setShowExternalParticipantForm(false);
+
+      console.log('Successfully added external participant');
+    } catch (error) {
+      console.error('Error adding external participant:', error);
+      // TODO: Show error notification to user
+    } finally {
+      setParticipantsLoading(false);
+    }
+  };
+
+
+
+  const getAvailableMembers = () => {
+    return allProjectMembers.filter(member => 
+      !selectedParticipants.some(selected => selected.id === member.id) &&
+      !meetingParticipants.some(participant => participant.userId === member.id)
+    );
   };
 
   // Delete meeting notes
@@ -1552,7 +1723,7 @@ const MeetingDetail = () => {
           
           <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
               <Users className="w-5 h-5" />
-              <span>{tempParticipants.length} participants</span>
+              <span>{meetingParticipants.length} {meetingParticipants.length === 1 ? 'participant' : 'participants'}</span>
           </div>
         </div>
       </div>
@@ -1638,89 +1809,254 @@ const MeetingDetail = () => {
               <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
                 <div className="flex justify-between items-center mb-3">
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                    Participants
+                    Participants ({meetingParticipants.length})
                   </h3>
                   {statusStyle.text !== 'Completed' && !editingParticipants && (
                     <button
                       onClick={() => setEditingParticipants(true)}
-                      className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
+                      className="flex items-center gap-2 px-3 py-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
                     >
-                      <Edit className="w-4 h-4" />
+                      <Plus className="w-4 h-4" />
+                      <span className="text-sm">Manage Participants</span>
                     </button>
                   )}
                 </div>
+                
                 {editingParticipants ? (
                   <div className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {tempParticipants.map((participant, index) => (
-                        <div key={`edit-participant-${participant.id || participant.email || index}`} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                          <div className="w-8 h-8 bg-gray-200 dark:bg-gray-600 rounded-full flex items-center justify-center">
-                            <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
-                              {participant.full_name?.charAt(0) || participant.username?.charAt(0) || participant.email.charAt(0)}
-                            </span>
-                          </div>
-                          <div className="flex-1">
-                            <p className="font-medium text-gray-900 dark:text-white">
-                              {participant.full_name || participant.username || participant.email}
-                            </p>
-                            <p className="text-sm text-gray-600 dark:text-gray-400">
-                              {participant.role}
-                            </p>
-                          </div>
-                            <button
-                              onClick={() => handleRemoveParticipant(index)}
-                              className="text-red-500 hover:text-red-700 transition-colors"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
+                    {/* Selected Participants */}
+                    <div>
+                      <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                        Selected Participants ({selectedParticipants.length})
+                      </h4>
+                      {selectedParticipants.length > 0 ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                          {selectedParticipants.map((participant) => (
+                            <div key={`selected-participant-${participant.id}`} className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                              <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
+                                {participant.full_name?.charAt(0) || participant.username?.charAt(0) || participant.email.charAt(0)}
+                              </div>
+                              <div className="flex-1">
+                                <p className="font-medium text-gray-900 dark:text-white">
+                                  {participant.full_name || participant.username || participant.email}
+                                </p>
+                                <p className="text-sm text-gray-600 dark:text-gray-400">
+                                  {participant.role}
+                                </p>
+                              </div>
+                              <button
+                                onClick={() => handleRemoveParticipant(participant.id)}
+                                className="text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 p-1 rounded transition-colors"
+                                title="Remove participant"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      ) : (
+                        <div className="text-center py-4 text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 mb-4">
+                          <Users className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+                          <p className="text-sm">No participants selected</p>
+                        </div>
+                      )}
                     </div>
-                    <div className="text-sm text-gray-500 dark:text-gray-400">
-                      <p>Note: Participants are based on project members. To add new participants, invite them to the project first.</p>
+
+                    {/* Available Project Members */}
+                    <div>
+                      <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                        Available Project Members ({getAvailableMembers().length})
+                      </h4>
+                      {getAvailableMembers().length > 0 ? (
+                        <div className="max-h-60 overflow-y-auto border border-gray-200 dark:border-gray-600 rounded-lg">
+                          {getAvailableMembers().map((member) => (
+                            <div key={`available-member-${member.id}`} 
+                                 className="flex items-center gap-3 p-3 hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-600 last:border-b-0 cursor-pointer transition-colors"
+                                 onClick={() => handleToggleParticipant(member)}>
+                              <div className="w-8 h-8 bg-gray-300 dark:bg-gray-600 rounded-full flex items-center justify-center text-gray-700 dark:text-gray-300 text-sm font-medium">
+                                {member.full_name?.charAt(0) || member.username?.charAt(0) || member.email.charAt(0)}
+                              </div>
+                              <div className="flex-1">
+                                <p className="font-medium text-gray-900 dark:text-white">
+                                  {member.full_name || member.username || member.email}
+                                </p>
+                                <p className="text-sm text-gray-600 dark:text-gray-400">
+                                  {member.role}
+                                </p>
+                              </div>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleToggleParticipant(member);
+                                }}
+                                className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 p-1 rounded transition-colors"
+                                title="Add as participant"
+                              >
+                                <Plus className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-4 text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600">
+                          <Check className="h-8 w-8 mx-auto mb-2 text-green-500" />
+                          <p className="text-sm">All project members are already participants</p>
+                        </div>
+                      )}
                     </div>
-                    <div className="flex justify-end gap-2">
+
+                    {/* External Participant Form */}
+                    <div>
+                      <div className="flex justify-between items-center mb-3">
+                        <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          Add External Participant
+                        </h4>
+                        <button
+                          onClick={() => setShowExternalParticipantForm(!showExternalParticipantForm)}
+                          className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
+                        >
+                          {showExternalParticipantForm ? 'Cancel' : 'Add External'}
+                        </button>
+                      </div>
+
+                      {showExternalParticipantForm && (
+                        <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 mb-4">
+                          <div className="space-y-3">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                Name *
+                              </label>
+                              <input
+                                type="text"
+                                value={externalParticipantName}
+                                onChange={(e) => setExternalParticipantName(e.target.value)}
+                                placeholder="Enter participant name..."
+                                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg
+                                         bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+                                         placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                disabled={participantsLoading}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                Email (Optional)
+                              </label>
+                              <input
+                                type="email"
+                                value={externalParticipantEmail}
+                                onChange={(e) => setExternalParticipantEmail(e.target.value)}
+                                placeholder="Enter participant email..."
+                                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg
+                                         bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+                                         placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                disabled={participantsLoading}
+                              />
+                            </div>
+                            <div className="flex justify-end">
+                              <button
+                                onClick={handleAddExternalParticipant}
+                                disabled={!externalParticipantName.trim() || participantsLoading}
+                                className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white rounded-lg transition-colors flex items-center gap-2 disabled:cursor-not-allowed"
+                              >
+                                {participantsLoading ? (
+                                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                ) : (
+                                  <Plus className="w-4 h-4" />
+                                )}
+                                {participantsLoading ? 'Adding...' : 'Add Participant'}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="text-sm text-gray-500 dark:text-gray-400 bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg">
+                      <p className="flex items-center gap-2">
+                        <Users className="w-4 h-4" />
+                        Add project members as participants or add external participants using the form above.
+                      </p>
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-4 border-t border-gray-200 dark:border-gray-600">
                       <button
                         onClick={handleCancelParticipants}
-                        className="px-3 py-1 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+                        className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors"
                       >
                         Cancel
                       </button>
                       <button
                         onClick={handleSaveParticipants}
-                        className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
+                        disabled={participantsLoading}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg transition-colors flex items-center gap-2 disabled:cursor-not-allowed"
                       >
-                        Save
+                        {participantsLoading ? (
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                        ) : (
+                          <Save className="w-4 h-4" />
+                        )}
+                        {participantsLoading ? 'Saving...' : 'Save Participants'}
                       </button>
                     </div>
                   </div>
                 ) : (
                   <div className="space-y-3">
-                    {tempParticipants.length > 0 ? (
+                    {meetingParticipants.length > 0 ? (
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                        {tempParticipants.map((participant, index) => (
-                          <div key={`overview-participant-${participant.id || participant.email || index}`} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                            <div className="w-8 h-8 bg-gray-200 dark:bg-gray-600 rounded-full flex items-center justify-center">
-                              <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
-                                {participant.full_name?.charAt(0) || participant.username?.charAt(0) || participant.email.charAt(0)}
-                              </span>
+                        {meetingParticipants.map((participant) => (
+                          <div key={`overview-participant-${participant.id}`} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg group">
+                            <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
+                              {participant.fullName?.charAt(0) || participant.username?.charAt(0) || participant.email?.charAt(0) || participant.externalName?.charAt(0) || participant.externalEmail?.charAt(0) || 'U'}
                             </div>
-                            <div>
+                            <div className="flex-1">
                               <p className="font-medium text-gray-900 dark:text-white">
-                                {participant.full_name || participant.username || participant.email}
+                                {participant.fullName || participant.username || participant.externalName || participant.email || participant.externalEmail || 'Unknown Participant'}
                               </p>
-                              <p className="text-sm text-gray-600 dark:text-gray-400">
-                                {participant.role}
-                              </p>
+                              <div className="flex flex-col gap-1">
+                                <p className="text-sm text-gray-600 dark:text-gray-400">
+                                  {formatRoleDisplayName(participant.role)}
+                                </p>
+                                {/* Show email for external participants if available */}
+                                {participant.externalEmail && (
+                                  <p className="text-xs text-gray-500 dark:text-gray-400 font-mono">
+                                    {participant.externalEmail}
+                                  </p>
+                                )}
+                                {/* Show email for internal users if no external email but has user email */}
+                                {!participant.externalEmail && participant.email && participant.userId && (
+                                  <p className="text-xs text-gray-500 dark:text-gray-400 font-mono">
+                                    {participant.email}
+                                  </p>
+                                )}
+                              </div>
                             </div>
+                            {statusStyle.text !== 'Completed' && (
+                              <button
+                                onClick={() => handleRemoveMeetingParticipant(participant.id, participant.userId)}
+                                disabled={participantsLoading}
+                                className="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 p-1 rounded transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                title="Remove participant"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            )}
                           </div>
                         ))}
                       </div>
                     ) : (
                       <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                         <Users className="h-12 w-12 mx-auto mb-4 text-gray-400" />
-                        <p>No participants assigned yet</p>
-                        <p className="text-sm mt-2">Participants are based on project members</p>
+                        <p className="font-medium">No participants assigned</p>
+                        <p className="text-sm mt-2">Click "Manage Participants" to add project members to this meeting</p>
+                        {statusStyle.text !== 'Completed' && (
+                          <button
+                            onClick={() => setEditingParticipants(true)}
+                            className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2 mx-auto"
+                          >
+                            <Plus className="w-4 h-4" />
+                            Add Participants
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -2181,7 +2517,7 @@ const MeetingDetail = () => {
         }}
         onSave={editingActionItem ? handleEditActionItem : handleAddActionItem}
         item={editingActionItem}
-        projectMembers={tempParticipants}
+        projectMembers={selectedParticipants}
       />
 
       <ConfirmationModal

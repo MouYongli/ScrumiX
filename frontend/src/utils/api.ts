@@ -1,7 +1,8 @@
-import { TaskStatus, TaskPriority, ProjectStatus } from '@/types/enums';
+import { TaskStatus, TaskPriority, ProjectStatus, MeetingParticipantRole } from '@/types/enums';
 import { 
   ApiUser, ApiTask, ApiMeeting, ApiMeetingAgenda, ApiMeetingNote, ApiMeetingActionItem, ApiProject, ApiSprint, ApiBacklog, ApiAcceptanceCriteria,
-  TaskListResponse, MeetingListResponse, ApiError, ScrumRole, ProjectMemberResponse, Documentation, DocumentationCreate, DocumentationUpdate
+  TaskListResponse, MeetingListResponse, ApiError, ScrumRole, ProjectMemberResponse, Documentation, DocumentationCreate, DocumentationUpdate,
+  ApiMeetingParticipant, ApiMeetingParticipantWithUser, MeetingParticipantsResponse
 } from '@/types/api';
 import { authenticatedFetch } from '@/utils/auth';
 
@@ -323,6 +324,91 @@ export const api = {
     delete: (id: number) => jsonFetch<void>(`/api/v1/meetings/${id}`, {
       method: 'DELETE',
     }),
+  },
+
+  meetingParticipants: {
+    // Get all participants for a meeting
+    getByMeeting: (meetingId: number) => 
+      jsonFetch<MeetingParticipantsResponse>(`/api/v1/meeting-participants/meeting/${meetingId}/participants`),
+    
+    // Add a single participant
+    addParticipant: (meetingId: number, data: {
+      userId?: number;
+      externalName?: string;
+      externalEmail?: string;
+      role?: MeetingParticipantRole;
+    }) => jsonFetch<ApiMeetingParticipant>(`/api/v1/meeting-participants/meeting/${meetingId}/participants`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: data.userId,
+        external_name: data.externalName,
+        external_email: data.externalEmail,
+        role: data.role || MeetingParticipantRole.GUEST,
+      }),
+    }),
+
+    // Add multiple participants
+    addMultipleParticipants: (meetingId: number, participants: Array<{
+      userId?: number;
+      externalName?: string;
+      externalEmail?: string;
+      role?: MeetingParticipantRole;
+    }>) => jsonFetch<ApiMeetingParticipant[]>(`/api/v1/meeting-participants/meeting/${meetingId}/participants/bulk`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        participants: participants.map(p => ({
+          user_id: p.userId,
+          external_name: p.externalName,
+          external_email: p.externalEmail,
+          role: p.role || MeetingParticipantRole.GUEST,
+        }))
+      }),
+    }),
+
+    // Update participant role
+    updateParticipantRole: (meetingId: number, participantId: number, role: MeetingParticipantRole) => 
+      jsonFetch<ApiMeetingParticipant>(`/api/v1/meeting-participants/meeting/${meetingId}/participants/${participantId}/role`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ role }),
+      }),
+
+    // Remove participant by participant ID
+    removeParticipant: (meetingId: number, participantId: number) => 
+      jsonFetch<{ message: string }>(`/api/v1/meeting-participants/meeting/${meetingId}/participants/${participantId}`, {
+        method: 'DELETE',
+      }),
+
+    // Remove participant by user ID
+    removeParticipantByUser: (meetingId: number, userId: number) => 
+      jsonFetch<{ message: string }>(`/api/v1/meeting-participants/meeting/${meetingId}/participants/user/${userId}`, {
+        method: 'DELETE',
+      }),
+
+    // Remove all participants from meeting
+    removeAllParticipants: (meetingId: number) => 
+      jsonFetch<{ message: string }>(`/api/v1/meeting-participants/meeting/${meetingId}/participants`, {
+        method: 'DELETE',
+      }),
+
+    // Get participants count
+    getParticipantsCount: (meetingId: number) => 
+      jsonFetch<{ meeting_id: number; participants_count: number }>(`/api/v1/meeting-participants/meeting/${meetingId}/participants/count`),
+
+    // Check if user is participant
+    checkUserParticipation: (meetingId: number, userId: number) => 
+      jsonFetch<{ user_id: number; meeting_id: number; is_participant: boolean; role?: string }>(`/api/v1/meeting-participants/meeting/${meetingId}/participants/check/${userId}`),
+
+    // Get user's meetings
+    getUserMeetings: (userId: number, params?: { skip?: number; limit?: number }) => {
+      const searchParams = new URLSearchParams();
+      if (params?.skip) searchParams.append('skip', params.skip.toString());
+      if (params?.limit) searchParams.append('limit', params.limit.toString());
+      
+      return jsonFetch<any[]>(`/api/v1/meeting-participants/user/${userId}/meetings?${searchParams.toString()}`);
+    },
   },
 
   meetingAgenda: {

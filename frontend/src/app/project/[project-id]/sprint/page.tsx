@@ -44,16 +44,16 @@ const CreateSprintModal: React.FC<{
     sprintGoal: string;
     startDate: string;
     endDate: string;
-          sprintCapacity: number;
-      status: 'planning' | 'active' | 'completed';
-    }) => void;
-  }> = ({ isOpen, onClose, onSubmit }) => {
+    sprintCapacity: number;
+    status: 'planning' | 'active' | 'completed';
+  }) => void;
+}> = ({ isOpen, onClose, onSubmit }) => {
   const [formData, setFormData] = useState({
     sprintName: '',
     sprintGoal: '',
     startDate: '',
-          endDate: '',
-      sprintCapacity: 40,
+    endDate: '',
+    sprintCapacity: 40,
       status: 'planning' as const
     });
 
@@ -91,10 +91,10 @@ const CreateSprintModal: React.FC<{
       sprintName: '',
       sprintGoal: '',
       startDate: '',
-              endDate: '',
-        sprintCapacity: 40,
+      endDate: '',
+      sprintCapacity: 40,
         status: 'planning'
-      });
+    });
     onClose();
   };
 

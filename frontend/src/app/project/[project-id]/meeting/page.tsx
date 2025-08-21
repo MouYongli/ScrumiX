@@ -67,7 +67,31 @@ const ProjectMeetings = () => {
   const [editingMeeting, setEditingMeeting] = useState<ApiMeeting | null>(null);
   const [deletingMeeting, setDeletingMeeting] = useState<ApiMeeting | null>(null);
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const [participantCounts, setParticipantCounts] = useState<Record<number, number>>({});
   
+  // Function to fetch participant counts for all meetings
+  const fetchParticipantCounts = async (meetings: any[]) => {
+    const counts: Record<number, number> = {};
+    
+    // Fetch participant counts for each meeting in parallel
+    const countPromises = meetings.map(async (meeting) => {
+      try {
+        const participantsResponse = await api.meetingParticipants.getByMeeting(meeting.id);
+        if (participantsResponse.data) {
+          counts[meeting.id] = participantsResponse.data.totalCount || 0;
+        } else {
+          counts[meeting.id] = 0;
+        }
+      } catch (error) {
+        console.warn(`Failed to fetch participants for meeting ${meeting.id}:`, error);
+        counts[meeting.id] = 0;
+      }
+    });
+    
+    await Promise.all(countPromises);
+    setParticipantCounts(counts);
+  };
+
   // Fetch meetings and sprints from API
   useEffect(() => {
     const fetchData = async () => {
@@ -81,9 +105,13 @@ const ProjectMeetings = () => {
         const meetingsResponse = await api.meetings.getByProject(parseInt(projectId));
         if (meetingsResponse.error) throw new Error(meetingsResponse.error);
         
-
+        const meetingsData = meetingsResponse.data || [];
+        setMeetings(meetingsData);
         
-        setMeetings(meetingsResponse.data || []);
+        // Fetch participant counts for all meetings
+        if (meetingsData.length > 0) {
+          await fetchParticipantCounts(meetingsData);
+        }
         
         // Fetch sprints for this project
         const sprintsResponse = await api.sprints.getByProject(parseInt(projectId));
@@ -417,7 +445,13 @@ const ProjectMeetings = () => {
       const refreshResponse = await api.meetings.getByProject(parseInt(projectId));
       if (refreshResponse.error) throw new Error(refreshResponse.error);
       
-      setMeetings(refreshResponse.data || []);
+      const refreshedMeetings = refreshResponse.data || [];
+      setMeetings(refreshedMeetings);
+      
+      // Refresh participant counts
+      if (refreshedMeetings.length > 0) {
+        await fetchParticipantCounts(refreshedMeetings);
+      }
     
     // Reset form and close modal
     resetForm();
@@ -483,7 +517,13 @@ const ProjectMeetings = () => {
       const refreshResponse = await api.meetings.getByProject(parseInt(projectId));
       if (refreshResponse.error) throw new Error(refreshResponse.error);
       
-      setMeetings(refreshResponse.data || []);
+      const refreshedMeetings = refreshResponse.data || [];
+      setMeetings(refreshedMeetings);
+      
+      // Refresh participant counts
+      if (refreshedMeetings.length > 0) {
+        await fetchParticipantCounts(refreshedMeetings);
+      }
     
     // Reset form and close modal
     resetForm();
@@ -707,7 +747,13 @@ const ProjectMeetings = () => {
         const refreshResponse = await api.meetings.getByProject(parseInt(projectId));
         if (refreshResponse.error) throw new Error(refreshResponse.error);
         
-        setMeetings(refreshResponse.data || []);
+        const refreshedMeetings = refreshResponse.data || [];
+        setMeetings(refreshedMeetings);
+        
+        // Refresh participant counts
+        if (refreshedMeetings.length > 0) {
+          await fetchParticipantCounts(refreshedMeetings);
+        }
       setShowDeleteModal(false);
       setDeletingMeeting(null);
       } catch (error) {
@@ -928,7 +974,12 @@ const ProjectMeetings = () => {
                   </div>
                   <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                     <Users className="w-4 h-4" />
-                    <span>0 participants</span> {/* TODO: Add participants field to backend */}
+                    <span>
+                      {(() => {
+                        const participantCount: number = participantCounts[meeting.id] || 0;
+                        return `${participantCount} ${participantCount === 1 ? 'participant' : 'participants'}`;
+                      })()}
+                    </span>
                   </div>
                 </div>
 
@@ -936,12 +987,6 @@ const ProjectMeetings = () => {
                 <p className="text-gray-600 dark:text-gray-400 text-sm mb-4 line-clamp-2">
                   {meeting.description}
                 </p>
-
-                {/* Participant avatars */}
-                <ParticipantsTooltip 
-                  participants={[]} // TODO: Add participants field to backend
-                  facilitator={''} // TODO: Add facilitator field to backend
-                />
 
                 {/* Action buttons */}
                 <div className="flex gap-2">

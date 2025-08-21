@@ -14,7 +14,16 @@ from ..schemas.meeting import (
     MeetingResponse,
     MeetingListResponse
 )
+from ..schemas.meeting_participant import (
+    MeetingParticipantCreate,
+    MeetingParticipantUpdate,
+    MeetingParticipantResponse,
+    MeetingParticipantWithUser,
+    MeetingParticipantsRequest,
+    MeetingParticipantsResponse
+)
 from ..crud.meeting import meeting_crud
+from ..crud.meeting_participant import meeting_participant_crud
 
 router = APIRouter()
 
@@ -225,4 +234,4 @@ def reschedule_meeting(
         raise HTTPException(status_code=404, detail="Meeting not found")
     
     db_meeting = meeting_crud.update(db=db, db_obj=db_meeting, obj_in=meeting_in)
-    return MeetingResponse.model_validate(db_meeting) 
+    return MeetingResponse.model_validate(db_meeting)

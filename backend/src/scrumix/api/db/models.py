@@ -22,7 +22,7 @@ from scrumix.api.models.meeting_action_item import MeetingActionItem
 # Import all association tables
 from scrumix.api.models.user_project import UserProject
 from scrumix.api.models.user_task import UserTask
-from scrumix.api.models.user_meeting import UserMeeting
+from scrumix.api.models.meeting_participant import MeetingParticipant
 from scrumix.api.models.user_documentation import UserDocumentation
 from scrumix.api.models.tag_task import TagTask
 from scrumix.api.models.tag_documentation import TagDocumentation
@@ -44,7 +44,7 @@ __all__ = [
     'MeetingNote',
     'MeetingActionItem',
     'UserTask',
-    'UserMeeting',
+    'MeetingParticipant',
     'UserDocumentation',
     'TagTask',
     'TagDocumentation'

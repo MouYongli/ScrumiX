@@ -28,3 +28,11 @@ export enum MeetingType {
   DAILY_STANDUP = "daily_standup",
   OTHER = "other"
 }
+
+export enum MeetingParticipantRole {
+  FACILITATOR = "facilitator",
+  SCRUM_MASTER = "scrum_master",
+  PRODUCT_OWNER = "product_owner",
+  DEVELOPER = "developer",
+  GUEST = "guest"
+}

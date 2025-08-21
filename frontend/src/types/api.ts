@@ -1,5 +1,5 @@
 // API Response Types - These should match the backend schema responses exactly
-import { TaskStatus, TaskPriority, ProjectStatus, MeetingType } from './enums';
+import { TaskStatus, TaskPriority, ProjectStatus, MeetingType, MeetingParticipantRole } from './enums';
 
 export interface ApiUser {
   id: number;
@@ -45,6 +45,27 @@ export interface ApiMeeting {
   createdAt: string;               // camelCase (alias in backend)
   updatedAt: string;               // camelCase (alias in backend)
   // Note: participants not included in MeetingResponse schema
+}
+
+export interface ApiMeetingParticipant {
+  id: number;
+  meetingId: number;
+  userId?: number;                 // Optional for external participants
+  role: MeetingParticipantRole;
+  externalName?: string;           // For external participants
+  externalEmail?: string;          // For external participants
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ApiMeetingParticipantWithUser extends ApiMeetingParticipant {
+  // User details (will be null for external participants)
+  username?: string;
+  email?: string;
+  fullName?: string;
+  // Helper properties
+  displayName?: string;            // Computed display name
+  displayEmail?: string;           // Computed display email
 }
 
 export interface ApiMeetingAgenda {
@@ -147,6 +168,12 @@ export interface MeetingListResponse {
   total: number;
   page: number;
   pages: number;
+}
+
+export interface MeetingParticipantsResponse {
+  meetingId: number;
+  participants: ApiMeetingParticipantWithUser[];
+  totalCount: number;
 }
 
 // Error response

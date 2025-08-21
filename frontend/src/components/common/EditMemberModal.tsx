@@ -28,17 +28,29 @@ export default function EditMemberModal({ isOpen, onClose, projectId, member, on
       setUpdating(true);
       setError(null);
 
+      console.log('DEBUG: Updating member role:', {
+        projectId: parseInt(projectId),
+        memberId: member.id,
+        currentRole: member.role,
+        newRole: selectedRole,
+        memberData: member
+      });
+
       const response = await api.projects.updateMember(parseInt(projectId), member.id, {
         role: selectedRole
       });
 
+      console.log('DEBUG: Update member response:', response);
+
       if (response.error) {
         setError(response.error);
       } else if (response.data) {
+        console.log('DEBUG: Updated member data:', response.data);
         onMemberUpdated(response.data);
         onClose();
       }
     } catch (err) {
+      console.error('DEBUG: Error updating member:', err);
       setError(err instanceof Error ? err.message : 'Failed to update member');
     } finally {
       setUpdating(false);
@@ -72,7 +84,7 @@ export default function EditMemberModal({ isOpen, onClose, projectId, member, on
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+    <div className="fixed inset-0 bg-black bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
