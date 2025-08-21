@@ -1,120 +1,174 @@
-import React, { useState, useEffect } from 'react';
-import { Bell, X, MessageCircle, FileText, Users, Calendar, CheckCircle } from 'lucide-react';
-
-interface Notification {
-  id: string;
-  type: 'message' | 'file' | 'meeting' | 'mention' | 'system';
-  title: string;
-  message: string;
-  timestamp: string;
-  read: boolean;
-  actionUrl?: string;
-  avatar?: string;
-  priority: 'low' | 'normal' | 'high';
-}
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { Bell, X, MessageCircle, FileText, Users, Calendar, CheckCircle, AlertTriangle, ExternalLink, Loader2 } from 'lucide-react';
+import { notificationsApi } from '../../utils/notifications-api';
+import { 
+  UserNotification, 
+  NotificationFeed, 
+  NotificationStatus, 
+  NotificationType, 
+  NotificationPriority 
+} from '../../types/domain';
 
 interface NotificationCenterProps {
-  notifications?: Notification[];
-  onMarkAsRead?: (id: string) => void;
-  onMarkAllAsRead?: () => void;
-  onDeleteNotification?: (id: string) => void;
+  className?: string;
 }
 
-const mockNotifications: Notification[] = [
-  {
-    id: '1',
-    type: 'message',
-    title: 'New message from Sarah Johnson',
-    message: 'Hey team, the sprint review meeting is starting in 15 minutes!',
-    timestamp: '2024-03-15T09:45:00Z',
-    read: false,
-    priority: 'high'
-  },
-  {
-    id: '2',
-    type: 'file',
-    title: 'Mike Chen uploaded a file',
-    message: 'API Documentation.pdf has been uploaded to the project',
-    timestamp: '2024-03-15T09:05:00Z',
-    read: false,
-    priority: 'normal'
-  },
-  {
-    id: '3',
-    type: 'mention',
-    title: 'You were mentioned in a comment',
-    message: 'Emily Rodriguez mentioned you in "User Registration Story"',
-    timestamp: '2024-03-15T08:30:00Z',
-    read: true,
-    priority: 'high'
-  },
-  {
-    id: '4',
-    type: 'meeting',
-    title: 'Upcoming meeting',
-    message: 'Daily Standup starts in 30 minutes',
-    timestamp: '2024-03-15T08:00:00Z',
-    read: true,
-    priority: 'normal'
-  },
-  {
-    id: '5',
-    type: 'system',
-    title: 'Sprint status update',
-    message: 'Sprint 2 is 67% complete with 3 days remaining',
-    timestamp: '2024-03-14T17:00:00Z',
-    read: true,
-    priority: 'low'
-  }
-];
-
-const NotificationCenter: React.FC<NotificationCenterProps> = ({
-  notifications = mockNotifications,
-  onMarkAsRead,
-  onMarkAllAsRead,
-  onDeleteNotification
-}) => {
+const NotificationCenter: React.FC<NotificationCenterProps> = ({ className = '' }) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [isClient, setIsClient] = useState(false);
+  const [notifications, setNotifications] = useState<UserNotification[]>([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(true);
+  const [totalCount, setTotalCount] = useState(0);
+  const hasLoadedRef = useRef(false);
 
-  useEffect(() => {
-    setIsClient(true);
+  // Fetch notifications
+  const fetchNotifications = useCallback(async (pageNum = 1, reset = false) => {
+    // Don't fetch if already loading
+    setLoading(prevLoading => {
+      if (prevLoading) return prevLoading;
+      
+      // Set up the actual fetch in the next tick
+      setTimeout(async () => {
+        setError(null);
+
+        // Set a timeout to prevent infinite loading
+        const timeoutId = setTimeout(() => {
+          setLoading(false);
+          setError('Request timed out');
+          setNotifications([]);
+          setUnreadCount(0);
+        }, 10000); // 10 second timeout
+
+        try {
+          const response = await notificationsApi.getFeed({
+            skip: (pageNum - 1) * 20,
+            limit: 20,
+            includeExpired: false
+          });
+
+          if (response.error) {
+            // Handle authentication errors gracefully
+            if (response.error.includes('Authentication failed') || response.error.includes('Could not validate credentials')) {
+              setError('Please log in to view notifications');
+              setNotifications([]);
+              setUnreadCount(0);
+              return;
+            }
+            throw new Error(response.error);
+          }
+
+          if (response.data) {
+            const feedData = response.data;
+            setNotifications(prev => reset ? feedData.notifications : [...prev, ...feedData.notifications]);
+            setUnreadCount(feedData.unreadCount);
+            setTotalCount(feedData.total);
+            setHasMore(feedData.hasNext);
+            setPage(pageNum);
+          } else {
+            // Handle case where data is null/undefined
+            setNotifications([]);
+            setUnreadCount(0);
+            setError('No notifications available');
+          }
+        } catch (err) {
+          const errorMessage = err instanceof Error ? err.message : 'Failed to load notifications';
+          setError(errorMessage);
+          setNotifications([]);
+          setUnreadCount(0);
+          console.error('Failed to fetch notifications:', err);
+        } finally {
+          clearTimeout(timeoutId);
+          setLoading(false);
+        }
+      }, 0);
+      
+      return true; // Set loading to true
+    });
   }, []);
 
-  const unreadCount = notifications.filter(n => !n.read).length;
+  // Fetch unread count
+  const fetchUnreadCount = useCallback(async () => {
+    try {
+      const response = await notificationsApi.getUnreadCount();
+      if (response.error) {
+        // Silently fail for unread count - don't show errors for this
+        if (!response.error.includes('Authentication failed') && !response.error.includes('Could not validate credentials')) {
+          console.error('Failed to fetch unread count:', response.error);
+        }
+        return;
+      }
+      if (response.data) {
+        setUnreadCount(response.data.unread_count);
+      }
+    } catch (err) {
+      // Silently fail for unread count - this shouldn't disrupt the UI
+      console.error('Failed to fetch unread count:', err);
+    }
+  }, []);
 
-  const getNotificationIcon = (type: string) => {
+  // Load notifications when opening
+  useEffect(() => {
+    if (isOpen && !hasLoadedRef.current && notifications.length === 0) {
+      hasLoadedRef.current = true;
+      fetchNotifications(1, true);
+    }
+    if (!isOpen) {
+      hasLoadedRef.current = false;
+    }
+  }, [isOpen, notifications.length]);
+
+  // Periodically fetch unread count
+  useEffect(() => {
+    fetchUnreadCount();
+    const interval = setInterval(fetchUnreadCount, 30000); // Check every 30 seconds
+    return () => clearInterval(interval);
+  }, [fetchUnreadCount]);
+
+  const getNotificationIcon = (type: NotificationType) => {
     switch (type) {
-      case 'message':
-        return <MessageCircle className="w-4 h-4 text-blue-500" />;
-      case 'file':
-        return <FileText className="w-4 h-4 text-purple-500" />;
-      case 'meeting':
+      case NotificationType.TASK_ASSIGNED:
+      case NotificationType.TASK_STATUS_CHANGED:
+        return <CheckCircle className="w-4 h-4 text-blue-500" />;
+      case NotificationType.MEETING_CREATED:
+      case NotificationType.MEETING_REMINDER:
+      case NotificationType.MEETING_UPDATED:
         return <Calendar className="w-4 h-4 text-orange-500" />;
-      case 'mention':
+      case NotificationType.MENTION:
         return <Users className="w-4 h-4 text-green-500" />;
-      case 'system':
-        return <CheckCircle className="w-4 h-4 text-gray-500" />;
-      default:
+      case NotificationType.BACKLOG_CREATED:
+      case NotificationType.BACKLOG_UPDATED:
+        return <FileText className="w-4 h-4 text-purple-500" />;
+      case NotificationType.SPRINT_STARTED:
+      case NotificationType.SPRINT_COMPLETED:
+        return <AlertTriangle className="w-4 h-4 text-indigo-500" />;
+      case NotificationType.SYSTEM_ANNOUNCEMENT:
         return <Bell className="w-4 h-4 text-gray-500" />;
+      default:
+        return <MessageCircle className="w-4 h-4 text-blue-500" />;
     }
   };
 
-  const getPriorityColor = (priority: string) => {
+  const getPriorityColor = (priority: NotificationPriority) => {
     switch (priority) {
-      case 'high': return 'border-l-red-500';
-      case 'normal': return 'border-l-blue-500';
-      case 'low': return 'border-l-gray-300';
+      case NotificationPriority.CRITICAL: return 'border-l-red-600';
+      case NotificationPriority.HIGH: return 'border-l-red-400';
+      case NotificationPriority.MEDIUM: return 'border-l-blue-500';
+      case NotificationPriority.LOW: return 'border-l-gray-300';
       default: return 'border-l-gray-300';
     }
   };
 
-  const formatTimestamp = (timestamp: string) => {
-    if (!isClient) {
-      return 'Loading...';
-    }
+  const formatTimestamp = (timestamp: string | Date | undefined) => {
+    if (!timestamp) return 'Unknown time';
     
     const date = new Date(timestamp);
+    
+    // Check if date is valid
+    if (isNaN(date.getTime())) return 'Invalid date';
+    
     const now = new Date();
     const diffInMinutes = (now.getTime() - date.getTime()) / (1000 * 60);
     
@@ -125,7 +179,6 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
     } else if (diffInMinutes < 1440) {
       return `${Math.floor(diffInMinutes / 60)}h ago`;
     } else {
-      // Use consistent date formatting
       return date.toLocaleDateString('en-US', {
         year: 'numeric',
         month: 'short',
@@ -134,27 +187,98 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
     }
   };
 
-  const handleMarkAsRead = (id: string) => {
-    if (onMarkAsRead) {
-      onMarkAsRead(id);
+  const handleMarkAsRead = async (notification: UserNotification, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    
+    if (notification.status === NotificationStatus.READ) return;
+
+    try {
+      const response = await notificationsApi.markAsRead(notification.notification_id || notification.notificationId);
+      if (response.error) {
+        throw new Error(response.error);
+      }
+
+      // Update local state
+      setNotifications(prev => 
+        prev.map(n => 
+          n.id === notification.id 
+            ? { ...n, status: NotificationStatus.READ, readAt: new Date() }
+            : n
+        )
+      );
+      setUnreadCount(prev => Math.max(0, prev - 1));
+    } catch (err) {
+      console.error('Failed to mark notification as read:', err);
     }
   };
 
-  const handleMarkAllAsRead = () => {
-    if (onMarkAllAsRead) {
-      onMarkAllAsRead();
-    }
-  };
-
-  const handleDeleteNotification = (id: string, e: React.MouseEvent) => {
+  const handleDismiss = async (notification: UserNotification, e: React.MouseEvent) => {
     e.stopPropagation();
-    if (onDeleteNotification) {
-      onDeleteNotification(id);
+    
+    try {
+      const response = await notificationsApi.dismiss(notification.notification_id || notification.notificationId);
+      if (response.error) {
+        throw new Error(response.error);
+      }
+
+      // Remove from local state
+      setNotifications(prev => prev.filter(n => n.id !== notification.id));
+      if (notification.status === NotificationStatus.UNREAD) {
+        setUnreadCount(prev => Math.max(0, prev - 1));
+      }
+    } catch (err) {
+      console.error('Failed to dismiss notification:', err);
+    }
+  };
+
+  const handleMarkAllAsRead = async () => {
+    try {
+      const response = await notificationsApi.markAllAsRead();
+      if (response.error) {
+        throw new Error(response.error);
+      }
+
+      // Update local state
+      setNotifications(prev => 
+        prev.map(n => ({ 
+          ...n, 
+          status: NotificationStatus.READ, 
+          readAt: new Date() 
+        }))
+      );
+      setUnreadCount(0);
+    } catch (err) {
+      console.error('Failed to mark all as read:', err);
+    }
+  };
+
+  const handleNotificationClick = (notification: UserNotification) => {
+    // Mark as read if unread
+    if (notification.status === NotificationStatus.UNREAD) {
+      handleMarkAsRead(notification);
+    }
+
+    // Navigate to entity if URL exists
+    if (notification.notification.actionUrl) {
+      window.open(notification.notification.actionUrl, '_blank');
+    } else if (notification.notification.entityUrl && notification.notification.entityUrl !== '/') {
+      window.location.href = notification.notification.entityUrl;
+    }
+  };
+
+  const loadMore = () => {
+    if (hasMore) {
+      setLoading(prevLoading => {
+        if (!prevLoading) {
+          fetchNotifications(page + 1, false);
+        }
+        return prevLoading;
+      });
     }
   };
 
   return (
-    <div className="relative">
+    <div className={`relative ${className}`}>
       {/* Notification Bell */}
       <button
         onClick={() => setIsOpen(!isOpen)}
@@ -163,7 +287,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
         <Bell className="w-5 h-5" />
         {unreadCount > 0 && (
           <span className="absolute -top-1 -right-1 bg-red-500 text-white text-xs rounded-full w-5 h-5 flex items-center justify-center font-medium">
-            {unreadCount > 9 ? '9+' : unreadCount}
+            {unreadCount > 99 ? '99+' : unreadCount}
           </span>
         )}
       </button>
@@ -178,14 +302,14 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
           />
           
           {/* Panel */}
-          <div className="absolute right-0 top-full mt-2 w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50">
+          <div className="absolute right-0 top-full mt-2 w-96 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 max-h-96">
             {/* Header */}
             <div className="p-4 border-b border-gray-200 dark:border-gray-700">
               <div className="flex justify-between items-center">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                   Notifications
                 </h3>
-                <div className="flex gap-2">
+                <div className="flex gap-2 items-center">
                   {unreadCount > 0 && (
                     <button
                       onClick={handleMarkAllAsRead}
@@ -202,71 +326,126 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({
                   </button>
                 </div>
               </div>
+              {unreadCount > 0 && (
+                <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
+                  {unreadCount} unread notification{unreadCount !== 1 ? 's' : ''}
+                </p>
+              )}
             </div>
 
+            {/* Error Message */}
+            {error && (
+              <div className="p-3 bg-red-50 dark:bg-red-900/20 border-b border-red-200 dark:border-red-800">
+                <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+              </div>
+            )}
+
             {/* Notifications List */}
-            <div className="max-h-96 overflow-y-auto">
-              {notifications.length === 0 ? (
+            <div className="max-h-80 overflow-y-auto">
+              {loading && notifications.length === 0 ? (
+                <div className="p-8 text-center">
+                  <Loader2 className="w-6 h-6 text-gray-400 mx-auto mb-2 animate-spin" />
+                  <p className="text-gray-600 dark:text-gray-400">Loading notifications...</p>
+                </div>
+              ) : notifications.length === 0 ? (
                 <div className="p-8 text-center">
                   <Bell className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-                  <p className="text-gray-600 dark:text-gray-400">No notifications</p>
+                  <p className="text-gray-600 dark:text-gray-400">
+                    {error && error.includes('log in') ? 'Please log in to view notifications' : 'No notifications'}
+                  </p>
                 </div>
               ) : (
                 <div className="space-y-1 p-2">
-                  {notifications.map((notification) => (
+                  {notifications.map((userNotification) => {
+                    const notification = userNotification.notification;
+                    return (
                     <div
-                      key={notification.id}
+                        key={userNotification.id}
                       className={`relative p-3 rounded-lg border-l-4 cursor-pointer transition-colors ${
-                        !notification.read 
+                          userNotification.status === NotificationStatus.UNREAD
                           ? 'bg-blue-50 dark:bg-blue-900/20 hover:bg-blue-100 dark:hover:bg-blue-900/30' 
                           : 'bg-gray-50 dark:bg-gray-700/50 hover:bg-gray-100 dark:hover:bg-gray-700'
                       } ${getPriorityColor(notification.priority)}`}
-                      onClick={() => !notification.read && handleMarkAsRead(notification.id)}
+                        onClick={() => handleNotificationClick(userNotification)}
                     >
                       <div className="flex items-start gap-3">
                         <div className="flex-shrink-0 mt-0.5">
-                          {getNotificationIcon(notification.type)}
+                            {getNotificationIcon(notification.notificationType)}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex justify-between items-start">
                             <h4 className={`text-sm font-medium ${
-                              !notification.read 
+                                userNotification.status === NotificationStatus.UNREAD
                                 ? 'text-gray-900 dark:text-white' 
                                 : 'text-gray-700 dark:text-gray-300'
                             }`}>
                               {notification.title}
                             </h4>
+                              <div className="flex items-center gap-1">
+                                {notification.actionUrl && (
+                                  <ExternalLink className="w-3 h-3 text-gray-400" />
+                                )}
                             <button
-                              onClick={(e) => handleDeleteNotification(notification.id, e)}
+                                  onClick={(e) => handleDismiss(userNotification, e)}
                               className="text-gray-400 hover:text-red-600 dark:hover:text-red-400"
                             >
                               <X className="w-3 h-3" />
                             </button>
                           </div>
-                          <p className={`text-xs mt-1 ${
-                            !notification.read 
+                            </div>
+                            <p className={`text-xs mt-1 line-clamp-2 ${
+                              userNotification.status === NotificationStatus.UNREAD
                               ? 'text-gray-700 dark:text-gray-300' 
                               : 'text-gray-600 dark:text-gray-400'
                           }`}>
                             {notification.message}
                           </p>
-                          <p className="text-xs text-gray-500 dark:text-gray-500 mt-1">
-                            {formatTimestamp(notification.timestamp)}
-                          </p>
+                            <div className="flex items-center justify-between mt-2">
+                              <p className="text-xs text-gray-500 dark:text-gray-500">
+                                {formatTimestamp(userNotification.createdAt || userNotification.created_at)}
+                              </p>
+                              {notification.actionText && (
+                                <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">
+                                  {notification.actionText}
+                                </span>
+                              )}
+                            </div>
                         </div>
-                        {!notification.read && (
+                          {userNotification.status === NotificationStatus.UNREAD && (
                           <div className="w-2 h-2 bg-blue-500 rounded-full flex-shrink-0 mt-2"></div>
                         )}
                       </div>
                     </div>
-                  ))}
+                    );
+                  })}
+                  
+                  {/* Load More Button */}
+                  {hasMore && (
+                    <button
+                      onClick={loadMore}
+                      disabled={loading}
+                      className="w-full p-3 text-sm text-center text-blue-600 hover:text-blue-700 dark:text-blue-400 disabled:opacity-50"
+                    >
+                      {loading ? (
+                        <Loader2 className="w-4 h-4 mx-auto animate-spin" />
+                      ) : (
+                        'Load more'
+                      )}
+                    </button>
+                  )}
                 </div>
               )}
             </div>
 
             {/* Footer */}
             <div className="p-3 border-t border-gray-200 dark:border-gray-700">
-              <button className="w-full text-sm text-center text-blue-600 hover:text-blue-700 dark:text-blue-400">
+              <button 
+                onClick={() => {
+                  setIsOpen(false);
+                  window.location.href = '/notifications';
+                }}
+                className="w-full text-sm text-center text-blue-600 hover:text-blue-700 dark:text-blue-400"
+              >
                 View all notifications
               </button>
             </div>

@@ -14,6 +14,7 @@ from ..schemas.task import (
     TaskListResponse
 )
 from ..crud.task import task_crud
+from ..utils.notification_helpers import notification_helper
 
 router = APIRouter()
 
@@ -79,7 +80,33 @@ def update_task(
     if not db_task:
         raise HTTPException(status_code=404, detail="Task not found")
     
+    # Store old status for notification comparison
+    old_status = db_task.status.value if db_task.status else None
+    
+    # Update the task
     db_task = task_crud.update(db=db, db_obj=db_task, obj_in=task_in)
+    
+    # Create notifications for status changes
+    if task_in.status and old_status and task_in.status != old_status:
+        try:
+            # Get assigned users for notifications
+            assigned_user_ids = [user.id for user in db_task.users]
+            
+            notification_helper.create_task_status_changed_notification(
+                db=db,
+                task_id=db_task.id,
+                task_title=db_task.title,
+                old_status=old_status,
+                new_status=task_in.status,
+                changed_by_user_id=current_user.id,
+                project_id=db_task.backlog.project_id if db_task.backlog else None,
+                assigned_user_ids=assigned_user_ids,
+                sprint_id=db_task.sprint_id
+            )
+        except Exception as e:
+            # Log the error but don't fail the task update
+            print(f"Failed to create task status change notification: {e}")
+    
     return TaskResponse.model_validate(db_task)
 
 

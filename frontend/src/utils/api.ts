@@ -37,6 +37,17 @@ async function jsonFetch<T>(endpoint: string, options?: RequestInit): Promise<Ap
 // Request deduplication cache
 const inFlightRequests = new Map<string, Promise<any>>();
 
+// Import notification types
+import type { 
+  NotificationFeed, 
+  NotificationStats, 
+  NotificationCreateRequest,
+  NotificationBroadcastRequest,
+  NotificationType,
+  NotificationPriority,
+  NotificationStatus
+} from '../types/domain';
+
 /**
  * Deduplicate API calls by reusing in-flight requests
  */
@@ -979,6 +990,156 @@ export const documentationApi = {
       return { data };
     } catch (error) {
       return { data: null, error: error instanceof Error ? error.message : 'Failed to fetch project users' };
+    }
+  },
+
+  notifications: {
+    // Get notification feed with pagination and filtering
+    getFeed: (params?: {
+      skip?: number;
+      limit?: number;
+      notificationTypes?: NotificationType[];
+      priorities?: NotificationPriority[];
+      statuses?: NotificationStatus[];
+      projectId?: number;
+      includeExpired?: boolean;
+      daysBack?: number;
+    }) => {
+      const searchParams = new URLSearchParams();
+      if (params?.skip) searchParams.append('skip', params.skip.toString());
+      if (params?.limit) searchParams.append('limit', params.limit.toString());
+      if (params?.notificationTypes) {
+        params.notificationTypes.forEach(type => searchParams.append('notification_types', type));
+      }
+      if (params?.priorities) {
+        params.priorities.forEach(priority => searchParams.append('priorities', priority));
+      }
+      if (params?.statuses) {
+        params.statuses.forEach(status => searchParams.append('statuses', status));
+      }
+      if (params?.projectId) searchParams.append('project_id', params.projectId.toString());
+      if (params?.includeExpired) searchParams.append('include_expired', params.includeExpired.toString());
+      if (params?.daysBack) searchParams.append('days_back', params.daysBack.toString());
+      
+      return jsonFetch<NotificationFeed>(`/api/v1/notifications/feed?${searchParams.toString()}`);
+    },
+
+    // Get unread notification count
+    getUnreadCount: () => deduplicateRequest('notifications:unreadCount', () => 
+      jsonFetch<{ unread_count: number }>('/api/v1/notifications/unread-count')
+    ),
+
+    // Get notification statistics
+    getStats: () => deduplicateRequest('notifications:stats', () => 
+      jsonFetch<NotificationStats>('/api/v1/notifications/stats')
+    ),
+
+    // Mark notification as read
+    markAsRead: (notificationId: number) => {
+      // Clear unread count cache after marking as read
+      inFlightRequests.delete('notifications:unreadCount');
+      inFlightRequests.delete('notifications:stats');
+      
+      return jsonFetch<{ message: string }>(`/api/v1/notifications/${notificationId}/read`, {
+        method: 'PUT'
+      });
+    },
+
+    // Dismiss notification
+    dismiss: (notificationId: number) => {
+      // Clear caches after dismissing
+      inFlightRequests.delete('notifications:unreadCount');
+      inFlightRequests.delete('notifications:stats');
+      
+      return jsonFetch<{ message: string }>(`/api/v1/notifications/${notificationId}/dismiss`, {
+        method: 'PUT'
+      });
+    },
+
+    // Mark all notifications as read
+    markAllAsRead: () => {
+      // Clear caches after bulk operation
+      inFlightRequests.delete('notifications:unreadCount');
+      inFlightRequests.delete('notifications:stats');
+      
+      return jsonFetch<{ message: string }>('/api/v1/notifications/mark-all-read', {
+        method: 'PUT'
+      });
+    },
+
+    // Bulk update notification status
+    bulkUpdate: (data: {
+      notificationIds: number[];
+      status: NotificationStatus;
+      userId: number;
+    }) => {
+      // Clear caches after bulk operation
+      inFlightRequests.delete('notifications:unreadCount');
+      inFlightRequests.delete('notifications:stats');
+      
+      return jsonFetch<{ message: string }>('/api/v1/notifications/bulk-update', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          notification_ids: data.notificationIds,
+          status: data.status,
+          user_id: data.userId
+        })
+      });
+    },
+
+    // Create notification
+    create: (data: NotificationCreateRequest) => {
+      // Clear caches after creating notification
+      inFlightRequests.delete('notifications:unreadCount');
+      inFlightRequests.delete('notifications:stats');
+      
+      return jsonFetch<any>('/api/v1/notifications/', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: data.title,
+          message: data.message,
+          notification_type: data.notificationType,
+          priority: data.priority,
+          action_url: data.actionUrl,
+          action_text: data.actionText,
+          expires_at: data.expiresAt?.toISOString(),
+          recipient_user_ids: data.recipientUserIds,
+          project_id: data.projectId,
+          meeting_id: data.meetingId,
+          backlog_item_id: data.backlogItemId,
+          sprint_id: data.sprintId,
+          task_id: data.taskId
+        })
+      });
+    },
+
+    // Broadcast notification
+    broadcast: (data: NotificationBroadcastRequest) => {
+      // Clear caches after broadcasting
+      inFlightRequests.delete('notifications:unreadCount');
+      inFlightRequests.delete('notifications:stats');
+      
+      return jsonFetch<any>('/api/v1/notifications/broadcast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: data.title,
+          message: data.message,
+          notification_type: data.notificationType,
+          priority: data.priority,
+          action_url: data.actionUrl,
+          action_text: data.actionText,
+          expires_at: data.expiresAt?.toISOString(),
+          target_user_ids: data.targetUserIds,
+          project_id: data.projectId,
+          meeting_id: data.meetingId,
+          backlog_item_id: data.backlogItemId,
+          sprint_id: data.sprintId,
+          task_id: data.taskId
+        })
+      });
     }
   },
 };

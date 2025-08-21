@@ -1,6 +1,48 @@
 // Domain/Business Logic Types - These represent how we work with data in the frontend
 import { TaskStatus, TaskPriority, ProjectStatus, MeetingType } from './enums';
 
+// Notification system enums
+export enum NotificationType {
+  TASK_ASSIGNED = "task_assigned",
+  TASK_STATUS_CHANGED = "task_status_changed",
+  TASK_DEADLINE_APPROACHING = "task_deadline_approaching",
+  MEETING_CREATED = "meeting_created",
+  MEETING_REMINDER = "meeting_reminder",
+  MEETING_UPDATED = "meeting_updated",
+  MEETING_CANCELLED = "meeting_cancelled",
+  SPRINT_STARTED = "sprint_started",
+  SPRINT_COMPLETED = "sprint_completed",
+  SPRINT_UPDATED = "sprint_updated",
+  BACKLOG_CREATED = "backlog_created",
+  BACKLOG_UPDATED = "backlog_updated",
+  BACKLOG_ASSIGNED = "backlog_assigned",
+  PROJECT_MEMBER_ADDED = "project_member_added",
+  PROJECT_MEMBER_REMOVED = "project_member_removed",
+  PROJECT_STATUS_CHANGED = "project_status_changed",
+  MENTION = "mention",
+  SYSTEM_ANNOUNCEMENT = "system_announcement",
+  DEADLINE_APPROACHING = "deadline_approaching"
+}
+
+export enum NotificationPriority {
+  LOW = "low",
+  MEDIUM = "medium",
+  HIGH = "high",
+  CRITICAL = "critical"
+}
+
+export enum NotificationStatus {
+  UNREAD = "unread",
+  READ = "read",
+  DISMISSED = "dismissed"
+}
+
+export enum DeliveryMethod {
+  IN_APP = "in_app",
+  EMAIL = "email",
+  PUSH = "push"
+}
+
 export interface User {
   id: number;
   username: string;
@@ -105,4 +147,111 @@ export interface PaginationState {
   total: number;
   hasNext: boolean;
   hasPrevious: boolean;
+}
+
+// Notification system types
+export interface Notification {
+  id: number;
+  title: string;
+  message: string;
+  notificationType: NotificationType;
+  priority: NotificationPriority;
+  actionUrl?: string;
+  actionText?: string;
+  expiresAt?: Date;
+  createdById?: number;
+  createdAt: Date;
+  updatedAt: Date;
+  
+  // Entity relationships
+  projectId?: number;
+  meetingId?: number;
+  backlogItemId?: number;
+  sprintId?: number;
+  taskId?: number;
+  
+  // Computed fields
+  isExpired: boolean;
+  entityUrl: string;
+}
+
+export interface UserNotification {
+  id: number;
+  userId: number;
+  user_id?: number; // API uses snake_case
+  notificationId: number;
+  notification_id?: number; // API uses snake_case  
+  status: NotificationStatus;
+  deliveryMethod: DeliveryMethod;
+  readAt?: Date;
+  read_at?: Date; // API uses snake_case
+  dismissedAt?: Date;
+  dismissed_at?: Date; // API uses snake_case
+  createdAt: Date;
+  created_at?: Date; // API uses snake_case
+  notification: Notification;
+}
+
+export interface NotificationFeed {
+  notifications: UserNotification[];
+  total: number;
+  unreadCount: number;
+  page: number;
+  pages: number;
+  hasNext: boolean;
+  hasPrevious: boolean;
+}
+
+export interface NotificationStats {
+  totalNotifications: number;
+  unreadCount: number;
+  readCount: number;
+  dismissedCount: number;
+  countsByType: Record<string, number>;
+  countsByPriority: Record<string, number>;
+  recentActivity: Array<{
+    id: number;
+    title: string;
+    type: string;
+    status: string;
+    createdAt: string;
+  }>;
+}
+
+export interface NotificationCreateRequest {
+  title: string;
+  message: string;
+  notificationType: NotificationType;
+  priority?: NotificationPriority;
+  actionUrl?: string;
+  actionText?: string;
+  expiresAt?: Date;
+  recipientUserIds: number[];
+  
+  // Entity relationships
+  projectId?: number;
+  meetingId?: number;
+  backlogItemId?: number;
+  sprintId?: number;
+  taskId?: number;
+}
+
+export interface NotificationBroadcastRequest {
+  title: string;
+  message: string;
+  notificationType: NotificationType;
+  priority?: NotificationPriority;
+  actionUrl?: string;
+  actionText?: string;
+  expiresAt?: Date;
+  
+  // Targeting
+  targetUserIds?: number[];
+  projectId?: number;
+  
+  // Entity context
+  meetingId?: number;
+  backlogItemId?: number;
+  sprintId?: number;
+  taskId?: number;
 }

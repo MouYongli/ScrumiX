@@ -17,6 +17,7 @@ from scrumix.api.schemas.sprint import (
 from scrumix.api.models.sprint import SprintStatus
 from scrumix.api.crud.sprint import sprint_crud
 from scrumix.api.crud.sprint_backlog import sprint_backlog_crud
+from scrumix.api.utils.notification_helpers import notification_helper
 from scrumix.api.models.backlog import Backlog
 from scrumix.api.models.task import Task
 from scrumix.api.models.sprint import Sprint
@@ -91,9 +92,36 @@ def update_sprint(
     """
     Update sprint
     """
+    # Get the current sprint to check for status changes
+    current_sprint = sprint_crud.get_by_id(db, sprint_id)
+    if not current_sprint:
+        raise HTTPException(status_code=404, detail="Sprint not found")
+    
+    old_status = current_sprint.status
+    
+    # Update the sprint
     sprint = sprint_crud.update_sprint(db, sprint_id, sprint_update)
     if not sprint:
         raise HTTPException(status_code=404, detail="Sprint not found")
+    
+    # Check if status changed to ACTIVE (sprint started)
+    if (old_status != SprintStatus.ACTIVE and 
+        sprint.status == SprintStatus.ACTIVE):
+        try:
+            notification_helper.create_sprint_started_notification(
+                db=db,
+                sprint_id=sprint.id,
+                sprint_name=sprint.sprint_name,
+                sprint_goal=sprint.sprint_goal,
+                start_date=sprint.start_date,
+                end_date=sprint.end_date,
+                project_id=sprint.project_id,
+                started_by_user_id=current_user.id
+            )
+        except Exception as e:
+            # Log the error but don't fail the sprint update
+            print(f"Failed to create sprint started notification: {e}")
+    
     return SprintResponse.from_db_model(sprint)
 
 @router.delete("/{sprint_id}", status_code=204)

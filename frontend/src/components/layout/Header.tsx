@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { Search, Bell, ChevronDown, User, Settings, HelpCircle, LogOut, Menu, Sun, Moon, Monitor } from 'lucide-react';
-import NotificationPopover from '../common/NotificationPopover';
+import NotificationCenter from '../common/NotificationCenter';
 import SearchBar from '../common/SearchBar';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '../auth/AuthGuard';
@@ -15,7 +15,6 @@ interface HeaderProps {
 
 const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
-  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const pathname = usePathname();
@@ -69,14 +68,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
     setIsUserMenuOpen(!isUserMenuOpen);
   };
 
-  // Notification popover handlers
-  const toggleNotifications = () => {
-    setIsNotificationsOpen(!isNotificationsOpen);
-  };
 
-  const closeNotifications = () => {
-    setIsNotificationsOpen(false);
-  };
 
   // Theme toggle functionality
   const getThemeIcon = () => {
@@ -195,12 +187,8 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
               })()}
             </button>
 
-            {/* Notification Popover */}
-            <NotificationPopover 
-              isOpen={isNotificationsOpen} 
-              onToggle={toggleNotifications} 
-              onClose={closeNotifications} 
-            />
+            {/* Notification Center */}
+            <NotificationCenter />
 
             {/* User menu */}
             <div className="relative" ref={userMenuRef}>

@@ -9,6 +9,7 @@ from ..core.security import get_current_user
 from ..db.database import get_db
 from ..crud.meeting_participant import meeting_participant_crud
 from ..crud.meeting import meeting_crud
+from ..utils.notification_helpers import notification_helper
 from ..schemas.meeting_participant import (
     MeetingParticipantResponse,
     MeetingParticipantWithUser,
@@ -99,6 +100,24 @@ async def add_meeting_participant(
             external_email=participant_data.external_email,
             role=participant_data.role
         )
+        
+        # Send notification to the added participant (only for internal users)
+        if participant_data.user_id and participant_data.user_id != current_user.id:
+            try:
+                notification_helper.create_meeting_participant_added_notification(
+                    db=db,
+                    meeting_id=meeting_id,
+                    meeting_title=meeting.title,
+                    meeting_start=meeting.start_datetime,
+                    new_participant_user_id=participant_data.user_id,
+                    added_by_user_id=current_user.id,
+                    project_id=meeting.project_id,
+                    sprint_id=meeting.sprint_id
+                )
+            except Exception as e:
+                # Log the error but don't fail the participant addition
+                print(f"Failed to create meeting participant notification: {e}")
+        
         return participant
     except ValueError as e:
         raise HTTPException(
@@ -134,6 +153,25 @@ async def add_multiple_participants(
             meeting_id=meeting_id,
             participants=participants_request.participants
         )
+        
+        # Send notifications to the added participants (only for internal users)
+        for participant_data in participants_request.participants:
+            if participant_data.get('user_id') and participant_data.get('user_id') != current_user.id:
+                try:
+                    notification_helper.create_meeting_participant_added_notification(
+                        db=db,
+                        meeting_id=meeting_id,
+                        meeting_title=meeting.title,
+                        meeting_start=meeting.start_datetime,
+                        new_participant_user_id=participant_data['user_id'],
+                        added_by_user_id=current_user.id,
+                        project_id=meeting.project_id,
+                        sprint_id=meeting.sprint_id
+                    )
+                except Exception as e:
+                    # Log the error but don't fail the participant addition
+                    print(f"Failed to create meeting participant notification for user {participant_data.get('user_id')}: {e}")
+        
         return participants
     except Exception as e:
         raise HTTPException(

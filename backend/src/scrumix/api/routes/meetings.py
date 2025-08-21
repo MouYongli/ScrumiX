@@ -24,6 +24,7 @@ from ..schemas.meeting_participant import (
 )
 from ..crud.meeting import meeting_crud
 from ..crud.meeting_participant import meeting_participant_crud
+from ..utils.notification_helpers import notification_helper
 
 router = APIRouter()
 
@@ -162,6 +163,22 @@ def create_meeting(
 ):
     """Create a new meeting."""
     db_meeting = meeting_crud.create(db=db, obj_in=meeting_in)
+    
+    # Create notification for meeting participants
+    try:
+        notification_helper.create_meeting_created_notification(
+            db=db,
+            meeting_id=db_meeting.id,
+            meeting_title=db_meeting.title,
+            meeting_start=db_meeting.start_datetime,
+            creator_user_id=current_user.id,
+            project_id=db_meeting.project_id,
+            sprint_id=db_meeting.sprint_id
+        )
+    except Exception as e:
+        # Log the error but don't fail the meeting creation
+        print(f"Failed to create meeting notification: {e}")
+    
     return MeetingResponse.model_validate(db_meeting)
 
 

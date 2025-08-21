@@ -64,6 +64,9 @@ class User(Base):
     documentations = relationship("Documentation", secondary="user_documentation", back_populates="users", overlaps="user_documentations")
     meeting_notes = relationship("MeetingNote", back_populates="user", cascade="all, delete-orphan")
     meeting_action_items = relationship("MeetingActionItem", back_populates="user", cascade="all, delete-orphan")
+    
+    # Notification relationships
+    user_notifications = relationship("UserNotification", back_populates="user", cascade="all, delete-orphan")
 
 class UserOAuth(Base):
     """OAuth account association table"""

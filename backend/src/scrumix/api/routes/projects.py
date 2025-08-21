@@ -10,6 +10,7 @@ from scrumix.api.db.session import get_db
 from scrumix.api.core.security import get_current_user
 from scrumix.api.crud.project import project_crud
 from scrumix.api.crud.user_project import user_project_crud
+from scrumix.api.utils.notification_helpers import notification_helper
 from scrumix.api.models.project import ProjectStatus
 from scrumix.api.models.user_project import ScrumRole
 from scrumix.api.schemas.project import ProjectCreate, ProjectUpdate, ProjectResponse
@@ -389,6 +390,24 @@ async def invite_project_member(
             project_id, 
             member_data.role
         )
+        
+        # Get project details for notification
+        project = project_crud.get(db, project_id)
+        project_name = project.name if project else "Unknown Project"
+        
+        # Send notification to the added user
+        try:
+            notification_helper.create_project_member_added_notification(
+                db=db,
+                project_id=project_id,
+                project_name=project_name,
+                new_user_id=member_data.user_id,
+                added_by_user_id=current_user.id,
+                role=member_data.role.value
+            )
+        except Exception as e:
+            # Log the error but don't fail the member addition
+            print(f"Failed to create project member notification: {e}")
         
         # Get the user details for response
         user = user_crud.get(db, member_data.user_id)

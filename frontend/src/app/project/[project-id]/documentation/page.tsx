@@ -53,10 +53,10 @@ const DocumentModal: React.FC<DocumentModalProps> = ({ isOpen, onClose, onSave, 
     
     try {
       let fileUrl = formData.file_url;
-      
+    
       // In a real implementation, you would upload the file to a file server
       // and get back a URL. For now, we'll use the existing file_url or a placeholder
-      if (uploadedFile) {
+    if (uploadedFile) {
         // This is a placeholder - in production you'd upload to S3, etc.
         fileUrl = `uploads/${uploadedFile.name}`;
       }
@@ -71,7 +71,7 @@ const DocumentModal: React.FC<DocumentModalProps> = ({ isOpen, onClose, onSave, 
       };
 
       await onSave(documentData);
-      onClose();
+    onClose();
     } catch (error) {
       console.error('Error saving document:', error);
     } finally {
@@ -504,7 +504,7 @@ const ProjectDocumentation: React.FC<ProjectDocumentationProps> = ({ params }) =
 
   const handleSaveDocument = async (documentData: DocumentationCreate | DocumentationUpdate) => {
     try {
-      if (modalMode === 'create') {
+    if (modalMode === 'create') {
         const response = await documentationApi.create(documentData as DocumentationCreate);
         
         if (response.error) {
@@ -515,7 +515,7 @@ const ProjectDocumentation: React.FC<ProjectDocumentationProps> = ({ params }) =
         } else {
           throw new Error('No data received from server');
         }
-      } else {
+    } else {
         if (!editingDocument) {
           throw new Error('No document selected for editing');
         }
@@ -525,7 +525,7 @@ const ProjectDocumentation: React.FC<ProjectDocumentationProps> = ({ params }) =
           throw new Error(response.error);
         }
         if (response.data) {
-          setDocuments(documents.map(doc => 
+      setDocuments(documents.map(doc => 
             doc.id === editingDocument.id ? response.data! : doc
           ));
         } else {
@@ -678,13 +678,13 @@ const ProjectDocumentation: React.FC<ProjectDocumentationProps> = ({ params }) =
             Manage project documents, meeting notes, and shared resources
           </p>
         </div>
-        <button
-          onClick={handleCreateDocument}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          New Doc
-        </button>
+            <button 
+              onClick={handleCreateDocument}
+              className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              New Doc
+            </button>
       </div>
 
       {/* Filters and Search */}
@@ -700,16 +700,16 @@ const ProjectDocumentation: React.FC<ProjectDocumentationProps> = ({ params }) =
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
               />
-            </div>
           </div>
-          
+        </div>
+        
           <div className="flex gap-4">
-            <select
-              value={filterType}
-              onChange={(e) => setFilterType(e.target.value)}
+                <select
+                  value={filterType}
+                  onChange={(e) => setFilterType(e.target.value)}
               className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
-            >
-              <option value="all">All Types</option>
+                >
+                  <option value="all">All Types</option>
               <option value={DocumentationType.REQUIREMENT}>Requirement</option>
               <option value={DocumentationType.DESIGN_ARCHITECTURE}>Design Architecture</option>
               <option value={DocumentationType.MEETING_REPORT}>Meeting Report</option>
@@ -717,9 +717,9 @@ const ProjectDocumentation: React.FC<ProjectDocumentationProps> = ({ params }) =
               <option value={DocumentationType.SPRINT_RETROSPECTIVE}>Sprint Retrospective</option>
               <option value={DocumentationType.USER_GUIDE}>User Guide</option>
               <option value={DocumentationType.OTHER}>Other</option>
-            </select>
-          </div>
-        </div>
+                </select>
+              </div>
+            </div>
       </div>
 
       {/* Document Cards */}
@@ -773,7 +773,7 @@ const ProjectDocumentation: React.FC<ProjectDocumentationProps> = ({ params }) =
               <div className="flex flex-wrap gap-1">
                 <span className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
                   {doc.type}
-                </span>
+                  </span>
               </div>
             </div>
 

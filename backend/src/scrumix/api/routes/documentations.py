@@ -15,6 +15,7 @@ from scrumix.api.schemas.documentation import (
 )
 from scrumix.api.models.documentation import DocumentationType
 from scrumix.api.crud.documentation import documentation_crud
+from scrumix.api.utils.notification_helpers import notification_helper
 
 router = APIRouter()
 
@@ -55,6 +56,21 @@ def create_documentation(
     """
     try:
         documentation = documentation_crud.create_documentation(db, documentation_create)
+        
+        # Send notification to project members
+        try:
+            notification_helper.create_documentation_added_notification(
+                db=db,
+                documentation_id=documentation.id,
+                documentation_title=documentation.title,
+                documentation_type=documentation.type.value,
+                project_id=documentation.project_id,
+                created_by_user_id=current_user.id
+            )
+        except Exception as e:
+            # Log the error but don't fail the documentation creation
+            print(f"Failed to create documentation notification: {e}")
+        
         return DocumentationResponse.from_db_model(documentation)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
