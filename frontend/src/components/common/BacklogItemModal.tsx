@@ -43,6 +43,7 @@ const BacklogItemModal: React.FC<BacklogItemModalProps> = ({
 
   const [epics, setEpics] = useState<ApiBacklog[]>([]);
   const [isLoadingEpics, setIsLoadingEpics] = useState(false);
+  const [epicsRefreshed, setEpicsRefreshed] = useState(false);
 
   useEffect(() => {
     if (editingItem) {
@@ -64,7 +65,7 @@ const BacklogItemModal: React.FC<BacklogItemModalProps> = ({
   // Fetch epics for parent selection
   useEffect(() => {
     const fetchEpics = async () => {
-      if (!projectId) return;
+      if (!projectId || !isOpen) return;
       
       try {
         setIsLoadingEpics(true);
@@ -74,6 +75,8 @@ const BacklogItemModal: React.FC<BacklogItemModalProps> = ({
           return;
         }
         setEpics(response.data || []);
+        setEpicsRefreshed(true);
+        setTimeout(() => setEpicsRefreshed(false), 3000); // Clear indicator after 3 seconds
       } catch (error) {
         console.error('Error fetching epics:', error);
       } finally {
@@ -82,7 +85,7 @@ const BacklogItemModal: React.FC<BacklogItemModalProps> = ({
     };
 
     fetchEpics();
-  }, [projectId]);
+  }, [projectId, isOpen]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -251,9 +254,45 @@ const BacklogItemModal: React.FC<BacklogItemModalProps> = ({
 
           {/* Parent Item Selection */}
           <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Parent Item
-            </label>
+            <div className="flex items-center justify-between mb-2">
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                Parent Item
+              </label>
+              <div className="flex items-center gap-2">
+                {epicsRefreshed && (
+                  <span className="text-xs text-green-600 dark:text-green-400 flex items-center gap-1">
+                    <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                    Updated!
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={async () => {
+                    if (!projectId) return;
+                    setIsLoadingEpics(true);
+                    try {
+                      const response = await api.backlogs.getEpics(projectId);
+                      if (!response.error) {
+                        setEpics(response.data || []);
+                        setEpicsRefreshed(true);
+                        setTimeout(() => setEpicsRefreshed(false), 3000);
+                      }
+                    } catch (error) {
+                      console.error('Error refreshing epics:', error);
+                    } finally {
+                      setIsLoadingEpics(false);
+                    }
+                  }}
+                  className="text-xs text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 flex items-center gap-1 px-2 py-1 rounded hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors"
+                  disabled={isLoadingEpics}
+                >
+                  <svg className={`w-3 h-3 ${isLoadingEpics ? 'animate-spin' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  {isLoadingEpics ? 'Refreshing...' : 'Refresh'}
+                </button>
+              </div>
+            </div>
             <select
               value={formData.parent_id || ''}
               onChange={(e) => setFormData({ ...formData, parent_id: e.target.value ? parseInt(e.target.value) : undefined })}
@@ -268,7 +307,7 @@ const BacklogItemModal: React.FC<BacklogItemModalProps> = ({
               ) : (
                 epics.map((epic) => (
                   <option key={epic.id} value={epic.id}>
-                    {epic.title}
+                    EPIC-{epic.id}: {epic.title}
                   </option>
                 ))
               )}
@@ -276,6 +315,14 @@ const BacklogItemModal: React.FC<BacklogItemModalProps> = ({
             {formData.item_type === BacklogType.EPIC && (
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                 Epics cannot have parent items
+              </p>
+            )}
+            {formData.item_type !== BacklogType.EPIC && epics.length === 0 && !isLoadingEpics && (
+              <p className="text-xs text-amber-600 dark:text-amber-400 mt-1 flex items-center gap-1">
+                <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+                No epics found. Create an Epic first to use as a parent, or click refresh if you just created one.
               </p>
             )}
           </div>

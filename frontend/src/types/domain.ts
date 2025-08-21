@@ -155,24 +155,38 @@ export interface Notification {
   title: string;
   message: string;
   notificationType: NotificationType;
+  notification_type?: string; // API uses snake_case
   priority: NotificationPriority;
   actionUrl?: string;
+  action_url?: string; // API uses snake_case
   actionText?: string;
+  action_text?: string; // API uses snake_case
   expiresAt?: Date;
+  expires_at?: Date; // API uses snake_case
   createdById?: number;
+  created_by_id?: number; // API uses snake_case
   createdAt: Date;
+  created_at?: Date; // API uses snake_case
   updatedAt: Date;
+  updated_at?: Date; // API uses snake_case
   
   // Entity relationships
   projectId?: number;
+  project_id?: number; // API uses snake_case
   meetingId?: number;
+  meeting_id?: number; // API uses snake_case
   backlogItemId?: number;
+  backlog_item_id?: number; // API uses snake_case
   sprintId?: number;
+  sprint_id?: number; // API uses snake_case
   taskId?: number;
+  task_id?: number; // API uses snake_case
   
   // Computed fields
   isExpired: boolean;
+  is_expired?: boolean; // API uses snake_case
   entityUrl: string;
+  entity_url?: string; // API uses snake_case
 }
 
 export interface UserNotification {

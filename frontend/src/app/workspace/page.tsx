@@ -187,7 +187,58 @@ const MyWorkspacePage = () => {
 
         {/* Projects */}
         <div className="space-y-6">
-          {projects.map((project) => (
+          {projects.length === 0 ? (
+            <div className="text-center py-16 bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+              <div className="max-w-md mx-auto">
+                <Target className="w-16 h-16 text-gray-400 mx-auto mb-6" />
+                <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-3">
+                  Welcome to Your Workspace
+                </h3>
+                <p className="text-gray-600 dark:text-gray-400 mb-6 leading-relaxed">
+                  You haven't joined any projects yet. Create your first project or ask a team member to invite you to get started with your agile journey.
+                </p>
+                <div className="flex flex-col sm:flex-row gap-3 justify-center">
+                  <Link
+                    href="/project"
+                    className="inline-flex items-center gap-2 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium"
+                  >
+                    <Plus className="w-5 h-5" />
+                    Create Project
+                  </Link>
+                  <Link
+                    href="/notifications"
+                    className="inline-flex items-center gap-2 px-6 py-3 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors font-medium"
+                  >
+                    Check Invitations
+                  </Link>
+                </div>
+                <div className="mt-8 pt-6 border-t border-gray-200 dark:border-gray-700">
+                  <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-3">
+                    Get started with ScrumiX:
+                  </h4>
+                  <ul className="text-sm text-gray-600 dark:text-gray-400 space-y-2 text-left">
+                    <li className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+                      Create and manage project backlogs
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+                      Plan and track sprint progress
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+                      Collaborate with your team
+                    </li>
+                    <li className="flex items-center gap-2">
+                      <CheckCircle2 className="w-4 h-4 text-green-500 flex-shrink-0" />
+                      Schedule and manage meetings
+                    </li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          ) : (
+            projects.map((project) => (
             <div
               key={project.id}
               className="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 p-6 hover:border-gray-300 dark:hover:border-gray-600 transition-colors shadow-sm"
@@ -346,7 +397,8 @@ const MyWorkspacePage = () => {
 
               </div>
             </div>
-          ))}
+            ))
+          )}
         </div>
       </div>
     </div>

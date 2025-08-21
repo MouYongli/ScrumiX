@@ -47,11 +47,13 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
         const projectResponse = await api.projects.getById(parseInt(projectId));
         if (projectResponse.error) throw new Error(projectResponse.error);
         
-        setProject({
-          id: projectResponse.data.id,
-          name: projectResponse.data.name,
-          description: projectResponse.data.description
-        });
+        if (projectResponse.data) {
+          setProject({
+            id: projectResponse.data.id,
+            name: projectResponse.data.name,
+            description: projectResponse.data.description
+          });
+        }
         
         // Fetch backlog items for the project
         const response = await api.backlogs.getAll({
@@ -87,6 +89,8 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
   const [editingItem, setEditingItem] = useState<BacklogItem | null>(null);
   const [expandedItems, setExpandedItems] = useState<Set<string>>(new Set());
   const [collapsedHierarchy, setCollapsedHierarchy] = useState<Set<string>>(new Set());
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false);
+  const [itemToDelete, setItemToDelete] = useState<BacklogItem | null>(null);
 
   // Validate editingItem state to ensure acceptance_criteria is always an array
   useEffect(() => {
@@ -247,7 +251,7 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
                 <Edit2 className="w-4 h-4" />
               </button>
               <button
-                onClick={() => handleDeleteItem(item.id)}
+                onClick={() => handleDeleteItemClick(item)}
                 className="text-red-600 hover:text-red-700 dark:text-red-400 dark:hover:text-red-300 p-2 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
                 title="Delete PBI"
               >
@@ -370,6 +374,15 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
 
       setBacklogItems(items);
       setIsAddModalOpen(false);
+      
+      // Show a success message for the newly created item
+      if (newItem.item_type === BacklogType.EPIC) {
+        console.log('Epic created successfully! It will now be available as a parent option for user stories.');
+      } else if (newItem.item_type === BacklogType.BUG) {
+        console.log('Bug created successfully!');
+      } else {
+        console.log('User story created successfully!');
+      }
     } catch (error) {
       console.error('Error adding item:', error);
       // You might want to show a toast notification here
@@ -429,21 +442,27 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
     }
   };
 
-  // Handle deleting items
-  const handleDeleteItem = async (itemId: number) => {
-    if (!confirm('Are you sure you want to delete this item?')) return;
+  // Handle delete item click (opens modal)
+  const handleDeleteItemClick = (item: BacklogItem) => {
+    setItemToDelete(item);
+    setDeleteModalOpen(true);
+  };
+
+  // Handle actual deletion (called from modal)
+  const handleConfirmDelete = async () => {
+    if (!itemToDelete) return;
     
     try {
-      const response = await api.backlogs.delete(itemId);
-        if (response.error) throw new Error(response.error);
+      const response = await api.backlogs.delete(itemToDelete.id);
+      if (response.error) throw new Error(response.error);
 
-        // Refresh the backlog items
+      // Refresh the backlog items
       const refreshResponse = await api.backlogs.getAll({
-          project_id: parseInt(projectId),
-          include_children: true,
-          include_acceptance_criteria: true
-        });
-        
+        project_id: parseInt(projectId),
+        include_children: true,
+        include_acceptance_criteria: true
+      });
+      
       if (refreshResponse.error) throw new Error(refreshResponse.error);
       
       const items = (refreshResponse.data || []).map(item => ({
@@ -452,6 +471,10 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
       }));
 
       setBacklogItems(items);
+      setDeleteModalOpen(false);
+      setItemToDelete(null);
+      
+      console.log(`${itemToDelete.item_type === BacklogType.EPIC ? 'Epic' : itemToDelete.item_type === BacklogType.BUG ? 'Bug' : 'User story'} "${itemToDelete.title}" deleted successfully!`);
     } catch (error) {
       console.error('Error deleting item:', error);
       // You might want to show a toast notification here
@@ -605,7 +628,7 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
           setIsAddModalOpen(false);
           setEditingItem(null);
         }}
-        onSubmit={(item: { title: string; description: string; priority: BacklogPriority; status: BacklogStatus; acceptanceCriteria: string[] }) => {
+        onSubmit={(item) => {
           if (editingItem) {
             const editData: any = {
               ...editingItem,
@@ -617,8 +640,8 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
           } else {
             handleAddItem({
               ...item,
-              story_point: 0,
-              item_type: BacklogType.STORY
+              story_point: 0
+              // item_type is now preserved from the form data
             });
           }
         }}
@@ -640,6 +663,120 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
         } : null}
         projectId={parseInt(projectId)}
       />
+
+      {/* Delete Confirmation Modal */}
+      {deleteModalOpen && itemToDelete && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-md w-full mx-4 overflow-hidden shadow-2xl">
+            {/* Header */}
+            <div className="bg-red-50 dark:bg-red-900/20 px-6 py-4 border-b border-red-200 dark:border-red-800">
+              <div className="flex items-center gap-3">
+                <div className="flex-shrink-0">
+                  <div className="w-10 h-10 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center">
+                    <Trash2 className="w-5 h-5 text-red-600 dark:text-red-400" />
+                  </div>
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-red-900 dark:text-red-100">
+                    Delete {itemToDelete.item_type === BacklogType.EPIC ? 'Epic' : 
+                            itemToDelete.item_type === BacklogType.BUG ? 'Bug' : 'User Story'}
+                  </h3>
+                  <p className="text-sm text-red-700 dark:text-red-300">
+                    This action cannot be undone
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Content */}
+            <div className="px-6 py-4">
+              <div className="mb-4">
+                <p className="text-gray-700 dark:text-gray-300 mb-3">
+                  Are you sure you want to delete this {itemToDelete.item_type === BacklogType.EPIC ? 'epic' : 
+                  itemToDelete.item_type === BacklogType.BUG ? 'bug' : 'user story'}?
+                </p>
+                
+                {/* Item Details */}
+                <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4 border-l-4 border-red-400">
+                  <div className="flex items-start gap-3">
+                    <div className="flex-shrink-0">
+                      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                        itemToDelete.item_type === BacklogType.EPIC ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/20 dark:text-purple-300' :
+                        itemToDelete.item_type === BacklogType.BUG ? 'bg-red-100 text-red-800 dark:bg-red-900/20 dark:text-red-300' :
+                        'bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-300'
+                      }`}>
+                        {itemToDelete.item_type === BacklogType.EPIC ? 'EPIC' : 
+                         itemToDelete.item_type === BacklogType.BUG ? 'BUG' : 'STORY'}
+                      </span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <h4 className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
+                        {itemToDelete.title}
+                      </h4>
+                      {itemToDelete.description && (
+                        <p className="text-sm text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
+                          {itemToDelete.description}
+                        </p>
+                      )}
+                      <div className="flex items-center gap-4 mt-2 text-xs text-gray-500 dark:text-gray-500">
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium ${
+                          itemToDelete.priority === BacklogPriority.HIGH ? 'bg-red-100 text-red-700 dark:bg-red-900/20 dark:text-red-400' :
+                          itemToDelete.priority === BacklogPriority.MEDIUM ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/20 dark:text-yellow-400' :
+                          'bg-green-100 text-green-700 dark:bg-green-900/20 dark:text-green-400'
+                        }`}>
+                          {itemToDelete.priority} Priority
+                        </span>
+                        <span>
+                          {itemToDelete.story_point} {itemToDelete.story_point === 1 ? 'Point' : 'Points'}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Warning for epics with children */}
+                {itemToDelete.item_type === BacklogType.EPIC && (
+                  <div className="mt-3 p-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-md">
+                    <div className="flex items-start gap-2">
+                      <div className="flex-shrink-0">
+                        <div className="w-5 h-5 text-amber-600 dark:text-amber-400">⚠️</div>
+                      </div>
+                      <div>
+                        <p className="text-sm text-amber-800 dark:text-amber-200 font-medium">
+                          Warning: Epic Deletion
+                        </p>
+                        <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
+                          Deleting this epic may affect associated user stories. Make sure to reassign any child stories to another epic if needed.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="bg-gray-50 dark:bg-gray-700/50 px-6 py-4 flex gap-3">
+              <button
+                onClick={() => {
+                  setDeleteModalOpen(false);
+                  setItemToDelete(null);
+                }}
+                className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 font-medium"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-all duration-200 font-medium shadow-md hover:shadow-lg"
+              >
+                Delete {itemToDelete.item_type === BacklogType.EPIC ? 'Epic' : 
+                        itemToDelete.item_type === BacklogType.BUG ? 'Bug' : 'Story'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

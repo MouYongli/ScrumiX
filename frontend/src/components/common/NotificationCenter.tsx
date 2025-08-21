@@ -259,10 +259,13 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ className = '' 
     }
 
     // Navigate to entity if URL exists
-    if (notification.notification.actionUrl) {
-      window.open(notification.notification.actionUrl, '_blank');
-    } else if (notification.notification.entityUrl && notification.notification.entityUrl !== '/') {
-      window.location.href = notification.notification.entityUrl;
+    const actionUrl = notification.notification.actionUrl || notification.notification.action_url;
+    const entityUrl = notification.notification.entityUrl || notification.notification.entity_url;
+    
+    if (actionUrl) {
+      window.open(actionUrl, '_blank');
+    } else if (entityUrl && entityUrl !== '/') {
+      window.location.href = entityUrl;
     }
   };
 
@@ -370,7 +373,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ className = '' 
                     >
                       <div className="flex items-start gap-3">
                         <div className="flex-shrink-0 mt-0.5">
-                            {getNotificationIcon(notification.notificationType)}
+                            {getNotificationIcon(notification.notificationType || notification.notification_type || 'system_announcement')}
                         </div>
                         <div className="flex-1 min-w-0">
                           <div className="flex justify-between items-start">
@@ -382,7 +385,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ className = '' 
                               {notification.title}
                             </h4>
                               <div className="flex items-center gap-1">
-                                {notification.actionUrl && (
+                                {(notification.actionUrl || notification.action_url) && (
                                   <ExternalLink className="w-3 h-3 text-gray-400" />
                                 )}
                             <button
@@ -404,9 +407,9 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ className = '' 
                               <p className="text-xs text-gray-500 dark:text-gray-500">
                                 {formatTimestamp(userNotification.createdAt || userNotification.created_at)}
                               </p>
-                              {notification.actionText && (
+                              {(notification.actionText || notification.action_text) && (
                                 <span className="text-xs text-blue-600 dark:text-blue-400 font-medium">
-                                  {notification.actionText}
+                                  {notification.actionText || notification.action_text}
                                 </span>
                               )}
                             </div>
