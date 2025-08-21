@@ -886,20 +886,79 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
     }
   };
 
-  // Calculate velocity for completed and active sprints
-  const calculateVelocity = () => {
-    // Only include completed and active sprints, in order
-    const relevantSprints = sprints.filter(sprint => sprint.status === 'completed' || sprint.status === 'active');
-    return relevantSprints.map(sprint => ({
-      sprint: sprint.sprintName,
-      velocity: sprint.completedStoryPoints || 0
-    }));
+  // Calculate velocity for completed sprints only (matching velocity page logic)
+  const calculateVelocity = async () => {
+    try {
+      // Filter for completed sprints only
+      const completedSprints = sprints.filter(sprint => sprint.status === 'completed');
+      
+      // Sort by completion date (end date)
+      completedSprints.sort((a, b) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime());
+      
+      let totalCompletedStoryPoints = 0;
+      let sprintCount = 0;
+      const sprintVelocities: number[] = [];
+      
+      // Fetch backlog items for each completed sprint to get actual story points
+      for (const sprint of completedSprints) {
+        try {
+          const backlogResponse = await api.sprints.getSprintBacklog(sprint.id);
+          if (backlogResponse.data) {
+            const backlogItems = backlogResponse.data;
+            // Calculate completed story points (only items with status 'done')
+            const completedItems = backlogItems.filter((item: any) => item.status === 'done');
+            const completedStoryPoints = completedItems.reduce((sum: number, item: any) => sum + (item.story_point || 0), 0);
+            totalCompletedStoryPoints += completedStoryPoints;
+            sprintVelocities.push(completedStoryPoints);
+            sprintCount++;
+          }
+        } catch (backlogError) {
+          console.error(`Error fetching backlog for sprint ${sprint.id}:`, backlogError);
+          // Skip this sprint if backlog fetch fails
+        }
+      }
+      
+      // Calculate trend if we have at least 2 sprints
+      if (sprintVelocities.length >= 2) {
+        const recentVelocities = sprintVelocities.slice(-3); // Last 3 sprints
+        const firstHalf = recentVelocities.slice(0, Math.ceil(recentVelocities.length / 2));
+        const secondHalf = recentVelocities.slice(Math.ceil(recentVelocities.length / 2));
+        
+        const firstAvg = firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length;
+        const secondAvg = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length;
+        
+        const difference = secondAvg - firstAvg;
+        if (Math.abs(difference) < 2) {
+          setVelocityTrend('stable');
+        } else if (difference > 0) {
+          setVelocityTrend('improving');
+        } else {
+          setVelocityTrend('declining');
+        }
+      } else {
+        setVelocityTrend(null);
+      }
+      
+      return sprintCount > 0 ? Math.round(totalCompletedStoryPoints / sprintCount) : 0;
+    } catch (error) {
+      console.error('Error calculating velocity:', error);
+      return 0;
+    }
   };
 
-  const velocityData = calculateVelocity();
-  const averageVelocity = velocityData.length > 0 
-    ? Math.round(velocityData.reduce((sum, data) => sum + data.velocity, 0) / velocityData.length)
-    : 0;
+  const [averageVelocity, setAverageVelocity] = useState<number>(0);
+  const [isCalculatingVelocity, setIsCalculatingVelocity] = useState<boolean>(false);
+  const [velocityTrend, setVelocityTrend] = useState<'stable' | 'improving' | 'declining' | null>(null);
+
+  // Calculate velocity when sprints change
+  useEffect(() => {
+    if (sprints.length > 0) {
+      setIsCalculatingVelocity(true);
+      calculateVelocity()
+        .then(setAverageVelocity)
+        .finally(() => setIsCalculatingVelocity(false));
+    }
+  }, [sprints]);
 
   // Early return for loading state
   if (isLoading) {
@@ -1025,7 +1084,29 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
             </div>
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Velocity</p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">{averageVelocity}</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                                 {isCalculatingVelocity ? (
+                   <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-indigo-600"></span>
+                 ) : (
+                   averageVelocity
+                 )}
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                {sprints.filter(s => s.status === 'completed').length} completed sprints
+                {velocityTrend && (
+                  <span className={`ml-2 inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
+                    velocityTrend === 'improving' 
+                      ? 'bg-green-100 dark:bg-green-900/20 text-green-800 dark:text-green-400'
+                      : velocityTrend === 'declining'
+                      ? 'bg-red-100 dark:bg-red-900/20 text-red-800 dark:text-red-400'
+                      : 'bg-gray-100 dark:bg-gray-900/20 text-gray-800 dark:text-gray-400'
+                  }`}>
+                    {velocityTrend === 'improving' && '↗ Improving'}
+                    {velocityTrend === 'declining' && '↘ Declining'}
+                    {velocityTrend === 'stable' && '→ Stable'}
+                  </span>
+                )}
+              </p>
             </div>
           </div>
         </Link>
