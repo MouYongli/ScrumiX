@@ -44,34 +44,20 @@ const CreateSprintModal: React.FC<{
     sprintGoal: string;
     startDate: string;
     endDate: string;
-    sprintCapacity: number;
-    status: 'planning' | 'active' | 'completed';
-    teamMembers: string[];
-  }) => void;
-}> = ({ isOpen, onClose, onSubmit }) => {
+          sprintCapacity: number;
+      status: 'planning' | 'active' | 'completed';
+    }) => void;
+  }> = ({ isOpen, onClose, onSubmit }) => {
   const [formData, setFormData] = useState({
     sprintName: '',
     sprintGoal: '',
     startDate: '',
-    endDate: '',
-    sprintCapacity: 40,
-    status: 'planning' as const,
-    teamMembers: [] as string[]
-  });
+          endDate: '',
+      sprintCapacity: 40,
+      status: 'planning' as const
+    });
 
-  const [isTeamDropdownOpen, setIsTeamDropdownOpen] = useState(false);
 
-  // Mock team members - in real app, this would come from API
-  const availableTeamMembers = [
-    'Sarah Johnson',
-    'Mike Chen', 
-    'Emily Rodriguez',
-    'David Park',
-    'Lisa Wang',
-    'James Smith',
-    'Maria Gonzalez',
-    'Alex Kim'
-  ];
 
   const statusOptions = [
     { value: 'planning', label: 'Planning' },
@@ -105,29 +91,14 @@ const CreateSprintModal: React.FC<{
       sprintName: '',
       sprintGoal: '',
       startDate: '',
-      endDate: '',
-      sprintCapacity: 40,
-      status: 'planning',
-      teamMembers: []
-    });
+              endDate: '',
+        sprintCapacity: 40,
+        status: 'planning'
+      });
     onClose();
   };
 
-  const toggleTeamMember = (member: string) => {
-    setFormData(prev => ({
-      ...prev,
-      teamMembers: (prev.teamMembers || []).includes(member)
-        ? (prev.teamMembers || []).filter(m => m !== member)
-        : [...(prev.teamMembers || []), member]
-    }));
-  };
 
-  const removeTeamMember = (member: string) => {
-    setFormData(prev => ({
-      ...prev,
-      teamMembers: (prev.teamMembers || []).filter(m => m !== member)
-    }));
-  };
 
   if (!isOpen) return null;
 
@@ -223,64 +194,7 @@ const CreateSprintModal: React.FC<{
             </p>
           </div>
 
-          {/* Team Members */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Team Members
-            </label>
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setIsTeamDropdownOpen(!isTeamDropdownOpen)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent flex justify-between items-center"
-              >
-                <span className="text-gray-500 dark:text-gray-400">
-                  {formData.teamMembers.length === 0 
-                    ? 'Select team members...' 
-                    : `${formData.teamMembers.length} member${formData.teamMembers.length !== 1 ? 's' : ''} selected`
-                  }
-                </span>
-                <ChevronDown className={`w-4 h-4 transform transition-transform ${isTeamDropdownOpen ? 'rotate-180' : ''}`} />
-              </button>
-              
-              {isTeamDropdownOpen && (
-                <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                  {availableTeamMembers.map(member => (
-                    <label key={member} className="flex items-center px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-600 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={formData.teamMembers.includes(member)}
-                        onChange={() => toggleTeamMember(member)}
-                        className="mr-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      <span className="text-gray-900 dark:text-white">{member}</span>
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
-            
-            {/* Selected team members */}
-            {formData.teamMembers.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {formData.teamMembers.map(member => (
-                  <span
-                    key={member}
-                    className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-900/20 text-blue-800 dark:text-blue-400 text-sm rounded-full"
-                  >
-                    {member}
-                    <button
-                      type="button"
-                      onClick={() => removeTeamMember(member)}
-                      className="hover:text-blue-600 dark:hover:text-blue-300"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
+          
 
           {/* Status */}
           <div>
@@ -622,6 +536,16 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [projectName, setProjectName] = useState<string>('Project');
+  const [projectDevelopers, setProjectDevelopers] = useState<Array<{
+    id: number;
+    email: string;
+    username?: string;
+    full_name?: string;
+    avatar_url?: string;
+    role: string;
+    joined_at: string;
+    is_admin: boolean;
+  }>>([]);
 
   // Breadcrumb navigation
   const breadcrumbItems = [
@@ -706,7 +630,7 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
     }
   }, [projectId]);
 
-  // Add useEffect to fetch project details
+  // Add useEffect to fetch project details and developers
   useEffect(() => {
     const fetchProjectDetails = async () => {
       try {
@@ -720,8 +644,28 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
       }
     };
 
+    const fetchProjectDevelopers = async () => {
+      try {
+        const projectMembersResponse = await api.projects.getMembers(parseInt(projectId, 10));
+        if (projectMembersResponse.error) {
+          console.warn('Failed to fetch project members:', projectMembersResponse.error);
+          setProjectDevelopers([]);
+        } else {
+          // Filter only developers from the project members
+          const developers = (projectMembersResponse.data || []).filter(
+            (member: any) => member.role === 'developer'
+          );
+          setProjectDevelopers(developers);
+        }
+      } catch (memberError) {
+        console.warn('Failed to fetch project members:', memberError);
+        setProjectDevelopers([]);
+      }
+    };
+
     if (projectId) {
       fetchProjectDetails();
+      fetchProjectDevelopers();
     }
   }, [projectId]);
 
@@ -795,7 +739,6 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
     endDate: string;
     sprintCapacity: number;
     status: 'planning' | 'active' | 'completed';
-    teamMembers: string[];
   }) => {
     api.sprints.create({
       project_id: parseInt(projectId, 10),
@@ -1092,7 +1035,7 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
                  )}
               </p>
               <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                {sprints.filter(s => s.status === 'completed').length} completed sprints
+                {sprints.filter(s => s.status === 'completed').length} completed {sprints.filter(s => s.status === 'completed').length === 1 ? 'sprint' : 'sprints'}
                 {velocityTrend && (
                   <span className={`ml-2 inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
                     velocityTrend === 'improving' 
@@ -1228,7 +1171,7 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
                     </span>
                     <span className="flex items-center gap-1">
                       <Users className="w-4 h-4" />
-                      {sprint.teamMembers?.length || 0} members
+                      {projectDevelopers.length} {projectDevelopers.length === 1 ? 'developer' : 'developers'}
                     </span>
                     {sprint.status === 'active' && (
                       <span className="flex items-center gap-1">
