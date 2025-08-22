@@ -14,7 +14,17 @@ from ..schemas.meeting import (
     MeetingResponse,
     MeetingListResponse
 )
-from ..crud.meeting import meeting
+from ..schemas.meeting_participant import (
+    MeetingParticipantCreate,
+    MeetingParticipantUpdate,
+    MeetingParticipantResponse,
+    MeetingParticipantWithUser,
+    MeetingParticipantsRequest,
+    MeetingParticipantsResponse
+)
+from ..crud.meeting import meeting_crud
+from ..crud.meeting_participant import meeting_participant_crud
+from ..utils.notification_helpers import notification_helper
 
 router = APIRouter()
 
@@ -27,7 +37,7 @@ def get_upcoming_meetings(
     current_user: User = Depends(get_current_user)
 ):
     """Get upcoming meetings within specified days."""
-    meetings = meeting.get_upcoming(db=db, days=days, limit=limit)
+    meetings = meeting_crud.get_upcoming(db=db, days=days, limit=limit)
     return [MeetingResponse.model_validate(m) for m in meetings]
 
 
@@ -37,7 +47,7 @@ def get_today_meetings(
     current_user: User = Depends(get_current_user)
 ):
     """Get today's meetings."""
-    meetings = meeting.get_today(db=db)
+    meetings = meeting_crud.get_today(db=db)
     return [MeetingResponse.model_validate(m) for m in meetings]
 
 
@@ -47,7 +57,7 @@ def get_ongoing_meetings(
     current_user: User = Depends(get_current_user)
 ):
     """Get currently ongoing meetings."""
-    meetings = meeting.get_ongoing(db=db)
+    meetings = meeting_crud.get_ongoing(db=db)
     return [MeetingResponse.model_validate(m) for m in meetings]
 
 
@@ -60,7 +70,7 @@ def search_meetings(
     current_user: User = Depends(get_current_user)
 ):
     """Search meetings by description and location."""
-    meetings = meeting.search(db=db, search_term=query, skip=skip, limit=limit)
+    meetings = meeting_crud.search(db=db, search_term=query, skip=skip, limit=limit)
     return [MeetingResponse.model_validate(m) for m in meetings]
 
 
@@ -77,7 +87,7 @@ def get_meetings_by_date_range(
     if start_date >= end_date:
         raise HTTPException(status_code=400, detail="Start date must be before end date")
     
-    meetings = meeting.get_by_date_range(
+    meetings = meeting_crud.get_by_date_range(
         db=db, start_date=start_date, end_date=end_date, skip=skip, limit=limit
     )
     return [MeetingResponse.model_validate(m) for m in meetings]
@@ -89,7 +99,7 @@ def get_meeting_statistics(
     current_user: User = Depends(get_current_user)
 ):
     """Get meeting statistics by type and time periods."""
-    stats = meeting.get_statistics(db=db)
+    stats = meeting_crud.get_statistics(db=db)
     return {
         "statistics": stats,
         "message": "Meeting statistics retrieved successfully"
@@ -105,7 +115,7 @@ def get_meetings_by_type(
     current_user: User = Depends(get_current_user)
 ):
     """Get meetings by type."""
-    meetings = meeting.get_by_type(db=db, meeting_type=meeting_type, skip=skip, limit=limit)
+    meetings = meeting_crud.get_by_type(db=db, meeting_type=meeting_type, skip=skip, limit=limit)
     return [MeetingResponse.model_validate(m) for m in meetings]
 
 
@@ -122,7 +132,7 @@ def get_meetings(
     current_user: User = Depends(get_current_user)
 ):
     """Get all meetings with pagination and optional filtering."""
-    meetings = meeting.get_multi(
+    meetings = meeting_crud.get_multi(
         db, 
         skip=skip, 
         limit=limit, 
@@ -152,7 +162,23 @@ def create_meeting(
     current_user: User = Depends(get_current_user)
 ):
     """Create a new meeting."""
-    db_meeting = meeting.create(db=db, obj_in=meeting_in)
+    db_meeting = meeting_crud.create(db=db, obj_in=meeting_in)
+    
+    # Create notification for meeting participants
+    try:
+        notification_helper.create_meeting_created_notification(
+            db=db,
+            meeting_id=db_meeting.id,
+            meeting_title=db_meeting.title,
+            meeting_start=db_meeting.start_datetime,
+            creator_user_id=current_user.id,
+            project_id=db_meeting.project_id,
+            sprint_id=db_meeting.sprint_id
+        )
+    except Exception as e:
+        # Log the error but don't fail the meeting creation
+        print(f"Failed to create meeting notification: {e}")
+    
     return MeetingResponse.model_validate(db_meeting)
 
 
@@ -163,7 +189,7 @@ def get_meeting(
     current_user: User = Depends(get_current_user)
 ):
     """Get a specific meeting by ID."""
-    db_meeting = meeting.get(db=db, id=meeting_id)
+    db_meeting = meeting_crud.get(db=db, id=meeting_id)
     if not db_meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
     return MeetingResponse.model_validate(db_meeting)
@@ -177,11 +203,11 @@ def update_meeting(
     current_user: User = Depends(get_current_user)
 ):
     """Update a specific meeting."""
-    db_meeting = meeting.get(db=db, id=meeting_id)
+    db_meeting = meeting_crud.get(db=db, id=meeting_id)
     if not db_meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
     
-    db_meeting = meeting.update(db=db, db_obj=db_meeting, obj_in=meeting_in)
+    db_meeting = meeting_crud.update(db=db, db_obj=db_meeting, obj_in=meeting_in)
     return MeetingResponse.model_validate(db_meeting)
 
 
@@ -192,11 +218,11 @@ def delete_meeting(
     current_user: User = Depends(get_current_user)
 ):
     """Delete a specific meeting."""
-    db_meeting = meeting.get(db=db, id=meeting_id)
+    db_meeting = meeting_crud.get(db=db, id=meeting_id)
     if not db_meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
     
-    meeting.remove(db=db, id=meeting_id)
+    meeting_crud.remove(db=db, id=meeting_id)
     return {"message": "Meeting deleted successfully"}
 
 
@@ -208,12 +234,21 @@ def reschedule_meeting(
     current_user: User = Depends(get_current_user)
 ):
     """Reschedule a meeting."""
-    if meeting_in.start_datetime < datetime.now():
+    from datetime import timezone
+    now = datetime.now(timezone.utc)
+    # Ensure start_datetime is timezone-aware for comparison
+    if meeting_in.start_datetime.tzinfo is None:
+        # If naive, assume it's in UTC
+        start_dt = meeting_in.start_datetime.replace(tzinfo=timezone.utc)
+    else:
+        start_dt = meeting_in.start_datetime
+    
+    if start_dt < now:
         raise HTTPException(status_code=400, detail="Cannot reschedule to a past time")
     
-    db_meeting = meeting.get(db=db, id=meeting_id)
+    db_meeting = meeting_crud.get(db=db, id=meeting_id)
     if not db_meeting:
         raise HTTPException(status_code=404, detail="Meeting not found")
     
-    db_meeting = meeting.update(db=db, db_obj=db_meeting, obj_in=meeting_in)
-    return MeetingResponse.model_validate(db_meeting) 
+    db_meeting = meeting_crud.update(db=db, db_obj=db_meeting, obj_in=meeting_in)
+    return MeetingResponse.model_validate(db_meeting)

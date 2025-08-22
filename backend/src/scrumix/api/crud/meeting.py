@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 
 from .base import CRUDBase
 from ..models.meeting import Meeting, MeetingType
+from ..models.meeting_participant import MeetingParticipant
 from ..schemas.meeting import MeetingCreate, MeetingUpdate
 
 
@@ -23,6 +24,49 @@ class CRUDMeeting(CRUDBase[Meeting, MeetingCreate, MeetingUpdate]):
     def get_by_id(self, db: Session, meeting_id: int) -> Optional[Meeting]:
         """Get a meeting by ID."""
         return db.query(self.model).filter(self.model.id == meeting_id).first()
+    
+    def get_upcoming_meetings(
+        self,
+        db: Session,
+        user_id: int,
+        days: int = 7,
+        limit: int = 100
+    ) -> List[Meeting]:
+        """Get upcoming meetings for a specific user within specified days."""
+        from datetime import timezone
+        now = datetime.now(timezone.utc)
+        end_date = now + timedelta(days=days)
+        return (
+            db.query(self.model)
+            .join(MeetingParticipant)
+            .filter(
+                and_(
+                    MeetingParticipant.user_id == user_id,
+                    self.model.start_datetime > now,
+                    self.model.start_datetime <= end_date
+                )
+            )
+            .order_by(self.model.start_datetime.asc())
+            .limit(limit)
+            .all()
+        )
+    
+    def get_meetings_by_project(
+        self,
+        db: Session,
+        project_id: int,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[Meeting]:
+        """Get meetings by project ID."""
+        return (
+            db.query(self.model)
+            .filter(self.model.project_id == project_id)
+            .order_by(self.model.start_datetime.desc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
     
     def get_multi(
         self,
@@ -54,7 +98,9 @@ class CRUDMeeting(CRUDBase[Meeting, MeetingCreate, MeetingUpdate]):
         
         # Apply upcoming only filter
         if upcoming_only:
-            query = query.filter(self.model.start_datetime > datetime.now())
+            from datetime import timezone
+            now = datetime.now(timezone.utc)
+            query = query.filter(self.model.start_datetime > now)
         
         # Apply date range filter
         if date_from:
@@ -113,12 +159,14 @@ class CRUDMeeting(CRUDBase[Meeting, MeetingCreate, MeetingUpdate]):
         limit: int = 100
     ) -> List[Meeting]:
         """Get upcoming meetings within specified days."""
-        end_date = datetime.now() + timedelta(days=days)
+        from datetime import timezone
+        now = datetime.now(timezone.utc)
+        end_date = now + timedelta(days=days)
         return (
             db.query(self.model)
             .filter(
                 and_(
-                    self.model.start_datetime > datetime.now(),
+                    self.model.start_datetime > now,
                     self.model.start_datetime <= end_date
                 )
             )
@@ -129,7 +177,8 @@ class CRUDMeeting(CRUDBase[Meeting, MeetingCreate, MeetingUpdate]):
     
     def get_today(self, db: Session) -> List[Meeting]:
         """Get today's meetings."""
-        today = datetime.now().date()
+        from datetime import timezone
+        today = datetime.now(timezone.utc).date()
         return (
             db.query(self.model)
             .filter(func.date(self.model.start_datetime) == today)
@@ -145,7 +194,8 @@ class CRUDMeeting(CRUDBase[Meeting, MeetingCreate, MeetingUpdate]):
         limit: int = 100
     ) -> List[Meeting]:
         """Get currently ongoing meetings."""
-        now = datetime.now()
+        from datetime import timezone
+        now = datetime.now(timezone.utc)
         
         # Get all meetings and filter in Python for SQLite compatibility
         all_meetings = (
@@ -231,7 +281,32 @@ class CRUDMeeting(CRUDBase[Meeting, MeetingCreate, MeetingUpdate]):
         db.commit()
         db.refresh(meeting)
         return meeting
+    
+    def search_meetings_by_project(
+        self,
+        db: Session,
+        project_id: int,
+        query: str,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[Meeting]:
+        """Search meetings by project ID and search query."""
+        search_filter = or_(
+            self.model.title.ilike(f"%{query}%"),
+            self.model.description.ilike(f"%{query}%"),
+            self.model.location.ilike(f"%{query}%")
+        )
+        
+        return (
+            db.query(self.model)
+            .filter(self.model.project_id == project_id)
+            .filter(search_filter)
+            .order_by(self.model.start_datetime.desc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
 
 
 # Create instance
-meeting = CRUDMeeting(Meeting) 
+meeting_crud = CRUDMeeting(Meeting) 

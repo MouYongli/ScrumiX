@@ -39,8 +39,8 @@ class Meeting(Base):
     agenda_items = relationship("MeetingAgenda", back_populates="meeting", cascade="all, delete-orphan")
     notes = relationship("MeetingNote", back_populates="meeting", cascade="all, delete-orphan")
     action_items = relationship("MeetingActionItem", back_populates="meeting", cascade="all, delete-orphan")
-    user_meetings = relationship("UserMeeting", back_populates="meeting", cascade="all, delete-orphan")
-    users = relationship("User", secondary="user_meeting", back_populates="meetings", overlaps="user_meetings")
+    meeting_participants = relationship("MeetingParticipant", back_populates="meeting", cascade="all, delete-orphan")
+    users = relationship("User", secondary="meeting_participant", back_populates="meetings", overlaps="meeting_participants")
     
     def __repr__(self):
         return f"<Meeting(id={self.id}, type='{self.meeting_type.value}', start='{self.start_datetime}')>" 

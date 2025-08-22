@@ -2,9 +2,10 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { Search, Bell, ChevronDown, User, Settings, HelpCircle, LogOut, Menu, Sun, Moon, Monitor } from 'lucide-react';
-import NotificationPopover from '../common/NotificationPopover';
+import NotificationCenter from '../common/NotificationCenter';
+import SearchBar from '../common/SearchBar';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '../auth/AuthGuard';
 
@@ -14,9 +15,9 @@ interface HeaderProps {
 
 const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
-  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+  const pathname = usePathname();
   
   // Theme management
   const { theme, setTheme, effectiveTheme } = useTheme();
@@ -44,18 +45,30 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
     provider: 'local'
   };
 
+  // Determine search scope and project ID based on current path
+  const getSearchContext = () => {
+    const projectMatch = pathname.match(/^\/project\/([^\/]+)/);
+    if (projectMatch) {
+      return {
+        scope: 'project' as const,
+        projectId: projectMatch[1],
+        placeholder: 'Search in this project...'
+      };
+    }
+    return {
+      scope: 'global' as const,
+      projectId: undefined,
+      placeholder: 'Search projects, tasks, meetings...'
+    };
+  };
+
+  const searchContext = getSearchContext();
+
   const toggleUserMenu = () => {
     setIsUserMenuOpen(!isUserMenuOpen);
   };
 
-  // Notification popover handlers
-  const toggleNotifications = () => {
-    setIsNotificationsOpen(!isNotificationsOpen);
-  };
 
-  const closeNotifications = () => {
-    setIsNotificationsOpen(false);
-  };
 
   // Theme toggle functionality
   const getThemeIcon = () => {
@@ -151,20 +164,13 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
 
           {/* Middle: Search box */}
           <div className="flex-1 max-w-lg mx-4">
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Search className="h-4 w-4 text-gray-400" />
-              </div>
-              <input
-                type="text"
-                placeholder="Search projects, sprints, tasks..."
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg 
-                         bg-white dark:bg-gray-800 text-gray-900 dark:text-white 
-                         focus:ring-2 focus:ring-blue-500 focus:border-transparent
-                         placeholder-gray-500 dark:placeholder-gray-400 text-sm"
-              />
-            </div>
-
+            <SearchBar
+              scope={searchContext.scope}
+              projectId={searchContext.projectId}
+              placeholder={searchContext.placeholder}
+              className="w-full"
+              maxResults={8}
+            />
           </div>
 
           {/* Right: Theme toggle, notifications and user menu */}
@@ -181,12 +187,8 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
               })()}
             </button>
 
-            {/* Notification Popover */}
-            <NotificationPopover 
-              isOpen={isNotificationsOpen} 
-              onToggle={toggleNotifications} 
-              onClose={closeNotifications} 
-            />
+            {/* Notification Center */}
+            <NotificationCenter />
 
             {/* User menu */}
             <div className="relative" ref={userMenuRef}>

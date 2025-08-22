@@ -1,6 +1,7 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
+from pydantic import BaseModel
 import math
 
 from ..core.security import get_current_user
@@ -14,7 +15,7 @@ from ..schemas.meeting_note import (
     MeetingNoteTreeResponse
 )
 from ..crud.meeting_note import meeting_note
-from ..crud.meeting import meeting
+from ..crud.meeting import meeting_crud
 
 router = APIRouter()
 
@@ -58,7 +59,7 @@ def create_meeting_note(
 ):
     """Create a new meeting note."""
     # Verify meeting exists
-    db_meeting = meeting.get(db=db, id=note_in.meeting_id)
+    db_meeting = meeting_crud.get(db=db, id=note_in.meeting_id)
     if not db_meeting:
         raise HTTPException(
             status_code=404, 
@@ -142,7 +143,7 @@ def get_notes_by_meeting(
 ):
     """Get notes by meeting ID."""
     # Verify meeting exists
-    db_meeting = meeting.get(db=db, id=meeting_id)
+    db_meeting = meeting_crud.get(db=db, id=meeting_id)
     if not db_meeting:
         raise HTTPException(status_code=404, detail=f"Meeting with ID {meeting_id} not found")
     
@@ -166,7 +167,7 @@ def get_notes_tree_by_meeting(
 ):
     """Get hierarchical note tree for a meeting."""
     # Verify meeting exists
-    db_meeting = meeting.get(db=db, id=meeting_id)
+    db_meeting = meeting_crud.get(db=db, id=meeting_id)
     if not db_meeting:
         raise HTTPException(status_code=404, detail=f"Meeting with ID {meeting_id} not found")
     
@@ -201,7 +202,7 @@ def count_notes_by_meeting(
 ):
     """Count notes for a specific meeting."""
     # Verify meeting exists
-    db_meeting = meeting.get(db=db, id=meeting_id)
+    db_meeting = meeting_crud.get(db=db, id=meeting_id)
     if not db_meeting:
         raise HTTPException(status_code=404, detail=f"Meeting with ID {meeting_id} not found")
     
@@ -217,10 +218,13 @@ def count_notes_by_meeting(
     }
 
 
+class ReplyRequest(BaseModel):
+    content: str
+
 @router.post("/{note_id}/reply", response_model=MeetingNoteResponse, status_code=201)
 def create_note_reply(
     note_id: int,
-    content: str,
+    reply_request: ReplyRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -234,7 +238,7 @@ def create_note_reply(
         # Create the reply note with user_id
         note_data = {
             "meeting_id": parent_note.meeting_id,
-            "content": content,
+            "content": reply_request.content,
             "parent_note_id": note_id,
             "user_id": current_user.id
         }
@@ -288,7 +292,7 @@ def delete_all_notes_by_meeting(
 ):
     """Delete all notes for a specific meeting."""
     # Verify meeting exists
-    db_meeting = meeting.get(db=db, id=meeting_id)
+    db_meeting = meeting_crud.get(db=db, id=meeting_id)
     if not db_meeting:
         raise HTTPException(status_code=404, detail=f"Meeting with ID {meeting_id} not found")
     

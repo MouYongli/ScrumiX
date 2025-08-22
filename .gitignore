@@ -31,6 +31,7 @@ backend/**/*.coverage
 backend/**/htmlcov/
 backend/**/tox/
 backend/**/.mypy_cache/
+backend/scrumix.db
 
 # Frontend Node.js and Next.js ignores
 frontend/*node_modules/

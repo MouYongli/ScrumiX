@@ -9,106 +9,55 @@ import {
   X, ChevronDown, BarChart3, ArrowRight
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
+import { api } from '@/utils/api';
 
-
+// Updated interface to match backend schema
 interface Sprint {
-  id: string;
-  name: string;
-  goal: string;
-  status: 'planning' | 'active' | 'completed' | 'cancelled';
+  id: number;
+  sprintName: string;
+  sprintGoal?: string;
   startDate: string;
   endDate: string;
-  capacity: number; // story points
-  totalStoryPoints: number;
-  completedStoryPoints: number;
-  totalStories: number;
-  completedStories: number;
-  teamMembers: string[];
+  status: 'planning' | 'active' | 'completed' | 'cancelled';
+  sprintCapacity?: number;
+  projectId: number;
   createdAt: string;
+  updatedAt: string;
+  // Frontend-only fields for display
+  totalStoryPoints?: number;
+  completedStoryPoints?: number;
+  totalStories?: number;
+  completedStories?: number;
+  teamMembers?: string[];
 }
 
 interface ProjectSprintsProps {
   params: Promise<{ 'project-id': string }>;
 }
 
-// Mock sprint data
-const mockSprints: Sprint[] = [
-  {
-    id: '1',
-    name: 'Sprint 1 - Authentication Foundation',
-    goal: 'Implement core user authentication system and basic user management features',
-    status: 'completed',
-    startDate: '2025-06-15',
-    endDate: '2025-07-05',
-    capacity: 40,
-    totalStoryPoints: 38,
-    completedStoryPoints: 38,
-    totalStories: 8,
-    completedStories: 8,
-    teamMembers: ['Sarah Johnson', 'Mike Chen', 'Emily Rodriguez'],
-    createdAt: '2025-06-15',
-  },
-  {
-    id: '2',
-    name: 'Sprint 2 - E-commerce Core',
-    goal: 'Build shopping cart, product catalog, and basic checkout functionality',
-    status: 'active',
-    startDate: '2025-07-15',
-    endDate: '2025-07-29',
-    capacity: 45,
-    totalStoryPoints: 42,
-    completedStoryPoints: 28,
-    totalStories: 10,
-    completedStories: 6,
-    teamMembers: ['Sarah Johnson', 'Mike Chen', 'Emily Rodriguez', 'David Park'],
-    createdAt: '2024-02-25',
-  },
-  {
-    id: '3',
-    name: 'Sprint 3 - Payment Integration',
-    goal: 'Integrate payment gateway and complete order processing workflow',
-    status: 'planning',
-    startDate: '2025-07-30',
-    endDate: '2025-08-13',
-    capacity: 50,
-    totalStoryPoints: 0,
-    completedStoryPoints: 0,
-    totalStories: 0,
-    completedStories: 0,
-    teamMembers: ['Sarah Johnson', 'Mike Chen', 'Emily Rodriguez', 'David Park'],
-    createdAt: '2024-03-01',
-  },
-];
-
 // Add CreateSprintModal component
 const CreateSprintModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (sprintData: Omit<Sprint, 'id' | 'totalStoryPoints' | 'completedStoryPoints' | 'totalStories' | 'completedStories' | 'createdAt'>) => void;
+  onSubmit: (sprintData: {
+    sprintName: string;
+    sprintGoal: string;
+    startDate: string;
+    endDate: string;
+    sprintCapacity: number;
+    status: 'planning' | 'active' | 'completed';
+  }) => void;
 }> = ({ isOpen, onClose, onSubmit }) => {
   const [formData, setFormData] = useState({
-    name: '',
-    goal: '',
+    sprintName: '',
+    sprintGoal: '',
     startDate: '',
     endDate: '',
-    capacity: 40,
-    status: 'planning' as const,
-    teamMembers: [] as string[]
-  });
+    sprintCapacity: 40,
+      status: 'planning' as const
+    });
 
-  const [isTeamDropdownOpen, setIsTeamDropdownOpen] = useState(false);
 
-  // Mock team members - in real app, this would come from API
-  const availableTeamMembers = [
-    'Sarah Johnson',
-    'Mike Chen', 
-    'Emily Rodriguez',
-    'David Park',
-    'Lisa Wang',
-    'James Smith',
-    'Maria Gonzalez',
-    'Alex Kim'
-  ];
 
   const statusOptions = [
     { value: 'planning', label: 'Planning' },
@@ -120,7 +69,7 @@ const CreateSprintModal: React.FC<{
     e.preventDefault();
     
     // Basic validation
-    if (!formData.name.trim()) {
+    if (!formData.sprintName.trim()) {
       alert('Sprint name is required');
       return;
     }
@@ -139,32 +88,17 @@ const CreateSprintModal: React.FC<{
     
     // Reset form
     setFormData({
-      name: '',
-      goal: '',
+      sprintName: '',
+      sprintGoal: '',
       startDate: '',
       endDate: '',
-      capacity: 40,
-      status: 'planning',
-      teamMembers: []
+      sprintCapacity: 40,
+        status: 'planning'
     });
     onClose();
   };
 
-  const toggleTeamMember = (member: string) => {
-    setFormData(prev => ({
-      ...prev,
-      teamMembers: prev.teamMembers.includes(member)
-        ? prev.teamMembers.filter(m => m !== member)
-        : [...prev.teamMembers, member]
-    }));
-  };
 
-  const removeTeamMember = (member: string) => {
-    setFormData(prev => ({
-      ...prev,
-      teamMembers: prev.teamMembers.filter(m => m !== member)
-    }));
-  };
 
   if (!isOpen) return null;
 
@@ -191,8 +125,8 @@ const CreateSprintModal: React.FC<{
             </label>
             <input
               type="text"
-              value={formData.name}
-              onChange={(e) => setFormData(prev => ({ ...prev, name: e.target.value }))}
+              value={formData.sprintName}
+              onChange={(e) => setFormData(prev => ({ ...prev, sprintName: e.target.value }))}
               placeholder="e.g., Sprint 1 - User Authentication"
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               required
@@ -205,8 +139,8 @@ const CreateSprintModal: React.FC<{
               Sprint Goal <span className="text-gray-400 text-sm">(Optional)</span>
             </label>
             <textarea
-              value={formData.goal}
-              onChange={(e) => setFormData(prev => ({ ...prev, goal: e.target.value }))}
+              value={formData.sprintGoal}
+              onChange={(e) => setFormData(prev => ({ ...prev, sprintGoal: e.target.value }))}
               placeholder="Describe the main objective of this sprint..."
               rows={3}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
@@ -249,8 +183,8 @@ const CreateSprintModal: React.FC<{
             </label>
             <input
               type="number"
-              value={formData.capacity}
-              onChange={(e) => setFormData(prev => ({ ...prev, capacity: parseInt(e.target.value) || 0 }))}
+              value={formData.sprintCapacity}
+              onChange={(e) => setFormData(prev => ({ ...prev, sprintCapacity: parseInt(e.target.value) || 0 }))}
               min="1"
               max="200"
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -260,64 +194,7 @@ const CreateSprintModal: React.FC<{
             </p>
           </div>
 
-          {/* Team Members */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Team Members
-            </label>
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setIsTeamDropdownOpen(!isTeamDropdownOpen)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent flex justify-between items-center"
-              >
-                <span className="text-gray-500 dark:text-gray-400">
-                  {formData.teamMembers.length === 0 
-                    ? 'Select team members...' 
-                    : `${formData.teamMembers.length} member${formData.teamMembers.length !== 1 ? 's' : ''} selected`
-                  }
-                </span>
-                <ChevronDown className={`w-4 h-4 transform transition-transform ${isTeamDropdownOpen ? 'rotate-180' : ''}`} />
-              </button>
-              
-              {isTeamDropdownOpen && (
-                <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                  {availableTeamMembers.map(member => (
-                    <label key={member} className="flex items-center px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-600 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={formData.teamMembers.includes(member)}
-                        onChange={() => toggleTeamMember(member)}
-                        className="mr-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      <span className="text-gray-900 dark:text-white">{member}</span>
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
-            
-            {/* Selected team members */}
-            {formData.teamMembers.length > 0 && (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {formData.teamMembers.map(member => (
-                  <span
-                    key={member}
-                    className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-900/20 text-blue-800 dark:text-blue-400 text-sm rounded-full"
-                  >
-                    {member}
-                    <button
-                      type="button"
-                      onClick={() => removeTeamMember(member)}
-                      className="hover:text-blue-600 dark:hover:text-blue-300"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
+          
 
           {/* Status */}
           <div>
@@ -372,7 +249,17 @@ const EditSprintModal: React.FC<{
   // Initialize form data when sprint changes
   useEffect(() => {
     if (sprint) {
-      setFormData(sprint);
+      // Format dates for HTML date inputs (YYYY-MM-DD format)
+      const formatDateForInput = (dateString: string) => {
+        const date = new Date(dateString);
+        return date.toISOString().split('T')[0];
+      };
+      
+      setFormData({
+        ...sprint,
+        startDate: formatDateForInput(sprint.startDate),
+        endDate: formatDateForInput(sprint.endDate)
+      });
     }
   }, [sprint]);
 
@@ -400,7 +287,7 @@ const EditSprintModal: React.FC<{
     if (!formData) return;
 
     // Basic validation
-    if (!formData.name.trim()) {
+    if (!formData.sprintName.trim()) {
       alert('Sprint name is required');
       return;
     }
@@ -425,9 +312,9 @@ const EditSprintModal: React.FC<{
       if (!prev) return prev;
       return {
         ...prev,
-        teamMembers: prev.teamMembers.includes(member)
-          ? prev.teamMembers.filter(m => m !== member)
-          : [...prev.teamMembers, member]
+        teamMembers: (prev.teamMembers || []).includes(member)
+          ? (prev.teamMembers || []).filter(m => m !== member)
+          : [...(prev.teamMembers || []), member]
       };
     });
   };
@@ -438,7 +325,7 @@ const EditSprintModal: React.FC<{
       if (!prev) return prev;
       return {
         ...prev,
-        teamMembers: prev.teamMembers.filter(m => m !== member)
+        teamMembers: (prev.teamMembers || []).filter(m => m !== member)
       };
     });
   };
@@ -468,8 +355,8 @@ const EditSprintModal: React.FC<{
             </label>
             <input
               type="text"
-              value={formData.name}
-              onChange={(e) => setFormData(prev => prev ? { ...prev, name: e.target.value } : prev)}
+              value={formData.sprintName}
+              onChange={(e) => setFormData(prev => prev ? { ...prev, sprintName: e.target.value } : prev)}
               placeholder="e.g., Sprint 1 - User Authentication"
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               required
@@ -482,8 +369,8 @@ const EditSprintModal: React.FC<{
               Sprint Goal <span className="text-gray-400 text-sm">(Optional)</span>
             </label>
             <textarea
-              value={formData.goal}
-              onChange={(e) => setFormData(prev => prev ? { ...prev, goal: e.target.value } : prev)}
+              value={formData.sprintGoal}
+              onChange={(e) => setFormData(prev => prev ? { ...prev, sprintGoal: e.target.value } : prev)}
               placeholder="Describe the main objective of this sprint..."
               rows={3}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"
@@ -526,8 +413,8 @@ const EditSprintModal: React.FC<{
             </label>
             <input
               type="number"
-              value={formData.capacity}
-              onChange={(e) => setFormData(prev => prev ? { ...prev, capacity: parseInt(e.target.value) || 0 } : prev)}
+              value={formData.sprintCapacity}
+              onChange={(e) => setFormData(prev => prev ? { ...prev, sprintCapacity: parseInt(e.target.value) || 0 } : prev)}
               min="1"
               max="200"
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
@@ -546,9 +433,9 @@ const EditSprintModal: React.FC<{
                 className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent flex justify-between items-center"
               >
                 <span className="text-gray-500 dark:text-gray-400">
-                  {formData.teamMembers.length === 0 
+                  {(formData.teamMembers?.length || 0) === 0 
                     ? 'Select team members...' 
-                    : `${formData.teamMembers.length} member${formData.teamMembers.length !== 1 ? 's' : ''} selected`
+                    : `${formData.teamMembers?.length || 0} member${(formData.teamMembers?.length || 0) !== 1 ? 's' : ''} selected`
                   }
                 </span>
                 <ChevronDown className={`w-4 h-4 transform transition-transform ${isTeamDropdownOpen ? 'rotate-180' : ''}`} />
@@ -560,7 +447,7 @@ const EditSprintModal: React.FC<{
                     <label key={member} className="flex items-center px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-600 cursor-pointer">
                       <input
                         type="checkbox"
-                        checked={formData.teamMembers.includes(member)}
+                        checked={formData.teamMembers?.includes(member)}
                         onChange={() => toggleTeamMember(member)}
                         className="mr-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
                       />
@@ -571,9 +458,10 @@ const EditSprintModal: React.FC<{
               )}
             </div>
             
-            {formData.teamMembers.length > 0 && (
+            {/* Selected team members */}
+            {(formData.teamMembers?.length || 0) > 0 && (
               <div className="mt-2 flex flex-wrap gap-2">
-                {formData.teamMembers.map(member => (
+                {formData.teamMembers?.map(member => (
                   <span
                     key={member}
                     className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-900/20 text-blue-800 dark:text-blue-400 text-sm rounded-full"
@@ -638,24 +526,36 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
   const resolvedParams = React.use(params);
   const projectId = resolvedParams['project-id'];
 
-  const [sprints, setSprints] = useState<Sprint[]>(mockSprints);
+  const [sprints, setSprints] = useState<Sprint[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedSprint, setSelectedSprint] = useState<Sprint | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [projectName, setProjectName] = useState<string>('Project');
+  const [projectDevelopers, setProjectDevelopers] = useState<Array<{
+    id: number;
+    email: string;
+    username?: string;
+    full_name?: string;
+    avatar_url?: string;
+    role: string;
+    joined_at: string;
+    is_admin: boolean;
+  }>>([]);
 
   // Breadcrumb navigation
   const breadcrumbItems = [
-    { label: 'Projects', href: '/project', icon: <FolderOpen className="w-4 h-4" /> },
-    { label: 'Project Name', href: `/project/${projectId}/dashboard` },
+    { label: projectName, href: `/project/${projectId}/dashboard` },
     { label: 'Sprints', icon: <Zap className="w-4 h-4" /> }
   ];
 
   const filteredSprints = sprints.filter(sprint => {
-    const matchesSearch = sprint.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         sprint.goal.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesSearch = sprint.sprintName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         (sprint.sprintGoal?.toLowerCase() || '').includes(searchTerm.toLowerCase());
     const matchesStatus = filterStatus === 'all' || sprint.status === filterStatus;
     return matchesSearch && matchesStatus;
   });
@@ -693,7 +593,83 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
     return diffDays;
   };
 
-  const handleStartSprint = (sprintId: string) => {
+  // Add useEffect to fetch sprints from API
+  useEffect(() => {
+    const fetchSprints = async () => {
+      try {
+        setIsLoading(true);
+        setError(null);
+        const response = await api.sprints.getByProject(parseInt(projectId, 10));
+        if (response.data) {
+          // Transform backend data to frontend format
+          const transformedSprints: Sprint[] = response.data.map(sprint => ({
+            ...sprint,
+            // Cast status to the correct union type
+            status: sprint.status as 'planning' | 'active' | 'completed' | 'cancelled',
+            // Add frontend-only fields with default values
+            totalStoryPoints: 0, // TODO: Calculate from tasks when available
+            completedStoryPoints: 0, // TODO: Calculate from tasks when available
+            totalStories: 0, // TODO: Calculate from tasks when available
+            completedStories: 0, // TODO: Calculate from tasks when available
+            teamMembers: [], // TODO: Get from project members when available
+          }));
+          setSprints(transformedSprints);
+        } else if (response.error) {
+          setError(response.error);
+        }
+      } catch (error) {
+        console.error('Error fetching sprints:', error);
+        setError('Failed to fetch sprints');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    if (projectId) {
+      fetchSprints();
+    }
+  }, [projectId]);
+
+  // Add useEffect to fetch project details and developers
+  useEffect(() => {
+    const fetchProjectDetails = async () => {
+      try {
+        const response = await api.projects.getById(parseInt(projectId, 10));
+        if (response.data) {
+          setProjectName(response.data.name);
+        }
+      } catch (error) {
+        console.error('Error fetching project details:', error);
+        // Keep default project name if fetch fails
+      }
+    };
+
+    const fetchProjectDevelopers = async () => {
+      try {
+        const projectMembersResponse = await api.projects.getMembers(parseInt(projectId, 10));
+        if (projectMembersResponse.error) {
+          console.warn('Failed to fetch project members:', projectMembersResponse.error);
+          setProjectDevelopers([]);
+        } else {
+          // Filter only developers from the project members
+          const developers = (projectMembersResponse.data || []).filter(
+            (member: any) => member.role === 'developer'
+          );
+          setProjectDevelopers(developers);
+        }
+      } catch (memberError) {
+        console.warn('Failed to fetch project members:', memberError);
+        setProjectDevelopers([]);
+      }
+    };
+
+    if (projectId) {
+      fetchProjectDetails();
+      fetchProjectDevelopers();
+    }
+  }, [projectId]);
+
+  const handleStartSprint = (sprintId: number) => {
     // Check if there's already an active sprint
     const hasActiveSprint = sprints.some(sprint => sprint.status === 'active');
     
@@ -702,15 +678,53 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
       return;
     }
     
-    setSprints(sprints.map(sprint => 
-      sprint.id === sprintId ? { ...sprint, status: 'active' as const } : sprint
-    ));
+    api.sprints.start(sprintId)
+      .then(response => {
+        if (response.data) {
+          // Transform backend response to frontend format
+          const updatedSprint: Sprint = {
+            ...response.data,
+            status: response.data.status as 'planning' | 'active' | 'completed' | 'cancelled',
+            totalStoryPoints: 0,
+            completedStoryPoints: 0,
+            totalStories: 0,
+            completedStories: 0,
+            teamMembers: [],
+          };
+          setSprints(sprints.map(sprint => 
+            sprint.id === sprintId ? updatedSprint : sprint
+          ));
+        }
+      })
+      .catch(error => {
+        console.error('Error starting sprint:', error);
+        alert('Failed to start sprint.');
+      });
   };
 
-  const handleCompleteSprint = (sprintId: string) => {
-    setSprints(sprints.map(sprint => 
-      sprint.id === sprintId ? { ...sprint, status: 'completed' as const } : sprint
-    ));
+  const handleCompleteSprint = (sprintId: number) => {
+    api.sprints.close(sprintId)
+      .then(response => {
+        if (response.data) {
+          // Transform backend response to frontend format
+          const updatedSprint: Sprint = {
+            ...response.data,
+            status: response.data.status as 'planning' | 'active' | 'completed' | 'cancelled',
+            totalStoryPoints: 0,
+            completedStoryPoints: 0,
+            totalStories: 0,
+            completedStories: 0,
+            teamMembers: [],
+          };
+          setSprints(sprints.map(sprint => 
+            sprint.id === sprintId ? updatedSprint : sprint
+          ));
+        }
+      })
+      .catch(error => {
+        console.error('Error completing sprint:', error);
+        alert('Failed to complete sprint.');
+      });
   };
 
   const activeSprint = sprints.find(s => s.status === 'active');
@@ -718,18 +732,42 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
   const totalActiveStoryPoints = activeSprint?.totalStoryPoints || 0;
   const completedActiveStoryPoints = activeSprint?.completedStoryPoints || 0;
 
-  const handleCreateSprint = (sprintData: Omit<Sprint, 'id' | 'totalStoryPoints' | 'completedStoryPoints' | 'totalStories' | 'completedStories' | 'createdAt'>) => {
-    const newSprint: Sprint = {
-      ...sprintData,
-      id: (sprints.length + 1).toString(),
-      totalStoryPoints: 0,
-      completedStoryPoints: 0,
-      totalStories: 0,
-      completedStories: 0,
-      createdAt: new Date().toISOString().split('T')[0]
-    };
-    
-    setSprints([...sprints, newSprint]);
+  const handleCreateSprint = (sprintData: {
+    sprintName: string;
+    sprintGoal: string;
+    startDate: string;
+    endDate: string;
+    sprintCapacity: number;
+    status: 'planning' | 'active' | 'completed';
+  }) => {
+    api.sprints.create({
+      project_id: parseInt(projectId, 10),
+      sprint_name: sprintData.sprintName,
+      sprint_goal: sprintData.sprintGoal,
+      start_date: sprintData.startDate,
+      end_date: sprintData.endDate,
+      sprint_capacity: sprintData.sprintCapacity,
+      status: sprintData.status,
+    })
+    .then(response => {
+      if (response.data) {
+        // Transform backend response to frontend format
+        const newSprint: Sprint = {
+          ...response.data,
+          status: response.data.status as 'planning' | 'active' | 'completed' | 'cancelled',
+          totalStoryPoints: 0,
+          completedStoryPoints: 0,
+          totalStories: 0,
+          completedStories: 0,
+          teamMembers: [],
+        };
+        setSprints([...sprints, newSprint]);
+      }
+    })
+    .catch(error => {
+      console.error('Error creating sprint:', error);
+      alert('Failed to create sprint.');
+    });
   };
 
   const handleEditSprint = (sprint: Sprint) => {
@@ -738,11 +776,37 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
   };
 
   const handleUpdateSprint = (updatedSprint: Sprint) => {
-    setSprints(sprints.map(sprint => 
-      sprint.id === updatedSprint.id ? updatedSprint : sprint
-    ));
-    setSelectedSprint(null);
-    setIsEditModalOpen(false);
+    api.sprints.update(updatedSprint.id, {
+      sprint_name: updatedSprint.sprintName,
+      sprint_goal: updatedSprint.sprintGoal,
+      start_date: updatedSprint.startDate,
+      end_date: updatedSprint.endDate,
+      sprint_capacity: updatedSprint.sprintCapacity,
+      status: updatedSprint.status,
+    })
+    .then(response => {
+      if (response.data) {
+        // Transform backend response to frontend format
+        const updatedSprintData: Sprint = {
+          ...response.data,
+          status: response.data.status as 'planning' | 'active' | 'completed' | 'cancelled',
+          totalStoryPoints: updatedSprint.totalStoryPoints || 0,
+          completedStoryPoints: updatedSprint.completedStoryPoints || 0,
+          totalStories: updatedSprint.totalStories || 0,
+          completedStories: updatedSprint.completedStories || 0,
+          teamMembers: updatedSprint.teamMembers || [],
+        };
+        setSprints(sprints.map(sprint => 
+          sprint.id === updatedSprint.id ? updatedSprintData : sprint
+        ));
+        setSelectedSprint(null);
+        setIsEditModalOpen(false);
+      }
+    })
+    .catch(error => {
+      console.error('Error updating sprint:', error);
+      alert('Failed to update sprint.');
+    });
   };
 
   const handleDeleteClick = (sprint: Sprint) => {
@@ -752,26 +816,131 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
 
   const handleDeleteConfirm = () => {
     if (selectedSprint) {
-      setSprints(sprints.filter(sprint => sprint.id !== selectedSprint.id));
-      setSelectedSprint(null);
-      setIsDeleteModalOpen(false);
+      api.sprints.delete(selectedSprint.id)
+        .then(() => {
+          setSprints(sprints.filter(sprint => sprint.id !== selectedSprint.id));
+          setSelectedSprint(null);
+          setIsDeleteModalOpen(false);
+        })
+        .catch(error => {
+          console.error('Error deleting sprint:', error);
+          alert('Failed to delete sprint.');
+        });
     }
   };
 
-  // Calculate velocity for completed and active sprints
-  const calculateVelocity = () => {
-    // Only include completed and active sprints, in order
-    const relevantSprints = sprints.filter(sprint => sprint.status === 'completed' || sprint.status === 'active');
-    return relevantSprints.map(sprint => ({
-      sprint: sprint.name,
-      velocity: sprint.completedStoryPoints
-    }));
+  // Calculate velocity for completed sprints only (matching velocity page logic)
+  const calculateVelocity = async () => {
+    try {
+      // Filter for completed sprints only
+      const completedSprints = sprints.filter(sprint => sprint.status === 'completed');
+      
+      // Sort by completion date (end date)
+      completedSprints.sort((a, b) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime());
+      
+      let totalCompletedStoryPoints = 0;
+      let sprintCount = 0;
+      const sprintVelocities: number[] = [];
+      
+      // Fetch backlog items for each completed sprint to get actual story points
+      for (const sprint of completedSprints) {
+        try {
+          const backlogResponse = await api.sprints.getSprintBacklog(sprint.id);
+          if (backlogResponse.data) {
+            const backlogItems = backlogResponse.data;
+            // Calculate completed story points (only items with status 'done')
+            const completedItems = backlogItems.filter((item: any) => item.status === 'done');
+            const completedStoryPoints = completedItems.reduce((sum: number, item: any) => sum + (item.story_point || 0), 0);
+            totalCompletedStoryPoints += completedStoryPoints;
+            sprintVelocities.push(completedStoryPoints);
+            sprintCount++;
+          }
+        } catch (backlogError) {
+          console.error(`Error fetching backlog for sprint ${sprint.id}:`, backlogError);
+          // Skip this sprint if backlog fetch fails
+        }
+      }
+      
+      // Calculate trend if we have at least 2 sprints
+      if (sprintVelocities.length >= 2) {
+        const recentVelocities = sprintVelocities.slice(-3); // Last 3 sprints
+        const firstHalf = recentVelocities.slice(0, Math.ceil(recentVelocities.length / 2));
+        const secondHalf = recentVelocities.slice(Math.ceil(recentVelocities.length / 2));
+        
+        const firstAvg = firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length;
+        const secondAvg = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length;
+        
+        const difference = secondAvg - firstAvg;
+        if (Math.abs(difference) < 2) {
+          setVelocityTrend('stable');
+        } else if (difference > 0) {
+          setVelocityTrend('improving');
+        } else {
+          setVelocityTrend('declining');
+        }
+      } else {
+        setVelocityTrend(null);
+      }
+      
+      return sprintCount > 0 ? Math.round(totalCompletedStoryPoints / sprintCount) : 0;
+    } catch (error) {
+      console.error('Error calculating velocity:', error);
+      return 0;
+    }
   };
 
-  const velocityData = calculateVelocity();
-  const averageVelocity = velocityData.length > 0 
-    ? Math.round(velocityData.reduce((sum, data) => sum + data.velocity, 0) / velocityData.length)
-    : 0;
+  const [averageVelocity, setAverageVelocity] = useState<number>(0);
+  const [isCalculatingVelocity, setIsCalculatingVelocity] = useState<boolean>(false);
+  const [velocityTrend, setVelocityTrend] = useState<'stable' | 'improving' | 'declining' | null>(null);
+
+  // Calculate velocity when sprints change
+  useEffect(() => {
+    if (sprints.length > 0) {
+      setIsCalculatingVelocity(true);
+      calculateVelocity()
+        .then(setAverageVelocity)
+        .finally(() => setIsCalculatingVelocity(false));
+    }
+  }, [sprints]);
+
+  // Early return for loading state
+  if (isLoading) {
+    return (
+      <div className="space-y-8">
+        <Breadcrumb items={breadcrumbItems} />
+        <div className="text-center py-12">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-400">Loading sprints...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Early return for error state
+  if (error) {
+    return (
+      <div className="space-y-8">
+        <Breadcrumb items={breadcrumbItems} />
+        <div className="text-center py-12">
+          <div className="text-red-500 mb-4">
+            <AlertCircle className="h-16 w-16 mx-auto" />
+          </div>
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+            Error Loading Sprints
+          </h3>
+          <p className="text-gray-600 dark:text-gray-400 mb-4">
+            {error}
+          </p>
+          <button
+            onClick={() => window.location.reload()}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -858,7 +1027,29 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
             </div>
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Velocity</p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">{averageVelocity}</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white">
+                                 {isCalculatingVelocity ? (
+                   <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-indigo-600"></span>
+                 ) : (
+                   averageVelocity
+                 )}
+              </p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                {sprints.filter(s => s.status === 'completed').length} completed {sprints.filter(s => s.status === 'completed').length === 1 ? 'sprint' : 'sprints'}
+                {velocityTrend && (
+                  <span className={`ml-2 inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium ${
+                    velocityTrend === 'improving' 
+                      ? 'bg-green-100 dark:bg-green-900/20 text-green-800 dark:text-green-400'
+                      : velocityTrend === 'declining'
+                      ? 'bg-red-100 dark:bg-red-900/20 text-red-800 dark:text-red-400'
+                      : 'bg-gray-100 dark:bg-gray-900/20 text-gray-800 dark:text-gray-400'
+                  }`}>
+                    {velocityTrend === 'improving' && '↗ Improving'}
+                    {velocityTrend === 'declining' && '↘ Declining'}
+                    {velocityTrend === 'stable' && '→ Stable'}
+                  </span>
+                )}
+              </p>
             </div>
           </div>
         </Link>
@@ -875,8 +1066,8 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
                   Active Sprint
                 </span>
               </div>
-              <h3 className="text-xl font-semibold text-gray-900 dark:text-white">{activeSprint.name}</h3>
-              <p className="text-gray-600 dark:text-gray-400 mt-1">{activeSprint.goal}</p>
+              <h3 className="text-xl font-semibold text-gray-900 dark:text-white">{activeSprint.sprintName}</h3>
+              <p className="text-gray-600 dark:text-gray-400 mt-1">{activeSprint.sprintGoal}</p>
             </div>
             <Link 
               href={`/project/${projectId}/sprint/${activeSprint.id}`}
@@ -911,11 +1102,11 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
                 <div className="flex-1 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                   <div 
                     className="bg-green-600 h-2 rounded-full" 
-                    style={{ width: `${calculateProgress(activeSprint.completedStoryPoints, activeSprint.totalStoryPoints)}%` }}
+                    style={{ width: `${calculateProgress(activeSprint.completedStoryPoints || 0, Math.max(activeSprint.totalStoryPoints || 1, 1))}%` }}
                   ></div>
                 </div>
                 <span className="text-sm font-medium text-gray-900 dark:text-white">
-                  {calculateProgress(activeSprint.completedStoryPoints, activeSprint.totalStoryPoints)}%
+                  {calculateProgress(activeSprint.completedStoryPoints || 0, Math.max(activeSprint.totalStoryPoints || 1, 1))}%
                 </span>
               </div>
             </div>
@@ -965,14 +1156,14 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
                 <div className="flex-1">
                   <div className="flex items-center gap-3 mb-2">
                     <h3 className="text-xl font-semibold text-gray-900 dark:text-white">
-                      {sprint.name}
+                      {sprint.sprintName}
                     </h3>
                     <span className={`inline-flex items-center gap-1 px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(sprint.status)}`}>
                       {getStatusIcon(sprint.status)}
                       {sprint.status.charAt(0).toUpperCase() + sprint.status.slice(1)}
                     </span>
                   </div>
-                  <p className="text-gray-600 dark:text-gray-400 mb-3">{sprint.goal}</p>
+                  <p className="text-gray-600 dark:text-gray-400 mb-3">{sprint.sprintGoal}</p>
                   <div className="flex items-center gap-6 text-sm text-gray-600 dark:text-gray-400">
                     <span className="flex items-center gap-1">
                       <Calendar className="w-4 h-4" />
@@ -980,7 +1171,7 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
                     </span>
                     <span className="flex items-center gap-1">
                       <Users className="w-4 h-4" />
-                      {sprint.teamMembers.length} members
+                      {projectDevelopers.length} {projectDevelopers.length === 1 ? 'developer' : 'developers'}
                     </span>
                     {sprint.status === 'active' && (
                       <span className="flex items-center gap-1">
@@ -1055,19 +1246,19 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
               </div>
 
               {/* Sprint Progress */}
-              {sprint.totalStoryPoints > 0 && (
+              {sprint.totalStoryPoints !== undefined && sprint.totalStoryPoints > 0 && (
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div>
                     <div className="flex justify-between items-center mb-2">
                       <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Story Points</span>
                       <span className="text-sm text-gray-600 dark:text-gray-400">
-                        {sprint.completedStoryPoints} / {sprint.totalStoryPoints}
+                        {sprint.completedStoryPoints || 0} / {sprint.totalStoryPoints || 0}
                       </span>
                     </div>
                     <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                       <div 
                         className="bg-blue-600 h-2 rounded-full" 
-                        style={{ width: `${calculateProgress(sprint.completedStoryPoints, sprint.totalStoryPoints)}%` }}
+                        style={{ width: `${calculateProgress(sprint.completedStoryPoints || 0, Math.max(sprint.totalStoryPoints || 1, 1))}%` }}
                       ></div>
                     </div>
                   </div>
@@ -1076,13 +1267,13 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
                     <div className="flex justify-between items-center mb-2">
                       <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Stories</span>
                       <span className="text-sm text-gray-600 dark:text-gray-400">
-                        {sprint.completedStories} / {sprint.totalStories}
+                        {sprint.completedStories || 0} / {sprint.totalStories || 0}
                       </span>
                     </div>
                     <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                       <div 
                         className="bg-green-600 h-2 rounded-full" 
-                        style={{ width: `${calculateProgress(sprint.completedStories, sprint.totalStories)}%` }}
+                        style={{ width: `${calculateProgress(sprint.completedStories || 0, Math.max(sprint.totalStories || 1, 1))}%` }}
                       ></div>
                     </div>
                   </div>
@@ -1091,13 +1282,13 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
                     <div className="flex justify-between items-center mb-2">
                       <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Capacity</span>
                       <span className="text-sm text-gray-600 dark:text-gray-400">
-                        {sprint.totalStoryPoints} / {sprint.capacity}
+                        {sprint.totalStoryPoints || 0} / {sprint.sprintCapacity || 0}
                       </span>
                     </div>
                     <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                       <div 
                         className="bg-purple-600 h-2 rounded-full" 
-                        style={{ width: `${calculateProgress(sprint.totalStoryPoints, sprint.capacity)}%` }}
+                        style={{ width: `${calculateProgress(sprint.totalStoryPoints || 0, sprint.sprintCapacity || 1)}%` }}
                       ></div>
                     </div>
                   </div>
@@ -1153,7 +1344,7 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
               Delete Sprint
             </h3>
             <p className="text-gray-600 dark:text-gray-400 mb-6">
-              Are you sure you want to delete "{selectedSprint.name}"? This action cannot be undone.
+              Are you sure you want to delete "{selectedSprint.sprintName}"? This action cannot be undone.
             </p>
             <div className="flex justify-end gap-3">
               <button

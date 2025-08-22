@@ -1,5 +1,5 @@
 from typing import Optional, List
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, or_
 
 from .base import CRUDBase
@@ -9,6 +9,10 @@ from ..schemas.meeting_note import MeetingNoteCreate, MeetingNoteUpdate
 
 class CRUDMeetingNote(CRUDBase[MeetingNote, MeetingNoteCreate, MeetingNoteUpdate]):
     """CRUD operations for MeetingNote."""
+    
+    def get(self, db: Session, id: int) -> Optional[MeetingNote]:
+        """Get a single meeting note with user information."""
+        return db.query(self.model).options(joinedload(self.model.user)).filter(self.model.id == id).first()
     
     def get_multi_with_pagination(
         self,
@@ -54,7 +58,7 @@ class CRUDMeetingNote(CRUDBase[MeetingNote, MeetingNoteCreate, MeetingNoteUpdate
         include_children: bool = True
     ) -> List[MeetingNote]:
         """Get notes by meeting ID."""
-        query = db.query(self.model).filter(self.model.meeting_id == meeting_id)
+        query = db.query(self.model).options(joinedload(self.model.user)).filter(self.model.meeting_id == meeting_id)
         
         if not include_children:
             # Only top-level notes
@@ -116,9 +120,10 @@ class CRUDMeetingNote(CRUDBase[MeetingNote, MeetingNoteCreate, MeetingNoteUpdate
         meeting_id: int
     ) -> List[MeetingNote]:
         """Get hierarchical note tree for a meeting."""
-        # Get all notes for the meeting
+        # Get all notes for the meeting with user information
         all_notes = (
             db.query(self.model)
+            .options(joinedload(self.model.user))
             .filter(self.model.meeting_id == meeting_id)
             .order_by(self.model.id.asc())
             .all()

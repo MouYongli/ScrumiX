@@ -10,10 +10,17 @@ class UserBase(BaseModel):
     """User basic information"""
     email: EmailStr
     username: Optional[str] = None
-    full_name: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    full_name: Optional[str] = None  # Keep for backward compatibility
     avatar_url: Optional[str] = None
+    phone: Optional[str] = None
+    department: Optional[str] = None
+    location: Optional[str] = None
+    bio: Optional[str] = None
     timezone: str = "UTC"
     language: str = "zh-CN"
+    date_format: str = "YYYY-MM-DD"
 
 class UserCreate(UserBase):
     """Create user"""
@@ -23,10 +30,17 @@ class UserUpdate(BaseModel):
     """Update user information"""
     email: Optional[EmailStr] = None
     username: Optional[str] = None
-    full_name: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    full_name: Optional[str] = None  # Keep for backward compatibility
     avatar_url: Optional[str] = None
+    phone: Optional[str] = None
+    department: Optional[str] = None
+    location: Optional[str] = None
+    bio: Optional[str] = None
     timezone: Optional[str] = None
     language: Optional[str] = None
+    date_format: Optional[str] = None
 
 class UserInDB(UserBase):
     """User information in database"""
@@ -71,7 +85,9 @@ class TokenData(BaseModel):
     user_id: Optional[Union[int, str]] = None
     email: Optional[str] = None
     scopes: List[str] = []
-    full_name: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    full_name: Optional[str] = None  # Keep for backward compatibility
     username: Optional[str] = None
     avatar_url: Optional[str] = None
     provider: Optional[str] = None
@@ -104,6 +120,45 @@ class ChangePasswordRequest(BaseModel):
     """Change password request"""
     current_password: str
     new_password: str
+
+class ProfileUpdate(BaseModel):
+    """Profile update request"""
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    full_name: Optional[str] = None  # Keep for backward compatibility
+    avatar_url: Optional[str] = None
+    phone: Optional[str] = None
+    department: Optional[str] = None
+    location: Optional[str] = None
+    bio: Optional[str] = None
+    timezone: Optional[str] = None
+    language: Optional[str] = None
+    date_format: Optional[str] = None
+
+class ProfileResponse(BaseModel):
+    """Profile response"""
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: int
+    email: str
+    username: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    full_name: Optional[str] = None  # Keep for backward compatibility
+    avatar_url: Optional[str] = None
+    phone: Optional[str] = None
+    department: Optional[str] = None
+    location: Optional[str] = None
+    bio: Optional[str] = None
+    timezone: str
+    language: str
+    date_format: str
+    is_active: bool
+    is_verified: bool
+    provider: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    last_login_at: Optional[datetime] = None
 
 class UserSessionResponse(BaseModel):
     """User session response"""

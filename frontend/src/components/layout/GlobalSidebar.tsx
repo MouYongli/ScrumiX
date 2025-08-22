@@ -58,7 +58,7 @@ const GlobalSidebar: React.FC<GlobalSidebarProps> = ({ isCollapsed, onToggle }) 
   return (
     <div className={`bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 transition-all duration-300 ${
       isCollapsed ? 'w-16' : 'w-64 lg:w-64'
-    } flex flex-col h-full`}>
+    } flex flex-col h-full`} style={{ height: 'calc(100vh - 64px)' }}>
       
       {/* Sidebar Header */}
       <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700">
@@ -127,30 +127,6 @@ const GlobalSidebar: React.FC<GlobalSidebarProps> = ({ isCollapsed, onToggle }) 
               </h3>
             </div>
           )}
-          {quickActions.map((item) => {
-            const IconComponent = item.icon;
-            const active = isActive(item.href);
-            
-            return (
-              <Link
-                key={item.name}
-                href={item.href}
-                className={`flex items-center gap-3 px-3 py-3 rounded-lg transition-colors group ${
-                  active
-                    ? 'bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400'
-                    : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-800'
-                }`}
-                title={isCollapsed ? item.name : undefined}
-              >
-                <IconComponent className={`w-5 h-5 flex-shrink-0 ${
-                  active ? 'text-green-600 dark:text-green-400' : 'text-gray-400 group-hover:text-gray-600 dark:group-hover:text-gray-300'
-                }`} />
-                {!isCollapsed && (
-                  <span className="font-medium truncate">{item.name}</span>
-                )}
-              </Link>
-            );
-          })}
         </div>
       </nav>
 
@@ -194,13 +170,13 @@ const GlobalSidebar: React.FC<GlobalSidebarProps> = ({ isCollapsed, onToggle }) 
       {/* Sidebar Footer */}
       {!isCollapsed && (
         <div className="p-4 border-t border-gray-200 dark:border-gray-700">
-                  <div className="text-xs text-gray-500 dark:text-gray-400 text-center">
-          ScrumiX v1.0 - Global Workspace
-        </div>
+          <div className="text-xs text-gray-500 dark:text-gray-400 text-center">
+            ScrumiX v1.0 - Global Workspace
+          </div>
         </div>
       )}
     </div>
   );
 };
 
-export default GlobalSidebar; 
+export default GlobalSidebar;

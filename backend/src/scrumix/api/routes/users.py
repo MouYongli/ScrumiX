@@ -5,11 +5,12 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
 
+
 from scrumix.api.core.security import get_current_user, get_current_superuser
 from scrumix.api.db.database import get_db
 from scrumix.api.crud.user import user_crud, session_crud
 from scrumix.api.schemas.user import (
-    UserResponse, UserUpdate, UserSessionResponse
+    UserResponse, UserUpdate, UserSessionResponse, ProfileUpdate, ProfileResponse, ChangePasswordRequest
 )
 
 router = APIRouter()
@@ -20,12 +21,12 @@ async def get_current_user_profile(current_user = Depends(get_current_user)):
     return current_user
 
 @router.put("/me", response_model=UserResponse)
-async def update_current_user_profile(
+async def update_current_user_basic_profile(
     user_update: UserUpdate,
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """Update current user profile"""
+    """Update current user basic profile"""
     try:
         updated_user = user_crud.update_user(db, current_user.id, user_update)
         if not updated_user:
@@ -38,6 +39,81 @@ async def update_current_user_profile(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
+        )
+
+@router.get("/me/profile", response_model=ProfileResponse)
+async def get_current_user_detailed_profile(current_user = Depends(get_current_user)):
+    """Get current user detailed profile with all fields"""
+    return current_user
+
+@router.put("/me/profile", response_model=ProfileResponse)
+async def update_current_user_profile(
+    profile_update: ProfileUpdate,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update current user profile"""
+    try:
+        # Check if this is a virtual user (Keycloak user)
+        if hasattr(current_user, '__class__') and current_user.__class__.__name__ == 'VirtualUser':
+            # For Keycloak users, we can't update the database
+            # Return the current user with updated fields for immediate UI feedback
+            # Note: In a real implementation, you might want to store Keycloak user profiles separately
+            # or integrate with Keycloak Admin API to update the profile there
+            
+            # Update the virtual user object with the new profile data
+            user_update_data = profile_update.model_dump(exclude_unset=True)
+            for field, value in user_update_data.items():
+                if hasattr(current_user, field):
+                    setattr(current_user, field, value)
+            
+            # Update the updated_at timestamp
+            current_user.updated_at = datetime.now()
+            
+            return current_user
+        else:
+            # For local users, update in database as usual
+            # Convert ProfileUpdate to UserUpdate for compatibility
+            user_update_data = profile_update.model_dump(exclude_unset=True)
+            user_update = UserUpdate(**user_update_data)
+            
+            updated_user = user_crud.update_user(db, current_user.id, user_update)
+            if not updated_user:
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="User not found"
+                )
+            return updated_user
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+@router.post("/me/change-password")
+async def change_user_password(
+    password_data: ChangePasswordRequest,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Change user password"""
+    try:
+        success = user_crud.change_password(
+            db, 
+            current_user.id, 
+            password_data.current_password, 
+            password_data.new_password
+        )
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Current password is incorrect"
+            )
+        return {"message": "Password changed successfully"}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to change password"
         )
 
 @router.get("/me/sessions", response_model=List[UserSessionResponse])

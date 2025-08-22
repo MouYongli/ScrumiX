@@ -13,7 +13,8 @@ from ..schemas.task import (
     TaskResponse,
     TaskListResponse
 )
-from ..crud.task import task
+from ..crud.task import task_crud
+from ..utils.notification_helpers import notification_helper
 
 router = APIRouter()
 
@@ -28,7 +29,7 @@ def get_tasks(
     current_user: User = Depends(get_current_user)
 ):
     """Get all tasks with pagination and optional filtering."""
-    tasks, total = task.get_multi_with_pagination(
+    tasks, total = task_crud.get_multi_with_pagination(
         db, skip=skip, limit=limit, status=status, search=search
     )
     
@@ -50,7 +51,7 @@ def create_task(
     current_user: User = Depends(get_current_user)
 ):
     """Create a new task."""
-    db_task = task.create(db=db, obj_in=task_in)
+    db_task = task_crud.create(db=db, obj_in=task_in)
     return TaskResponse.model_validate(db_task)
 
 
@@ -61,7 +62,7 @@ def get_task(
     current_user: User = Depends(get_current_user)
 ):
     """Get a specific task by ID."""
-    db_task = task.get(db=db, id=task_id)
+    db_task = task_crud.get(db=db, id=task_id)
     if not db_task:
         raise HTTPException(status_code=404, detail="Task not found")
     return TaskResponse.model_validate(db_task)
@@ -75,11 +76,37 @@ def update_task(
     current_user: User = Depends(get_current_user)
 ):
     """Update a specific task."""
-    db_task = task.get(db=db, id=task_id)
+    db_task = task_crud.get(db=db, id=task_id)
     if not db_task:
         raise HTTPException(status_code=404, detail="Task not found")
     
-    db_task = task.update(db=db, db_obj=db_task, obj_in=task_in)
+    # Store old status for notification comparison
+    old_status = db_task.status.value if db_task.status else None
+    
+    # Update the task
+    db_task = task_crud.update(db=db, db_obj=db_task, obj_in=task_in)
+    
+    # Create notifications for status changes
+    if task_in.status and old_status and task_in.status != old_status:
+        try:
+            # Get assigned users for notifications
+            assigned_user_ids = [user.id for user in db_task.users]
+            
+            notification_helper.create_task_status_changed_notification(
+                db=db,
+                task_id=db_task.id,
+                task_title=db_task.title,
+                old_status=old_status,
+                new_status=task_in.status,
+                changed_by_user_id=current_user.id,
+                project_id=db_task.backlog.project_id if db_task.backlog else None,
+                assigned_user_ids=assigned_user_ids,
+                sprint_id=db_task.sprint_id
+            )
+        except Exception as e:
+            # Log the error but don't fail the task update
+            print(f"Failed to create task status change notification: {e}")
+    
     return TaskResponse.model_validate(db_task)
 
 
@@ -90,11 +117,11 @@ def delete_task(
     current_user: User = Depends(get_current_user)
 ):
     """Delete a specific task."""
-    db_task = task.get(db=db, id=task_id)
+    db_task = task_crud.get(db=db, id=task_id)
     if not db_task:
         raise HTTPException(status_code=404, detail="Task not found")
     
-    task.remove(db=db, id=task_id)
+    task_crud.remove(db=db, id=task_id)
     return {"message": "Task deleted successfully"}
 
 
@@ -107,7 +134,7 @@ def get_tasks_by_status(
     current_user: User = Depends(get_current_user)
 ):
     """Get tasks by status."""
-    tasks = task.get_by_status(db=db, status=status, skip=skip, limit=limit)
+    tasks = task_crud.get_by_status(db=db, status=status, skip=skip, limit=limit)
     return [TaskResponse.model_validate(t) for t in tasks]
 
 
@@ -120,7 +147,7 @@ def search_tasks(
     current_user: User = Depends(get_current_user)
 ):
     """Search tasks by title and description."""
-    tasks = task.search_tasks(db=db, query=query, skip=skip, limit=limit)
+    tasks = task_crud.search_tasks(db=db, query=query, skip=skip, limit=limit)
     return [TaskResponse.model_validate(t) for t in tasks]
 
 
@@ -131,7 +158,7 @@ def get_recent_tasks(
     current_user: User = Depends(get_current_user)
 ):
     """Get recently updated tasks."""
-    tasks = task.get_recent_tasks(db=db, limit=limit)
+    tasks = task_crud.get_recent_tasks(db=db, limit=limit)
     return [TaskResponse.model_validate(t) for t in tasks]
 
 
@@ -141,7 +168,7 @@ def get_task_statistics(
     current_user: User = Depends(get_current_user)
 ):
     """Get task statistics by status."""
-    stats = task.get_task_statistics(db=db)
+    stats = task_crud.get_task_statistics(db=db)
     return {
         "statistics": stats,
         "message": "Task statistics retrieved successfully"
@@ -156,7 +183,7 @@ def update_task_status(
     current_user: User = Depends(get_current_user)
 ):
     """Update task status only."""
-    db_task = task.update_status(db=db, task_id=task_id, status=status)
+    db_task = task_crud.update_status(db=db, task_id=task_id, status=status)
     if not db_task:
         raise HTTPException(status_code=404, detail="Task not found")
     return TaskResponse.model_validate(db_task) 

@@ -3,6 +3,16 @@ from typing import Optional
 from datetime import datetime
 
 
+class UserCreator(BaseModel):
+    """User creator information for action items."""
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: int
+    username: Optional[str] = None
+    email: str
+    full_name: Optional[str] = None
+
+
 class MeetingActionItemBase(BaseModel):
     """Base meeting action item schema with common fields."""
     meeting_id: int = Field(..., gt=0, description="ID of the meeting this action item belongs to")
@@ -41,6 +51,7 @@ class MeetingActionItemInDB(MeetingActionItemBase):
     model_config = ConfigDict(from_attributes=True)
     
     id: int = Field(alias="action_id")
+    user_id: int = Field(description="ID of the user who created the action item")
     created_at: datetime
     updated_at: datetime
 
@@ -55,6 +66,7 @@ class MeetingActionItemResponse(BaseModel):
     dueDate: Optional[datetime] = Field(alias="due_date")
     createdAt: datetime = Field(alias="created_at")
     updatedAt: datetime = Field(alias="updated_at")
+    creator: UserCreator = Field(alias="user", description="User who created the action item")
 
 
 class MeetingActionItemListResponse(BaseModel):

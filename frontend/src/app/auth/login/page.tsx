@@ -3,7 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Eye, EyeOff, Mail, Lock, ArrowRight, Github, Shield } from 'lucide-react';
+import { Eye, EyeOff, Mail, Lock, ArrowRight, Github, Shield, Home } from 'lucide-react';
 
 const LoginPage = () => {
   const router = useRouter();
@@ -76,7 +76,7 @@ const LoginPage = () => {
     setIsLoading(true);
     
     try {
-      // Use REAL authentication instead of mock
+      // Call backend authentication API
       const { login } = await import('../../../utils/auth');
       
       const loginData = await login(
@@ -85,7 +85,7 @@ const LoginPage = () => {
         formData.rememberMe
       );
       
-      console.log('Real login successful:', loginData.user);
+      console.log('Backend login successful:', loginData.user);
       console.log('Auth method:', loginData.auth_method || 'cookie');
       
       // Redirect to workspace
@@ -183,7 +183,7 @@ const LoginPage = () => {
         <div className="relative z-10 flex flex-col justify-center px-12 text-white">
           <div className="max-w-md">
             <h1 className="text-4xl font-bold mb-6">
-              Welcome Back to Scrumix
+              Welcome Back to ScrumiX
             </h1>
             <p className="text-xl text-blue-100 mb-8">
               Efficient agile project management platform that makes team collaboration simpler
@@ -191,19 +191,25 @@ const LoginPage = () => {
             <div className="space-y-4">
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
-                  ✓
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+                  </svg>
                 </div>
                 <span>Visual Scrum board management</span>
               </div>
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
-                  ✓
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+                  </svg>
                 </div>
                 <span>Real-time team collaboration and communication</span>
               </div>
               <div className="flex items-center gap-3">
                 <div className="w-8 h-8 bg-white/20 rounded-full flex items-center justify-center">
-                  ✓
+                  <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M9 16.17L4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41L9 16.17z"/>
+                  </svg>
                 </div>
                 <span>Detailed project data analysis</span>
               </div>
@@ -217,23 +223,39 @@ const LoginPage = () => {
       </div>
 
       {/* Right login form */}
-      <div className="flex-1 flex flex-col justify-center px-6 sm:px-12 lg:px-16 xl:px-20">
-        <div className="w-full max-w-md mx-auto">
-          {/* Top Logo */}
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center gap-2 mb-4">
-              <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-xl">S</span>
+      <div className="flex-1 flex flex-col px-6 sm:px-12 lg:px-16 xl:px-20 relative">
+        {/* Home Button - Fixed position top-right */}
+        <div className="absolute top-6 right-6 z-10">
+          <Link
+            href="/"
+            className="group inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-full shadow-sm hover:shadow-md hover:border-blue-300 dark:hover:border-blue-500 transition-all duration-200"
+            title="Back to Home"
+          >
+            <Home className="w-4 h-4 text-gray-500 dark:text-gray-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors" />
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
+              Home
+            </span>
+          </Link>
+        </div>
+
+        {/* Centered form content */}
+        <div className="flex-1 flex items-center justify-center">
+          <div className="w-full max-w-md">
+            {/* Logo and title */}
+            <div className="text-center mb-8">
+              <div className="inline-flex items-center gap-2 mb-4">
+                <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center">
+                  <span className="text-white font-bold text-xl">S</span>
+                </div>
+                <span className="text-2xl font-bold text-gray-900 dark:text-white">ScrumiX</span>
               </div>
-              <span className="text-2xl font-bold text-gray-900 dark:text-white">Scrumix</span>
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                Sign in to your account
+              </h2>
+              <p className="text-gray-600 dark:text-gray-400 mt-2">
+                Continue your agile project management journey
+              </p>
             </div>
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-              Sign in to your account
-            </h2>
-            <p className="text-gray-600 dark:text-gray-400 mt-2">
-              Continue your agile project management journey
-            </p>
-          </div>
 
           {/* Social login */}
           <div className="space-y-3 mb-6">
@@ -241,7 +263,9 @@ const LoginPage = () => {
               onClick={() => handleSocialLogin('google')}
               className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
             >
-              <span className="text-lg">🔍</span>
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12.545,10.239v3.821h5.445c-0.712,2.315-2.647,3.972-5.445,3.972c-3.332,0-6.033-2.701-6.033-6.032s2.701-6.032,6.033-6.032c1.498,0,2.866,0.549,3.921,1.453l2.814-2.814C17.503,2.988,15.139,2,12.545,2C7.021,2,2.543,6.477,2.543,12s4.478,10,10.002,10c8.396,0,10.249-7.85,9.426-11.748L12.545,10.239z"/>
+              </svg>
               <span className="text-gray-700 dark:text-gray-300">Sign in with Google</span>
             </button>
             <button
@@ -405,6 +429,7 @@ const LoginPage = () => {
                 Sign up for free
               </Link>
             </p>
+          </div>
           </div>
         </div>
       </div>

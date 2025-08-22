@@ -78,6 +78,22 @@ class SprintResponse(BaseModel):
     updated_at: datetime = Field(..., alias="updatedAt")
     
     @classmethod
+    def from_orm(cls, obj):
+        """Create response object from ORM model (for compatibility)"""
+        return cls(
+            id=obj.id,
+            sprint_name=obj.sprint_name,
+            sprint_goal=obj.sprint_goal,
+            start_date=obj.start_date,
+            end_date=obj.end_date,
+            status=obj.status,
+            sprint_capacity=obj.sprint_capacity,
+            project_id=obj.project_id,
+            created_at=obj.created_at,
+            updated_at=obj.updated_at
+        )
+    
+    @classmethod
     def from_db_model(cls, sprint):
         """Create a response model from an ORM model."""
         return cls(

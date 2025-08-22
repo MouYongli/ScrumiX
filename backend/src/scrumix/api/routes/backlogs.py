@@ -14,6 +14,7 @@ from scrumix.api.schemas.backlog import (
     BacklogCreate,
     BacklogUpdate
 )
+from scrumix.api.utils.notification_helpers import notification_helper
 
 router = APIRouter(tags=["backlogs"])
 
@@ -24,10 +25,13 @@ def get_backlogs(
     limit: int = Query(100, ge=1, le=1000, description="Number of records to return"),
     status: Optional[BacklogStatus] = Query(None, description="Filter by status"),
     priority: Optional[BacklogPriority] = Query(None, description="Filter by priority"),
+    item_type: Optional[BacklogType] = Query(None, description="Filter by item type"),
     project_id: Optional[int] = Query(None, description="Filter by project ID"),
     sprint_id: Optional[int] = Query(None, description="Filter by sprint ID"),
     assigned_to_id: Optional[int] = Query(None, description="Filter by assigned user ID"),
     search: Optional[str] = Query(None, description="Search term for title and description"),
+    include_children: bool = Query(False, description="Include child items"),
+    include_acceptance_criteria: bool = Query(False, description="Include acceptance criteria"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_hybrid)
 ) -> List[BacklogResponse]:
@@ -36,19 +40,24 @@ def get_backlogs(
         if search:
             backlogs = backlog_crud.search_backlogs(db, search, skip, limit)
         else:
+            print(f"Fetching backlogs with include_acceptance_criteria={include_acceptance_criteria}")
             backlogs = backlog_crud.get_backlogs(
                 db,
                 skip,
                 limit,
                 status,
                 priority,
-                None,  # item_type
+                item_type,
                 project_id,
                 sprint_id,
                 assigned_to_id,
                 False,  # root_only
-                False   # include_children
+                include_children,
+                include_acceptance_criteria
             )
+            print(f"Retrieved {len(backlogs)} backlogs")
+            for backlog in backlogs:
+                print(f"Backlog {backlog.id}: has acceptance_criteria={hasattr(backlog, 'acceptance_criteria')}, count={len(backlog.acceptance_criteria) if hasattr(backlog, 'acceptance_criteria') else 'N/A'}")
         
         # Convert to response format
         return [
@@ -87,6 +96,8 @@ def create_backlog(
     """Create a new backlog item"""
     try:
         created_backlog = backlog_crud.create(db=db, obj_in=backlog)
+        
+
         return BacklogResponse.from_db_model(created_backlog)
     except Exception as e:
         raise HTTPException(
@@ -111,8 +122,18 @@ def update_backlog(
         )
     
     try:
-        updated_backlog = backlog_crud.update(db=db, db_obj=existing_backlog, obj_in=backlog)
+        updated_backlog = backlog_crud.update_backlog(db=db, backlog_id=backlog_id, backlog_update=backlog)
+        if not updated_backlog:
+            raise HTTPException(
+                status_code=fastapi_status.HTTP_404_NOT_FOUND,
+                detail="Backlog item not found or update failed"
+            )
         return BacklogResponse.from_db_model(updated_backlog)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=fastapi_status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
     except Exception as e:
         raise HTTPException(
             status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -152,16 +173,23 @@ def update_backlog_status(
     current_user: User = Depends(get_current_user_hybrid)
 ) -> BacklogResponse:
     """Update backlog status"""
-    existing_backlog = backlog_crud.get(db=db, id=backlog_id)
-    if not existing_backlog:
-        raise HTTPException(
-            status_code=fastapi_status.HTTP_404_NOT_FOUND,
-            detail="Backlog not found"
-        )
-    
     try:
-        updated_backlog = backlog_crud.update_status(db=db, db_obj=existing_backlog, status=status)
+        # Create a BacklogUpdate object with just the status field
+        from scrumix.api.schemas.backlog import BacklogUpdate
+        status_update = BacklogUpdate(status=status)
+        
+        updated_backlog = backlog_crud.update_backlog(db=db, backlog_id=backlog_id, backlog_update=status_update)
+        if not updated_backlog:
+            raise HTTPException(
+                status_code=fastapi_status.HTTP_404_NOT_FOUND,
+                detail="Backlog item not found or update failed"
+            )
         return BacklogResponse.from_db_model(updated_backlog)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=fastapi_status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
     except Exception as e:
         raise HTTPException(
             status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR,

@@ -5,22 +5,25 @@ import { User, Mail, Phone, MapPin, Calendar, Camera, Save, Lock, Eye, EyeOff, E
 import Breadcrumb from '@/components/common/Breadcrumb';
 import { useAuth } from '@/components/auth/AuthGuard';
 import { getCurrentUser, getAuthProvider } from '@/utils/auth';
+import { api } from '@/utils/api';
 
 const ProfilePage = () => {
   const { user: authUser, isAuthenticated } = useAuth();
   const [userInfo, setUserInfo] = useState({
     id: '',
-    name: '',
+    firstName: '',
+    lastName: '',
+    name: '', // Keep for backward compatibility
     email: '',
     phone: '',
     department: '',
-    position: '',
     location: '',
     bio: '',
     joinDate: '',
     avatar: null as string | null,
     provider: '',
     is_keycloak_user: false,
+    dateFormat: 'YYYY-MM-DD',
   });
 
   const [isEditing, setIsEditing] = useState(false);
@@ -39,51 +42,191 @@ const ProfilePage = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [successMessage, setSuccessMessage] = useState<string>('');
 
-  // Load user information
-  useEffect(() => {
-    const loadUserData = () => {
-      const currentUser = getCurrentUser();
-      const authProvider = getAuthProvider();
-      const isKeycloakUser = authProvider === 'keycloak';
+  // Load user information from backend
+  const loadUserData = async () => {
+    try {
+              const response = await api.users.getProfile();
+        
+        if (response.data) {
+          const user = response.data;
+        const authProvider = getAuthProvider();
+        const isKeycloakUser = authProvider === 'keycloak';
+        
+        const newUserInfo = {
+          id: String(user.id) || '1',
+          firstName: user.first_name || '',
+          lastName: user.last_name || '',
+          name: user.full_name || user.username || user.email.split('@')[0],
+          email: user.email || '',
+          phone: user.phone || '',
+          department: user.department || '',
+          location: user.location || '',
+          bio: user.bio || '',
+          joinDate: user.created_at ? new Date(user.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+          avatar: user.avatar_url || null,
+          provider: user.provider || 'local',
+          is_keycloak_user: isKeycloakUser,
+          dateFormat: user.date_format || 'YYYY-MM-DD',
+        };
+        
+        setUserInfo(newUserInfo);
+        
+        // Also update localStorage with the fresh backend data to keep it in sync
+        const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+        const updatedUser = {
+          ...currentUser,
+          full_name: user.full_name || currentUser.full_name,
+          phone: user.phone || currentUser.phone,
+          department: user.department || currentUser.department,
+          location: user.location || currentUser.location,
+          bio: user.bio || currentUser.bio,
+          avatar_url: user.avatar_url || currentUser.avatar_url,
+          provider: user.provider || currentUser.provider,
+        };
+        
+        localStorage.setItem('user', JSON.stringify(updatedUser));
+      } else {
+        console.warn('No data received from backend, falling back to localStorage');
+        // Only fallback to localStorage if backend fails completely
+        const currentUser = getCurrentUser();
+        if (currentUser) {
+          const authProvider = getAuthProvider();
+          const isKeycloakUser = authProvider === 'keycloak';
+          
+          const fallbackUserInfo = {
+            id: String(currentUser.id) || '1',
+            firstName: (currentUser as any).first_name || '',
+            lastName: (currentUser as any).last_name || '',
+            name: currentUser.full_name || currentUser.username || currentUser.email.split('@')[0],
+            email: currentUser.email || '',
+            phone: (currentUser as any).phone || '',
+            department: (currentUser as any).department || '',
+            location: (currentUser as any).location || '',
+            bio: (currentUser as any).bio || '',
+            joinDate: (currentUser as any).joinDate || new Date().toISOString().split('T')[0],
+            avatar: currentUser.avatar_url || null,
+            provider: currentUser.provider || 'local',
+            is_keycloak_user: isKeycloakUser,
+            dateFormat: (currentUser as any).date_format || 'YYYY-MM-DD',
+          };
+          
+                  setUserInfo(fallbackUserInfo);
+        }
+      }
+    } catch (error) {
+      console.error('Failed to load user profile from backend:', error);
+      console.log('Falling back to localStorage data...');
       
+      // Only use localStorage as absolute last resort
+      const currentUser = getCurrentUser();
       if (currentUser) {
-        setUserInfo({
-          id: currentUser.id || '1',
+        const authProvider = getAuthProvider();
+        const isKeycloakUser = authProvider === 'keycloak';
+        
+        const fallbackUserInfo = {
+          id: String(currentUser.id) || '1',
+          firstName: (currentUser as any).first_name || '',
+          lastName: (currentUser as any).last_name || '',
           name: currentUser.full_name || currentUser.username || currentUser.email.split('@')[0],
           email: currentUser.email || '',
           phone: (currentUser as any).phone || '',
-          department: (currentUser as any).department || 'Product Development',
-          position: (currentUser as any).position || 'Scrum Master',
-          location: (currentUser as any).location || 'Remote',
-          bio: (currentUser as any).bio || `${isKeycloakUser ? 'Authenticated via Keycloak SSO. ' : ''}Passionate about agile development, dedicated to improving team collaboration efficiency.`,
+          department: (currentUser as any).department || '',
+          location: (currentUser as any).location || '',
+          bio: (currentUser as any).bio || '',
           joinDate: (currentUser as any).joinDate || new Date().toISOString().split('T')[0],
           avatar: currentUser.avatar_url || null,
           provider: currentUser.provider || 'local',
           is_keycloak_user: isKeycloakUser,
-        });
-      } else {
-        // Fallback for unauthenticated users
-        setUserInfo({
-          id: '1',
-          name: 'Guest User',
-          email: 'guest@example.com',
-          phone: '',
-          department: 'Product Development',
-          position: 'Scrum Master',
-          location: 'Remote',
-          bio: 'Passionate about agile development, dedicated to improving team collaboration efficiency.',
-          joinDate: '2023-01-15',
-          avatar: null,
-          provider: 'local',
-          is_keycloak_user: false,
-        });
+          dateFormat: (currentUser as any).date_format || 'YYYY-MM-DD',
+        };
+        
+        setUserInfo(fallbackUserInfo);
+      }
+    }
+  };
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      loadUserData();
+    }
+  }, [authUser, isAuthenticated]);
+
+
+
+  // Periodically refresh profile data to keep localStorage in sync
+  useEffect(() => {
+    if (!isAuthenticated) return;
+    
+    const refreshInterval = setInterval(async () => {
+      try {
+        const response = await api.users.getProfile();
+        if (response.data) {
+          const user = response.data;
+          // Only update localStorage if we have new data
+          const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+          if (user.department !== currentUser.department || 
+              user.phone !== currentUser.phone || 
+              user.location !== currentUser.location || 
+              user.bio !== currentUser.bio) {
+            
+            const updatedUser = {
+              ...currentUser,
+              full_name: user.full_name || currentUser.full_name,
+              phone: user.phone || currentUser.phone,
+              department: user.department || currentUser.department,
+              location: user.location || currentUser.location,
+              bio: user.bio || currentUser.bio,
+              avatar_url: user.avatar_url || currentUser.avatar_url,
+              provider: user.provider || currentUser.provider,
+            };
+            
+            localStorage.setItem('user', JSON.stringify(updatedUser));
+          }
+        }
+      } catch (error) {
+        console.error('Periodic profile refresh failed:', error);
+      }
+    }, 30000); // Refresh every 30 seconds
+    
+    return () => clearInterval(refreshInterval);
+  }, [isAuthenticated]);
+
+        // Force refresh profile data when user navigates to profile page
+      useEffect(() => {
+        if (isAuthenticated && authUser) {
+          // Small delay to ensure the component is fully mounted
+          const timer = setTimeout(() => {
+            loadUserData();
+          }, 100);
+          return () => clearTimeout(timer);
+        }
+      }, [authUser]);
+
+  // Reload profile data when user returns to the tab (e.g., after page refresh)
+  useEffect(() => {
+    const handleFocus = () => {
+      if (isAuthenticated) {
+        loadUserData();
       }
     };
 
-    loadUserData();
-  }, [authUser, isAuthenticated]);
+    window.addEventListener('focus', handleFocus);
+    return () => window.removeEventListener('focus', handleFocus);
+  }, [isAuthenticated]);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  // Reload profile data when user navigates back to the profile page
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && isAuthenticated) {
+        loadUserData();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [isAuthenticated]);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setUserInfo(prev => ({
       ...prev,
@@ -120,8 +263,12 @@ const ProfilePage = () => {
   const validateProfile = () => {
     const newErrors: { [key: string]: string } = {};
 
-    if (!userInfo.name.trim()) {
-      newErrors.name = 'Please enter your name';
+    if (!userInfo.firstName.trim()) {
+      newErrors.firstName = 'Please enter your first name';
+    }
+
+    if (!userInfo.lastName.trim()) {
+      newErrors.lastName = 'Please enter your last name';
     }
 
     if (!userInfo.email) {
@@ -165,49 +312,125 @@ const ProfilePage = () => {
     setIsLoading(true);
     
     try {
-      // Mock save API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      // Update user information in localStorage with proper field mapping
-      const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
-      const updatedUser = {
-        ...currentUser,
-        // Map profile fields to User interface fields
-        full_name: userInfo.name,
-        email: userInfo.email,
-        avatar_url: userInfo.avatar,
-        username: userInfo.name.toLowerCase().replace(/\s+/g, ''), // Generate username from name
-        // Keep additional profile fields as extended properties
+      // Prepare profile data for backend
+      const profileData = {
+        first_name: userInfo.firstName,
+        last_name: userInfo.lastName,
         phone: userInfo.phone,
         department: userInfo.department,
-        position: userInfo.position,
         location: userInfo.location,
         bio: userInfo.bio,
-        joinDate: userInfo.joinDate,
-        provider: userInfo.provider,
+        avatar_url: userInfo.avatar,
+        date_format: userInfo.dateFormat,
+      };
+      
+      // Debug: Log what we're about to send
+      console.log('About to send profile data:', profileData);
+      console.log('userInfo.department value:', userInfo.department);
+      console.log('userInfo.department type:', typeof userInfo.department);
+
+      const response = await api.users.updateProfile(profileData);
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
+
+      // Debug: Log the response to see what we're getting
+      console.log('Profile update response:', response);
+      console.log('Profile data sent:', profileData);
+      console.log('Current userInfo before update:', userInfo);
+
+      // Update userInfo state with the response data from backend
+      if (response.data) {
+        const updatedData = response.data;
+        const authProvider = getAuthProvider();
+        const isKeycloakUser = authProvider === 'keycloak';
+        
+        const newUserInfo = {
+          id: String(updatedData.id) || userInfo.id,
+          firstName: updatedData.first_name !== undefined ? updatedData.first_name : userInfo.firstName,
+          lastName: updatedData.last_name !== undefined ? updatedData.last_name : userInfo.lastName,
+          name: updatedData.full_name || userInfo.name,
+          email: updatedData.email || userInfo.email,
+          phone: updatedData.phone !== undefined ? updatedData.phone : userInfo.phone,
+          department: updatedData.department !== undefined ? updatedData.department : userInfo.department,
+          location: updatedData.location !== undefined ? updatedData.location : userInfo.location,
+          bio: updatedData.bio !== undefined ? updatedData.bio : userInfo.bio,
+          joinDate: updatedData.created_at ? new Date(updatedData.created_at).toISOString().split('T')[0] : userInfo.joinDate,
+          avatar: updatedData.avatar_url !== undefined ? updatedData.avatar_url : userInfo.avatar,
+          provider: updatedData.provider || 'local',
+          is_keycloak_user: isKeycloakUser,
+          dateFormat: updatedData.date_format !== undefined ? updatedData.date_format : userInfo.dateFormat,
+        };
+        
+        console.log('New userInfo to be set:', newUserInfo);
+        setUserInfo(newUserInfo);
+        console.log('setUserInfo called with:', newUserInfo);
+      }
+
+      // Update localStorage with fresh data from backend for immediate header update
+      const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+      const backendData = response.data || {};
+      const updatedUser = {
+        ...currentUser,
+        full_name: backendData.full_name !== undefined ? backendData.full_name : userInfo.name,
+        avatar_url: backendData.avatar_url !== undefined ? backendData.avatar_url : userInfo.avatar,
+        phone: backendData.phone !== undefined ? backendData.phone : userInfo.phone,
+        department: backendData.department !== undefined ? backendData.department : userInfo.department,
+        location: backendData.location !== undefined ? backendData.location : userInfo.location,
+        bio: backendData.bio !== undefined ? backendData.bio : userInfo.bio,
+        provider: backendData.provider || userInfo.provider,
         is_verified: currentUser.is_verified || true
       };
       
-      // Update localStorage - this will trigger the storage change listener in useAuth()
       localStorage.setItem('user', JSON.stringify(updatedUser));
       
-      // Trigger a storage event manually for same-tab updates
+      // Trigger storage event for header update
       window.dispatchEvent(new StorageEvent('storage', {
         key: 'user',
         newValue: JSON.stringify(updatedUser),
         oldValue: JSON.stringify(currentUser)
       }));
       
-      setIsEditing(false);
+      // Force reload profile data from backend to ensure consistency
+      try {
+        const refreshResponse = await api.users.getProfile();
+        if (refreshResponse.data) {
+          const refreshedUser = refreshResponse.data;
+          const authProvider = getAuthProvider();
+          const isKeycloakUser = authProvider === 'keycloak';
+          
+          const refreshedUserInfo = {
+            id: String(refreshedUser.id) || '1',
+            firstName: refreshedUser.first_name || '',
+            lastName: refreshedUser.last_name || '',
+            name: refreshedUser.full_name || refreshedUser.username || refreshedUser.email.split('@')[0],
+            email: refreshedUser.email || '',
+            phone: refreshedUser.phone || '',
+            department: refreshedUser.department || '',
+            location: refreshedUser.location || '',
+            bio: refreshedUser.bio || '',
+            joinDate: refreshedUser.created_at ? new Date(refreshedUser.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+            avatar: refreshedUser.avatar_url || null,
+            provider: refreshedUser.provider || 'local',
+            is_keycloak_user: isKeycloakUser,
+            dateFormat: refreshedUser.date_format || 'YYYY-MM-DD',
+          };
+          
+          setUserInfo(refreshedUserInfo);
+        }
+      } catch (refreshError) {
+        console.error('Failed to refresh profile data after update:', refreshError);
+      }
       
-      // Show success message
-      setSuccessMessage('Profile updated successfully! Changes will appear in the header.');
+      setIsEditing(false);
+      setSuccessMessage('Profile updated successfully! Changes have been saved to the database.');
       
       // Clear success message after 3 seconds
       setTimeout(() => setSuccessMessage(''), 3000);
       
     } catch (error) {
-      setErrors({ submit: 'Save failed, please try again later' });
+      setErrors({ submit: error instanceof Error ? error.message : 'Save failed, please try again later' });
     } finally {
       setIsLoading(false);
     }
@@ -221,8 +444,14 @@ const ProfilePage = () => {
     setIsLoading(true);
     
     try {
-      // Mock password change API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      const response = await api.users.changePassword({
+        current_password: passwordData.currentPassword,
+        new_password: passwordData.newPassword
+      });
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
       
       setIsChangingPassword(false);
       setPasswordData({
@@ -230,9 +459,10 @@ const ProfilePage = () => {
         newPassword: '',
         confirmPassword: '',
       });
-      // Success message can be added here
+      setSuccessMessage('Password changed successfully!');
+      setTimeout(() => setSuccessMessage(''), 3000);
     } catch (error) {
-      setErrors({ submit: 'Password change failed, please try again later' });
+      setErrors({ submit: error instanceof Error ? error.message : 'Password change failed, please try again later' });
     } finally {
       setIsLoading(false);
     }
@@ -283,7 +513,7 @@ const ProfilePage = () => {
     return (
       <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
         <span className="text-white font-bold text-2xl">
-          {userInfo.name.charAt(0).toUpperCase()}
+          {(userInfo.firstName || userInfo.name).charAt(0).toUpperCase()}
         </span>
       </div>
     );
@@ -361,57 +591,32 @@ const ProfilePage = () => {
                   </label>
                 )}
               </div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mt-4">
-                {userInfo.name}
-              </h3>
-              <p className="text-gray-600 dark:text-gray-400">{userInfo.position}</p>
-              <p className="text-sm text-gray-500 dark:text-gray-400">{userInfo.department}</p>
               
-              {/* Keycloak authentication indicator */}
-              {userInfo.is_keycloak_user && (
-                <div className="mt-3 inline-flex items-center gap-2 px-3 py-1 bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 rounded-full text-sm">
+              {/* Authentication type badge - positioned prominently */}
+              <div className="mt-3 mb-2">
+                {userInfo.is_keycloak_user ? (
+                  <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-full text-sm font-medium shadow-sm">
                   <Shield className="w-4 h-4" />
                   <span>Keycloak SSO</span>
+                    <div className="w-2 h-2 bg-green-300 rounded-full animate-pulse"></div>
+                  </div>
+                ) : (
+                  <div className="inline-flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-gray-500 to-gray-600 text-white rounded-full text-sm font-medium shadow-sm">
+                    <Shield className="w-4 h-4" />
+                    <span>Local Account</span>
                 </div>
               )}
             </div>
 
-            {/* Quick info */}
-            <div className="space-y-3">
-              <div className="flex items-center gap-3 text-sm">
-                <Mail className="w-4 h-4 text-gray-400" />
-                <span className="text-gray-600 dark:text-gray-400">{userInfo.email}</span>
-              </div>
-              {userInfo.phone && (
-                <div className="flex items-center gap-3 text-sm">
-                  <Phone className="w-4 h-4 text-gray-400" />
-                  <span className="text-gray-600 dark:text-gray-400">{userInfo.phone}</span>
-                </div>
-              )}
-              <div className="flex items-center gap-3 text-sm">
-                <MapPin className="w-4 h-4 text-gray-400" />
-                <span className="text-gray-600 dark:text-gray-400">{userInfo.location}</span>
-              </div>
-              <div className="flex items-center gap-3 text-sm">
-                <Calendar className="w-4 h-4 text-gray-400" />
-                <span className="text-gray-600 dark:text-gray-400">
-                  Joined on {new Date(userInfo.joinDate).toLocaleDateString('en-US')}
-                </span>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mt-2">
+                {userInfo.firstName && userInfo.lastName 
+                  ? `${userInfo.firstName} ${userInfo.lastName}` 
+                  : userInfo.name}
+              </h3>
+              <p className="text-sm text-gray-500 dark:text-gray-400">{userInfo.email}</p>
               </div>
               
-              {/* Authentication provider info */}
-              <div className="flex items-center gap-3 text-sm">
-                <Shield className="w-4 h-4 text-gray-400" />
-                <span className="text-gray-600 dark:text-gray-400">
-                  {userInfo.is_keycloak_user ? 'Keycloak SSO Authentication' : 'Local Authentication'}
-                </span>
-                {userInfo.is_keycloak_user && (
-                  <span className="bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 px-2 py-1 rounded-full text-xs">
-                    Verified
-                  </span>
-                )}
-              </div>
-            </div>
+            {/* Remove the old authentication info section since it's now integrated above */}
           </div>
         </div>
 
@@ -548,23 +753,43 @@ const ProfilePage = () => {
             </h2>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Name */}
+              {/* First Name */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Name
+                  First Name
                 </label>
                 <input
                   type="text"
-                  name="name"
-                  value={userInfo.name}
+                  name="firstName"
+                  value={userInfo.firstName}
                   onChange={handleInputChange}
                   disabled={!isEditing}
                   className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white transition-colors ${
                     !isEditing ? 'bg-gray-50 dark:bg-gray-600' : ''
-                  } ${errors.name ? 'border-red-300 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'}`}
+                  } ${errors.firstName ? 'border-red-300 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'}`}
                 />
-                {errors.name && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.name}</p>
+                {errors.firstName && (
+                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.firstName}</p>
+                )}
+              </div>
+
+              {/* Last Name */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Last Name
+                </label>
+                <input
+                  type="text"
+                  name="lastName"
+                  value={userInfo.lastName}
+                  onChange={handleInputChange}
+                  disabled={!isEditing}
+                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white transition-colors ${
+                    !isEditing ? 'bg-gray-50 dark:bg-gray-600' : ''
+                  } ${errors.lastName ? 'border-red-300 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'}`}
+                />
+                {errors.lastName && (
+                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.lastName}</p>
                 )}
               </div>
 
@@ -625,23 +850,6 @@ const ProfilePage = () => {
                 />
               </div>
 
-              {/* Position */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Position
-                </label>
-                <input
-                  type="text"
-                  name="position"
-                  value={userInfo.position}
-                  onChange={handleInputChange}
-                  disabled={!isEditing}
-                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white transition-colors ${
-                    !isEditing ? 'bg-gray-50 dark:bg-gray-600' : ''
-                  } border-gray-300 dark:border-gray-600`}
-                />
-              </div>
-
               {/* Location */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -657,6 +865,29 @@ const ProfilePage = () => {
                     !isEditing ? 'bg-gray-50 dark:bg-gray-600' : ''
                   } border-gray-300 dark:border-gray-600`}
                 />
+              </div>
+
+              {/* Date Format */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Date Format
+                </label>
+                <select
+                  name="dateFormat"
+                  value={userInfo.dateFormat}
+                  onChange={handleInputChange}
+                  disabled={!isEditing}
+                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white transition-colors ${
+                    !isEditing ? 'bg-gray-50 dark:bg-gray-600' : ''
+                  } border-gray-300 dark:border-gray-600`}
+                >
+                  <option value="YYYY-MM-DD">YYYY-MM-DD (2024-12-31)</option>
+                  <option value="MM/DD/YYYY">MM/DD/YYYY (12/31/2024)</option>
+                  <option value="DD/MM/YYYY">DD/MM/YYYY (31/12/2024)</option>
+                  <option value="DD-MM-YYYY">DD-MM-YYYY (31-12-2024)</option>
+                  <option value="MMM DD, YYYY">MMM DD, YYYY (Dec 31, 2024)</option>
+                  <option value="DD MMM YYYY">DD MMM YYYY (31 Dec 2024)</option>
+                </select>
               </div>
             </div>
 
@@ -693,26 +924,37 @@ const ProfilePage = () => {
                   Save Changes
                 </button>
                 <button
-                  onClick={() => {
+                  onClick={async () => {
                     setIsEditing(false);
                     setErrors({});
                     setSuccessMessage('');
-                    // Re-load original data
-                    const userData = localStorage.getItem('user');
-                    if (userData) {
-                      const user = JSON.parse(userData);
-                      setUserInfo(prev => ({ 
-                        ...prev, 
-                        name: user.full_name || user.username || user.email?.split('@')[0] || prev.name,
-                        email: user.email || prev.email,
-                        avatar: user.avatar_url || prev.avatar,
-                        phone: user.phone || prev.phone,
-                        department: user.department || prev.department,
-                        position: user.position || prev.position,
-                        location: user.location || prev.location,
-                        bio: user.bio || prev.bio,
-                        provider: user.provider || prev.provider
-                      }));
+                    // Re-load original data from backend
+                    try {
+                      const response = await api.users.getProfile();
+                      if (response.data) {
+                        const user = response.data;
+                        const authProvider = getAuthProvider();
+                        const isKeycloakUser = authProvider === 'keycloak';
+                        
+                        setUserInfo({
+                          id: String(user.id) || '1',
+                          firstName: user.first_name || '',
+                          lastName: user.last_name || '',
+                          name: user.full_name || user.username || user.email.split('@')[0],
+                          email: user.email || '',
+                          phone: user.phone || '',
+                          department: user.department || '',
+                          location: user.location || '',
+                          bio: user.bio || '',
+                          joinDate: user.created_at ? new Date(user.created_at).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+                          avatar: user.avatar_url || null,
+                          provider: user.provider || 'local',
+                          is_keycloak_user: isKeycloakUser,
+                          dateFormat: user.date_format || 'YYYY-MM-DD',
+                        });
+                      }
+                    } catch (error) {
+                      console.error('Failed to reload profile data:', error);
                     }
                   }}
                   className="border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 px-4 py-2 rounded-lg transition-colors"

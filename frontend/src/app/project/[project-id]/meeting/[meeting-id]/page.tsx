@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { 
@@ -13,203 +13,139 @@ import {
   Trash2, X, Check, GripVertical
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
+import { api } from '@/utils/api';
+import { ApiMeeting, ApiProject, ApiMeetingAgenda, ApiMeetingActionItem, ApiMeetingNote, ApiUser, ApiMeetingParticipantWithUser, MeetingParticipantsResponse } from '@/types/api';
+import { MeetingType, MeetingParticipantRole } from '@/types/enums';
+import { ProjectMemberResponse } from '@/types/api';
 
-// Meeting type configuration
+// Meeting type configuration - maps backend enum values to display names
 const meetingTypes = {
-  'daily-standup': {
+  [MeetingType.DAILY_STANDUP]: {
     name: 'Daily Standup',
     color: 'bg-blue-500',
     icon: MessageSquare,
   },
-  'sprint-planning': {
+  [MeetingType.SPRINT_PLANNING]: {
     name: 'Sprint Planning',
     color: 'bg-green-500',
     icon: Target,
   },
-  'sprint-review': {
+  [MeetingType.SPRINT_REVIEW]: {
     name: 'Sprint Review',
     color: 'bg-purple-500',
     icon: BarChart3,
   },
-  'sprint-retrospective': {
+  [MeetingType.SPRINT_RETROSPECTIVE]: {
     name: 'Sprint Retrospective',
     color: 'bg-orange-500',
     icon: UserCheck,
   },
-  'backlog-refinement': {
-    name: 'Backlog Refinement',
+  [MeetingType.TEAM_MEETING]: {
+    name: 'Team Meeting',
     color: 'bg-indigo-500',
-    icon: Edit,
+    icon: MessageSquare,
+  },
+  [MeetingType.OTHER]: {
+    name: 'Other',
+    color: 'bg-gray-500',
+    icon: MessageSquare,
   },
 };
 
-// Mock meeting detail data
-const getMeetingData = (id: string) => {
-  const meetings = {
-    'meeting-1': {
-      id: 'meeting-1',
-      title: 'Daily Standup - Week 3',
-      type: 'daily-standup',
-      status: 'scheduled',
-      date: '2024-03-15',
-      time: '09:00',
-      duration: 15,
-      location: 'Zoom Meeting Room',
-      meetingLink: 'https://zoom.us/j/1234567890',
-      facilitator: 'Alice Wang',
-      participants: ['John Smith', 'Alice Wang', 'Bob Zhang', 'Carol Li', 'David Zhao'],
-      description: 'Daily team sync meeting to share yesterday\'s progress, today\'s plans, and any blockers.',
-      agenda: [
-        'Work completed yesterday',
-        'Today\'s work plan', 
-        'Encountered blockers',
-        'Items requiring assistance'
-      ],
-      objectives: [
-        'Sync team progress',
-        'Identify blocking issues',
-        'Coordinate team collaboration'
-      ],
-    },
-    'meeting-4': {
-      id: 'meeting-4',
-      title: 'Sprint 5 Retrospective Meeting',
-      type: 'sprint-retrospective',
-      status: 'completed',
-      date: '2024-03-13',
-      time: '10:00',
-      duration: 90,
-      location: 'Conference Room A',
-      facilitator: 'Alice Wang',
-      participants: ['Alice Wang', 'Bob Zhang', 'Carol Li', 'David Zhao'],
-      description: 'Review Sprint 5 work process and identify improvement points.',
-      agenda: [
-        'What went well',
-        'Areas for improvement',
-        'Action plan for next Sprint',
-        'Team feedback collection'
-      ],
-      objectives: [
-        'Identify team strengths',
-        'Discover improvement opportunities',
-        'Develop action plan'
-      ],
-      notes: `# Sprint 5 Retrospective Meeting Notes
-
-## Meeting Information
-- **Time**: March 13, 2024 10:00-11:30
-- **Facilitator**: Alice Wang
-- **Participants**: Alice Wang, Bob Zhang, Carol Li, David Zhao
-
-## What Went Well
-
-### Technical Aspects
-- **Significant improvement in code quality**: Team started using ESLint and Prettier, code style became more consistent
-- **Notable performance optimization results**: Page loading speed improved by 30%
-- **Test coverage reached 75%**: 15% improvement from previous Sprint
-
-### Collaboration Aspects
-- Team communication became smoother, daily standups were very efficient
-- Code Review process was effectively implemented
-- Documentation quality improved
-
-## Areas for Improvement
-
-### Process Optimization
-1. **Code Review process needs standardization**
-   - Lack of unified checklist
-   - Review time sometimes too long
-   - Need to establish clearer standards
-
-2. **Insufficient automated test coverage**
-   - Few integration tests
-   - Missing end-to-end tests
-   - Need to add more test cases
-
-3. **Deployment process needs optimization**
-   - Many manual operation steps
-   - Rollback mechanism not perfect enough
-
-### Technical Debt
-- Old code modules need refactoring
-- API documentation updates not timely
-- Database query performance needs optimization
-
-## Team Feedback
-
-> **Bob Zhang**: "Hope to add more technical sharing sessions, especially new technology applications"
-
-> **Carol Li**: "Suggest optimizing development environment configuration to improve development efficiency"
-
-> **David Zhao**: "Need clearer requirement documents to reduce questions during development"
-
-## Decisions & Action Items
-
-### Immediate Actions (Within this week)
-- [ ] Establish Code Review checklist - **Owner**: Bob Zhang
-- [ ] Update API documentation - **Owner**: Carol Li
-
-### Short-term Goals (Within 2 weeks)  
-- [ ] Increase automated test coverage to 80% - **Owner**: Carol Li
-- [ ] Optimize deployment process, achieve one-click deployment - **Owner**: David Zhao
-
-### Long-term Planning (Within 1 month)
-- [ ] Refactor core module code - **Owner**: Bob Zhang
-- [ ] Establish technical sharing mechanism - **Owner**: Alice Wang
-
-## Next Sprint Focus
-
-1. **User Authentication Enhancement**
-   - Social login integration
-   - Two-factor authentication
-   - Permission management optimization
-
-2. **Performance Monitoring System Setup**
-   - Error tracking
-   - Performance metrics collection
-   - Alert mechanism
-
----
-
-**Meeting Recorder**: Alice Wang  
-**Reviewer**: John Smith  
-**Published**: March 13, 2024 12:00`,
-      actionItems: [
-        {
-          id: 'action-1',
-          title: 'Establish Code Review checklist',
-          assignee: 'Bob Zhang',
-          dueDate: '2024-03-20',
-          status: 'pending',
-          priority: 'high'
-        },
-        {
-          id: 'action-2', 
-          title: 'Increase automated test coverage to 80%',
-          assignee: 'Carol Li',
-          dueDate: '2024-03-25',
-          status: 'pending',
-          priority: 'medium'
-        },
-        {
-          id: 'action-3',
-          title: 'Optimize deployment process documentation',
-          assignee: 'David Zhao',
-          dueDate: '2024-03-18',
-          status: 'completed',
-          priority: 'low'
-        }
-      ],
-      decisions: [
-        'Adopt new Code Review tool',
-        'Hold technical sharing sessions every Friday',
-        'Add test steps to daily builds'
-      ]
+// Helper function to get user display name with fallback for current user
+function getUserDisplayName(user: any, currentUser: ApiUser | null): string {
+  // If no user information is available, check if it might be the current user
+  if (!user) {
+    if (currentUser) {
+      const fullName = currentUser.first_name && currentUser.last_name 
+        ? `${currentUser.first_name} ${currentUser.last_name}` 
+        : null;
+      return fullName || currentUser.username || currentUser.email;
     }
-  };
+    return 'Unknown User';
+  }
   
-  return meetings[id as keyof typeof meetings] || meetings['meeting-1'];
-};
+  // Return the best available user name
+  return user.full_name || user.username || user.email || 'Unknown User';
+}
+
+// Helper function to get user avatar letter
+function getUserAvatarLetter(user: any, currentUser: ApiUser | null): string {
+  if (!user && currentUser) {
+    const fullName = currentUser.first_name && currentUser.last_name 
+      ? `${currentUser.first_name} ${currentUser.last_name}` 
+      : null;
+    return (fullName?.charAt(0) || currentUser.username?.charAt(0) || currentUser.email?.charAt(0) || 'U').toUpperCase();
+  }
+  
+  return (user?.full_name?.charAt(0) || user?.username?.charAt(0) || user?.email?.charAt(0) || 'U').toUpperCase();
+}
+
+// Helper function to format role display names
+function formatRoleDisplayName(role: string): string {
+  switch (role) {
+    case 'scrum_master':
+      return 'Scrum Master';
+    case 'product_owner':
+      return 'Product Owner';
+    case 'developer':
+      return 'Developer';
+    case 'facilitator':
+      return 'Facilitator';
+    case 'guest':
+      return 'Guest';
+    default:
+      return role.charAt(0).toUpperCase() + role.slice(1).replace(/_/g, ' ');
+  }
+}
+
+// Utility function to safely parse datetime - enhanced to handle various formats
+function parseDatetimeSafely(datetimeValue: any): Date | null {
+  if (!datetimeValue) return null;
+  
+  try {
+    let dateToTry: Date;
+    
+    if (typeof datetimeValue === 'string') {
+      let normalized = datetimeValue.trim();
+      
+      if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(normalized)) {
+        normalized = normalized.replace(' ', 'T');
+      }
+      
+      normalized = normalized.replace(/\+00:00$/, 'Z');
+      normalized = normalized.replace(/\+00$/, 'Z');
+      normalized = normalized.replace(/\.(\d{3})\d+(?=(Z|[+\-]\d{2}:?\d{2})?$)/, '.$1');
+      
+      dateToTry = new Date(normalized);
+      
+      if (isNaN(dateToTry.getTime())) {
+        const isoMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2}):(\d{2})/);
+        if (isoMatch) {
+          const [, year, month, day, hour, minute, second] = isoMatch;
+          dateToTry = new Date(
+            parseInt(year), 
+            parseInt(month) - 1, 
+            parseInt(day), 
+            parseInt(hour), 
+            parseInt(minute), 
+            parseInt(second)
+          );
+        }
+      }
+    } else {
+      dateToTry = new Date(datetimeValue);
+    }
+    
+    if (!isNaN(dateToTry.getTime())) {
+      return dateToTry;
+    }
+  } catch (error) {
+    console.error('Error parsing datetime:', error, 'Value:', datetimeValue);
+  }
+  
+  return null;
+}
 
 // Markdown Editor Component
 const MarkdownEditor = ({ value, onChange, readonly = false }: { 
@@ -303,7 +239,7 @@ const MarkdownEditor = ({ value, onChange, readonly = false }: {
             const IconComponent = button.icon;
             return (
               <button
-                key={index}
+                key={`toolbar-${button.label}-${index}`}
                 onClick={button.action}
                 className="p-1.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
                 title={button.label}
@@ -383,7 +319,7 @@ const ParticipantsHeaderTooltip = ({ participants, facilitator }: {
           >
             {participants.slice(0, 3).map((participant, index) => (
               <div
-                key={index}
+                key={`tooltip-participant-${index}-${participant}`}
                 className="w-5 h-5 bg-gray-200 dark:bg-gray-600 rounded-full flex items-center justify-center border border-white dark:border-gray-800 cursor-pointer hover:bg-gray-300 dark:hover:bg-gray-500 transition-colors"
               >
                 <span className="text-xs text-gray-600 dark:text-gray-300">
@@ -407,7 +343,7 @@ const ParticipantsHeaderTooltip = ({ participants, facilitator }: {
                 </div>
                 <div className="space-y-2 max-h-40 overflow-y-auto">
                   {participants.map((participant, index) => (
-                    <div key={index} className="flex items-center gap-2">
+                    <div key={`tooltip-list-participant-${index}-${participant}`} className="flex items-center gap-2">
                       <div className="w-6 h-6 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center">
                         <span className="text-xs text-gray-600 dark:text-gray-300">
                           {participant.charAt(0)}
@@ -443,7 +379,7 @@ const ParticipantsDetailView = ({ participants, facilitator }: {
   return (
     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
       {participants.map((participant, index) => (
-        <div key={index} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+        <div key={`participant-${index}-${participant}`} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
           <div className="w-8 h-8 bg-gray-200 dark:bg-gray-600 rounded-full flex items-center justify-center">
             <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
               {participant.charAt(0)}
@@ -514,14 +450,18 @@ const AgendaItemModal = ({
   isOpen, 
   onClose, 
   onSave, 
+  onBulkSave,
   item = null 
 }: {
   isOpen: boolean;
   onClose: () => void;
   onSave: (item: string) => void;
+  onBulkSave?: (items: string[]) => void;
   item?: string | null;
 }) => {
   const [agendaItem, setAgendaItem] = useState(item || '');
+  const [isBulkMode, setIsBulkMode] = useState(false);
+  const [bulkItems, setBulkItems] = useState<string[]>(['']);
 
   const handleSave = () => {
     if (agendaItem.trim()) {
@@ -531,14 +471,91 @@ const AgendaItemModal = ({
     }
   };
 
+  const handleBulkSave = () => {
+    const validItems = bulkItems.filter(item => item.trim());
+    if (validItems.length > 0 && onBulkSave) {
+      onBulkSave(validItems);
+      setBulkItems(['']);
+      setIsBulkMode(false);
+      onClose();
+    }
+  };
+
+  const addBulkItem = () => {
+    setBulkItems([...bulkItems, '']);
+  };
+
+  const removeBulkItem = (index: number) => {
+    if (bulkItems.length > 1) {
+      setBulkItems(bulkItems.filter((_, i) => i !== index));
+    }
+  };
+
+  const updateBulkItem = (index: number, value: string) => {
+    const newItems = [...bulkItems];
+    newItems[index] = value;
+    setBulkItems(newItems);
+  };
+
+  const handleClose = () => {
+    setAgendaItem('');
+    setBulkItems(['']);
+    setIsBulkMode(false);
+    onClose();
+  };
+
   if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
       <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
           {item ? 'Edit Agenda Item' : 'Add Agenda Item'}
         </h3>
+          {!item && onBulkSave && (
+            <button
+              onClick={() => setIsBulkMode(!isBulkMode)}
+              className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300"
+            >
+              {isBulkMode ? 'Single Item' : 'Bulk Add'}
+            </button>
+          )}
+        </div>
+
+        {isBulkMode ? (
+          <div className="space-y-3">
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              Add multiple agenda items at once:
+            </p>
+            {bulkItems.map((item, index) => (
+              <div key={`bulk-item-${index}`} className="flex gap-2">
+                <textarea
+                  value={item}
+                  onChange={(e) => updateBulkItem(index, e.target.value)}
+                  placeholder={`Agenda item ${index + 1}...`}
+                  className="flex-1 p-2 border border-gray-300 dark:border-gray-600 rounded resize-none h-16
+                           bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+                           placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                />
+                {bulkItems.length > 1 && (
+                  <button
+                    onClick={() => removeBulkItem(index)}
+                    className="px-2 py-1 text-red-600 hover:text-red-800 transition-colors"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                )}
+              </div>
+            ))}
+            <button
+              onClick={addBulkItem}
+              className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            >
+              <Plus className="w-4 h-4 mx-auto" />
+            </button>
+          </div>
+        ) : (
         <textarea
           value={agendaItem}
           onChange={(e) => setAgendaItem(e.target.value)}
@@ -547,22 +564,21 @@ const AgendaItemModal = ({
                    bg-white dark:bg-gray-700 text-gray-900 dark:text-white
                    placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
         />
+        )}
+
         <div className="flex justify-end gap-3 mt-4">
           <button
-            onClick={() => {
-              setAgendaItem('');
-              onClose();
-            }}
+            onClick={handleClose}
             className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
           >
             Cancel
           </button>
           <button
-            onClick={handleSave}
-            disabled={!agendaItem.trim()}
+            onClick={isBulkMode ? handleBulkSave : handleSave}
+            disabled={isBulkMode ? bulkItems.filter(item => item.trim()).length === 0 : !agendaItem.trim()}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
           >
-            {item ? 'Update' : 'Add'}
+            {isBulkMode ? 'Add All' : (item ? 'Update' : 'Add')}
           </button>
         </div>
       </div>
@@ -575,35 +591,49 @@ const ActionItemModal = ({
   isOpen, 
   onClose, 
   onSave, 
-  item = null 
+  item = null,
+  projectMembers = []
 }: {
   isOpen: boolean;
   onClose: () => void;
   onSave: (item: any) => void;
   item?: any;
+  projectMembers?: any[];
 }) => {
   const [actionItem, setActionItem] = useState({
-    title: item?.title || '',
-    assignee: item?.assignee || '',
-    dueDate: item?.dueDate || '',
-    priority: item?.priority || 'medium',
-    status: item?.status || 'pending'
+    title: '',
+    dueDate: ''
   });
 
+  // Update form when editing item changes
+  useEffect(() => {
+    console.log('ActionItemModal: item prop changed:', item);
+    if (item) {
+      const dueDate = item.due_date ? new Date(item.due_date).toISOString().split('T')[0] : '';
+      console.log('ActionItemModal: Setting form data - title:', item.title, 'dueDate:', dueDate);
+      setActionItem({
+        title: item.title || '',
+        dueDate: dueDate
+      });
+    } else {
+      console.log('ActionItemModal: Clearing form data');
+      setActionItem({
+        title: '',
+        dueDate: ''
+      });
+    }
+  }, [item]);
+
   const handleSave = () => {
-    if (actionItem.title.trim() && actionItem.assignee.trim()) {
+    if (actionItem.title.trim()) {
       onSave({
         ...actionItem,
-        id: item?.id || `action-${Date.now()}`,
-        title: actionItem.title.trim(),
-        assignee: actionItem.assignee.trim()
+        id: item?.id,
+        title: actionItem.title.trim()
       });
       setActionItem({
         title: '',
-        assignee: '',
-        dueDate: '',
-        priority: 'medium',
-        status: 'pending'
+        dueDate: ''
       });
       onClose();
     }
@@ -634,20 +664,6 @@ const ActionItemModal = ({
           </div>
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Assignee *
-            </label>
-            <input
-              type="text"
-              value={actionItem.assignee}
-              onChange={(e) => setActionItem({...actionItem, assignee: e.target.value})}
-              placeholder="Enter assignee name..."
-              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg
-                       bg-white dark:bg-gray-700 text-gray-900 dark:text-white
-                       placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
               Due Date
             </label>
             <input
@@ -659,50 +675,14 @@ const ActionItemModal = ({
                        focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             />
           </div>
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Priority
-              </label>
-              <select
-                value={actionItem.priority}
-                onChange={(e) => setActionItem({...actionItem, priority: e.target.value})}
-                className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg
-                         bg-white dark:bg-gray-700 text-gray-900 dark:text-white
-                         focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="low">Low</option>
-                <option value="medium">Medium</option>
-                <option value="high">High</option>
-              </select>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Status
-              </label>
-              <select
-                value={actionItem.status}
-                onChange={(e) => setActionItem({...actionItem, status: e.target.value})}
-                className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg
-                         bg-white dark:bg-gray-700 text-gray-900 dark:text-white
-                         focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              >
-                <option value="pending">Pending</option>
-                <option value="in-progress">In Progress</option>
-                <option value="completed">Completed</option>
-              </select>
-            </div>
-          </div>
+
         </div>
         <div className="flex justify-end gap-3 mt-6">
           <button
             onClick={() => {
               setActionItem({
                 title: '',
-                assignee: '',
-                dueDate: '',
-                priority: 'medium',
-                status: 'pending'
+                dueDate: ''
               });
               onClose();
             }}
@@ -712,7 +692,7 @@ const ActionItemModal = ({
           </button>
           <button
             onClick={handleSave}
-            disabled={!actionItem.title.trim() || !actionItem.assignee.trim()}
+            disabled={!actionItem.title.trim()}
             className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
           >
             {item ? 'Update' : 'Add'}
@@ -727,44 +707,38 @@ const MeetingDetail = () => {
   const params = useParams();
   const projectId = params['project-id'] as string;
   const meetingId = params['meeting-id'] as string;
-  const initialMeeting = getMeetingData(meetingId);
   
   // State management
-  const [meeting, setMeeting] = useState(initialMeeting);
+  const [meeting, setMeeting] = useState<ApiMeeting | null>(null);
+  const [project, setProject] = useState<ApiProject | null>(null);
+  const [currentUser, setCurrentUser] = useState<ApiUser | null>(null);
+  const [agendaItems, setAgendaItems] = useState<ApiMeetingAgenda[]>([]);
+  const [meetingNotes, setMeetingNotes] = useState<ApiMeetingNote[]>([]);
+  const [actionItems, setActionItems] = useState<ApiMeetingActionItem[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
   const [activeTab, setActiveTab] = useState('overview');
   const [isRecording, setIsRecording] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
-  const [meetingNotes, setMeetingNotes] = useState('');
+  const [currentNote, setCurrentNote] = useState('');
   const [hasUnsavedNotes, setHasUnsavedNotes] = useState(false);
-  const [notesHistory, setNotesHistory] = useState<Array<{
-    id: string;
-    content: string;
-    timestamp: string;
-    author: string;
-    replies?: Array<{
-      id: string;
-      content: string;
-      timestamp: string;
-      author: string;
-    }>;
-  }>>(() => {
-    if ('notesHistory' in meeting && Array.isArray(meeting.notesHistory)) {
-      return meeting.notesHistory;
-    }
-    return [];
-  });
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
   const [replyContent, setReplyContent] = useState('');
 
   // Overview editing states
   const [editingDescription, setEditingDescription] = useState(false);
-  const [editingObjectives, setEditingObjectives] = useState(false);
   const [editingParticipants, setEditingParticipants] = useState(false);
-  const [tempDescription, setTempDescription] = useState(meeting.description);
-  const [tempObjectives, setTempObjectives] = useState([...(meeting.objectives || [])]);
-  const [tempParticipants, setTempParticipants] = useState([...meeting.participants]);
-  const [newObjective, setNewObjective] = useState('');
-  const [newParticipant, setNewParticipant] = useState('');
+  const [tempDescription, setTempDescription] = useState('');
+  const [allProjectMembers, setAllProjectMembers] = useState<ProjectMemberResponse[]>([]);
+  const [meetingParticipants, setMeetingParticipants] = useState<ApiMeetingParticipantWithUser[]>([]);
+  const [selectedParticipants, setSelectedParticipants] = useState<ProjectMemberResponse[]>([]);
+  const [showParticipantDropdown, setShowParticipantDropdown] = useState(false);
+
+  // External participant form state
+  const [externalParticipantName, setExternalParticipantName] = useState('');
+  const [externalParticipantEmail, setExternalParticipantEmail] = useState('');
+  const [showExternalParticipantForm, setShowExternalParticipantForm] = useState(false);
 
   // Modal states
   const [agendaModalOpen, setAgendaModalOpen] = useState(false);
@@ -778,59 +752,271 @@ const MeetingDetail = () => {
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
 
-  const meetingType = meetingTypes[meeting.type as keyof typeof meetingTypes];
+  // Loading states
+  const [agendaLoading, setAgendaLoading] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
+  const [notesLoading, setNotesLoading] = useState(false);
+  const [participantsLoading, setParticipantsLoading] = useState(false);
+
+  // Fetch meeting data and related information
+  useEffect(() => {
+    const fetchMeetingData = async () => {
+      if (!meetingId || !projectId) return;
+      
+      try {
+        setIsLoading(true);
+        setError(null);
+        
+        // Fetch current user information
+        const userResponse = await api.auth.getCurrentUser();
+        if (userResponse.data) {
+          setCurrentUser(userResponse.data);
+        }
+        
+        // Fetch meeting details
+        const meetingResponse = await api.meetings.getById(parseInt(meetingId));
+        if (meetingResponse.error) throw new Error(meetingResponse.error);
+        if (!meetingResponse.data) throw new Error('Meeting data not found');
+        setMeeting(meetingResponse.data);
+        
+        // Set initial editing values
+        setTempDescription(meetingResponse.data.description || '');
+        
+        // Fetch project information
+        const projectResponse = await api.projects.getById(parseInt(projectId));
+        if (projectResponse.error) {
+          console.warn('Failed to fetch project:', projectResponse.error);
+        } else {
+          setProject(projectResponse.data);
+        }
+        
+        // Fetch project members for participants
+        try {
+          const membersResponse = await api.projects.getMembers(parseInt(projectId));
+          if (membersResponse.error) {
+            console.warn('Failed to fetch project members:', membersResponse.error);
+            setAllProjectMembers([]);
+            setSelectedParticipants([]);
+          } else {
+            const members = membersResponse.data || [];
+            console.log('DEBUG: Fetched project members from API:', members);
+            members.forEach((member, index) => {
+              console.log(`DEBUG: Project member ${index}:`, {
+                id: member.id,
+                username: member.username,
+                role: member.role,
+                roleType: typeof member.role,
+                fullMember: member
+              });
+            });
+            setAllProjectMembers(members);
+            // Initialize with no participants selected by default
+            setSelectedParticipants([]);
+          }
+        } catch (error) {
+          console.warn('Failed to fetch project members:', error);
+          setAllProjectMembers([]);
+          setSelectedParticipants([]);
+        }
+        
+        // Fetch agenda items
+        try {
+          const agendaResponse = await api.meetingAgenda.getByMeeting(parseInt(meetingId));
+          if (agendaResponse.data) {
+            setAgendaItems(agendaResponse.data);
+          }
+        } catch (error) {
+          console.warn('Failed to fetch agenda items:', error);
+        }
+        
+        // Fetch meeting notes using tree structure for hierarchical display
+        try {
+          const notesResponse = await api.meetingNotes.getTreeByMeeting(parseInt(meetingId));
+          console.log('Meeting notes response:', notesResponse);
+          if (notesResponse.data && notesResponse.data.notes) {
+            console.log('First note structure:', notesResponse.data.notes[0]);
+            setMeetingNotes(notesResponse.data.notes);
+          } else {
+            setMeetingNotes([]);
+          }
+        } catch (error) {
+          console.warn('Failed to fetch meeting notes:', error);
+          setMeetingNotes([]);
+        }
+        
+        // Fetch action items
+        try {
+          const actionResponse = await api.meetingActionItems.getByMeeting(parseInt(meetingId));
+          if (actionResponse.data) {
+            console.log('Fetched action items:', actionResponse.data);
+            console.log('Sample action item structure:', actionResponse.data[0]);
+            setActionItems(actionResponse.data);
+          }
+        } catch (error) {
+          console.warn('Failed to fetch action items:', error);
+          setActionItems([]);
+        }
+        
+        // Fetch meeting participants
+        try {
+          const participantsResponse = await api.meetingParticipants.getByMeeting(parseInt(meetingId));
+          if (participantsResponse.data) {
+            console.log('DEBUG: Fetched meeting participants raw response:', participantsResponse.data);
+            participantsResponse.data.participants.forEach((participant, index) => {
+              console.log(`DEBUG: Participant ${index} role details:`, {
+                id: participant.id,
+                userId: participant.userId,
+                role: participant.role,
+                roleType: typeof participant.role,
+                fullName: participant.fullName,
+                username: participant.username,
+                externalName: participant.externalName,
+                fullParticipant: participant
+              });
+            });
+            setMeetingParticipants(participantsResponse.data.participants);
+          }
+        } catch (error) {
+          console.warn('Failed to fetch meeting participants:', error);
+          setMeetingParticipants([]);
+        }
+        
+      } catch (error) {
+        console.error('Error fetching meeting data:', error);
+        setError(error instanceof Error ? error.message : 'Failed to fetch meeting data');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchMeetingData();
+  }, [meetingId, projectId]);
+
+  // Early return if loading or error
+  if (isLoading) {
+    return (
+      <div className="space-y-8">
+        <div className="text-center py-12">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-400">Loading meeting details...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error || !meeting) {
+    return (
+      <div className="space-y-8">
+        <div className="text-center py-12">
+          <div className="text-red-500 mb-4">
+            <FileText className="h-16 w-16 mx-auto" />
+          </div>
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+            Error Loading Meeting
+          </h3>
+          <p className="text-gray-600 dark:text-gray-400 mb-4">
+            {error || 'Meeting not found'}
+          </p>
+          <Link
+            href={`/project/${projectId}/meeting`}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg"
+          >
+            Back to Meetings
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  const meetingType = meetingTypes[meeting.meetingType as keyof typeof meetingTypes] || meetingTypes[MeetingType.OTHER];
   const IconComponent = meetingType.icon;
 
   // Handle notes change
   const handleNotesChange = (value: string) => {
-    setMeetingNotes(value);
-    setHasUnsavedNotes(value !== (('notes' in meeting ? meeting.notes : '') || ''));
+    setCurrentNote(value);
+    setHasUnsavedNotes(value.trim() !== '');
   };
 
   // Save meeting notes
-  const handleSaveNotes = () => {
-    if (!meetingNotes.trim()) return;
+  const handleSaveNotes = async () => {
+    if (!currentNote.trim()) return;
     
-    const newNote = {
-      id: `note-${Date.now()}`,
-      content: meetingNotes.trim(),
-      timestamp: new Date().toLocaleString(),
-      author: 'Current User', // In real app, this would be the current user's name
-      replies: []
-    };
-    
-    const updateHistory = [...notesHistory, newNote];
-    setNotesHistory(updateHistory);
-    setMeeting(prev => ({...prev, notesHistory: updateHistory}));
-    setMeetingNotes(''); // Clear the input field after saving
-    setHasUnsavedNotes(false);
-    // Here you would typically make an API call to save the notes
-    console.log('Adding new meeting note:', newNote);
+    setNotesLoading(true);
+    try {
+      const response = await api.meetingNotes.create({
+        meeting_id: parseInt(meetingId),
+        content: currentNote.trim()
+      });
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      
+      // Refresh notes by fetching the complete tree structure
+      const notesResponse = await api.meetingNotes.getTreeByMeeting(parseInt(meetingId));
+      console.log('Refreshed notes response:', notesResponse);
+      if (notesResponse.data && notesResponse.data.notes) {
+        console.log('Refreshed notes structure:', notesResponse.data.notes[0]);
+        setMeetingNotes(notesResponse.data.notes);
+      }
+      
+      // Clear the input
+      setCurrentNote('');
+      setHasUnsavedNotes(false);
+      
+      console.log('Added new meeting note:', response.data);
+      // TODO: Show success notification
+    } catch (error) {
+      console.error('Error adding meeting note:', error);
+      // TODO: Show error notification to user
+    } finally {
+      setNotesLoading(false);
+    }
   };
 
   // Reply to a note
-  const handleReply = (noteId: string) => {
-    if (!replyContent.trim()) return;
+  const handleReply = async (noteId: string) => {
+    console.log('handleReply called with noteId:', noteId, 'replyContent:', replyContent.trim());
     
-    const newReply = {
-      id: `reply-${Date.now()}`,
-      content: replyContent.trim(),
-      timestamp: new Date().toLocaleString(),
-      author: 'Current User' // In real app, this would be the current user's name
-    };
+    if (!replyContent.trim()) {
+      console.log('Reply content is empty, returning');
+      return;
+    }
     
-    const updatedHistory = notesHistory.map(note => 
-      note.id === noteId 
-        ? { ...note, replies: [...(note.replies || []), newReply] }
-        : note
-    );
+    if (!noteId) {
+      console.error('Note ID is undefined or empty');
+      return;
+    }
     
-    setNotesHistory(updatedHistory);
-    setMeeting(prev => ({...prev, notesHistory: updatedHistory}));
-    setReplyContent('');
-    setReplyingTo(null);
-    // Here you would typically make an API call to save the reply
-    console.log('Adding reply to note:', noteId, newReply);
+    setNotesLoading(true);
+    try {
+      console.log('Creating reply for noteId:', noteId, 'content:', replyContent.trim());
+      const response = await api.meetingNotes.createReply(parseInt(noteId), replyContent.trim());
+      console.log('CreateReply response:', response);
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      
+      // Refresh notes to show the new reply
+      console.log('Refreshing notes after reply...');
+      const notesResponse = await api.meetingNotes.getTreeByMeeting(parseInt(meetingId));
+      if (notesResponse.data && notesResponse.data.notes) {
+        setMeetingNotes(notesResponse.data.notes);
+      }
+      
+      setReplyContent('');
+      setReplyingTo(null);
+      
+      console.log('Successfully added reply to note:', response.data);
+      // TODO: Show success notification
+    } catch (error) {
+      console.error('Error adding reply:', error);
+      console.error('Error details:', error instanceof Error ? error.message : error);
+      // TODO: Show error notification to user
+    } finally {
+      setNotesLoading(false);
+    }
   };
 
   // Cancel reply
@@ -840,108 +1026,350 @@ const MeetingDetail = () => {
   };
 
   // Overview editing handlers
-  const handleSaveDescription = () => {
-    setMeeting(prev => ({...prev, description: tempDescription}));
+  const handleSaveDescription = async () => {
+    try {
+      const updateData = {
+        description: tempDescription
+      };
+      
+      const response = await api.meetings.update(parseInt(meetingId), updateData);
+      if (response.error) throw new Error(response.error);
+      
+      setMeeting(prev => prev ? { ...prev, description: tempDescription } : null);
     setEditingDescription(false);
     console.log('Updated description:', tempDescription);
+    } catch (error) {
+      console.error('Error updating description:', error);
+      // TODO: Show error notification to user
+    }
   };
 
   const handleCancelDescription = () => {
-    setTempDescription(meeting.description);
+    setTempDescription(meeting.description || '');
     setEditingDescription(false);
   };
 
-  const handleSaveObjectives = () => {
-    setMeeting(prev => ({...prev, objectives: tempObjectives}));
-    setEditingObjectives(false);
-    setNewObjective('');
-    console.log('Updated objectives:', tempObjectives);
-  };
 
-  const handleCancelObjectives = () => {
-    setTempObjectives([...(meeting.objectives || [])]);
-    setEditingObjectives(false);
-    setNewObjective('');
-  };
 
-  const handleAddObjective = () => {
-    if (newObjective.trim()) {
-      setTempObjectives([...tempObjectives, newObjective.trim()]);
-      setNewObjective('');
+  const handleSaveParticipants = async () => {
+    setParticipantsLoading(true);
+    try {
+      // Convert selected participants to the format expected by the API
+      const participantsToAdd = selectedParticipants.map(member => {
+        console.log('DEBUG: Adding participant:', {
+          id: member.id,
+          username: member.username,
+          projectRole: member.role,
+          fullMemberObject: member
+        });
+        
+        // For new participants, we can use a placeholder role since the backend will fetch the actual project role
+        // The backend will ignore this and use the project role from user_project table
+        let meetingRole = MeetingParticipantRole.DEVELOPER; // Placeholder - will be overridden by project role
+        
+        console.log('DEBUG: Adding participant with placeholder role (will use project role):', {
+          userId: member.id,
+          projectRole: member.role,
+          placeholderRole: meetingRole
+        });
+        
+        return {
+          userId: member.id,
+          role: meetingRole
+        };
+      });
+
+      if (participantsToAdd.length > 0) {
+        const response = await api.meetingParticipants.addMultipleParticipants(
+          parseInt(meetingId),
+          participantsToAdd
+        );
+        
+        if (response.error) {
+          throw new Error(response.error);
+        }
+      }
+
+      // Refresh participants list
+      const participantsResponse = await api.meetingParticipants.getByMeeting(parseInt(meetingId));
+      if (participantsResponse.data) {
+        setMeetingParticipants(participantsResponse.data.participants);
+      }
+
+      // Reset editing state
+      setSelectedParticipants([]);
+      setEditingParticipants(false);
+      setShowParticipantDropdown(false);
+      
+      console.log('Successfully updated participants');
+    } catch (error) {
+      console.error('Error updating participants:', error);
+      // TODO: Show error notification to user
+    } finally {
+      setParticipantsLoading(false);
     }
-  };
-
-  const handleRemoveObjective = (index: number) => {
-    setTempObjectives(tempObjectives.filter((_, i) => i !== index));
-  };
-
-  const handleSaveParticipants = () => {
-    setMeeting(prev => ({...prev, participants: tempParticipants}));
-    setEditingParticipants(false);
-    setNewParticipant('');
-    console.log('Updated participants:', tempParticipants);
   };
 
   const handleCancelParticipants = () => {
-    setTempParticipants([...meeting.participants]);
+    // Reset to no participants (current default state)
+    setSelectedParticipants([]);
     setEditingParticipants(false);
-    setNewParticipant('');
+    setShowParticipantDropdown(false);
   };
 
-  const handleAddParticipant = () => {
-    if (newParticipant.trim() && !tempParticipants.includes(newParticipant.trim())) {
-      setTempParticipants([...tempParticipants, newParticipant.trim()]);
-      setNewParticipant('');
+  const handleToggleParticipant = (member: ProjectMemberResponse) => {
+    const isSelected = selectedParticipants.some(p => p.id === member.id);
+    if (isSelected) {
+      setSelectedParticipants(selectedParticipants.filter(p => p.id !== member.id));
+    } else {
+      setSelectedParticipants([...selectedParticipants, member]);
     }
   };
 
-  const handleRemoveParticipant = (index: number) => {
-    setTempParticipants(tempParticipants.filter((_, i) => i !== index));
+  const handleRemoveParticipant = (memberId: number) => {
+    setSelectedParticipants(selectedParticipants.filter(p => p.id !== memberId));
+  };
+
+  const handleRemoveMeetingParticipant = async (participantId: number, userId?: number) => {
+    setParticipantsLoading(true);
+    try {
+      let response;
+      if (userId) {
+        response = await api.meetingParticipants.removeParticipantByUser(parseInt(meetingId), userId);
+      } else {
+        response = await api.meetingParticipants.removeParticipant(parseInt(meetingId), participantId);
+      }
+
+      if (response.error) {
+        throw new Error(response.error);
+      }
+
+      // Refresh participants list
+      const participantsResponse = await api.meetingParticipants.getByMeeting(parseInt(meetingId));
+      if (participantsResponse.data) {
+        setMeetingParticipants(participantsResponse.data.participants);
+      }
+
+      console.log('Successfully removed participant');
+    } catch (error) {
+      console.error('Error removing participant:', error);
+      // TODO: Show error notification to user
+    } finally {
+      setParticipantsLoading(false);
+    }
+  };
+
+  const handleAddExternalParticipant = async () => {
+    if (!externalParticipantName.trim()) return;
+
+    setParticipantsLoading(true);
+    try {
+      const response = await api.meetingParticipants.addParticipant(
+        parseInt(meetingId),
+        {
+          userId: undefined,
+          externalName: externalParticipantName.trim(),
+          externalEmail: externalParticipantEmail.trim() || undefined,
+          role: MeetingParticipantRole.GUEST
+        }
+      );
+
+      if (response.error) {
+        throw new Error(response.error);
+      }
+
+      // Refresh participants list
+      const participantsResponse = await api.meetingParticipants.getByMeeting(parseInt(meetingId));
+      if (participantsResponse.data) {
+        setMeetingParticipants(participantsResponse.data.participants);
+      }
+
+      // Reset form
+      setExternalParticipantName('');
+      setExternalParticipantEmail('');
+      setShowExternalParticipantForm(false);
+
+      console.log('Successfully added external participant');
+    } catch (error) {
+      console.error('Error adding external participant:', error);
+      // TODO: Show error notification to user
+    } finally {
+      setParticipantsLoading(false);
+    }
+  };
+
+
+
+  const getAvailableMembers = () => {
+    return allProjectMembers.filter(member => 
+      !selectedParticipants.some(selected => selected.id === member.id) &&
+      !meetingParticipants.some(participant => participant.userId === member.id)
+    );
   };
 
   // Delete meeting notes
-  const handleDeleteNotes = () => {
-    setNotesHistory([]);
-    setMeeting(prev => ({...prev, notesHistory: []}));
-    setConfirmModalOpen(false);
-    setDeleteTarget(null);
-    // Here you would typically make an API call to delete the notes
-    console.log('Deleting all meeting notes');
-  };
-
-  // Agenda item handlers
-  const handleAddAgendaItem = (item: string) => {
-    setMeeting(prev => ({
-      ...prev,
-      agenda: [...prev.agenda, item]
-    }));
-    // Here you would typically make an API call
-    console.log('Adding agenda item:', item);
-  };
-
-  const handleEditAgendaItem = (item: string) => {
-    if (editingAgendaIndex !== null) {
-      setMeeting(prev => ({
-        ...prev,
-        agenda: prev.agenda.map((agendaItem, index) => 
-          index === editingAgendaIndex ? item : agendaItem
-        )
-      }));
-      setEditingAgendaIndex(null);
-      // Here you would typically make an API call
-      console.log('Editing agenda item:', item);
+  const handleDeleteNotes = async () => {
+    setNotesLoading(true);
+    try {
+      const response = await api.meetingNotes.deleteAllByMeeting(parseInt(meetingId));
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      
+      // Clear local state
+      setMeetingNotes([]);
+      setConfirmModalOpen(false);
+      setDeleteTarget(null);
+      
+      console.log('Deleted all meeting notes:', response.data?.message);
+      // TODO: Show success notification
+    } catch (error) {
+      console.error('Error deleting meeting notes:', error);
+      // TODO: Show error notification to user
+    } finally {
+      setNotesLoading(false);
     }
   };
 
-  const handleDeleteAgendaItem = (index: number) => {
-    setMeeting(prev => ({
-      ...prev,
-      agenda: prev.agenda.filter((_, i) => i !== index)
-    }));
+  // Agenda item handlers
+  const handleAddAgendaItem = async (item: string) => {
+    setAgendaLoading(true);
+    try {
+      const response = await api.meetingAgenda.create({
+        meeting_id: parseInt(meetingId),
+        title: item
+      });
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      
+      // Refresh agenda items
+      const agendaResponse = await api.meetingAgenda.getByMeeting(parseInt(meetingId));
+      if (agendaResponse.data) {
+        setAgendaItems(agendaResponse.data);
+      }
+      
+      console.log('Added agenda item:', response.data);
+      // TODO: Show success notification
+    } catch (error) {
+      console.error('Error adding agenda item:', error);
+      // TODO: Show error notification to user
+    } finally {
+      setAgendaLoading(false);
+    }
+  };
+
+  const handleEditAgendaItem = async (item: string) => {
+    if (editingAgendaIndex !== null) {
+      setAgendaLoading(true);
+      try {
+        const agendaItem = agendaItems[editingAgendaIndex];
+        if (!agendaItem) return;
+        
+        const response = await api.meetingAgenda.update(agendaItem.agendaId, {
+          title: item
+        });
+        
+        if (response.error) {
+          throw new Error(response.error);
+        }
+        
+        // Refresh agenda items
+        const agendaResponse = await api.meetingAgenda.getByMeeting(parseInt(meetingId));
+        if (agendaResponse.data) {
+          setAgendaItems(agendaResponse.data);
+        }
+        
+      setEditingAgendaIndex(null);
+        console.log('Updated agenda item:', response.data);
+        // TODO: Show success notification
+      } catch (error) {
+        console.error('Error updating agenda item:', error);
+        // TODO: Show error notification to user
+      } finally {
+        setAgendaLoading(false);
+      }
+    }
+  };
+
+  const handleDeleteAgendaItem = async (index: number) => {
+    setAgendaLoading(true);
+    try {
+      const agendaItem = agendaItems[index];
+      if (!agendaItem) return;
+      
+      const response = await api.meetingAgenda.delete(agendaItem.agendaId);
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      
+      // Remove from local state
+      setAgendaItems(prev => prev.filter((_, i) => i !== index));
     setConfirmModalOpen(false);
     setDeleteTarget(null);
-    // Here you would typically make an API call
-    console.log('Deleting agenda item at index:', index);
+      
+      console.log('Deleted agenda item:', agendaItem.agendaId);
+      // TODO: Show success notification
+    } catch (error) {
+      console.error('Error deleting agenda item:', error);
+      // TODO: Show error notification to user
+    } finally {
+      setAgendaLoading(false);
+    }
+  };
+
+  // Bulk create agenda items
+  const handleBulkCreateAgendaItems = async (agendaTitles: string[]) => {
+    setAgendaLoading(true);
+    try {
+      const response = await api.meetingAgenda.bulkCreate(parseInt(meetingId), agendaTitles);
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      
+      // Refresh agenda items
+      const agendaResponse = await api.meetingAgenda.getByMeeting(parseInt(meetingId));
+      if (agendaResponse.data) {
+        setAgendaItems(agendaResponse.data);
+      }
+      
+      console.log('Bulk created agenda items:', response.data);
+      // TODO: Show success notification
+    } catch (error) {
+      console.error('Error bulk creating agenda items:', error);
+      // TODO: Show error notification to user
+    } finally {
+      setAgendaLoading(false);
+    }
+  };
+
+  // Clear all agenda items
+  const handleClearAllAgendaItems = async () => {
+    setAgendaLoading(true);
+    try {
+      const response = await api.meetingAgenda.deleteAllByMeeting(parseInt(meetingId));
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      
+      // Clear local state
+      setAgendaItems([]);
+      setConfirmModalOpen(false);
+      setDeleteTarget(null);
+      
+      console.log('Cleared all agenda items');
+      // TODO: Show success notification
+    } catch (error) {
+      console.error('Error clearing agenda items:', error);
+      // TODO: Show error notification to user
+    } finally {
+      setAgendaLoading(false);
+    }
   };
 
   // Drag and drop handlers
@@ -961,7 +1389,7 @@ const MeetingDetail = () => {
     setDragOverIndex(null);
   };
 
-  const handleDrop = (e: React.DragEvent, dropIndex: number) => {
+  const handleDrop = async (e: React.DragEvent, dropIndex: number) => {
     e.preventDefault();
     setDragOverIndex(null);
     
@@ -970,7 +1398,7 @@ const MeetingDetail = () => {
       return;
     }
 
-    const newAgenda = [...meeting.agenda];
+    const newAgenda = [...agendaItems];
     const draggedItem = newAgenda[draggedIndex];
     
     // Remove the dragged item
@@ -980,14 +1408,38 @@ const MeetingDetail = () => {
     const insertIndex = draggedIndex < dropIndex ? dropIndex - 1 : dropIndex;
     newAgenda.splice(insertIndex, 0, draggedItem);
 
-    setMeeting(prev => ({
-      ...prev,
-      agenda: newAgenda
-    }));
-
+    // Update local state immediately for responsive UI
+    setAgendaItems(newAgenda);
     setDraggedIndex(null);
-    // Here you would typically make an API call to save the new order
-    console.log('Reordered agenda items:', newAgenda);
+
+    setAgendaLoading(true);
+    try {
+      // Send reorder request to backend
+      console.log('DEBUG: newAgenda before mapping:', newAgenda);
+      const agendaIds = newAgenda.map(item => {
+        console.log('DEBUG: mapping item:', item, 'agendaId:', item.agendaId);
+        return item.agendaId;
+      });
+      console.log('DEBUG: final agendaIds:', agendaIds);
+      const response = await api.meetingAgenda.reorder(agendaIds);
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      
+      console.log('Reordered agenda items:', response.data);
+      // TODO: Show success notification
+    } catch (error) {
+      console.error('Error reordering agenda items:', error);
+      // Revert to original order on error
+      const agendaResponse = await api.meetingAgenda.getByMeeting(parseInt(meetingId));
+      if (agendaResponse.data) {
+        setAgendaItems(agendaResponse.data);
+      }
+      // TODO: Show error notification to user
+    } finally {
+      setAgendaLoading(false);
+    }
   };
 
   const handleDragEnd = () => {
@@ -996,39 +1448,82 @@ const MeetingDetail = () => {
   };
 
   // Action item handlers
-  const handleAddActionItem = (item: any) => {
-    const actionItems = ('actionItems' in meeting ? meeting.actionItems : []) || [];
-    setMeeting(prev => ({
-      ...prev,
-      actionItems: [...actionItems, item]
-    }));
-    // Here you would typically make an API call
-    console.log('Adding action item:', item);
+  const handleAddActionItem = async (item: any) => {
+    try {
+      console.log('Creating action item with data:', item);
+      const dueDate = item.dueDate ? new Date(item.dueDate).toISOString() : undefined;
+      console.log('Formatted due date:', dueDate);
+      
+      const response = await api.meetingActionItems.create({
+        meeting_id: parseInt(meetingId),
+        title: item.title,
+        due_date: dueDate
+      });
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      
+      // Refresh action items from API
+      const actionResponse = await api.meetingActionItems.getByMeeting(parseInt(meetingId));
+      if (actionResponse.data) {
+        setActionItems(actionResponse.data);
+      }
+      
+      console.log('Added action item:', response.data);
+    } catch (error) {
+      console.error('Error adding action item:', error);
+      // TODO: Show error notification to user
+    }
   };
 
-  const handleEditActionItem = (item: any) => {
-    const actionItems = ('actionItems' in meeting ? meeting.actionItems : []) || [];
-    setMeeting(prev => ({
-      ...prev,
-      actionItems: actionItems.map((action: any) => 
-        action.id === item.id ? item : action
-      )
-    }));
-    setEditingActionItem(null);
-    // Here you would typically make an API call
-    console.log('Editing action item:', item);
+  const handleEditActionItem = async (item: any) => {
+    try {
+      console.log('Updating action item with data:', item);
+      const dueDate = item.dueDate ? new Date(item.dueDate).toISOString() : undefined;
+      console.log('Formatted due date:', dueDate);
+      
+              const response = await api.meetingActionItems.update(item.id, {
+        title: item.title,
+        due_date: dueDate
+      });
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      
+      // Refresh action items from API
+      const actionResponse = await api.meetingActionItems.getByMeeting(parseInt(meetingId));
+      if (actionResponse.data) {
+        setActionItems(actionResponse.data);
+      }
+      
+      setEditingActionItem(null);
+      console.log('Updated action item:', response.data);
+    } catch (error) {
+      console.error('Error updating action item:', error);
+      // TODO: Show error notification to user
+    }
   };
 
-  const handleDeleteActionItem = (itemId: string) => {
-    const actionItems = ('actionItems' in meeting ? meeting.actionItems : []) || [];
-    setMeeting(prev => ({
-      ...prev,
-      actionItems: actionItems.filter((action: any) => action.id !== itemId)
-    }));
-    setConfirmModalOpen(false);
-    setDeleteTarget(null);
-    // Here you would typically make an API call
-    console.log('Deleting action item:', itemId);
+  const handleDeleteActionItem = async (itemId: string) => {
+    try {
+      const response = await api.meetingActionItems.delete(parseInt(itemId));
+      
+      if (response.error) {
+        throw new Error(response.error);
+      }
+      
+      // Remove from local state
+              setActionItems(prev => prev.filter((action) => action.id !== parseInt(itemId)));
+      setConfirmModalOpen(false);
+      setDeleteTarget(null);
+      
+      console.log('Deleted action item:', itemId);
+    } catch (error) {
+      console.error('Error deleting action item:', error);
+      // TODO: Show error notification to user
+    }
   };
 
   // Confirmation handlers
@@ -1040,9 +1535,12 @@ const MeetingDetail = () => {
             handleDeleteAgendaItem(deleteTarget.index);
           }
           break;
+        case 'all-agenda':
+          handleClearAllAgendaItems();
+          break;
         case 'action':
-          if (deleteTarget.item?.id) {
-            handleDeleteActionItem(deleteTarget.item.id);
+                  if (deleteTarget.item?.id) {
+          handleDeleteActionItem(deleteTarget.item.id.toString());
           }
           break;
         case 'notes':
@@ -1052,23 +1550,12 @@ const MeetingDetail = () => {
     }
   };
 
-  // Get project name
-  const getProjectName = (id: string) => {
-    const projects = {
-      '1': 'E-commerce Platform Rebuild',
-      '2': 'Mobile App Development', 
-      '3': 'Data Analytics Platform',
-    };
-    return projects[id as keyof typeof projects] || 'Unknown Project';
-  };
-
-  const projectName = getProjectName(projectId);
+  const projectName = project?.name || 'Loading...';
 
   // Breadcrumb data with icons
   const breadcrumbItems = [
-    { label: 'Project', href: '/project', icon: <FolderOpen className="w-4 h-4" /> },
     { label: projectName, href: `/project/${projectId}/dashboard` },
-    { label: 'Meeting Management', href: `/project/${projectId}/meeting`, icon: <Calendar className="w-4 h-4" /> },
+    { label: 'Meetings', href: `/project/${projectId}/meeting` },
     { label: meeting.title, current: true }
   ];
 
@@ -1094,7 +1581,25 @@ const MeetingDetail = () => {
     };
   };
 
-  const statusStyle = getStatusStyle(meeting.status);
+  // Determine meeting status based on start time
+  const getMeetingStatus = (startDatetime: string) => {
+    const now = new Date();
+    const startTime = parseDatetimeSafely(startDatetime);
+    
+    if (!startTime) return { className: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100', text: 'Unknown' };
+    
+    const endTime = new Date(startTime.getTime() + meeting.duration * 60000);
+    
+    if (now < startTime) {
+      return { className: 'bg-blue-100 text-blue-800 dark:bg-blue-800 dark:text-blue-100', text: 'Scheduled' };
+    } else if (now >= startTime && now <= endTime) {
+      return { className: 'bg-green-100 text-green-800 dark:bg-green-800 dark:text-green-100', text: 'In Progress' };
+    } else {
+      return { className: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100', text: 'Completed' };
+    }
+  };
+
+  const statusStyle = getMeetingStatus(meeting.startDatetime);
 
   // Get action item status style
   const getActionItemStatus = (status: string) => {
@@ -1147,13 +1652,8 @@ const MeetingDetail = () => {
             <span className={`px-3 py-1 text-sm font-medium rounded-full ${statusStyle.className}`}>
               {statusStyle.text}
             </span>
-            {meeting.status === 'scheduled' && (
-              <button className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors">
-                <Play className="w-4 h-4" />
-                Start Meeting
-              </button>
-            )}
-            {meeting.status === 'in-progress' && (
+
+            {statusStyle.text === 'In Progress' && (
               <div className="flex gap-2">
                 <button 
                   onClick={() => setIsMuted(!isMuted)}
@@ -1190,7 +1690,13 @@ const MeetingDetail = () => {
             <div>
               <p className="text-sm text-gray-600 dark:text-gray-400">Date & Time</p>
               <p className="font-medium text-gray-900 dark:text-white">
-                {meeting.date} {meeting.time}
+                {(() => {
+                  const startDate = parseDatetimeSafely(meeting.startDatetime);
+                  if (startDate) {
+                    return `${startDate.toLocaleDateString()} ${startDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
+                  }
+                  return 'Date not available';
+                })()}
               </p>
             </div>
           </div>
@@ -1210,13 +1716,14 @@ const MeetingDetail = () => {
             <div>
               <p className="text-sm text-gray-600 dark:text-gray-400">Location</p>
               <p className="font-medium text-gray-900 dark:text-white">
-                {meeting.location}
+                {meeting.location || 'No location specified'}
               </p>
             </div>
           </div>
           
-          <div className="flex items-center gap-2">
-            <ParticipantsHeaderTooltip participants={meeting.participants} facilitator={meeting.facilitator} />
+          <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+              <Users className="w-5 h-5" />
+              <span>{meetingParticipants.length} {meetingParticipants.length === 1 ? 'participant' : 'participants'}</span>
           </div>
         </div>
       </div>
@@ -1255,7 +1762,7 @@ const MeetingDetail = () => {
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                     Meeting Description
                   </h3>
-                  {meeting.status !== 'completed' && !editingDescription && (
+                  {statusStyle.text !== 'Completed' && !editingDescription && (
                     <button
                       onClick={() => setEditingDescription(true)}
                       className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
@@ -1296,161 +1803,263 @@ const MeetingDetail = () => {
                 )}
               </div>
 
-              {/* Meeting Objectives Section */}
-              <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
-                <div className="flex justify-between items-center mb-3">
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                    Meeting Objectives
-                  </h3>
-                  {meeting.status !== 'completed' && !editingObjectives && (
-                    <button
-                      onClick={() => setEditingObjectives(true)}
-                      className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
-                    >
-                      <Edit className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-                {editingObjectives ? (
-                  <div className="space-y-3">
-                    <div className="space-y-2">
-                      {tempObjectives.map((objective, index) => (
-                        <div key={index} className="flex items-center gap-2 p-2 bg-gray-50 dark:bg-gray-700 rounded">
-                          <Target className="w-4 h-4 text-blue-500" />
-                          <span className="flex-1 text-gray-900 dark:text-white">{objective}</span>
-                          <button
-                            onClick={() => handleRemoveObjective(index)}
-                            className="text-red-500 hover:text-red-700 transition-colors"
-                          >
-                            <X className="w-4 h-4" />
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={newObjective}
-                        onChange={(e) => setNewObjective(e.target.value)}
-                        placeholder="Add new objective..."
-                        className="flex-1 p-2 border border-gray-300 dark:border-gray-600 rounded
-                                 bg-white dark:bg-gray-700 text-gray-900 dark:text-white
-                                 placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        onKeyPress={(e) => e.key === 'Enter' && handleAddObjective()}
-                      />
-                      <button
-                        onClick={handleAddObjective}
-                        disabled={!newObjective.trim()}
-                        className="px-3 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded transition-colors"
-                      >
-                        <Plus className="w-4 h-4" />
-                      </button>
-                    </div>
-                    <div className="flex justify-end gap-2">
-                      <button
-                        onClick={handleCancelObjectives}
-                        className="px-3 py-1 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        onClick={handleSaveObjectives}
-                        className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
-                      >
-                        Save
-                      </button>
-                    </div>
-                  </div>
-                ) : (
-                  <ul className="space-y-2">
-                    {meeting.objectives?.map((objective, index) => (
-                      <li key={index} className="flex items-center gap-2">
-                        <Target className="w-4 h-4 text-blue-500" />
-                        <span className="text-gray-600 dark:text-gray-400">{objective}</span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
+              
 
               {/* Participants Section */}
               <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-6">
                 <div className="flex justify-between items-center mb-3">
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                    Participants
+                    Participants ({meetingParticipants.length})
                   </h3>
-                  {meeting.status !== 'completed' && !editingParticipants && (
+                  {statusStyle.text !== 'Completed' && !editingParticipants && (
                     <button
                       onClick={() => setEditingParticipants(true)}
-                      className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
+                      className="flex items-center gap-2 px-3 py-2 text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
                     >
-                      <Edit className="w-4 h-4" />
+                      <Plus className="w-4 h-4" />
+                      <span className="text-sm">Manage Participants</span>
                     </button>
                   )}
                 </div>
+                
                 {editingParticipants ? (
                   <div className="space-y-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {tempParticipants.map((participant, index) => (
-                        <div key={index} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                          <div className="w-8 h-8 bg-gray-200 dark:bg-gray-600 rounded-full flex items-center justify-center">
-                            <span className="text-sm font-medium text-gray-600 dark:text-gray-300">
-                              {participant.charAt(0)}
-                            </span>
-                          </div>
-                          <div className="flex-1">
-                            <p className="font-medium text-gray-900 dark:text-white">{participant}</p>
-                            <p className="text-sm text-gray-600 dark:text-gray-400">
-                              {participant === meeting.facilitator ? 'Facilitator' : 'Participant'}
-                            </p>
-                          </div>
-                          {participant !== meeting.facilitator && (
-                            <button
-                              onClick={() => handleRemoveParticipant(index)}
-                              className="text-red-500 hover:text-red-700 transition-colors"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          )}
+                    {/* Selected Participants */}
+                    <div>
+                      <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                        Selected Participants ({selectedParticipants.length})
+                      </h4>
+                      {selectedParticipants.length > 0 ? (
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+                          {selectedParticipants.map((participant) => (
+                            <div key={`selected-participant-${participant.id}`} className="flex items-center gap-3 p-3 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+                              <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
+                                {participant.full_name?.charAt(0) || participant.username?.charAt(0) || participant.email.charAt(0)}
+                              </div>
+                              <div className="flex-1">
+                                <p className="font-medium text-gray-900 dark:text-white">
+                                  {participant.full_name || participant.username || participant.email}
+                                </p>
+                                <p className="text-sm text-gray-600 dark:text-gray-400">
+                                  {participant.role}
+                                </p>
+                              </div>
+                              <button
+                                onClick={() => handleRemoveParticipant(participant.id)}
+                                className="text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 p-1 rounded transition-colors"
+                                title="Remove participant"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ))}
                         </div>
-                      ))}
+                      ) : (
+                        <div className="text-center py-4 text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600 mb-4">
+                          <Users className="h-8 w-8 mx-auto mb-2 text-gray-400" />
+                          <p className="text-sm">No participants selected</p>
+                        </div>
+                      )}
                     </div>
-                    <div className="flex gap-2">
-                      <input
-                        type="text"
-                        value={newParticipant}
-                        onChange={(e) => setNewParticipant(e.target.value)}
-                        placeholder="Add participant name..."
-                        className="flex-1 p-2 border border-gray-300 dark:border-gray-600 rounded
-                                 bg-white dark:bg-gray-700 text-gray-900 dark:text-white
-                                 placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                        onKeyPress={(e) => e.key === 'Enter' && handleAddParticipant()}
-                      />
-                      <button
-                        onClick={handleAddParticipant}
-                        disabled={!newParticipant.trim() || tempParticipants.includes(newParticipant.trim())}
-                        className="px-3 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded transition-colors"
-                      >
-                        <Plus className="w-4 h-4" />
-                      </button>
+
+                    {/* Available Project Members */}
+                    <div>
+                      <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-3">
+                        Available Project Members ({getAvailableMembers().length})
+                      </h4>
+                      {getAvailableMembers().length > 0 ? (
+                        <div className="max-h-60 overflow-y-auto border border-gray-200 dark:border-gray-600 rounded-lg">
+                          {getAvailableMembers().map((member) => (
+                            <div key={`available-member-${member.id}`} 
+                                 className="flex items-center gap-3 p-3 hover:bg-gray-50 dark:hover:bg-gray-700 border-b border-gray-100 dark:border-gray-600 last:border-b-0 cursor-pointer transition-colors"
+                                 onClick={() => handleToggleParticipant(member)}>
+                              <div className="w-8 h-8 bg-gray-300 dark:bg-gray-600 rounded-full flex items-center justify-center text-gray-700 dark:text-gray-300 text-sm font-medium">
+                                {member.full_name?.charAt(0) || member.username?.charAt(0) || member.email.charAt(0)}
+                              </div>
+                              <div className="flex-1">
+                                <p className="font-medium text-gray-900 dark:text-white">
+                                  {member.full_name || member.username || member.email}
+                                </p>
+                                <p className="text-sm text-gray-600 dark:text-gray-400">
+                                  {member.role}
+                                </p>
+                              </div>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleToggleParticipant(member);
+                                }}
+                                className="text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 p-1 rounded transition-colors"
+                                title="Add as participant"
+                              >
+                                <Plus className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="text-center py-4 text-gray-500 dark:text-gray-400 bg-gray-50 dark:bg-gray-700 rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-600">
+                          <Check className="h-8 w-8 mx-auto mb-2 text-green-500" />
+                          <p className="text-sm">All project members are already participants</p>
+                        </div>
+                      )}
                     </div>
-                    <div className="flex justify-end gap-2">
+
+                    {/* External Participant Form */}
+                    <div>
+                      <div className="flex justify-between items-center mb-3">
+                        <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          Add External Participant
+                        </h4>
+                        <button
+                          onClick={() => setShowExternalParticipantForm(!showExternalParticipantForm)}
+                          className="text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
+                        >
+                          {showExternalParticipantForm ? 'Cancel' : 'Add External'}
+                        </button>
+                      </div>
+
+                      {showExternalParticipantForm && (
+                        <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 mb-4">
+                          <div className="space-y-3">
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                Name *
+                              </label>
+                              <input
+                                type="text"
+                                value={externalParticipantName}
+                                onChange={(e) => setExternalParticipantName(e.target.value)}
+                                placeholder="Enter participant name..."
+                                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg
+                                         bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+                                         placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                disabled={participantsLoading}
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                                Email (Optional)
+                              </label>
+                              <input
+                                type="email"
+                                value={externalParticipantEmail}
+                                onChange={(e) => setExternalParticipantEmail(e.target.value)}
+                                placeholder="Enter participant email..."
+                                className="w-full p-2 border border-gray-300 dark:border-gray-600 rounded-lg
+                                         bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+                                         placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                                disabled={participantsLoading}
+                              />
+                            </div>
+                            <div className="flex justify-end">
+                              <button
+                                onClick={handleAddExternalParticipant}
+                                disabled={!externalParticipantName.trim() || participantsLoading}
+                                className="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-green-400 text-white rounded-lg transition-colors flex items-center gap-2 disabled:cursor-not-allowed"
+                              >
+                                {participantsLoading ? (
+                                  <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                                ) : (
+                                  <Plus className="w-4 h-4" />
+                                )}
+                                {participantsLoading ? 'Adding...' : 'Add Participant'}
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="text-sm text-gray-500 dark:text-gray-400 bg-blue-50 dark:bg-blue-900/20 p-3 rounded-lg">
+                      <p className="flex items-center gap-2">
+                        <Users className="w-4 h-4" />
+                        Add project members as participants or add external participants using the form above.
+                      </p>
+                    </div>
+
+                    <div className="flex justify-end gap-2 pt-4 border-t border-gray-200 dark:border-gray-600">
                       <button
                         onClick={handleCancelParticipants}
-                        className="px-3 py-1 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
+                        className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors"
                       >
                         Cancel
                       </button>
                       <button
                         onClick={handleSaveParticipants}
-                        className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded transition-colors"
+                        disabled={participantsLoading}
+                        className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white rounded-lg transition-colors flex items-center gap-2 disabled:cursor-not-allowed"
                       >
-                        Save
+                        {participantsLoading ? (
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                        ) : (
+                          <Save className="w-4 h-4" />
+                        )}
+                        {participantsLoading ? 'Saving...' : 'Save Participants'}
                       </button>
                     </div>
                   </div>
                 ) : (
-                  <ParticipantsDetailView participants={meeting.participants} facilitator={meeting.facilitator} />
+                  <div className="space-y-3">
+                    {meetingParticipants.length > 0 ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {meetingParticipants.map((participant) => (
+                          <div key={`overview-participant-${participant.id}`} className="flex items-center gap-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg group">
+                            <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
+                              {participant.fullName?.charAt(0) || participant.username?.charAt(0) || participant.email?.charAt(0) || participant.externalName?.charAt(0) || participant.externalEmail?.charAt(0) || 'U'}
+                            </div>
+                            <div className="flex-1">
+                              <p className="font-medium text-gray-900 dark:text-white">
+                                {participant.fullName || participant.username || participant.externalName || participant.email || participant.externalEmail || 'Unknown Participant'}
+                              </p>
+                              <div className="flex flex-col gap-1">
+                                <p className="text-sm text-gray-600 dark:text-gray-400">
+                                  {formatRoleDisplayName(participant.role)}
+                                </p>
+                                {/* Show email for external participants if available */}
+                                {participant.externalEmail && (
+                                  <p className="text-xs text-gray-500 dark:text-gray-400 font-mono">
+                                    {participant.externalEmail}
+                                  </p>
+                                )}
+                                {/* Show email for internal users if no external email but has user email */}
+                                {!participant.externalEmail && participant.email && participant.userId && (
+                                  <p className="text-xs text-gray-500 dark:text-gray-400 font-mono">
+                                    {participant.email}
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                            {statusStyle.text !== 'Completed' && (
+                              <button
+                                onClick={() => handleRemoveMeetingParticipant(participant.id, participant.userId)}
+                                disabled={participantsLoading}
+                                className="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 hover:bg-red-50 dark:hover:bg-red-900/20 p-1 rounded transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                title="Remove participant"
+                              >
+                                <X className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                        <Users className="h-12 w-12 mx-auto mb-4 text-gray-400" />
+                        <p className="font-medium">No participants assigned</p>
+                        <p className="text-sm mt-2">Click "Manage Participants" to add project members to this meeting</p>
+                        {statusStyle.text !== 'Completed' && (
+                          <button
+                            onClick={() => setEditingParticipants(true)}
+                            className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors flex items-center gap-2 mx-auto"
+                          >
+                            <Plus className="w-4 h-4" />
+                            Add Participants
+                          </button>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -1463,22 +2072,52 @@ const MeetingDetail = () => {
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                   Meeting Agenda
                 </h3>
-                {meeting.status !== 'completed' && (
+                 {statusStyle.text !== 'Completed' && (
+                   <div className="flex gap-2">
                   <button 
                     onClick={() => setAgendaModalOpen(true)}
-                    className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm flex items-center gap-2"
+                       disabled={agendaLoading}
+                       className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-3 py-2 rounded-lg text-sm flex items-center gap-2 disabled:cursor-not-allowed"
                   >
+                       {agendaLoading ? (
+                         <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                       ) : (
                     <Plus className="w-4 h-4" />
-                    Add Agenda
+                       )}
+                       {agendaLoading ? 'Processing...' : 'Add Agenda'}
                   </button>
+                     {agendaItems.length > 0 && (
+                       <button 
+                         onClick={() => {
+                           setDeleteTarget({type: 'all-agenda'});
+                           setConfirmModalOpen(true);
+                         }}
+                         disabled={agendaLoading}
+                         className="bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white px-3 py-2 rounded-lg text-sm flex items-center gap-2 disabled:cursor-not-allowed"
+                       >
+                         {agendaLoading ? (
+                           <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                         ) : (
+                           <Trash2 className="w-4 h-4" />
+                         )}
+                         {agendaLoading ? 'Processing...' : 'Clear All'}
+                       </button>
+                     )}
+                   </div>
                 )}
               </div>
               
               <div className="space-y-3">
-                {meeting.agenda.map((item, index) => (
+                 {agendaLoading && (
+                   <div className="text-center py-4">
+                     <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mx-auto mb-2"></div>
+                     <p className="text-sm text-gray-600 dark:text-gray-400">Updating agenda...</p>
+                   </div>
+                 )}
+                 {agendaItems.length > 0 ? agendaItems.map((item, index) => (
                   <div 
-                    key={index} 
-                    draggable={meeting.status !== 'completed'}
+                    key={`agenda-${item.agendaId || index}`} 
+                     draggable={statusStyle.text !== 'Completed' && !agendaLoading}
                     onDragStart={(e) => handleDragStart(e, index)}
                     onDragOver={(e) => handleDragOver(e, index)}
                     onDragLeave={handleDragLeave}
@@ -1491,10 +2130,10 @@ const MeetingDetail = () => {
                         ? 'bg-blue-50 dark:bg-blue-800 border-2 border-blue-300 dark:border-blue-600'
                         : 'bg-gray-50 dark:bg-gray-700'
                     } ${
-                      meeting.status !== 'completed' ? 'cursor-move' : ''
+                       statusStyle.text !== 'Completed' && !agendaLoading ? 'cursor-move' : ''
                     }`}
                   >
-                    {meeting.status !== 'completed' && (
+                    {statusStyle.text !== 'Completed' && (
                       <div className="flex items-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors">
                         <GripVertical className="w-4 h-4" />
                       </div>
@@ -1502,18 +2141,19 @@ const MeetingDetail = () => {
                     <div className="w-6 h-6 bg-blue-100 dark:bg-blue-800 text-blue-600 dark:text-blue-300 rounded-full flex items-center justify-center text-sm font-medium">
                       {index + 1}
                     </div>
-                    <span className="flex-1 text-gray-900 dark:text-white">{item}</span>
-                    {meeting.status === 'completed' && (
+                    <span className="flex-1 text-gray-900 dark:text-white">{item.title}</span>
+                    {statusStyle.text === 'Completed' && (
                       <CheckCircle className="w-5 h-5 text-green-500" />
                     )}
-                    {meeting.status !== 'completed' && (
+                                         {statusStyle.text !== 'Completed' && (
                       <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                         <button
                           onClick={() => {
                             setEditingAgendaIndex(index);
                             setAgendaModalOpen(true);
                           }}
-                          className="p-1 text-gray-400 hover:text-blue-600 transition-colors"
+                           disabled={agendaLoading}
+                           className="p-1 text-gray-400 hover:text-blue-600 disabled:text-gray-300 disabled:cursor-not-allowed transition-colors"
                           title="Edit agenda item"
                         >
                           <Edit className="w-4 h-4" />
@@ -1523,7 +2163,8 @@ const MeetingDetail = () => {
                             setDeleteTarget({type: 'agenda', index});
                             setConfirmModalOpen(true);
                           }}
-                          className="p-1 text-gray-400 hover:text-red-600 transition-colors"
+                           disabled={agendaLoading}
+                           className="p-1 text-gray-400 hover:text-red-600 disabled:text-gray-300 disabled:cursor-not-allowed transition-colors"
                           title="Delete agenda item"
                         >
                           <Trash2 className="w-4 h-4" />
@@ -1531,7 +2172,11 @@ const MeetingDetail = () => {
                       </div>
                     )}
                   </div>
-                ))}
+                )) : (
+                  <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                    No agenda items yet
+                  </div>
+                )}
               </div>
             </div>
           )}
@@ -1540,48 +2185,77 @@ const MeetingDetail = () => {
           {activeTab === 'notes' && (
             <div className="space-y-6">
               {/* Meeting Notes History Section */}
-              {notesHistory.length > 0 && (
+              {meetingNotes.length > 0 && (
                 <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
                   <div className="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
                       <MessageSquare className="w-5 h-5" />
-                      Meeting Notes History ({notesHistory.length})
+                      Meeting Notes History ({meetingNotes.length})
                     </h3>
                     <div className="flex items-center gap-3">
-                      {meeting.status !== 'completed' && (
+                      {statusStyle.text !== 'Completed' && (
                         <button 
                           onClick={() => {
                             setDeleteTarget({type: 'notes'});
                             setConfirmModalOpen(true);
                           }}
-                          className="bg-red-600 hover:bg-red-700 text-white px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors"
+                          disabled={notesLoading}
+                          className="bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors disabled:cursor-not-allowed"
                         >
-                          <Trash2 className="w-4 h-4" />
-                          Clear All Notes
+                          {notesLoading ? (
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                          ) : (
+                            <Trash2 className="w-4 h-4" />
+                          )}
+                          {notesLoading ? 'Processing...' : 'Clear All Notes'}
                         </button>
                       )}
                     </div>
                   </div>
                   <div className="px-6 py-4 space-y-4 max-h-96 overflow-y-auto">
-                    {notesHistory.map((note) => (
-                      <div key={note.id} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
+                    {meetingNotes.map((note, index) => {
+                      // Handle both noteId (aliased) and id (fallback) from backend
+                      const noteId = note.noteId || (note as any).id;
+                      
+                      // Debug logging for the first note
+                      if (index === 0) {
+                        console.log('Rendering note:', note);
+                        console.log('noteId:', noteId);
+                        console.log('Available fields:', Object.keys(note));
+                      }
+                      
+                      return (
+                      <div key={`note-${noteId || (note.createdAt || note.created_at) || Math.random()}`} className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4">
                         {/* Main note */}
                         <div className="flex items-start gap-3">
                           <div className="w-8 h-8 bg-blue-500 rounded-full flex items-center justify-center text-white text-sm font-medium">
-                            {note.author.charAt(0)}
+                            {getUserAvatarLetter(note.user, currentUser)}
                           </div>
                           <div className="flex-1 min-w-0">
                             <div className="flex items-center gap-2 mb-1">
-                              <span className="font-medium text-gray-900 dark:text-white">{note.author}</span>
-                              <span className="text-sm text-gray-500 dark:text-gray-400">{note.timestamp}</span>
+                              <span className="font-medium text-gray-900 dark:text-white">
+                                {getUserDisplayName(note.user, currentUser)}
+                              </span>
+                              {note.user?.id === currentUser?.id && (
+                                <span className="text-xs bg-blue-100 dark:bg-blue-800 text-blue-600 dark:text-blue-200 px-1.5 py-0.5 rounded">
+                                  You
+                                </span>
+                              )}
+                              <span className="text-sm text-gray-500 dark:text-gray-400">
+                                {(note.createdAt || note.created_at) ? new Date(note.createdAt || note.created_at!).toLocaleString() : 'Unknown time'}
+                              </span>
                             </div>
                             <div className="prose prose-sm max-w-none dark:prose-invert">
                               <MarkdownEditor value={note.content} readonly={true} />
                             </div>
-                            {meeting.status !== 'completed' && (
+                            {statusStyle.text !== 'Completed' && noteId && (
                               <button
-                                onClick={() => setReplyingTo(note.id)}
-                                className="mt-2 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors"
+                                onClick={() => {
+                                  console.log('Reply button clicked for noteId:', noteId);
+                                  setReplyingTo(noteId.toString());
+                                }}
+                                disabled={notesLoading}
+                                className="mt-2 text-sm text-blue-600 dark:text-blue-400 hover:text-blue-800 dark:hover:text-blue-300 transition-colors disabled:text-gray-400 disabled:cursor-not-allowed"
                               >
                                 Reply
                               </button>
@@ -1589,34 +2263,51 @@ const MeetingDetail = () => {
                           </div>
                         </div>
 
-                        {/* Replies */}
-                        {note.replies && note.replies.length > 0 && (
+                        {/* Child Notes (Replies) */}
+                        {note.childNotes && note.childNotes.length > 0 && (
                           <div className="mt-4 ml-11 space-y-3">
-                            {note.replies.map((reply) => (
-                              <div key={reply.id} className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
+                            {note.childNotes.map((childNote) => {
+                              const childNoteId = childNote.noteId || (childNote as any).id;
+                              return (
+                              <div key={`child-note-${childNoteId}`} className="bg-white dark:bg-gray-800 rounded-lg p-3 border border-gray-200 dark:border-gray-600">
                                 <div className="flex items-start gap-3">
                                   <div className="w-6 h-6 bg-green-500 rounded-full flex items-center justify-center text-white text-xs font-medium">
-                                    {reply.author.charAt(0)}
+                                    {getUserAvatarLetter(childNote.user, currentUser)}
                                   </div>
                                   <div className="flex-1 min-w-0">
                                     <div className="flex items-center gap-2 mb-1">
-                                      <span className="font-medium text-gray-900 dark:text-white text-sm">{reply.author}</span>
-                                      <span className="text-xs text-gray-500 dark:text-gray-400">{reply.timestamp}</span>
+                                      <span className="font-medium text-gray-900 dark:text-white text-sm">
+                                        {getUserDisplayName(childNote.user, currentUser)}
+                                      </span>
+                                      {childNote.user?.id === currentUser?.id && (
+                                        <span className="text-xs bg-blue-100 dark:bg-blue-800 text-blue-600 dark:text-blue-200 px-1.5 py-0.5 rounded">
+                                          You
+                                        </span>
+                                      )}
+                                      <span className="text-xs text-gray-500 dark:text-gray-400">
+                                        {(childNote.createdAt || childNote.created_at) ? new Date(childNote.createdAt || childNote.created_at!).toLocaleString() : 'Unknown time'}
+                                      </span>
                                     </div>
                                     <div className="prose prose-sm max-w-none dark:prose-invert">
-                                      <MarkdownEditor value={reply.content} readonly={true} />
+                                      <MarkdownEditor value={childNote.content} readonly={true} />
                                     </div>
                                   </div>
                                 </div>
                               </div>
-                            ))}
+                            );
+                            })}
                           </div>
                         )}
 
                         {/* Reply input */}
-                        {replyingTo === note.id && meeting.status !== 'completed' && (
+                        {replyingTo === noteId?.toString() && statusStyle.text !== 'Completed' && noteId && (
                           <div className="mt-4 ml-11">
                             <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-600 p-3">
+                              <div className="flex items-center gap-2 mb-2">
+                                <span className="text-sm text-gray-600 dark:text-gray-400">
+                                  Replying to {getUserDisplayName(note.user, currentUser)}
+                                </span>
+                              </div>
                               <textarea
                                 value={replyContent}
                                 onChange={(e) => setReplyContent(e.target.value)}
@@ -1634,18 +2325,29 @@ const MeetingDetail = () => {
                                   Cancel
                                 </button>
                                 <button
-                                  onClick={() => handleReply(note.id)}
-                                  disabled={!replyContent.trim()}
-                                  className="px-3 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white text-sm rounded transition-colors"
+                                  onClick={() => {
+                                    console.log('Submit reply button clicked - noteId:', noteId, 'replyContent:', replyContent);
+                                    if (noteId) {
+                                      handleReply(noteId.toString());
+                                    } else {
+                                      console.error('Cannot submit reply: noteId is undefined');
+                                    }
+                                  }}
+                                  disabled={!replyContent.trim() || notesLoading || !noteId}
+                                  className="px-3 py-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white text-sm rounded transition-colors flex items-center gap-1"
                                 >
-                                  Reply
+                                  {notesLoading ? (
+                                    <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-white"></div>
+                                  ) : null}
+                                  {notesLoading ? 'Replying...' : 'Reply'}
                                 </button>
                               </div>
                             </div>
                           </div>
                         )}
                       </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -1655,7 +2357,7 @@ const MeetingDetail = () => {
                 <div className="flex justify-between items-center px-6 py-4 border-b border-gray-200 dark:border-gray-700">
                   <h3 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
                     <Edit className="w-5 h-5" />
-                    {meeting.status === 'completed' ? 'Meeting Notes' : 'Write Meeting Notes'}
+                    {statusStyle.text === 'Completed' ? 'Meeting Notes' : 'Write Meeting Notes'}
                   </h3>
                   <div className="flex items-center gap-2">
                     {hasUnsavedNotes && (
@@ -1664,26 +2366,30 @@ const MeetingDetail = () => {
                         Unsaved changes
                       </span>
                     )}
-                    {meeting.status !== 'completed' && (
+                    {statusStyle.text !== 'Completed' && (
                       <button 
                         onClick={handleSaveNotes}
-                        disabled={!meetingNotes.trim()}
+                        disabled={!currentNote.trim() || notesLoading}
                         className="bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white px-3 py-2 rounded-lg text-sm flex items-center gap-2 transition-colors"
                       >
-                        <Save className="w-4 h-4" />
-                        Add Note
+                        {notesLoading ? (
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                        ) : (
+                          <Save className="w-4 h-4" />
+                        )}
+                        {notesLoading ? 'Saving...' : 'Add Note'}
                       </button>
                     )}
                   </div>
                 </div>
                 <div className="p-6">
-                  {meeting.status === 'completed' ? (
+                  {statusStyle.text === 'Completed' ? (
                     <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                       Meeting is completed. No new notes can be added.
                     </div>
                   ) : (
                     <MarkdownEditor 
-                      value={meetingNotes} 
+                      value={currentNote} 
                       readonly={false} 
                       onChange={handleNotesChange}
                     />
@@ -1691,27 +2397,7 @@ const MeetingDetail = () => {
                 </div>
               </div>
 
-              {/* Meeting Decisions Section */}
-              {'decisions' in meeting && meeting.decisions && (
-                <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg">
-                  <div className="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-                    <h4 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center gap-2">
-                      <CheckCircle className="w-5 h-5 text-green-500" />
-                      Meeting Decisions
-                    </h4>
-                  </div>
-                  <div className="px-6 py-4">
-                    <ul className="space-y-3">
-                      {meeting.decisions.map((decision: string, index: number) => (
-                        <li key={index} className="flex items-start gap-3 p-3 bg-green-50 dark:bg-green-900/20 rounded-lg border border-green-200 dark:border-green-800">
-                          <CheckCircle className="w-5 h-5 text-green-500 mt-0.5 flex-shrink-0" />
-                          <span className="text-gray-700 dark:text-gray-300 leading-relaxed">{decision}</span>
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                </div>
-              )}
+
             </div>
           )}
 
@@ -1731,31 +2417,43 @@ const MeetingDetail = () => {
                 </button>
               </div>
 
-              {'actionItems' in meeting && meeting.actionItems && meeting.actionItems.length > 0 ? (
+              {actionItems.length > 0 ? (
                 <div className="space-y-3">
-                  {meeting.actionItems.map((action: any) => {
-                    const actionStatus = getActionItemStatus(action.status);
-                    const priorityColors = {
-                      low: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-100',
-                      medium: 'bg-yellow-100 text-yellow-800 dark:bg-yellow-800 dark:text-yellow-100',
-                      high: 'bg-red-100 text-red-800 dark:bg-red-800 dark:text-red-100'
-                    };
+                  {actionItems.map((action: any, idx: number) => {
+                    const stableKey = action.id ?? `fallback-${idx}`;
+                    if (process.env.NODE_ENV !== 'production') {
+                      if (stableKey === `fallback-${idx}`) {
+                        // eslint-disable-next-line no-console
+                        console.warn('Action item missing id, using fallback key', action);
+                      }
+                    }
+                    console.log('Rendering action item:', action);
+                    
+                    // Parse dates properly
+                    const createdDate = action.created_at ? new Date(action.created_at) : null;
+                    const dueDate = action.due_date ? new Date(action.due_date) : null;
+                    
+                    // Get creator display name - prioritize full_name, fallback to username, then email
+                    const creatorDisplayName = action.user?.full_name || 
+                                             action.user?.username || 
+                                             action.user?.email || 
+                                             'Unknown User';
+                    
+                    console.log('Created date:', action.created_at, 'Parsed:', createdDate);
+                    console.log('Due date:', action.due_date, 'Parsed:', dueDate);
+                    console.log('Creator:', action.user, 'Display name:', creatorDisplayName);
+                    
                     return (
-                      <div key={action.id} className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg group">
+                      <div key={stableKey} className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg group">
                         <div className="flex justify-between items-start mb-2">
                           <h4 className="font-medium text-gray-900 dark:text-white">
                             {action.title}
                           </h4>
                           <div className="flex items-center gap-2">
-                            <span className={`px-2 py-1 text-xs font-medium rounded-full ${priorityColors[action.priority as keyof typeof priorityColors]}`}>
-                              {action.priority}
-                            </span>
-                            <span className={`px-2 py-1 text-xs font-medium rounded-full ${actionStatus.className}`}>
-                              {actionStatus.text}
-                            </span>
                             <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                               <button
                                 onClick={() => {
+                                  console.log('Edit button clicked for action:', action);
                                   setEditingActionItem(action);
                                   setActionModalOpen(true);
                                 }}
@@ -1778,8 +2476,11 @@ const MeetingDetail = () => {
                           </div>
                         </div>
                         <div className="flex justify-between items-center text-sm text-gray-600 dark:text-gray-400">
-                          <span>Assignee: {action.assignee}</span>
-                          <span>Due: {action.dueDate || 'No due date'}</span>
+                          <div className="flex items-center gap-4">
+                            <span>Created: {createdDate ? createdDate.toLocaleDateString() : 'Unknown'}</span>
+                            <span>by: {creatorDisplayName}</span>
+                          </div>
+                          <span>Due: {dueDate ? dueDate.toLocaleDateString() : 'No due date'}</span>
                         </div>
                       </div>
                     );
@@ -1803,17 +2504,20 @@ const MeetingDetail = () => {
           setEditingAgendaIndex(null);
         }}
         onSave={editingAgendaIndex !== null ? handleEditAgendaItem : handleAddAgendaItem}
-        item={editingAgendaIndex !== null ? meeting.agenda[editingAgendaIndex] : null}
+         onBulkSave={editingAgendaIndex === null ? handleBulkCreateAgendaItems : undefined}
+         item={editingAgendaIndex !== null ? agendaItems[editingAgendaIndex]?.title : null}
       />
 
       <ActionItemModal
         isOpen={actionModalOpen}
         onClose={() => {
+          console.log('ActionItemModal: Closing modal, clearing editingActionItem');
           setActionModalOpen(false);
           setEditingActionItem(null);
         }}
         onSave={editingActionItem ? handleEditActionItem : handleAddActionItem}
         item={editingActionItem}
+        projectMembers={selectedParticipants}
       />
 
       <ConfirmationModal
@@ -1825,11 +2529,13 @@ const MeetingDetail = () => {
         onConfirm={handleConfirmDelete}
         title={
           deleteTarget?.type === 'agenda' ? 'Delete Agenda Item' :
+           deleteTarget?.type === 'all-agenda' ? 'Clear All Agenda Items' :
           deleteTarget?.type === 'action' ? 'Delete Action Item' :
           deleteTarget?.type === 'notes' ? 'Delete Meeting Notes' : 'Confirm Delete'
         }
         message={
           deleteTarget?.type === 'agenda' ? 'Are you sure you want to delete this agenda item? This action cannot be undone.' :
+           deleteTarget?.type === 'all-agenda' ? 'Are you sure you want to clear all agenda items? This action cannot be undone.' :
           deleteTarget?.type === 'action' ? 'Are you sure you want to delete this action item? This action cannot be undone.' :
           deleteTarget?.type === 'notes' ? 'Are you sure you want to delete all meeting notes? This action cannot be undone.' :
           'Are you sure you want to delete this item?'

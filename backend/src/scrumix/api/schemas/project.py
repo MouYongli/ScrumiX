@@ -1,11 +1,12 @@
 """
 Project-related Pydantic schemas
 """
-from typing import Optional
-from datetime import datetime, timedelta
+from typing import Optional, Dict
+from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
-from scrumix.api.models.project import ProjectStatus
 
+from scrumix.api.models.project import ProjectStatus
+from scrumix.api.models.user_project import ScrumRole
 
 class ProjectBase(BaseModel):
     """Base project schema with common fields."""
@@ -16,11 +17,9 @@ class ProjectBase(BaseModel):
     end_date: Optional[datetime] = Field(None, description="Project end date")
     color: Optional[str] = Field(None, max_length=20, description="Project color")
 
-
 class ProjectCreate(ProjectBase):
     """Create project schema"""
     model_config = ConfigDict(populate_by_name=True)
-
 
 class ProjectUpdate(BaseModel):
     """Update project information schema"""
@@ -33,7 +32,6 @@ class ProjectUpdate(BaseModel):
     end_date: Optional[datetime] = Field(default=None, description="Project end date")
     color: Optional[str] = None
 
-
 class ProjectInDB(ProjectBase):
     """Project information in database"""
     model_config = ConfigDict(from_attributes=True)
@@ -43,7 +41,6 @@ class ProjectInDB(ProjectBase):
     updated_at: datetime
     last_activity_at: datetime
 
-
 class ProjectResponse(ProjectBase):
     """Project response schema for frontend (matches frontend Project interface)"""
     model_config = ConfigDict(from_attributes=True, populate_by_name=True)
@@ -52,12 +49,38 @@ class ProjectResponse(ProjectBase):
     # Calculated fields (retrieved from relationships)
     progress: int = 0  # Project progress percentage
     members: int = 1   # Number of project members
-    tasks: dict = {"completed": 0, "total": 0}  # Task statistics
+    tasks: Dict[str, int] = {"completed": 0, "total": 0}  # Task statistics
     last_activity_at: datetime
+    user_role: Optional[ScrumRole] = None  # Current user's Scrum role in the project
     
     @classmethod
-    def from_db_model(cls, project: "Project", progress: int = 0, members: int = 1, 
-                     tasks_completed: int = 0, tasks_total: int = 0) -> "ProjectResponse":
+    def from_orm(cls, obj):
+        """Create response object from ORM model (for compatibility)"""
+        return cls(
+            id=obj.id,
+            name=obj.name,
+            description=obj.description,
+            status=obj.status,
+            start_date=obj.start_date,
+            end_date=obj.end_date,
+            color=obj.color,
+            progress=0,
+            members=1,
+            tasks={"completed": 0, "total": 0},
+            last_activity_at=obj.last_activity_at,
+            user_role=None
+        )
+    
+    @classmethod
+    def from_db_model(
+        cls,
+        project: "Project",
+        progress: int = 0,
+        members: int = 1,
+        tasks_completed: int = 0,
+        tasks_total: int = 0,
+        user_role: Optional[ScrumRole] = None
+    ) -> "ProjectResponse":
         """Create response object from database model"""
         return cls(
             id=project.id,
@@ -70,5 +93,7 @@ class ProjectResponse(ProjectBase):
             progress=progress,
             members=members,
             tasks={"completed": tasks_completed, "total": tasks_total},
-            last_activity_at=project.last_activity_at
-        ) 
+            last_activity_at=project.last_activity_at,
+            user_role=user_role
+        )
+

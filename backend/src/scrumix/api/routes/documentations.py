@@ -15,6 +15,7 @@ from scrumix.api.schemas.documentation import (
 )
 from scrumix.api.models.documentation import DocumentationType
 from scrumix.api.crud.documentation import documentation_crud
+from scrumix.api.utils.notification_helpers import notification_helper
 
 router = APIRouter()
 
@@ -24,6 +25,7 @@ def get_documentations(
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
     doc_type: Optional[DocumentationType] = Query(None, description="Filter by documentation type"),
     search: Optional[str] = Query(None, description="Search in title and description"),
+    project_id: Optional[int] = Query(None, description="Filter by project ID"),
     db: Session = Depends(get_db),
     current_user: UserInDB = Depends(get_current_user)
 ):
@@ -32,9 +34,9 @@ def get_documentations(
     """
     try:
         if search:
-            documentations = documentation_crud.search_documentations(db, search, skip, limit)
+            documentations = documentation_crud.search_documentations(db, search, skip, limit, project_id)
         else:
-            documentations = documentation_crud.get_documentations(db, skip, limit, doc_type)
+            documentations = documentation_crud.get_documentations(db, skip, limit, doc_type, project_id)
         
         return [
             DocumentationResponse.from_db_model(doc) 
@@ -54,6 +56,21 @@ def create_documentation(
     """
     try:
         documentation = documentation_crud.create_documentation(db, documentation_create)
+        
+        # Send notification to project members
+        try:
+            notification_helper.create_documentation_added_notification(
+                db=db,
+                documentation_id=documentation.id,
+                documentation_title=documentation.title,
+                documentation_type=documentation.type.value,
+                project_id=documentation.project_id,
+                created_by_user_id=current_user.id
+            )
+        except Exception as e:
+            # Log the error but don't fail the documentation creation
+            print(f"Failed to create documentation notification: {e}")
+        
         return DocumentationResponse.from_db_model(documentation)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -186,3 +203,44 @@ def get_documentation_statistics(
         return stats
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error fetching documentation statistics: {str(e)}") 
+
+@router.get("/project/{project_id}", response_model=List[DocumentationResponse])
+def get_documentations_by_project(
+    project_id: int,
+    skip: int = Query(0, ge=0, description="Number of records to skip"),
+    limit: int = Query(100, ge=1, le=1000, description="Maximum number of records to return"),
+    doc_type: Optional[DocumentationType] = Query(None, description="Filter by documentation type"),
+    search: Optional[str] = Query(None, description="Search in title and description"),
+    db: Session = Depends(get_db),
+    current_user: UserInDB = Depends(get_current_user)
+):
+    """
+    Get documentation items for a specific project
+    """
+    try:
+        if search:
+            documentations = documentation_crud.search_documentations(db, search, skip, limit, project_id)
+        else:
+            documentations = documentation_crud.get_documentations(db, skip, limit, doc_type, project_id)
+        
+        return [
+            DocumentationResponse.from_db_model(doc) 
+            for doc in documentations
+        ]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching project documentation: {str(e)}") 
+
+@router.get("/project/{project_id}/users", response_model=List[dict])
+def get_project_users_for_documentation(
+    project_id: int,
+    db: Session = Depends(get_db),
+    current_user: UserInDB = Depends(get_current_user)
+):
+    """
+    Get project users for author selection in documentation
+    """
+    try:
+        users = documentation_crud.get_project_users(db, project_id)
+        return users
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching project users: {str(e)}") 

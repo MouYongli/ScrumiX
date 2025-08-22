@@ -1,149 +1,82 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
-  Search, Plus, Upload, Filter, Calendar, User, Tag, 
+  Search, Plus, Upload, Calendar, User, Tag, 
   Eye, Edit2, Download, Trash2, FileText, FolderOpen,
-  BookOpen, Filter as FilterIcon, ChevronDown, X
+  BookOpen, ChevronDown, X, Loader2
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
-
-interface DocumentItem {
-  id: string;
-  title: string;
-  author: string;
-  createdAt: string;
-  tags: string[];
-  type: 'retrospective' | 'meeting' | 'requirements' | 'design' | 'other';
-  fileSize?: string;
-  description?: string;
-  content?: string;
-  fileName?: string;
-  fileUrl?: string;
-  fileType?: string;
-}
+import { api } from '@/utils/api';
+import { documentationApi } from '@/utils/api';
+import { Documentation, DocumentationType, DocumentationCreate, DocumentationUpdate } from '@/types/api';
 
 interface ProjectDocumentationProps {
   params: Promise<{ 'project-id': string }>;
 }
 
-// Mock documentation data
-const mockDocuments: DocumentItem[] = [
-  {
-    id: '1',
-    title: 'Sprint 5 Retrospective',
-    author: 'M. Schmidt',
-    createdAt: '2025-06-19',
-    tags: ['retrospective', 'team'],
-    type: 'retrospective',
-    fileSize: '2.3 MB',
-    description: 'Team retrospective meeting notes and action items for Sprint 5',
-    content: 'Sprint 5 retrospective content...'
-  },
-  {
-    id: '2',
-    title: 'Product Requirements Document',
-    author: 'J. Anderson',
-    createdAt: '2025-06-15',
-    tags: ['requirements', 'product'],
-    type: 'requirements',
-    fileSize: '1.8 MB',
-    description: 'Comprehensive product requirements and specifications',
-    content: 'Product requirements content...'
-  },
-  {
-    id: '3',
-    title: 'Daily Standup Notes - Week 24',
-    author: 'R. Williams',
-    createdAt: '2025-06-12',
-    tags: ['standup', 'weekly'],
-    type: 'meeting',
-    fileSize: '0.5 MB',
-    description: 'Weekly compilation of daily standup meeting notes',
-    content: 'Daily standup notes content...'
-  },
-  {
-    id: '4',
-    title: 'UI/UX Design Guidelines',
-    author: 'S. Johnson',
-    createdAt: '2025-06-08',
-    tags: ['design', 'guidelines', 'ui'],
-    type: 'design',
-    fileSize: '5.2 MB',
-    description: 'Design system and UI/UX guidelines for the project',
-    content: 'UI/UX design guidelines content...'
-  },
-  {
-    id: '5',
-    title: 'Sprint Planning Meeting',
-    author: 'T. Brown',
-    createdAt: '2025-06-05',
-    tags: ['planning', 'sprint'],
-    type: 'meeting',
-    fileSize: '1.1 MB',
-    description: 'Sprint planning session notes and task assignments',
-    content: 'Sprint planning meeting content...'
-  },
-  {
-    id: '6',
-    title: 'System Architecture Diagram',
-    author: 'K. Chen',
-    createdAt: '2025-06-01',
-    tags: ['architecture', 'technical'],
-    type: 'design',
-    fileSize: '2.8 MB',
-    description: 'Complete system architecture overview with detailed diagrams',
-    content: 'Architecture documentation content...',
-    fileName: 'system-architecture.pdf',
-    fileUrl: 'data:application/pdf;base64,sample', // This would be a real file URL in practice
-    fileType: 'application/pdf'
-  }
-];
-
 // Document Modal Component
 interface DocumentModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSave: (document: Partial<DocumentItem>) => void;
-  document?: DocumentItem;
+  onSave: (document: DocumentationCreate | DocumentationUpdate) => void;
+  document?: Documentation;
   mode: 'create' | 'edit';
+  projectId: number;
+  projectUsers: Array<{
+    id: number;
+    full_name: string;
+    email: string;
+    username?: string;
+  }>;
 }
 
-const DocumentModal: React.FC<DocumentModalProps> = ({ isOpen, onClose, onSave, document, mode }) => {
+const DocumentModal: React.FC<DocumentModalProps> = ({ isOpen, onClose, onSave, document, mode, projectId, projectUsers }) => {
   const [formData, setFormData] = useState({
     title: document?.title || '',
     description: document?.description || '',
-    type: document?.type || 'other' as DocumentItem['type'],
-    author: document?.author || 'Current User'
+    type: document?.type || DocumentationType.OTHER,
+    file_url: document?.file_url || ''
   });
 
   const [uploadedFile, setUploadedFile] = useState<File | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [selectedAuthors, setSelectedAuthors] = useState<number[]>(
+    document?.authors?.map(author => author.id) || []
+  );
+  const [isAuthorDropdownOpen, setIsAuthorDropdownOpen] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setIsSubmitting(true);
     
-    let fileData = {};
+    try {
+      let fileUrl = formData.file_url;
+    
+      // In a real implementation, you would upload the file to a file server
+      // and get back a URL. For now, we'll use the existing file_url or a placeholder
     if (uploadedFile) {
-      const fileUrl = URL.createObjectURL(uploadedFile);
-      fileData = {
-        fileName: uploadedFile.name,
-        fileUrl: fileUrl,
-        fileType: uploadedFile.type,
-        fileSize: `${(uploadedFile.size / 1024 / 1024).toFixed(1)} MB`
+        // This is a placeholder - in production you'd upload to S3, etc.
+        fileUrl = `uploads/${uploadedFile.name}`;
+      }
+      
+      const documentData: DocumentationCreate | DocumentationUpdate = {
+        title: formData.title,
+        description: formData.description,
+        type: formData.type,
+        file_url: fileUrl,
+        author_ids: selectedAuthors.length > 0 ? selectedAuthors : undefined,
+        ...(mode === 'create' && { project_id: projectId })
       };
-    }
-    
-    const documentData: Partial<DocumentItem> = {
-      ...formData,
-      ...fileData,
-      tags: document?.tags || [],
-      createdAt: document?.createdAt || new Date().toISOString().split('T')[0],
-      id: document?.id || Math.random().toString(36).substr(2, 9)
-    };
 
-    onSave(documentData);
+      await onSave(documentData);
     onClose();
+    } catch (error) {
+      console.error('Error saving document:', error);
+    } finally {
+      setIsSubmitting(false);
+    }
   };
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
@@ -166,6 +99,23 @@ const DocumentModal: React.FC<DocumentModalProps> = ({ isOpen, onClose, onSave, 
     }
   };
 
+  const toggleAuthor = (userId: number) => {
+    setSelectedAuthors(prev => 
+      prev.includes(userId)
+        ? prev.filter(id => id !== userId)
+        : [...prev, userId]
+    );
+  };
+
+  const removeAuthor = (userId: number) => {
+    setSelectedAuthors(prev => prev.filter(id => id !== userId));
+  };
+
+  const getAuthorDisplayName = (userId: number) => {
+    const user = projectUsers.find(u => u.id === userId);
+    return user ? (user.full_name || user.username || user.email) : 'Unknown User';
+  };
+
   // Cleanup object URLs when component unmounts or file changes
   React.useEffect(() => {
     return () => {
@@ -174,6 +124,42 @@ const DocumentModal: React.FC<DocumentModalProps> = ({ isOpen, onClose, onSave, 
       }
     };
   }, [filePreview]);
+
+  // Handle clicking outside the dropdown to close it
+  React.useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Element;
+      if (!target.closest('.author-dropdown')) {
+        setIsAuthorDropdownOpen(false);
+      }
+    };
+
+    window.document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      window.document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  // Update form data when document changes
+  React.useEffect(() => {
+    if (document) {
+      setFormData({
+        title: document.title || '',
+        description: document.description || '',
+        type: document.type || DocumentationType.OTHER,
+        file_url: document.file_url || ''
+      });
+      setSelectedAuthors(document.authors?.map(author => author.id) || []);
+    } else {
+      setFormData({
+        title: '',
+        description: '',
+        type: DocumentationType.OTHER,
+        file_url: ''
+      });
+      setSelectedAuthors([]);
+    }
+  }, [document]);
 
   if (!isOpen) return null;
 
@@ -225,11 +211,13 @@ const DocumentModal: React.FC<DocumentModalProps> = ({ isOpen, onClose, onSave, 
               required
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
             >
-              <option value="retrospective">Retrospective</option>
-              <option value="meeting">Meeting</option>
-              <option value="requirements">Requirements</option>
-              <option value="design">Design</option>
-              <option value="other">Other</option>
+              <option value={DocumentationType.REQUIREMENT}>Requirement</option>
+              <option value={DocumentationType.DESIGN_ARCHITECTURE}>Design Architecture</option>
+              <option value={DocumentationType.MEETING_REPORT}>Meeting Report</option>
+              <option value={DocumentationType.SPRINT_REVIEW}>Sprint Review</option>
+              <option value={DocumentationType.SPRINT_RETROSPECTIVE}>Sprint Retrospective</option>
+              <option value={DocumentationType.USER_GUIDE}>User Guide</option>
+              <option value={DocumentationType.OTHER}>Other</option>
             </select>
           </div>
 
@@ -246,6 +234,80 @@ const DocumentModal: React.FC<DocumentModalProps> = ({ isOpen, onClose, onSave, 
               rows={3}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               placeholder="Brief description of the document"
+            />
+          </div>
+
+          {/* Authors */}
+          <div>
+            <label htmlFor="authors" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Authors
+            </label>
+            <div className="relative author-dropdown">
+              <button
+                type="button"
+                onClick={() => setIsAuthorDropdownOpen(!isAuthorDropdownOpen)}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent flex justify-between items-center"
+              >
+                <span className="text-gray-500 dark:text-gray-400">
+                  {selectedAuthors.length === 0 
+                    ? 'Select authors...' 
+                    : `${selectedAuthors.length} author${selectedAuthors.length !== 1 ? 's' : ''} selected`
+                  }
+                </span>
+                <ChevronDown className={`w-4 h-4 transform transition-transform ${isAuthorDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+              
+              {isAuthorDropdownOpen && (
+                <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
+                  {projectUsers.map(user => (
+                    <label key={user.id} className="flex items-center px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-600 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selectedAuthors.includes(user.id)}
+                        onChange={() => toggleAuthor(user.id)}
+                        className="mr-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      />
+                      <span className="text-gray-900 dark:text-white">{getAuthorDisplayName(user.id)}</span>
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+            
+            {selectedAuthors.length > 0 && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {selectedAuthors.map(userId => (
+                  <span
+                    key={userId}
+                    className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-900/20 text-blue-800 dark:text-blue-400 text-sm rounded-full"
+                  >
+                    {getAuthorDisplayName(userId)}
+                    <button
+                      type="button"
+                      onClick={() => removeAuthor(userId)}
+                      className="hover:text-blue-600 dark:hover:text-blue-300"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+
+          {/* File URL */}
+          <div>
+            <label htmlFor="file_url" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              File URL
+            </label>
+            <input
+              type="url"
+              id="file_url"
+              name="file_url"
+              value={formData.file_url}
+              onChange={handleChange}
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              placeholder="https://example.com/document.pdf"
             />
           </div>
 
@@ -309,37 +371,22 @@ const DocumentModal: React.FC<DocumentModalProps> = ({ isOpen, onClose, onSave, 
             </div>
           )}
 
-          {/* Author (for create mode) */}
-          {mode === 'create' && (
-            <div>
-              <label htmlFor="author" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Author
-              </label>
-              <input
-                type="text"
-                id="author"
-                name="author"
-                value={formData.author}
-                onChange={handleChange}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder="Document author"
-              />
-            </div>
-          )}
-
           {/* Form Actions */}
           <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200 dark:border-gray-700">
             <button
               type="button"
               onClick={onClose}
               className="px-4 py-2 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              disabled={isSubmitting}
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+              disabled={isSubmitting}
             >
+              {isSubmitting && <Loader2 className="w-4 h-4 animate-spin" />}
               {mode === 'create' ? 'Create Document' : 'Save Changes'}
             </button>
           </div>
@@ -351,36 +398,97 @@ const DocumentModal: React.FC<DocumentModalProps> = ({ isOpen, onClose, onSave, 
 
 const ProjectDocumentation: React.FC<ProjectDocumentationProps> = ({ params }) => {
   const resolvedParams = React.use(params);
-  const projectId = resolvedParams['project-id'];
+  const projectId = parseInt(resolvedParams['project-id']);
 
-  const [documents, setDocuments] = useState<DocumentItem[]>(mockDocuments);
+  const [documents, setDocuments] = useState<Documentation[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState<string>('all');
-  const [filterAuthor, setFilterAuthor] = useState<string>('all');
-  const [showFilters, setShowFilters] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [modalMode, setModalMode] = useState<'create' | 'edit'>('create');
-  const [editingDocument, setEditingDocument] = useState<DocumentItem | undefined>();
+  const [editingDocument, setEditingDocument] = useState<Documentation | undefined>();
+  const [projectName, setProjectName] = useState<string>('Project');
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [projectUsers, setProjectUsers] = useState<Array<{
+    id: number;
+    full_name: string;
+    email: string;
+    username?: string;
+  }>>([]);
+
+  // Fetch project documentation - only once when component mounts
+  useEffect(() => {
+    const fetchDocumentation = async () => {
+      if (!projectId) return;
+      
+      setIsLoading(true);
+      setError(null);
+      
+      try {
+        const response = await documentationApi.getByProject(projectId);
+        
+        if (response.error) {
+          setError(response.error);
+        } else if (response.data) {
+          setDocuments(response.data);
+        }
+      } catch (err) {
+        setError('Failed to fetch documentation');
+        console.error('Error fetching documentation:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchDocumentation();
+  }, [projectId]);
+
+  // Fetch current project name for breadcrumb
+  useEffect(() => {
+    const fetchProjectName = async () => {
+      if (!projectId) return;
+      try {
+        const response = await api.projects.getById(projectId);
+        if (!response.error && response.data && response.data.name) {
+          setProjectName(response.data.name);
+        }
+      } catch (e) {
+        // Silently ignore; fallback 'Project' will be shown
+      }
+    };
+    fetchProjectName();
+  }, [projectId]);
+
+  // Fetch project users for author selection
+  useEffect(() => {
+    const fetchProjectUsers = async () => {
+      if (!projectId) return;
+      try {
+        const response = await documentationApi.getProjectUsers(projectId);
+        if (!response.error && response.data) {
+          setProjectUsers(response.data);
+        }
+      } catch (e) {
+        console.error('Error fetching project users:', e);
+      }
+    };
+    fetchProjectUsers();
+  }, [projectId]);
 
   // Breadcrumb navigation
   const breadcrumbItems = [
-    { label: 'Projects', href: '/project', icon: <FolderOpen className="w-4 h-4" /> },
-    { label: 'Project Name', href: `/project/${projectId}/dashboard` },
+    { label: projectName, href: `/project/${projectId}/dashboard` },
     { label: 'Documentation', icon: <BookOpen className="w-4 h-4" /> }
   ];
 
-  // Filter documents
+  // Filter documents client-side for instant search results
   const filteredDocuments = documents.filter(doc => {
-    const matchesSearch = doc.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         doc.author.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         doc.tags.some(tag => tag.toLowerCase().includes(searchTerm.toLowerCase()));
+    const matchesSearch = searchTerm === '' || 
+      doc.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      (doc.description?.toLowerCase() || '').includes(searchTerm.toLowerCase());
     const matchesType = filterType === 'all' || doc.type === filterType;
-    const matchesAuthor = filterAuthor === 'all' || doc.author === filterAuthor;
-    return matchesSearch && matchesType && matchesAuthor;
+    return matchesSearch && matchesType;
   });
-
-  // Get unique authors for filter
-  const uniqueAuthors = [...new Set(documents.map(doc => doc.author))];
 
   const handleCreateDocument = () => {
     setModalMode('create');
@@ -388,60 +496,110 @@ const ProjectDocumentation: React.FC<ProjectDocumentationProps> = ({ params }) =
     setIsModalOpen(true);
   };
 
-  const handleEditDocument = (document: DocumentItem) => {
+  const handleEditDocument = (document: Documentation) => {
     setModalMode('edit');
     setEditingDocument(document);
     setIsModalOpen(true);
   };
 
-  const handleSaveDocument = (documentData: Partial<DocumentItem>) => {
+  const handleSaveDocument = async (documentData: DocumentationCreate | DocumentationUpdate) => {
+    try {
     if (modalMode === 'create') {
-      const newDocument: DocumentItem = {
-        id: documentData.id!,
-        title: documentData.title!,
-        author: documentData.author!,
-        createdAt: documentData.createdAt!,
-        tags: documentData.tags!,
-        type: documentData.type!,
-        description: documentData.description,
-        content: documentData.content,
-        fileSize: '0.1 MB' // Mock file size for new documents
-      };
-      setDocuments([newDocument, ...documents]);
+        const response = await documentationApi.create(documentData as DocumentationCreate);
+        
+        if (response.error) {
+          throw new Error(response.error);
+        }
+        if (response.data) {
+          setDocuments([response.data, ...documents]);
+        } else {
+          throw new Error('No data received from server');
+        }
     } else {
+        if (!editingDocument) {
+          throw new Error('No document selected for editing');
+        }
+        const response = await documentationApi.update(editingDocument.id, documentData);
+        
+        if (response.error) {
+          throw new Error(response.error);
+        }
+        if (response.data) {
       setDocuments(documents.map(doc => 
-        doc.id === editingDocument?.id 
-          ? { ...doc, ...documentData }
-          : doc
-      ));
+            doc.id === editingDocument.id ? response.data! : doc
+          ));
+        } else {
+          throw new Error('No data received from server');
+        }
+      }
+    } catch (error) {
+      console.error('Error saving document:', error);
+      
+      // Better error message handling
+      let errorMessage = 'Unknown error occurred';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      } else if (error && typeof error === 'object' && 'message' in error) {
+        errorMessage = String(error.message);
+      } else if (error && typeof error === 'object') {
+        errorMessage = JSON.stringify(error);
+      }
+      
+      alert(`Error saving document: ${errorMessage}`);
     }
   };
 
-  const handleDeleteDocument = (id: string) => {
-    if (window.confirm('Are you sure you want to delete this document?')) {
+  const handleDeleteDocument = async (id: number) => {
+    if (!window.confirm('Are you sure you want to delete this document?')) {
+      return;
+    }
+    
+    try {
+      const response = await documentationApi.delete(id);
+      if (response.error) {
+        throw new Error(response.error);
+      }
       setDocuments(documents.filter(doc => doc.id !== id));
+    } catch (error) {
+      console.error('Error deleting document:', error);
+      
+      // Better error message handling
+      let errorMessage = 'Unknown error occurred';
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      } else if (error && typeof error === 'object' && 'message' in error) {
+        errorMessage = String(error.message);
+      } else if (error && typeof error === 'object') {
+        errorMessage = JSON.stringify(error);
+      }
+      
+      alert(`Error deleting document: ${errorMessage}`);
     }
   };
 
-  const handleViewDocument = (doc: DocumentItem) => {
-    if (doc.fileUrl) {
-      // If document has a file, open it in a new tab
-      window.open(doc.fileUrl, '_blank');
-    } else if (doc.content) {
-      // If document has content but no file, show content in alert (you might want to create a proper modal for this)
-      alert(`Document Content:\n\n${doc.content}`);
+  const handleViewDocument = (doc: Documentation) => {
+    if (doc.file_url) {
+      // If document has a file URL, open it in a new tab
+      window.open(doc.file_url, '_blank');
+    } else if (doc.description) {
+      // If document has description but no file, show content in alert
+      alert(`Document Content:\n\n${doc.description}`);
     } else {
       // If no file or content, show message
       alert('No content or file available to view.');
     }
   };
 
-  const handleDownloadDocument = (doc: DocumentItem) => {
-    if (doc.fileUrl && doc.fileName) {
+  const handleDownloadDocument = (doc: Documentation) => {
+    if (doc.file_url) {
       // Create a temporary anchor element to trigger download
       const link = document.createElement('a');
-      link.href = doc.fileUrl;
-      link.download = doc.fileName;
+      link.href = doc.file_url;
+      link.download = doc.title;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -450,12 +608,15 @@ const ProjectDocumentation: React.FC<ProjectDocumentationProps> = ({ params }) =
     }
   };
 
-  const getTypeIcon = (type: string) => {
+  const getTypeIcon = (type: DocumentationType) => {
     switch (type) {
-      case 'retrospective': return '🔄';
-      case 'meeting': return '👥';
-      case 'requirements': return '📋';
-      case 'design': return '🎨';
+      case DocumentationType.SPRINT_REVIEW: return '📊';
+      case DocumentationType.SPRINT_RETROSPECTIVE: return '🔄';
+      case DocumentationType.REQUIREMENT: return '📋';
+      case DocumentationType.DESIGN_ARCHITECTURE: return '🏗️';
+      case DocumentationType.MEETING_REPORT: return '📝';
+      case DocumentationType.USER_GUIDE: return '📖';
+      case DocumentationType.OTHER: return '📄';
       default: return '📄';
     }
   };
@@ -468,6 +629,40 @@ const ProjectDocumentation: React.FC<ProjectDocumentationProps> = ({ params }) =
       year: 'numeric' 
     });
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin mx-auto mb-4 text-blue-600" />
+          <p className="text-gray-600 dark:text-gray-400">Loading documentation...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="space-y-8">
+        <Breadcrumb items={breadcrumbItems} />
+        <div className="text-center py-12">
+          <div className="text-red-600 dark:text-red-400 mb-4">
+            <FileText className="w-16 h-16 mx-auto" />
+          </div>
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+            Error loading documentation
+          </h3>
+          <p className="text-gray-600 dark:text-gray-400 mb-4">{error}</p>
+          <button 
+            onClick={() => window.location.reload()}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors"
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-8">
@@ -483,27 +678,6 @@ const ProjectDocumentation: React.FC<ProjectDocumentationProps> = ({ params }) =
             Manage project documents, meeting notes, and shared resources
           </p>
         </div>
-      </div>
-
-      {/* Navigation Bar */}
-      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-        <div className="flex flex-wrap gap-4 items-center">
-          {/* Search */}
-          <div className="flex-1 min-w-[200px]">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
-              <input
-                type="text"
-                placeholder="Search..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-              />
-            </div>
-          </div>
-          
-          {/* Action Buttons */}
-          <div className="flex gap-2">
             <button 
               onClick={handleCreateDocument}
               className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
@@ -511,61 +685,41 @@ const ProjectDocumentation: React.FC<ProjectDocumentationProps> = ({ params }) =
               <Plus className="w-4 h-4" />
               New Doc
             </button>
-            
-            <button 
-              onClick={() => setShowFilters(!showFilters)}
-              className={`border border-gray-300 dark:border-gray-600 px-4 py-2 rounded-lg flex items-center gap-2 transition-colors ${
-                showFilters 
-                  ? 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 border-blue-300' 
-                  : 'text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700'
-              }`}
-            >
-              <FilterIcon className="w-4 h-4" />
-              Filter
-            </button>
+      </div>
+
+      {/* Filters and Search */}
+      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+        <div className="flex flex-wrap gap-4">
+          <div className="flex-1 min-w-[200px]">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <input
+                type="text"
+                placeholder="Search documentation..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
           </div>
         </div>
         
-        {/* Expanded Filters */}
-        {showFilters && (
-          <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
-            <div className="flex flex-wrap gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Document Type
-                </label>
+          <div className="flex gap-4">
                 <select
                   value={filterType}
                   onChange={(e) => setFilterType(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
                 >
                   <option value="all">All Types</option>
-                  <option value="retrospective">Retrospective</option>
-                  <option value="meeting">Meeting</option>
-                  <option value="requirements">Requirements</option>
-                  <option value="design">Design</option>
-                  <option value="other">Other</option>
-                </select>
-              </div>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Author
-                </label>
-                <select
-                  value={filterAuthor}
-                  onChange={(e) => setFilterAuthor(e.target.value)}
-                  className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white text-sm"
-                >
-                  <option value="all">All Authors</option>
-                  {uniqueAuthors.map(author => (
-                    <option key={author} value={author}>{author}</option>
-                  ))}
+              <option value={DocumentationType.REQUIREMENT}>Requirement</option>
+              <option value={DocumentationType.DESIGN_ARCHITECTURE}>Design Architecture</option>
+              <option value={DocumentationType.MEETING_REPORT}>Meeting Report</option>
+              <option value={DocumentationType.SPRINT_REVIEW}>Sprint Review</option>
+              <option value={DocumentationType.SPRINT_RETROSPECTIVE}>Sprint Retrospective</option>
+              <option value={DocumentationType.USER_GUIDE}>User Guide</option>
+              <option value={DocumentationType.OTHER}>Other</option>
                 </select>
               </div>
             </div>
-          </div>
-        )}
       </div>
 
       {/* Document Cards */}
@@ -583,7 +737,7 @@ const ProjectDocumentation: React.FC<ProjectDocumentationProps> = ({ params }) =
                   <div className="flex items-center space-x-4 text-sm text-gray-500 dark:text-gray-400">
                     <div className="flex items-center space-x-1">
                       <Calendar className="w-4 h-4" />
-                      <span>{formatDate(doc.createdAt)}</span>
+                      <span>{formatDate(doc.created_at)}</span>
                     </div>
                   </div>
                 </div>
@@ -598,10 +752,10 @@ const ProjectDocumentation: React.FC<ProjectDocumentationProps> = ({ params }) =
             )}
 
             {/* File Attachment Indicator */}
-            {doc.fileName && (
+            {doc.file_url && (
               <div className="flex items-center space-x-2 text-sm text-blue-600 dark:text-blue-400 mb-4">
                 <FileText className="w-4 h-4" />
-                <span>Attached: {doc.fileName}</span>
+                <span>Attached: {doc.file_url.split('/').pop()}</span>
               </div>
             )}
 
@@ -609,17 +763,17 @@ const ProjectDocumentation: React.FC<ProjectDocumentationProps> = ({ params }) =
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center space-x-1 text-sm text-gray-600 dark:text-gray-400">
                 <User className="w-4 h-4" />
-                <span>Author: {doc.author}</span>
+                <span>
+                  {doc.authors && doc.authors.length > 0 
+                    ? `Authors: ${doc.authors.map(author => author.full_name).join(', ')}`
+                    : 'No authors assigned'
+                  }
+                </span>
               </div>
               <div className="flex flex-wrap gap-1">
-                {doc.tags.map((tag, index) => (
-                  <span
-                    key={index}
-                    className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300"
-                  >
-                    {tag}
+                <span className="inline-flex items-center px-2 py-1 text-xs font-medium rounded-full bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300">
+                  {doc.type}
                   </span>
-                ))}
               </div>
             </div>
 
@@ -655,11 +809,6 @@ const ProjectDocumentation: React.FC<ProjectDocumentationProps> = ({ params }) =
                   <span>Delete</span>
                 </button>
               </div>
-              {doc.fileSize && (
-                <span className="text-xs text-gray-500 dark:text-gray-400">
-                  {doc.fileSize}
-                </span>
-              )}
             </div>
           </div>
         ))}
@@ -672,18 +821,11 @@ const ProjectDocumentation: React.FC<ProjectDocumentationProps> = ({ params }) =
           <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
             No documents found
           </h3>
-          <p className="text-gray-600 dark:text-gray-400 mb-4">
-            {searchTerm || filterType !== 'all' || filterAuthor !== 'all' 
+          <p className="text-gray-600 dark:text-gray-400">
+            {searchTerm || filterType !== 'all' 
               ? 'Try adjusting your search or filters' 
-              : 'Get started by creating your first document'}
+              : 'Get started by creating your first document using the "New Doc" button above'}
           </p>
-          <button 
-            onClick={handleCreateDocument}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 mx-auto transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            Create Document
-          </button>
         </div>
       )}
 
@@ -694,6 +836,8 @@ const ProjectDocumentation: React.FC<ProjectDocumentationProps> = ({ params }) =
         onSave={handleSaveDocument}
         document={editingDocument}
         mode={modalMode}
+        projectId={projectId}
+        projectUsers={projectUsers}
       />
     </div>
   );
