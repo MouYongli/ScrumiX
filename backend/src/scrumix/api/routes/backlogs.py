@@ -14,6 +14,7 @@ from scrumix.api.schemas.backlog import (
     BacklogCreate,
     BacklogUpdate
 )
+from scrumix.api.utils.notification_helpers import notification_helper
 
 router = APIRouter(tags=["backlogs"])
 
@@ -95,6 +96,21 @@ def create_backlog(
     """Create a new backlog item"""
     try:
         created_backlog = backlog_crud.create(db=db, obj_in=backlog)
+        
+        # Send notification to project members
+        try:
+            notification_helper.create_backlog_created_notification(
+                db=db,
+                backlog_id=created_backlog.id,
+                backlog_title=created_backlog.title,
+                backlog_type=created_backlog.item_type.value,
+                project_id=created_backlog.project_id,
+                created_by_user_id=current_user.id
+            )
+        except Exception as e:
+            # Log the error but don't fail the backlog creation
+            print(f"Failed to create backlog notification: {e}")
+        
         return BacklogResponse.from_db_model(created_backlog)
     except Exception as e:
         raise HTTPException(

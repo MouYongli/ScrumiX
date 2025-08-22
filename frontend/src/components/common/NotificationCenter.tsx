@@ -131,19 +131,32 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ className = '' 
     switch (type) {
       case NotificationType.TASK_ASSIGNED:
       case NotificationType.TASK_STATUS_CHANGED:
+      case NotificationType.TASK_DEADLINE_APPROACHING:
         return <CheckCircle className="w-4 h-4 text-blue-500" />;
       case NotificationType.MEETING_CREATED:
       case NotificationType.MEETING_REMINDER:
       case NotificationType.MEETING_UPDATED:
+      case NotificationType.MEETING_CANCELLED:
         return <Calendar className="w-4 h-4 text-orange-500" />;
       case NotificationType.MENTION:
+      case NotificationType.PROJECT_MEMBER_ADDED:
+      case NotificationType.PROJECT_MEMBER_REMOVED:
         return <Users className="w-4 h-4 text-green-500" />;
       case NotificationType.BACKLOG_CREATED:
       case NotificationType.BACKLOG_UPDATED:
+      case NotificationType.BACKLOG_ASSIGNED:
         return <FileText className="w-4 h-4 text-purple-500" />;
+      case NotificationType.DOCUMENTATION_ADDED:
+        return <FileText className="w-4 h-4 text-teal-500" />;
       case NotificationType.SPRINT_STARTED:
       case NotificationType.SPRINT_COMPLETED:
+      case NotificationType.SPRINT_UPDATED:
+      case NotificationType.SPRINT_ENDING:
         return <AlertTriangle className="w-4 h-4 text-indigo-500" />;
+      case NotificationType.DEADLINE_APPROACHING:
+        return <AlertTriangle className="w-4 h-4 text-red-500" />;
+      case NotificationType.PROJECT_STATUS_CHANGED:
+        return <Bell className="w-4 h-4 text-yellow-500" />;
       case NotificationType.SYSTEM_ANNOUNCEMENT:
         return <Bell className="w-4 h-4 text-gray-500" />;
       default:

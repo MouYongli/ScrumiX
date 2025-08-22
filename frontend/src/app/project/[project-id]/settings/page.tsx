@@ -19,7 +19,6 @@ interface ProjectSettingsProps {
 const defaultUISettings = {
   settings: {
     notifications: {
-      emailDigest: true,
       taskUpdates: true,
       sprintUpdates: true,
       meetingReminders: true,
@@ -29,17 +28,7 @@ const defaultUISettings = {
       requirePeerReview: true,
       autoCloseCompletedSprints: false,
     },
-    permissions: {
-      allowGuestView: false,
-      requireApprovalForTasks: true,
-      teamCanEditProject: true,
-    },
   },
-  integrations: [
-    { id: '1', name: 'GitHub', status: 'connected', icon: '🐙' },
-    { id: '2', name: 'Slack', status: 'connected', icon: '💬' },
-    { id: '3', name: 'Jira', status: 'disconnected', icon: '🔷' },
-  ],
 };
 
 const mockTeamMembers = [
@@ -108,7 +97,6 @@ const ProjectSettings: React.FC<ProjectSettingsProps> = ({ params }) => {
 
   const tabs = [
     { id: 'general', label: 'General', icon: <Settings className="w-4 h-4" /> },
-    { id: 'team', label: 'Permissions', icon: <Shield className="w-4 h-4" /> },
     { id: 'notifications', label: 'Notifications', icon: <Bell className="w-4 h-4" /> },
     { id: 'integrations', label: 'Integrations', icon: <Globe className="w-4 h-4" /> },
     { id: 'danger', label: 'Danger Zone', icon: <AlertTriangle className="w-4 h-4" /> },
@@ -403,86 +391,11 @@ const ProjectSettings: React.FC<ProjectSettingsProps> = ({ params }) => {
     </div>
   );
 
-  const renderTeamTab = () => (
-    <div className="space-y-6">
-      {/* Permissions */}
-      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg border border-gray-200 dark:border-gray-700">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Permissions</h3>
-        
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h4 className="font-medium text-gray-900 dark:text-white">Allow guest view</h4>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Allow non-team members to view project</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={projectData.settings.permissions.allowGuestView}
-                onChange={(e) => handleSettingsChange('permissions', 'allowGuestView', e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-            </label>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <h4 className="font-medium text-gray-900 dark:text-white">Require approval for tasks</h4>
-              <p className="text-sm text-gray-500 dark:text-gray-400">New tasks need approval before being added to sprint</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={projectData.settings.permissions.requireApprovalForTasks}
-                onChange={(e) => handleSettingsChange('permissions', 'requireApprovalForTasks', e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-            </label>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <h4 className="font-medium text-gray-900 dark:text-white">Team can edit project</h4>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Allow team members to edit project settings</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={projectData.settings.permissions.teamCanEditProject}
-                onChange={(e) => handleSettingsChange('permissions', 'teamCanEditProject', e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-            </label>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
   const renderNotificationsTab = () => (
     <div className="bg-white dark:bg-gray-800 p-6 rounded-lg border border-gray-200 dark:border-gray-700">
       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Notification Settings</h3>
       
       <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h4 className="font-medium text-gray-900 dark:text-white">Email digest</h4>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Receive daily/weekly project summary emails</p>
-          </div>
-          <label className="relative inline-flex items-center cursor-pointer">
-            <input
-              type="checkbox"
-              checked={projectData.settings.notifications.emailDigest}
-              onChange={(e) => handleSettingsChange('notifications', 'emailDigest', e.target.checked)}
-              className="sr-only peer"
-            />
-            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-          </label>
-        </div>
-
         <div className="flex items-center justify-between">
           <div>
             <h4 className="font-medium text-gray-900 dark:text-white">Task updates</h4>
@@ -536,44 +449,15 @@ const ProjectSettings: React.FC<ProjectSettingsProps> = ({ params }) => {
 
   const renderIntegrationsTab = () => (
     <div className="bg-white dark:bg-gray-800 p-6 rounded-lg border border-gray-200 dark:border-gray-700">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Integrations</h3>
-        <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
-          <Plus className="w-4 h-4" />
-          Add Integration
-        </button>
-      </div>
-
-      <div className="space-y-3">
-        {projectData.integrations.map((integration: any) => (
-          <div key={integration.id} className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-600 rounded-lg">
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">{integration.icon}</span>
-              <div>
-                <h4 className="font-medium text-gray-900 dark:text-white">{integration.name}</h4>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Status: <span className={`capitalize ${integration.status === 'connected' ? 'text-green-600' : 'text-red-600'}`}>
-                    {integration.status}
-                  </span>
-                </p>
-              </div>
-            </div>
-            <div className="flex gap-2">
-              {integration.status === 'connected' ? (
-                <button className="px-3 py-1 text-red-600 hover:text-red-700 border border-red-300 hover:border-red-400 rounded-lg transition-colors">
-                  Disconnect
-                </button>
-              ) : (
-                <button className="px-3 py-1 text-blue-600 hover:text-blue-700 border border-blue-300 hover:border-blue-400 rounded-lg transition-colors">
-                  Connect
-                </button>
-              )}
-              <button className="px-3 py-1 text-gray-600 hover:text-gray-700 border border-gray-300 hover:border-gray-400 rounded-lg transition-colors">
-                Settings
-              </button>
-            </div>
-          </div>
-        ))}
+      <div className="text-center py-12">
+        <Globe className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+          Integrations Coming Soon
+        </h3>
+        <p className="text-gray-600 dark:text-gray-400 max-w-md mx-auto">
+          We're working hard to bring you powerful integrations with popular tools and services. 
+          This feature will be available in a future update.
+        </p>
       </div>
     </div>
   );
@@ -713,7 +597,6 @@ const ProjectSettings: React.FC<ProjectSettingsProps> = ({ params }) => {
       {/* Tab Content */}
       <div>
         {activeTab === 'general' && renderGeneralTab()}
-        {activeTab === 'team' && renderTeamTab()}
         {activeTab === 'notifications' && renderNotificationsTab()}
         {activeTab === 'integrations' && renderIntegrationsTab()}
         {activeTab === 'danger' && renderDangerTab()}

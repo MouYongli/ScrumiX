@@ -193,7 +193,7 @@ class NotificationHelper:
         """Create notification when sprint is started"""
         # Get all project members
         project_members = user_project_crud.get_project_members(db, project_id)
-        member_ids = [member.user_id for member in project_members if member.user_id != started_by_user_id]
+        member_ids = [member["user"].id for member in project_members if member["user"].id != started_by_user_id]
         
         if not member_ids:
             return
@@ -233,7 +233,7 @@ class NotificationHelper:
         """Create notification when sprint is approaching its end"""
         # Get all project members
         project_members = user_project_crud.get_project_members(db, project_id)
-        member_ids = [member.user_id for member in project_members]
+        member_ids = [member["user"].id for member in project_members]
         
         if not member_ids:
             return
@@ -271,7 +271,7 @@ class NotificationHelper:
         """Create notification when new documentation is added"""
         # Get all project members except the creator
         project_members = user_project_crud.get_project_members(db, project_id)
-        member_ids = [member.user_id for member in project_members if member.user_id != created_by_user_id]
+        member_ids = [member["user"].id for member in project_members if member["user"].id != created_by_user_id]
         
         if not member_ids:
             return
@@ -461,6 +461,44 @@ class NotificationHelper:
             db=db,
             obj_in=notification_data,
             created_by_id=added_by_user_id
+        )
+    
+    @staticmethod
+    def create_backlog_created_notification(
+        db: Session,
+        backlog_id: int,
+        backlog_title: str,
+        backlog_type: str,
+        project_id: int,
+        created_by_user_id: int
+    ):
+        """Create notification when new backlog item is created"""
+        # Get all project members except the creator
+        project_members = user_project_crud.get_project_members(db, project_id)
+        member_ids = [member["user"].id for member in project_members if member["user"].id != created_by_user_id]
+        
+        if not member_ids:
+            return
+        
+        # Format backlog type for display
+        type_display = backlog_type.replace('_', ' ').title()
+        
+        notification_data = NotificationCreate(
+            title=f"New {type_display}: {backlog_title}",
+            message=f"New {type_display.lower()} '{backlog_title}' has been added to the project backlog",
+            notification_type=NotificationType.BACKLOG_CREATED,
+            priority=NotificationPriority.LOW,
+            action_url=f"/project/{project_id}/backlog",
+            action_text="View Backlog",
+            recipient_user_ids=member_ids,
+            project_id=project_id,
+            backlog_item_id=backlog_id
+        )
+        
+        return notification_crud.create_with_recipients(
+            db=db,
+            obj_in=notification_data,
+            created_by_id=created_by_user_id
         )
     
     @staticmethod
