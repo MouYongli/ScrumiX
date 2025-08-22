@@ -7,6 +7,8 @@ export interface ApiUser {
   email: string;
   first_name?: string;
   last_name?: string;
+  full_name?: string; // Keep for backward compatibility
+  date_format?: string;
   is_active?: boolean;
   created_at?: string;
   updated_at?: string;
@@ -298,4 +300,43 @@ export interface DocumentationUpdate {
   description?: string;
   file_url?: string;
   author_ids?: number[];
+}
+
+// Notification Preferences API types
+export enum NotificationCategory {
+  MEETING_REMINDERS = "meeting_reminders",
+  DOCUMENTATION_REMINDERS = "documentation_reminders",
+  PROJECT_UPDATES = "project_updates",
+  DEADLINE_REMINDERS = "deadline_reminders"
+}
+
+export enum DeliveryChannel {
+  IN_APP = "in_app",
+  EMAIL = "email",
+  PUSH = "push"
+}
+
+export interface ApiNotificationPreference {
+  id: number;
+  user_id: number;
+  category: NotificationCategory;
+  delivery_channel: DeliveryChannel;
+  is_enabled: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface NotificationPreferencesResponse {
+  user_id: number;
+  delivery_channel: DeliveryChannel;
+  preferences: Record<string, boolean>;
+  meeting_reminders: boolean;
+  documentation_reminders: boolean;
+  project_updates: boolean;
+  deadline_reminders: boolean;
+}
+
+export interface NotificationPreferencesUpdate {
+  preferences: Record<string, boolean>;
+  delivery_channel?: DeliveryChannel;
 }

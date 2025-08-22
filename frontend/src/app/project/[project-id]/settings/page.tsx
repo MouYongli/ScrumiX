@@ -7,8 +7,8 @@ import {
   Plus, X, Edit2, Check
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
-import { api } from '@/utils/api';
-import { ApiProject } from '@/types/api';
+import { api, notificationPreferences as notificationAPI } from '@/utils/api';
+import { ApiProject, NotificationPreferencesResponse, DeliveryChannel } from '@/types/api';
 import { ProjectStatus } from '@/types/enums';
 
 interface ProjectSettingsProps {
@@ -22,11 +22,6 @@ const defaultUISettings = {
       taskUpdates: true,
       sprintUpdates: true,
       meetingReminders: true,
-    },
-    workflow: {
-      autoAssignReviewer: true,
-      requirePeerReview: true,
-      autoCloseCompletedSprints: false,
     },
   },
 };
@@ -64,6 +59,26 @@ const ProjectSettings: React.FC<ProjectSettingsProps> = ({ params }) => {
   const [unsavedChanges, setUnsavedChanges] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  // Notification preferences state
+  const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferencesResponse | null>(null);
+  const [notificationLoading, setNotificationLoading] = useState(false);
+  const [notificationError, setNotificationError] = useState<string | null>(null);
+
+  // Fetch notification preferences
+  const fetchNotificationPreferences = async () => {
+    setNotificationLoading(true);
+    setNotificationError(null);
+    try {
+      const resp = await notificationAPI.get(DeliveryChannel.IN_APP);
+      if (resp.error) throw new Error(resp.error);
+      setNotificationPreferences(resp.data);
+    } catch (e: any) {
+      setNotificationError(e?.message || 'Failed to load notification preferences');
+    } finally {
+      setNotificationLoading(false);
+    }
+  };
 
   // Fetch real project data
   useEffect(() => {
@@ -86,11 +101,11 @@ const ProjectSettings: React.FC<ProjectSettingsProps> = ({ params }) => {
       }
     };
     fetchProject();
+    fetchNotificationPreferences();
   }, [projectId]);
 
   // Breadcrumb navigation
   const breadcrumbItems = [
-    { label: 'Projects', href: '/project', icon: <FolderOpen className="w-4 h-4" /> },
     { label: projectData?.name || 'Project', href: `/project/${projectId}/dashboard` },
     { label: 'Settings', icon: <Settings className="w-4 h-4" /> }
   ];
@@ -175,6 +190,32 @@ const ProjectSettings: React.FC<ProjectSettingsProps> = ({ params }) => {
       }
     }));
     setUnsavedChanges(true);
+  };
+
+  const handleNotificationPreferenceChange = async (category: string, enabled: boolean) => {
+    if (!notificationPreferences) return;
+
+    try {
+      setNotificationLoading(true);
+      setNotificationError(null);
+
+      const updatedPreferences = {
+        ...notificationPreferences.preferences,
+        [category]: enabled
+      };
+
+      const resp = await notificationAPI.update({
+        preferences: updatedPreferences,
+        delivery_channel: DeliveryChannel.IN_APP
+      });
+
+      if (resp.error) throw new Error(resp.error);
+      setNotificationPreferences(resp.data);
+    } catch (e: any) {
+      setNotificationError(e?.message || 'Failed to update notification preferences');
+    } finally {
+      setNotificationLoading(false);
+    }
   };
 
   const handleDeleteProject = async () => {
@@ -334,114 +375,95 @@ const ProjectSettings: React.FC<ProjectSettingsProps> = ({ params }) => {
         </div>
       </div>
 
-      {/* Workflow Settings */}
-      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg border border-gray-200 dark:border-gray-700">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Workflow Settings</h3>
-        
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h4 className="font-medium text-gray-900 dark:text-white">Auto-assign reviewer</h4>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Automatically assign a reviewer to new tasks</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={projectData.settings.workflow.autoAssignReviewer}
-                onChange={(e) => handleSettingsChange('workflow', 'autoAssignReviewer', e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-            </label>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <h4 className="font-medium text-gray-900 dark:text-white">Require peer review</h4>
-              <p className="text-sm text-gray-500 dark:text-gray-400">All tasks must be reviewed before completion</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={projectData.settings.workflow.requirePeerReview}
-                onChange={(e) => handleSettingsChange('workflow', 'requirePeerReview', e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-            </label>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <h4 className="font-medium text-gray-900 dark:text-white">Auto-close completed sprints</h4>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Automatically close sprints when all tasks are completed</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={projectData.settings.workflow.autoCloseCompletedSprints}
-                onChange={(e) => handleSettingsChange('workflow', 'autoCloseCompletedSprints', e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-            </label>
-          </div>
-        </div>
-      </div>
     </div>
   );
 
   const renderNotificationsTab = () => (
+    <div className="space-y-6">
     <div className="bg-white dark:bg-gray-800 p-6 rounded-lg border border-gray-200 dark:border-gray-700">
       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Notification Settings</h3>
+        
+        {notificationError && (
+          <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+            <p className="text-red-600 dark:text-red-400 text-sm">{notificationError}</p>
+          </div>
+        )}
+
+        {notificationLoading && (
+          <div className="mb-4 flex items-center gap-2 text-gray-600 dark:text-gray-400">
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
+            Updating preferences...
+          </div>
+        )}
       
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h4 className="font-medium text-gray-900 dark:text-white">Task updates</h4>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Get notified when tasks are updated or completed</p>
+              <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="font-medium text-gray-900 dark:text-white">Meeting reminders</h4>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Reminders for upcoming meetings and standups</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={notificationPreferences?.meeting_reminders ?? true}
+                onChange={(e) => handleNotificationPreferenceChange('meeting_reminders', e.target.checked)}
+                disabled={notificationLoading}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600 peer-disabled:opacity-50"></div>
+            </label>
           </div>
-          <label className="relative inline-flex items-center cursor-pointer">
-            <input
-              type="checkbox"
-              checked={projectData.settings.notifications.taskUpdates}
-              onChange={(e) => handleSettingsChange('notifications', 'taskUpdates', e.target.checked)}
-              className="sr-only peer"
-            />
-            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-          </label>
-        </div>
 
-        <div className="flex items-center justify-between">
-          <div>
-            <h4 className="font-medium text-gray-900 dark:text-white">Sprint updates</h4>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Notifications about sprint planning and completion</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="font-medium text-gray-900 dark:text-white">Documentation reminders</h4>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Get notified when new documentation is added</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={notificationPreferences?.documentation_reminders ?? true}
+                onChange={(e) => handleNotificationPreferenceChange('documentation_reminders', e.target.checked)}
+                disabled={notificationLoading}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600 peer-disabled:opacity-50"></div>
+            </label>
           </div>
-          <label className="relative inline-flex items-center cursor-pointer">
-            <input
-              type="checkbox"
-              checked={projectData.settings.notifications.sprintUpdates}
-              onChange={(e) => handleSettingsChange('notifications', 'sprintUpdates', e.target.checked)}
-              className="sr-only peer"
-            />
-            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-          </label>
-        </div>
 
-        <div className="flex items-center justify-between">
-          <div>
-            <h4 className="font-medium text-gray-900 dark:text-white">Meeting reminders</h4>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Reminders for upcoming meetings and standups</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="font-medium text-gray-900 dark:text-white">Project updates</h4>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Notifications about project changes (name, status) and member additions</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={notificationPreferences?.project_updates ?? true}
+                onChange={(e) => handleNotificationPreferenceChange('project_updates', e.target.checked)}
+                disabled={notificationLoading}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600 peer-disabled:opacity-50"></div>
+            </label>
           </div>
-          <label className="relative inline-flex items-center cursor-pointer">
-            <input
-              type="checkbox"
-              checked={projectData.settings.notifications.meetingReminders}
-              onChange={(e) => handleSettingsChange('notifications', 'meetingReminders', e.target.checked)}
-              className="sr-only peer"
-            />
-            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after-border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-          </label>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="font-medium text-gray-900 dark:text-white">Deadline reminders</h4>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Get notified when deadlines are approaching</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={notificationPreferences?.deadline_reminders ?? true}
+                onChange={(e) => handleNotificationPreferenceChange('deadline_reminders', e.target.checked)}
+                disabled={notificationLoading}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600 peer-disabled:opacity-50"></div>
+            </label>
+          </div>
         </div>
       </div>
     </div>

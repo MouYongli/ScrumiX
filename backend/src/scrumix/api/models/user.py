@@ -28,7 +28,9 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String(255), unique=True, index=True, nullable=False)
     username = Column(String(100), unique=True, index=True, nullable=True)
-    full_name = Column(String(255), nullable=True)
+    first_name = Column(String(100), nullable=True)
+    last_name = Column(String(100), nullable=True)
+    full_name = Column(String(255), nullable=True)  # Keep for backward compatibility
     hashed_password = Column(String(255), nullable=True)  # Used for local login
     
     # User status and permissions
@@ -45,6 +47,7 @@ class User(Base):
     bio = Column(Text, nullable=True)
     timezone = Column(String(100), default="UTC")
     language = Column(String(10), default="en")
+    date_format = Column(String(20), default="YYYY-MM-DD")
     
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())

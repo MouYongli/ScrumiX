@@ -11,7 +11,9 @@ const ProfilePage = () => {
   const { user: authUser, isAuthenticated } = useAuth();
   const [userInfo, setUserInfo] = useState({
     id: '',
-    name: '',
+    firstName: '',
+    lastName: '',
+    name: '', // Keep for backward compatibility
     email: '',
     phone: '',
     department: '',
@@ -21,6 +23,7 @@ const ProfilePage = () => {
     avatar: null as string | null,
     provider: '',
     is_keycloak_user: false,
+    dateFormat: 'YYYY-MM-DD',
   });
 
   const [isEditing, setIsEditing] = useState(false);
@@ -51,6 +54,8 @@ const ProfilePage = () => {
         
         const newUserInfo = {
           id: String(user.id) || '1',
+          firstName: user.first_name || '',
+          lastName: user.last_name || '',
           name: user.full_name || user.username || user.email.split('@')[0],
           email: user.email || '',
           phone: user.phone || '',
@@ -61,6 +66,7 @@ const ProfilePage = () => {
           avatar: user.avatar_url || null,
           provider: user.provider || 'local',
           is_keycloak_user: isKeycloakUser,
+          dateFormat: user.date_format || 'YYYY-MM-DD',
         };
         
         setUserInfo(newUserInfo);
@@ -89,6 +95,8 @@ const ProfilePage = () => {
           
           const fallbackUserInfo = {
             id: String(currentUser.id) || '1',
+            firstName: (currentUser as any).first_name || '',
+            lastName: (currentUser as any).last_name || '',
             name: currentUser.full_name || currentUser.username || currentUser.email.split('@')[0],
             email: currentUser.email || '',
             phone: (currentUser as any).phone || '',
@@ -97,8 +105,9 @@ const ProfilePage = () => {
             bio: (currentUser as any).bio || '',
             joinDate: (currentUser as any).joinDate || new Date().toISOString().split('T')[0],
             avatar: currentUser.avatar_url || null,
-          provider: currentUser.provider || 'local',
+            provider: currentUser.provider || 'local',
             is_keycloak_user: isKeycloakUser,
+            dateFormat: (currentUser as any).date_format || 'YYYY-MM-DD',
           };
           
                   setUserInfo(fallbackUserInfo);
@@ -116,6 +125,8 @@ const ProfilePage = () => {
         
         const fallbackUserInfo = {
           id: String(currentUser.id) || '1',
+          firstName: (currentUser as any).first_name || '',
+          lastName: (currentUser as any).last_name || '',
           name: currentUser.full_name || currentUser.username || currentUser.email.split('@')[0],
           email: currentUser.email || '',
           phone: (currentUser as any).phone || '',
@@ -126,6 +137,7 @@ const ProfilePage = () => {
           avatar: currentUser.avatar_url || null,
           provider: currentUser.provider || 'local',
           is_keycloak_user: isKeycloakUser,
+          dateFormat: (currentUser as any).date_format || 'YYYY-MM-DD',
         };
         
         setUserInfo(fallbackUserInfo);
@@ -214,7 +226,7 @@ const ProfilePage = () => {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [isAuthenticated]);
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setUserInfo(prev => ({
       ...prev,
@@ -251,8 +263,12 @@ const ProfilePage = () => {
   const validateProfile = () => {
     const newErrors: { [key: string]: string } = {};
 
-    if (!userInfo.name.trim()) {
-      newErrors.name = 'Please enter your name';
+    if (!userInfo.firstName.trim()) {
+      newErrors.firstName = 'Please enter your first name';
+    }
+
+    if (!userInfo.lastName.trim()) {
+      newErrors.lastName = 'Please enter your last name';
     }
 
     if (!userInfo.email) {
@@ -298,12 +314,14 @@ const ProfilePage = () => {
     try {
       // Prepare profile data for backend
       const profileData = {
-        full_name: userInfo.name,
+        first_name: userInfo.firstName,
+        last_name: userInfo.lastName,
         phone: userInfo.phone,
         department: userInfo.department,
         location: userInfo.location,
         bio: userInfo.bio,
         avatar_url: userInfo.avatar,
+        date_format: userInfo.dateFormat,
       };
       
       // Debug: Log what we're about to send
@@ -330,6 +348,8 @@ const ProfilePage = () => {
         
         const newUserInfo = {
           id: String(updatedData.id) || userInfo.id,
+          firstName: updatedData.first_name !== undefined ? updatedData.first_name : userInfo.firstName,
+          lastName: updatedData.last_name !== undefined ? updatedData.last_name : userInfo.lastName,
           name: updatedData.full_name || userInfo.name,
           email: updatedData.email || userInfo.email,
           phone: updatedData.phone !== undefined ? updatedData.phone : userInfo.phone,
@@ -340,6 +360,7 @@ const ProfilePage = () => {
           avatar: updatedData.avatar_url !== undefined ? updatedData.avatar_url : userInfo.avatar,
           provider: updatedData.provider || 'local',
           is_keycloak_user: isKeycloakUser,
+          dateFormat: updatedData.date_format !== undefined ? updatedData.date_format : userInfo.dateFormat,
         };
         
         console.log('New userInfo to be set:', newUserInfo);
@@ -381,6 +402,8 @@ const ProfilePage = () => {
           
           const refreshedUserInfo = {
             id: String(refreshedUser.id) || '1',
+            firstName: refreshedUser.first_name || '',
+            lastName: refreshedUser.last_name || '',
             name: refreshedUser.full_name || refreshedUser.username || refreshedUser.email.split('@')[0],
             email: refreshedUser.email || '',
             phone: refreshedUser.phone || '',
@@ -391,6 +414,7 @@ const ProfilePage = () => {
             avatar: refreshedUser.avatar_url || null,
             provider: refreshedUser.provider || 'local',
             is_keycloak_user: isKeycloakUser,
+            dateFormat: refreshedUser.date_format || 'YYYY-MM-DD',
           };
           
           setUserInfo(refreshedUserInfo);
@@ -489,7 +513,7 @@ const ProfilePage = () => {
     return (
       <div className="w-24 h-24 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
         <span className="text-white font-bold text-2xl">
-          {userInfo.name.charAt(0).toUpperCase()}
+          {(userInfo.firstName || userInfo.name).charAt(0).toUpperCase()}
         </span>
       </div>
     );
@@ -585,7 +609,9 @@ const ProfilePage = () => {
             </div>
 
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white mt-2">
-                {userInfo.name}
+                {userInfo.firstName && userInfo.lastName 
+                  ? `${userInfo.firstName} ${userInfo.lastName}` 
+                  : userInfo.name}
               </h3>
               <p className="text-sm text-gray-500 dark:text-gray-400">{userInfo.email}</p>
               </div>
@@ -727,23 +753,43 @@ const ProfilePage = () => {
             </h2>
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Name */}
+              {/* First Name */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                  Name
+                  First Name
                 </label>
                 <input
                   type="text"
-                  name="name"
-                  value={userInfo.name}
+                  name="firstName"
+                  value={userInfo.firstName}
                   onChange={handleInputChange}
                   disabled={!isEditing}
                   className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white transition-colors ${
                     !isEditing ? 'bg-gray-50 dark:bg-gray-600' : ''
-                  } ${errors.name ? 'border-red-300 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'}`}
+                  } ${errors.firstName ? 'border-red-300 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'}`}
                 />
-                {errors.name && (
-                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.name}</p>
+                {errors.firstName && (
+                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.firstName}</p>
+                )}
+              </div>
+
+              {/* Last Name */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Last Name
+                </label>
+                <input
+                  type="text"
+                  name="lastName"
+                  value={userInfo.lastName}
+                  onChange={handleInputChange}
+                  disabled={!isEditing}
+                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white transition-colors ${
+                    !isEditing ? 'bg-gray-50 dark:bg-gray-600' : ''
+                  } ${errors.lastName ? 'border-red-300 dark:border-red-500' : 'border-gray-300 dark:border-gray-600'}`}
+                />
+                {errors.lastName && (
+                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.lastName}</p>
                 )}
               </div>
 
@@ -820,6 +866,29 @@ const ProfilePage = () => {
                   } border-gray-300 dark:border-gray-600`}
                 />
               </div>
+
+              {/* Date Format */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Date Format
+                </label>
+                <select
+                  name="dateFormat"
+                  value={userInfo.dateFormat}
+                  onChange={handleInputChange}
+                  disabled={!isEditing}
+                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white transition-colors ${
+                    !isEditing ? 'bg-gray-50 dark:bg-gray-600' : ''
+                  } border-gray-300 dark:border-gray-600`}
+                >
+                  <option value="YYYY-MM-DD">YYYY-MM-DD (2024-12-31)</option>
+                  <option value="MM/DD/YYYY">MM/DD/YYYY (12/31/2024)</option>
+                  <option value="DD/MM/YYYY">DD/MM/YYYY (31/12/2024)</option>
+                  <option value="DD-MM-YYYY">DD-MM-YYYY (31-12-2024)</option>
+                  <option value="MMM DD, YYYY">MMM DD, YYYY (Dec 31, 2024)</option>
+                  <option value="DD MMM YYYY">DD MMM YYYY (31 Dec 2024)</option>
+                </select>
+              </div>
             </div>
 
             {/* Bio */}
@@ -869,6 +938,8 @@ const ProfilePage = () => {
                         
                         setUserInfo({
                           id: String(user.id) || '1',
+                          firstName: user.first_name || '',
+                          lastName: user.last_name || '',
                           name: user.full_name || user.username || user.email.split('@')[0],
                           email: user.email || '',
                           phone: user.phone || '',
@@ -879,6 +950,7 @@ const ProfilePage = () => {
                           avatar: user.avatar_url || null,
                           provider: user.provider || 'local',
                           is_keycloak_user: isKeycloakUser,
+                          dateFormat: user.date_format || 'YYYY-MM-DD',
                         });
                       }
                     } catch (error) {

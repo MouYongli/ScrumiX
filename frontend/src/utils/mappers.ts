@@ -13,9 +13,11 @@ export const mapApiUserToDomain = (apiUser: ApiUser): User => ({
   email: apiUser.email,
   firstName: apiUser.first_name,
   lastName: apiUser.last_name,
+  fullName: apiUser.full_name,
+  dateFormat: apiUser.date_format,
   displayName: apiUser.first_name && apiUser.last_name 
     ? `${apiUser.first_name} ${apiUser.last_name}`
-    : apiUser.username,
+    : apiUser.full_name || apiUser.username,
   isActive: apiUser.is_active ?? true,
 });
 

@@ -44,7 +44,6 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
 
   // Breadcrumb navigation
   const breadcrumbItems = [
-    { label: 'Projects', href: '/project', icon: <FolderOpen className="w-4 h-4" /> },
     { label: projectName, href: `/project/${projectId}/dashboard` },
     { label: 'Team Members', icon: <Users className="w-4 h-4" /> }
   ];

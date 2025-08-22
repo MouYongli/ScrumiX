@@ -2,7 +2,8 @@ import { TaskStatus, TaskPriority, ProjectStatus, MeetingParticipantRole } from 
 import { 
   ApiUser, ApiTask, ApiMeeting, ApiMeetingAgenda, ApiMeetingNote, ApiMeetingActionItem, ApiProject, ApiSprint, ApiBacklog, ApiAcceptanceCriteria,
   TaskListResponse, MeetingListResponse, ApiError, ScrumRole, ProjectMemberResponse, Documentation, DocumentationCreate, DocumentationUpdate,
-  ApiMeetingParticipant, ApiMeetingParticipantWithUser, MeetingParticipantsResponse
+  ApiMeetingParticipant, ApiMeetingParticipantWithUser, MeetingParticipantsResponse, NotificationPreferencesResponse, NotificationPreferencesUpdate,
+  ApiNotificationPreference, DeliveryChannel
 } from '@/types/api';
 import { authenticatedFetch } from '@/utils/auth';
 
@@ -1142,4 +1143,79 @@ export const documentationApi = {
       });
     }
   },
+
+  notificationPreferences: {
+    // Get user's notification preferences
+    get: (deliveryChannel: string = 'in_app') => deduplicateRequest(
+      `notificationPreferences:get:${deliveryChannel}`,
+      () => jsonFetch<import('../types/api').NotificationPreferencesResponse>(`/api/v1/notification-preferences/?delivery_channel=${deliveryChannel}`)
+    ),
+
+    // Update user's notification preferences
+    update: (data: import('../types/api').NotificationPreferencesUpdate) => {
+      // Clear cache after update
+      inFlightRequests.delete(`notificationPreferences:get:${data.delivery_channel || 'in_app'}`);
+      
+      return jsonFetch<import('../types/api').NotificationPreferencesResponse>('/api/v1/notification-preferences/', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data)
+      });
+    },
+
+    // Get detailed notification preferences
+    getAll: (deliveryChannel: string = 'in_app') => deduplicateRequest(
+      `notificationPreferences:getAll:${deliveryChannel}`,
+      () => jsonFetch<import('../types/api').ApiNotificationPreference[]>(`/api/v1/notification-preferences/all?delivery_channel=${deliveryChannel}`)
+    ),
+
+    // Initialize default preferences
+    initialize: (deliveryChannel: string = 'in_app') => {
+      // Clear cache after initialization
+      inFlightRequests.delete(`notificationPreferences:get:${deliveryChannel}`);
+      
+      return jsonFetch<import('../types/api').NotificationPreferencesResponse>(`/api/v1/notification-preferences/initialize?delivery_channel=${deliveryChannel}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+    }
+  },
+};
+
+// Export notification preferences separately to ensure it's available
+export const notificationPreferences = {
+  // Get user's notification preferences
+  get: (deliveryChannel: string = 'in_app') => deduplicateRequest(
+    `notificationPreferences:get:${deliveryChannel}`,
+    () => jsonFetch<import('../types/api').NotificationPreferencesResponse>(`/api/v1/notification-preferences/?delivery_channel=${deliveryChannel}`)
+  ),
+
+  // Update user's notification preferences
+  update: (data: import('../types/api').NotificationPreferencesUpdate) => {
+    // Clear cache after update
+    inFlightRequests.delete(`notificationPreferences:get:${data.delivery_channel || 'in_app'}`);
+    
+    return jsonFetch<import('../types/api').NotificationPreferencesResponse>('/api/v1/notification-preferences/', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+  },
+
+  // Get detailed notification preferences
+  getAll: (deliveryChannel: string = 'in_app') => deduplicateRequest(
+    `notificationPreferences:getAll:${deliveryChannel}`,
+    () => jsonFetch<import('../types/api').ApiNotificationPreference[]>(`/api/v1/notification-preferences/all?delivery_channel=${deliveryChannel}`)
+  ),
+
+  // Initialize default preferences
+  initialize: (deliveryChannel: string = 'in_app') => {
+    // Clear cache after initialization
+    inFlightRequests.delete(`notificationPreferences:get:${deliveryChannel}`);
+    
+    return jsonFetch<import('../types/api').NotificationPreferencesResponse>(`/api/v1/notification-preferences/initialize?delivery_channel=${deliveryChannel}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    });
+  }
 };

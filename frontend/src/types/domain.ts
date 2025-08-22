@@ -21,6 +21,7 @@ export enum NotificationType {
   PROJECT_MEMBER_ADDED = "project_member_added",
   PROJECT_MEMBER_REMOVED = "project_member_removed",
   PROJECT_STATUS_CHANGED = "project_status_changed",
+  PROJECT_UPDATED = "project_updated",
   MENTION = "mention",
   SYSTEM_ANNOUNCEMENT = "system_announcement",
   DEADLINE_APPROACHING = "deadline_approaching"
@@ -51,7 +52,9 @@ export interface User {
   email: string;
   firstName?: string;
   lastName?: string;
+  fullName?: string; // Keep for backward compatibility
   displayName?: string; // Computed field
+  dateFormat?: string;
   isActive?: boolean;
 }
 

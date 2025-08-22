@@ -10,43 +10,20 @@ import {
 import Breadcrumb from '@/components/common/Breadcrumb';
 import { useTheme } from '@/contexts/ThemeContext';
 
+interface NotificationSettings {
+  meeting_reminders: boolean;
+  documentation_reminders: boolean;
+  project_updates: boolean;
+  deadline_reminders: boolean;
+}
+
 interface SettingsData {
   profile: {
     language: string;
     timezone: string;
     dateFormat: string;
   };
-  notifications: {
-    email: {
-      projectUpdates: boolean;
-      taskAssignments: boolean;
-      sprintChanges: boolean;
-      meetingReminders: boolean;
-      weeklyDigest: boolean;
-    };
-    push: {
-      taskDeadlines: boolean;
-      mentionsAndComments: boolean;
-      projectInvitations: boolean;
-      systemUpdates: boolean;
-    };
-    inApp: {
-      realTimeUpdates: boolean;
-      soundNotifications: boolean;
-      desktopNotifications: boolean;
-    };
-  };
-  privacy: {
-    profileVisibility: 'public' | 'team' | 'private';
-    showOnlineStatus: boolean;
-    allowProjectInvitations: boolean;
-    dataCollection: boolean;
-  };
-  security: {
-    twoFactorAuth: boolean;
-    sessionTimeout: number;
-    loginAlerts: boolean;
-  };
+  notifications: NotificationSettings;
 }
 
 const SettingsPage = () => {
@@ -59,35 +36,10 @@ const SettingsPage = () => {
       dateFormat: 'MM/DD/YYYY',
     },
     notifications: {
-      email: {
-        projectUpdates: true,
-        taskAssignments: true,
-        sprintChanges: true,
-        meetingReminders: true,
-        weeklyDigest: false,
-      },
-      push: {
-        taskDeadlines: true,
-        mentionsAndComments: true,
-        projectInvitations: true,
-        systemUpdates: false,
-      },
-      inApp: {
-        realTimeUpdates: true,
-        soundNotifications: true,
-        desktopNotifications: true,
-      },
-    },
-    privacy: {
-      profileVisibility: 'team',
-      showOnlineStatus: true,
-      allowProjectInvitations: true,
-      dataCollection: true,
-    },
-    security: {
-      twoFactorAuth: false,
-      sessionTimeout: 30,
-      loginAlerts: true,
+      meeting_reminders: true,
+      documentation_reminders: true,
+      project_updates: true,
+      deadline_reminders: true,
     },
   });
   const [isLoading, setIsLoading] = useState(false);
@@ -95,57 +47,43 @@ const SettingsPage = () => {
 
   // Load settings
   useEffect(() => {
-    const loadSettings = () => {
+    const loadSettings = async () => {
       try {
-        const savedSettings = localStorage.getItem('userSettings');
-        if (savedSettings) {
-          const parsedSettings = JSON.parse(savedSettings);
-          // Ensure all required properties exist with fallback values
-          setSettings({
-            profile: {
-              language: 'en-US',
-              timezone: 'America/New_York',
-              dateFormat: 'MM/DD/YYYY',
-              ...parsedSettings.profile,
-            },
-            notifications: {
-              email: {
-                projectUpdates: true,
-                taskAssignments: true,
-                sprintChanges: true,
-                meetingReminders: true,
-                weeklyDigest: false,
-                ...parsedSettings.notifications?.email,
-              },
-              push: {
-                taskDeadlines: true,
-                mentionsAndComments: true,
-                projectInvitations: true,
-                systemUpdates: false,
-                ...parsedSettings.notifications?.push,
-              },
-              inApp: {
-                realTimeUpdates: true,
-                soundNotifications: true,
-                desktopNotifications: true,
-                ...parsedSettings.notifications?.inApp,
-              },
-            },
-            privacy: {
-              profileVisibility: 'team',
-              showOnlineStatus: true,
-              allowProjectInvitations: true,
-              dataCollection: true,
-              ...parsedSettings.privacy,
-            },
-            security: {
-              twoFactorAuth: false,
-              sessionTimeout: 30,
-              loginAlerts: true,
-              ...parsedSettings.security,
-            },
+        // Try to load notification preferences from backend first
+        let backendNotifications = null;
+        try {
+          const response = await fetch('/api/v1/user-notification-preferences/?delivery_channel=in_app', {
+            credentials: 'include',
           });
+          if (response.ok) {
+            const data = await response.json();
+            backendNotifications = data.preferences;
+          }
+        } catch (error) {
+          console.warn('Failed to load notification preferences from backend:', error);
         }
+
+        // Load local settings
+        const savedSettings = localStorage.getItem('userSettings');
+        const parsedSettings = savedSettings ? JSON.parse(savedSettings) : {};
+        
+        // Merge settings with priority: backend > localStorage > defaults
+        setSettings({
+          profile: {
+            language: 'en-US',
+            timezone: 'America/New_York',
+            dateFormat: 'MM/DD/YYYY',
+            ...parsedSettings.profile,
+          },
+          notifications: {
+            meeting_reminders: true,
+            documentation_reminders: true,
+            project_updates: true,
+            deadline_reminders: true,
+            ...parsedSettings.notifications,
+            ...(backendNotifications || {}),
+          },
+        });
       } catch (error) {
         console.error('Failed to load settings:', error);
       }
@@ -158,14 +96,36 @@ const SettingsPage = () => {
   const handleSaveSettings = async () => {
     setIsLoading(true);
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Save notification preferences to backend
+      if (settings.notifications) {
+        const response = await fetch('/api/v1/user-notification-preferences/', {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json',
+            // Add auth header if needed
+          },
+          credentials: 'include',
+          body: JSON.stringify({
+            preferences: settings.notifications,
+            delivery_channel: 'in_app'
+          }),
+        });
+
+        if (!response.ok) {
+          console.warn('Failed to save notification preferences to backend, saving locally');
+        }
+      }
       
+      // Always save to localStorage as backup
       localStorage.setItem('userSettings', JSON.stringify(settings));
       setIsSaved(true);
       setTimeout(() => setIsSaved(false), 2000);
     } catch (error) {
       console.error('Failed to save settings:', error);
+      // Still save locally even if backend fails
+      localStorage.setItem('userSettings', JSON.stringify(settings));
+      setIsSaved(true);
+      setTimeout(() => setIsSaved(false), 2000);
     } finally {
       setIsLoading(false);
     }
@@ -231,8 +191,6 @@ const SettingsPage = () => {
   const tabs = [
     { id: 'profile', label: 'Preferences', icon: User },
     { id: 'notifications', label: 'Notifications', icon: Bell },
-    { id: 'privacy', label: 'Privacy', icon: Shield },
-    { id: 'security', label: 'Security', icon: Lock },
     { id: 'data', label: 'Data Management', icon: Database },
   ];
 
@@ -390,253 +348,114 @@ const SettingsPage = () => {
               </div>
             )}
 
-            {/* Notification Settings */}
+            {/* Notifications */}
             {activeTab === 'notifications' && (
               <div className="space-y-6">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Notification Settings</h2>
+                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Notification Preferences</h2>
+                <p className="text-sm text-gray-600 dark:text-gray-400">
+                  Choose which notifications you want to receive. These settings apply to in-app notifications.
+                </p>
                 
-                {/* Email Notifications */}
-                <div>
-                  <div className="flex items-center gap-2 mb-4">
-                    <Mail className="w-5 h-5 text-blue-500" />
-                    <h3 className="text-lg font-medium text-gray-900 dark:text-white">Email Notifications</h3>
-                  </div>
-                  <div className="space-y-3">
-                    {settings.notifications?.email && Object.entries(settings.notifications.email).map(([key, value]) => (
-                      <div key={key} className="flex items-center justify-between py-2">
-                        <span className="text-gray-700 dark:text-gray-300">
-                          {key === 'projectUpdates' && 'Project Updates'}
-                          {key === 'taskAssignments' && 'Task Assignments'}
-                          {key === 'sprintChanges' && 'Sprint Changes'}
-                          {key === 'meetingReminders' && 'Meeting Reminders'}
-                          {key === 'weeklyDigest' && 'Weekly Digest'}
-                        </span>
-                        <button
-                          onClick={() => updateNestedSetting('notifications', 'email', key, !value)}
-                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                            value ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
-                          }`}
-                        >
-                          <span
-                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                              value ? 'translate-x-6' : 'translate-x-1'
-                            }`}
-                          />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Push Notifications */}
-                <div>
-                  <div className="flex items-center gap-2 mb-4">
-                    <Smartphone className="w-5 h-5 text-green-500" />
-                    <h3 className="text-lg font-medium text-gray-900 dark:text-white">Push Notifications</h3>
-                  </div>
-                  <div className="space-y-3">
-                    {settings.notifications?.push && Object.entries(settings.notifications.push).map(([key, value]) => (
-                      <div key={key} className="flex items-center justify-between py-2">
-                        <span className="text-gray-700 dark:text-gray-300">
-                          {key === 'taskDeadlines' && 'Task Deadline Reminders'}
-                          {key === 'mentionsAndComments' && 'Mentions and Comments'}
-                          {key === 'projectInvitations' && 'Project Invitations'}
-                          {key === 'systemUpdates' && 'System Updates'}
-                        </span>
-                        <button
-                          onClick={() => updateNestedSetting('notifications', 'push', key, !value)}
-                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                            value ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
-                          }`}
-                        >
-                          <span
-                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                              value ? 'translate-x-6' : 'translate-x-1'
-                            }`}
-                          />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* In-App Notifications */}
-                <div>
-                  <div className="flex items-center gap-2 mb-4">
-                    <MessageSquare className="w-5 h-5 text-purple-500" />
-                    <h3 className="text-lg font-medium text-gray-900 dark:text-white">In-App Notifications</h3>
-                  </div>
-                  <div className="space-y-3">
-                    {settings.notifications?.inApp && Object.entries(settings.notifications.inApp).map(([key, value]) => (
-                      <div key={key} className="flex items-center justify-between py-2">
-                        <span className="text-gray-700 dark:text-gray-300">
-                          {key === 'realTimeUpdates' && 'Real-time Updates'}
-                          {key === 'soundNotifications' && 'Sound Notifications'}
-                          {key === 'desktopNotifications' && 'Desktop Notifications'}
-                        </span>
-                        <button
-                          onClick={() => updateNestedSetting('notifications', 'inApp', key, !value)}
-                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                            value ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
-                          }`}
-                        >
-                          <span
-                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                              value ? 'translate-x-6' : 'translate-x-1'
-                            }`}
-                          />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Privacy Settings */}
-            {activeTab === 'privacy' && (
-              <div className="space-y-6">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Privacy Settings</h2>
-                
-                {/* Profile Visibility */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Profile Visibility
-                  </label>
-                  <select
-                    value={settings.privacy?.profileVisibility || 'team'}
-                    onChange={(e) => updateSetting('privacy', 'profileVisibility', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-                  >
-                    <option value="public">Public</option>
-                    <option value="team">Team Members Only</option>
-                    <option value="private">Private</option>
-                  </select>
-                </div>
-
-                {/* Other Privacy Options */}
                 <div className="space-y-4">
-                  <div className="flex items-center justify-between py-2">
-                    <div>
-                      <span className="text-gray-700 dark:text-gray-300 font-medium">Show Online Status</span>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">Let other users see your online status</p>
+                  {/* Meeting Reminders */}
+                  <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <Calendar className="w-5 h-5 text-blue-600 dark:text-blue-400" />
+                      <div>
+                        <h3 className="font-medium text-gray-900 dark:text-white">Meeting Reminders</h3>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                          Get notified about upcoming meetings and meeting updates
+                        </p>
+                      </div>
                     </div>
-                    <button
-                      onClick={() => updateSetting('privacy', 'showOnlineStatus', !(settings.privacy?.showOnlineStatus ?? true))}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        (settings.privacy?.showOnlineStatus ?? true) ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          (settings.privacy?.showOnlineStatus ?? true) ? 'translate-x-6' : 'translate-x-1'
-                        }`}
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={settings.notifications?.meeting_reminders || false}
+                        onChange={(e) => updateSetting('notifications', 'meeting_reminders', e.target.checked)}
+                        className="sr-only peer"
                       />
-                    </button>
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+                    </label>
                   </div>
 
-                  <div className="flex items-center justify-between py-2">
-                    <div>
-                      <span className="text-gray-700 dark:text-gray-300 font-medium">Allow Project Invitations</span>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">Other users can invite you to join projects</p>
+                  {/* Documentation Reminders */}
+                  <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <MessageSquare className="w-5 h-5 text-green-600 dark:text-green-400" />
+                      <div>
+                        <h3 className="font-medium text-gray-900 dark:text-white">Documentation Updates</h3>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                          Get notified when new documentation is added or updated
+                        </p>
+                      </div>
                     </div>
-                    <button
-                      onClick={() => updateSetting('privacy', 'allowProjectInvitations', !(settings.privacy?.allowProjectInvitations ?? true))}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        (settings.privacy?.allowProjectInvitations ?? true) ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          (settings.privacy?.allowProjectInvitations ?? true) ? 'translate-x-6' : 'translate-x-1'
-                        }`}
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={settings.notifications?.documentation_reminders || false}
+                        onChange={(e) => updateSetting('notifications', 'documentation_reminders', e.target.checked)}
+                        className="sr-only peer"
                       />
-                    </button>
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+                    </label>
                   </div>
 
-                  <div className="flex items-center justify-between py-2">
-                    <div>
-                      <span className="text-gray-700 dark:text-gray-300 font-medium">Data Collection</span>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">Allow collection of anonymous usage data to improve service</p>
+                  {/* Project Updates */}
+                  <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <Settings className="w-5 h-5 text-purple-600 dark:text-purple-400" />
+                      <div>
+                        <h3 className="font-medium text-gray-900 dark:text-white">Project Updates</h3>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                          Get notified about project changes, member additions, and status updates
+                        </p>
+                      </div>
                     </div>
-                    <button
-                      onClick={() => updateSetting('privacy', 'dataCollection', !(settings.privacy?.dataCollection ?? true))}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        (settings.privacy?.dataCollection ?? true) ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          (settings.privacy?.dataCollection ?? true) ? 'translate-x-6' : 'translate-x-1'
-                        }`}
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={settings.notifications?.project_updates || false}
+                        onChange={(e) => updateSetting('notifications', 'project_updates', e.target.checked)}
+                        className="sr-only peer"
                       />
-                    </button>
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+                    </label>
+                  </div>
+
+                  {/* Deadline Reminders */}
+                  <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <div className="flex items-center gap-3">
+                      <Bell className="w-5 h-5 text-red-600 dark:text-red-400" />
+                      <div>
+                        <h3 className="font-medium text-gray-900 dark:text-white">Deadline Reminders</h3>
+                        <p className="text-sm text-gray-600 dark:text-gray-400">
+                          Get notified about approaching deadlines for tasks and sprints
+                        </p>
+                      </div>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={settings.notifications?.deadline_reminders || false}
+                        onChange={(e) => updateSetting('notifications', 'deadline_reminders', e.target.checked)}
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
+                    </label>
                   </div>
                 </div>
-              </div>
-            )}
 
-            {/* Security Settings */}
-            {activeTab === 'security' && (
-              <div className="space-y-6">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Security Settings</h2>
-                
-                {/* Two-Factor Authentication */}
-                <div className="flex items-center justify-between py-2">
-                  <div>
-                    <span className="text-gray-700 dark:text-gray-300 font-medium">Two-Factor Authentication</span>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Add an extra layer of security to your account</p>
+                <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
+                  <div className="flex items-start gap-3">
+                    <Mail className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5" />
+                    <div>
+                      <h3 className="font-medium text-blue-900 dark:text-blue-100">Email Notifications</h3>
+                      <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
+                        Email notifications are currently being developed. For now, you'll receive notifications within the app.
+                      </p>
+                    </div>
                   </div>
-                  <button
-                    onClick={() => updateSetting('security', 'twoFactorAuth', !(settings.security?.twoFactorAuth ?? false))}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      (settings.security?.twoFactorAuth ?? false) ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        (settings.security?.twoFactorAuth ?? false) ? 'translate-x-6' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
-                </div>
-
-                {/* Session Timeout */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Session Timeout (minutes)
-                  </label>
-                  <select
-                    value={settings.security?.sessionTimeout || 30}
-                    onChange={(e) => updateSetting('security', 'sessionTimeout', parseInt(e.target.value))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-                  >
-                    <option value={15}>15 minutes</option>
-                    <option value={30}>30 minutes</option>
-                    <option value={60}>1 hour</option>
-                    <option value={240}>4 hours</option>
-                    <option value={480}>8 hours</option>
-                  </select>
-                </div>
-
-                {/* Login Alerts */}
-                <div className="flex items-center justify-between py-2">
-                  <div>
-                    <span className="text-gray-700 dark:text-gray-300 font-medium">Login Alerts</span>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Notify you when new devices sign in to your account</p>
-                  </div>
-                  <button
-                    onClick={() => updateSetting('security', 'loginAlerts', !(settings.security?.loginAlerts ?? true))}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      (settings.security?.loginAlerts ?? true) ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        (settings.security?.loginAlerts ?? true) ? 'translate-x-6' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
                 </div>
               </div>
             )}
@@ -645,25 +464,6 @@ const SettingsPage = () => {
             {activeTab === 'data' && (
               <div className="space-y-6">
                 <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Data Management</h2>
-                
-                {/* Export Data */}
-                <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
-                  <div className="flex items-start gap-3">
-                    <Download className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5" />
-                    <div className="flex-1">
-                      <h3 className="font-medium text-blue-900 dark:text-blue-100">Export Data</h3>
-                      <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
-                        Download all your data from Scrumix, including profile information, project data, favorites, and more.
-                      </p>
-                      <button
-                        onClick={handleExportData}
-                        className="mt-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm transition-colors"
-                      >
-                        Export Data
-                      </button>
-                    </div>
-                  </div>
-                </div>
 
                 {/* Delete Account */}
                 <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg">
