@@ -67,6 +67,7 @@ class User(Base):
     
     # Notification relationships
     user_notifications = relationship("UserNotification", back_populates="user", cascade="all, delete-orphan")
+    notification_preferences = relationship("UserNotificationPreference", back_populates="user", cascade="all, delete-orphan")
 
 class UserOAuth(Base):
     """OAuth account association table"""

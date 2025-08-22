@@ -18,6 +18,7 @@ from .meeting_note import router as meeting_note_router
 from .meeting_action_item import router as meeting_action_item_router
 from .meeting_participants import router as meeting_participants_router
 from .notifications import router as notifications_router
+from .user_notification_preferences import router as user_notification_preferences_router
 
 api_router = APIRouter()
 
@@ -37,3 +38,4 @@ api_router.include_router(meeting_note_router, prefix="/meeting-notes", tags=["m
 api_router.include_router(meeting_action_item_router, prefix="/meeting-action-items", tags=["meeting-action-items"])
 api_router.include_router(meeting_participants_router, prefix="/meeting-participants", tags=["meeting-participants"])
 api_router.include_router(notifications_router, prefix="/notifications", tags=["notifications"])
+api_router.include_router(user_notification_preferences_router, prefix="/notification-preferences", tags=["notification-preferences"])

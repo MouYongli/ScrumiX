@@ -10,10 +10,31 @@ from ..schemas.notification import NotificationCreate, NotificationBroadcast
 from ..crud.notification import notification_crud
 from ..crud.user_project import user_project_crud
 from ..crud.meeting_participant import meeting_participant_crud
+from ..crud.user_notification_preference import user_notification_preference_crud
 
 
 class NotificationHelper:
     """Helper class for creating and sending notifications for various events"""
+    
+    @staticmethod
+    def _filter_users_by_preferences(
+        db: Session,
+        user_ids: List[int],
+        notification_type: str,
+        delivery_method: str = 'in_app'
+    ) -> List[int]:
+        """Filter user IDs based on their notification preferences"""
+        print(f"    🔍 DEBUG: Filtering {len(user_ids)} users for notification type '{notification_type}'")
+        filtered_user_ids = []
+        for user_id in user_ids:
+            should_send = user_notification_preference_crud.should_send_notification(
+                db, user_id, notification_type, delivery_method
+            )
+            print(f"      User {user_id}: should_send = {should_send}")
+            if should_send:
+                filtered_user_ids.append(user_id)
+        print(f"    🔍 DEBUG: {len(filtered_user_ids)} users will receive notification after filtering")
+        return filtered_user_ids
     
     @staticmethod
     def create_task_assigned_notification(
@@ -116,10 +137,18 @@ class NotificationHelper:
     ):
         """Create notification when meeting is created - notify all participants"""
         # Get meeting participants
-        participants = meeting_participant_crud.get_by_meeting(db=db, meeting_id=meeting_id)
-        participant_user_ids = [p.user_id for p in participants if p.user_id and p.user_id != creator_user_id]
+        participants = meeting_participant_crud.get_participants_by_meeting(db=db, meeting_id=meeting_id)
+        participant_user_ids = [p["user_id"] for p in participants if p.get("user_id") and p["user_id"] != creator_user_id]
         
         if not participant_user_ids:
+            return
+        
+        # Filter users based on their notification preferences
+        filtered_participant_ids = NotificationHelper._filter_users_by_preferences(
+            db, participant_user_ids, 'meeting_created', 'in_app'
+        )
+        
+        if not filtered_participant_ids:
             return
         
         start_time = meeting_start.strftime("%B %d at %I:%M %p")
@@ -131,7 +160,7 @@ class NotificationHelper:
             priority=NotificationPriority.MEDIUM,
             action_url=f"/project/{project_id}/meeting/{meeting_id}",
             action_text="View Meeting",
-            recipient_user_ids=participant_user_ids,
+            recipient_user_ids=filtered_participant_ids,
             project_id=project_id,
             sprint_id=sprint_id,
             meeting_id=meeting_id
@@ -141,6 +170,54 @@ class NotificationHelper:
             db=db,
             obj_in=notification_data,
             created_by_id=creator_user_id
+        )
+    
+    @staticmethod
+    def create_meeting_reminder_notification(
+        db: Session,
+        meeting_id: int,
+        meeting_title: str,
+        meeting_start: datetime,
+        project_id: int,
+        minutes_until_meeting: int = 15,
+        sprint_id: Optional[int] = None
+    ):
+        """Create reminder notification for upcoming meetings"""
+        # Get meeting participants
+        participants = meeting_participant_crud.get_participants_by_meeting(db=db, meeting_id=meeting_id)
+        participant_user_ids = [p["user_id"] for p in participants if p.get("user_id")]
+        
+        if not participant_user_ids:
+            return
+        
+        # Filter users based on their notification preferences
+        filtered_participant_ids = NotificationHelper._filter_users_by_preferences(
+            db, participant_user_ids, 'meeting_reminder', 'in_app'
+        )
+        
+        if not filtered_participant_ids:
+            return
+        
+        start_time = meeting_start.strftime("%B %d at %I:%M %p")
+        time_text = f"{minutes_until_meeting} minutes" if minutes_until_meeting > 1 else "1 minute"
+        
+        notification_data = NotificationCreate(
+            title=f"Meeting reminder: {meeting_title}",
+            message=f"'{meeting_title}' starts in {time_text} ({start_time})",
+            notification_type=NotificationType.MEETING_REMINDER,
+            priority=NotificationPriority.HIGH,
+            action_url=f"/project/{project_id}/meeting/{meeting_id}",
+            action_text="Join Meeting",
+            recipient_user_ids=filtered_participant_ids,
+            project_id=project_id,
+            sprint_id=sprint_id,
+            meeting_id=meeting_id
+        )
+        
+        return notification_crud.create_with_recipients(
+            db=db,
+            obj_in=notification_data,
+            created_by_id=None  # System notification
         )
     
     @staticmethod
@@ -158,6 +235,17 @@ class NotificationHelper:
         if new_participant_user_id == added_by_user_id:
             return  # Don't notify when adding yourself
         
+        print(f"🔔 DEBUG: Creating meeting participant notification for user {new_participant_user_id}")
+        
+        # Filter user based on their notification preferences
+        filtered_user_ids = NotificationHelper._filter_users_by_preferences(
+            db, [new_participant_user_id], 'meeting_created', 'in_app'
+        )
+        
+        if not filtered_user_ids:
+            print(f"    User {new_participant_user_id} has meeting notifications disabled, skipping")
+            return
+        
         start_time = meeting_start.strftime("%B %d at %I:%M %p")
         
         notification_data = NotificationCreate(
@@ -167,12 +255,13 @@ class NotificationHelper:
             priority=NotificationPriority.MEDIUM,
             action_url=f"/project/{project_id}/meeting/{meeting_id}",
             action_text="View Meeting",
-            recipient_user_ids=[new_participant_user_id],
+            recipient_user_ids=filtered_user_ids,
             project_id=project_id,
             sprint_id=sprint_id,
             meeting_id=meeting_id
         )
         
+        print(f"    Sending meeting participant notification to user {new_participant_user_id}")
         return notification_crud.create_with_recipients(
             db=db,
             obj_in=notification_data,
@@ -276,6 +365,14 @@ class NotificationHelper:
         if not member_ids:
             return
         
+        # Filter users based on their notification preferences
+        filtered_member_ids = NotificationHelper._filter_users_by_preferences(
+            db, member_ids, 'documentation_added', 'in_app'
+        )
+        
+        if not filtered_member_ids:
+            return
+        
         # Format documentation type for display
         type_display = documentation_type.replace('_', ' ').title()
         
@@ -286,7 +383,7 @@ class NotificationHelper:
             priority=NotificationPriority.LOW,
             action_url=f"/project/{project_id}/documentation",
             action_text="View Documentation",
-            recipient_user_ids=member_ids,
+            recipient_user_ids=filtered_member_ids,
             project_id=project_id
         )
         
@@ -296,53 +393,7 @@ class NotificationHelper:
             created_by_id=created_by_user_id
         )
     
-    @staticmethod
-    def create_meeting_reminder_notification(
-        db: Session,
-        meeting_id: int,
-        meeting_title: str,
-        meeting_start: datetime,
-        project_id: int,
-        sprint_id: Optional[int] = None
-    ):
-        """Create meeting reminder notification (called by scheduler)"""
-        # Get meeting participants
-        participants = meeting_participant_crud.get_by_meeting(db=db, meeting_id=meeting_id)
-        participant_user_ids = [p.user_id for p in participants if p.user_id]
-        
-        if not participant_user_ids:
-            return
-        
-        # Calculate time until meeting
-        time_diff = meeting_start - datetime.utcnow()
-        if time_diff.total_seconds() > 0:
-            if time_diff.total_seconds() < 3600:  # Less than 1 hour
-                time_text = f"in {int(time_diff.total_seconds() / 60)} minutes"
-            else:
-                time_text = f"in {int(time_diff.total_seconds() / 3600)} hours"
-        else:
-            time_text = "now"
-        
-        notification_data = NotificationCreate(
-            title=f"Meeting reminder: {meeting_title}",
-            message=f"Your meeting '{meeting_title}' starts {time_text}",
-            notification_type=NotificationType.MEETING_REMINDER,
-            priority=NotificationPriority.HIGH,
-            action_url=f"/project/{project_id}/meeting/{meeting_id}",
-            action_text="Join Meeting",
-            expires_at=meeting_start + timedelta(hours=2),  # Expire 2 hours after meeting start
-            recipient_user_ids=participant_user_ids,
-            project_id=project_id,
-            sprint_id=sprint_id,
-            meeting_id=meeting_id
-        )
-        
-        return notification_crud.create_with_recipients(
-            db=db,
-            obj_in=notification_data,
-            created_by_id=None  # System notification
-        )
-    
+
     @staticmethod
     def create_sprint_started_notification(
         db: Session,
@@ -464,42 +515,97 @@ class NotificationHelper:
         )
     
     @staticmethod
-    def create_backlog_created_notification(
+    def create_project_updated_notification(
         db: Session,
-        backlog_id: int,
-        backlog_title: str,
-        backlog_type: str,
         project_id: int,
-        created_by_user_id: int
+        project_name: str,
+        updated_field: str,  # 'name', 'status', 'description', etc.
+        old_value: str,
+        new_value: str,
+        updated_by_user_id: int
     ):
-        """Create notification when new backlog item is created"""
-        # Get all project members except the creator
+        """Create notification when project information is updated"""
+        print(f"🔔 DEBUG: Creating project notification for field '{updated_field}' in project {project_id}")
+        print(f"    Old value: '{old_value}' -> New value: '{new_value}'")
+        
+        # Get all project members except the updater
         project_members = user_project_crud.get_project_members(db, project_id)
-        member_ids = [member["user"].id for member in project_members if member["user"].id != created_by_user_id]
+        member_ids = [member["user"].id for member in project_members if member["user"].id != updated_by_user_id]
+        print(f"    Found {len(project_members)} project members, {len(member_ids)} excluding updater")
         
         if not member_ids:
+            print("    No members to notify, returning")
             return
         
-        # Format backlog type for display
-        type_display = backlog_type.replace('_', ' ').title()
+        # Filter users based on their notification preferences
+        # Map the updated field to appropriate notification type
+        notification_type_map = {
+            'name': 'project_updated',
+            'status': 'project_status_changed', 
+            'description': 'project_updated',
+            'start_date': 'project_updated',
+            'end_date': 'project_updated'
+        }
+        notification_type = notification_type_map.get(updated_field, 'project_updated')
+        
+        print(f"    Notification type: {notification_type}")
+        filtered_member_ids = NotificationHelper._filter_users_by_preferences(
+            db, member_ids, notification_type, 'in_app'
+        )
+        print(f"    After preference filtering: {len(filtered_member_ids)} users will receive notification")
+        
+        if not filtered_member_ids:
+            print("    No users after filtering, returning")
+            return
+        
+        # Create appropriate message based on what was updated
+        field_display = updated_field.replace('_', ' ').title()
+        if updated_field == 'name':
+            message = f"Project name changed from '{old_value}' to '{new_value}'"
+            title = f"Project renamed: {new_value}"
+            notification_type = NotificationType.PROJECT_UPDATED
+        elif updated_field == 'status':
+            status_display_old = old_value.replace('_', ' ').title()
+            status_display_new = new_value.replace('_', ' ').title()
+            message = f"Project status changed from '{status_display_old}' to '{status_display_new}'"
+            title = f"Project status updated: {project_name}"
+            notification_type = NotificationType.PROJECT_STATUS_CHANGED
+        elif updated_field == 'description':
+            message = f"Project description was updated"
+            title = f"Project description updated: {project_name}"
+            notification_type = NotificationType.PROJECT_UPDATED
+        elif updated_field == 'start_date':
+            message = f"Project start date changed from '{old_value}' to '{new_value}'"
+            title = f"Project start date updated: {project_name}"
+            notification_type = NotificationType.PROJECT_UPDATED
+        elif updated_field == 'end_date':
+            message = f"Project end date changed from '{old_value}' to '{new_value}'"
+            title = f"Project end date updated: {project_name}"
+            notification_type = NotificationType.PROJECT_UPDATED
+        else:
+            message = f"Project {field_display.lower()} was updated"
+            title = f"Project updated: {project_name}"
+            notification_type = NotificationType.PROJECT_UPDATED
         
         notification_data = NotificationCreate(
-            title=f"New {type_display}: {backlog_title}",
-            message=f"New {type_display.lower()} '{backlog_title}' has been added to the project backlog",
-            notification_type=NotificationType.BACKLOG_CREATED,
-            priority=NotificationPriority.LOW,
-            action_url=f"/project/{project_id}/backlog",
-            action_text="View Backlog",
-            recipient_user_ids=member_ids,
-            project_id=project_id,
-            backlog_item_id=backlog_id
+            title=title,
+            message=message,
+            notification_type=notification_type,
+            priority=NotificationPriority.MEDIUM,
+            action_url=f"/project/{project_id}/dashboard",
+            action_text="View Project",
+            recipient_user_ids=filtered_member_ids,
+            project_id=project_id
         )
         
-        return notification_crud.create_with_recipients(
+        print(f"    Creating notification: '{title}'")
+        result = notification_crud.create_with_recipients(
             db=db,
             obj_in=notification_data,
-            created_by_id=created_by_user_id
+            created_by_id=updated_by_user_id
         )
+        print(f"    Notification created successfully: ID {result.id if result else 'None'}")
+        return result
     
     @staticmethod
     def create_deadline_approaching_notification(

@@ -196,6 +196,14 @@ async def update_project(
 ):
     """Update project information"""
     try:
+        # Get the current project to check for changes
+        current_project = project_crud.get_by_id(db, project_id)
+        if not current_project:
+            raise HTTPException(
+                status_code=fastapi_status.HTTP_404_NOT_FOUND,
+                detail="Project not found"
+            )
+        
         # Update project with user permission check
         updated_project = project_crud.update_project(db, project_id, project_update, current_user.id)
         if not updated_project:
@@ -203,6 +211,100 @@ async def update_project(
                 status_code=fastapi_status.HTTP_404_NOT_FOUND,
                 detail="Project not found"
             )
+        
+        # Send notifications for important project changes
+        print(f"🚀 DEBUG: Processing project update for project {project_id}")
+        print(f"    Current user: {current_user.id}")
+        print(f"    Update data: {project_update.dict(exclude_unset=True)}")
+        
+        try:
+            # Check for name change
+            if (project_update.name is not None and project_update.name != current_project.name):
+                print(f"    📝 Name change detected: '{current_project.name}' -> '{project_update.name}'")
+                notification_helper.create_project_updated_notification(
+                    db=db,
+                    project_id=project_id,
+                    project_name=updated_project.name,
+                    updated_field="name",
+                    old_value=current_project.name,
+                    new_value=project_update.name,
+                    updated_by_user_id=current_user.id
+                )
+            else:
+                print(f"    ❌ No name change: current='{current_project.name}', update='{project_update.name}' (provided: {project_update.name is not None})")
+            
+            # Check for status change
+            if (project_update.status is not None and project_update.status != current_project.status):
+                print(f"    📊 Status change detected: '{current_project.status.value}' -> '{project_update.status.value}'")
+                notification_helper.create_project_updated_notification(
+                    db=db,
+                    project_id=project_id,
+                    project_name=updated_project.name,
+                    updated_field="status",
+                    old_value=current_project.status.value,
+                    new_value=project_update.status.value,
+                    updated_by_user_id=current_user.id
+                )
+            else:
+                print(f"    ❌ No status change: current='{current_project.status}', update='{project_update.status}' (provided: {project_update.status is not None})")
+            
+            # Check for description change (only notify if description is substantial)
+            if (project_update.description is not None and 
+                project_update.description != current_project.description):
+                print(f"    📄 Description change detected")
+                old_desc = current_project.description or "No description"
+                new_desc = project_update.description or "No description"
+                notification_helper.create_project_updated_notification(
+                    db=db,
+                    project_id=project_id,
+                    project_name=updated_project.name,
+                    updated_field="description",
+                    old_value=old_desc[:50] + "..." if len(old_desc) > 50 else old_desc,
+                    new_value=new_desc[:50] + "..." if len(new_desc) > 50 else new_desc,
+                    updated_by_user_id=current_user.id
+                )
+            else:
+                print(f"    ❌ No description change: update provided = {project_update.description is not None}")
+            
+            # Check for start date change
+            if (project_update.start_date is not None and project_update.start_date != current_project.start_date):
+                print(f"    📅 Start date change detected")
+                old_date = current_project.start_date.strftime("%Y-%m-%d") if current_project.start_date else "Not set"
+                new_date = project_update.start_date.strftime("%Y-%m-%d")
+                notification_helper.create_project_updated_notification(
+                    db=db,
+                    project_id=project_id,
+                    project_name=updated_project.name,
+                    updated_field="start_date",
+                    old_value=old_date,
+                    new_value=new_date,
+                    updated_by_user_id=current_user.id
+                )
+            else:
+                print(f"    ❌ No start date change: provided = {project_update.start_date is not None}")
+            
+            # Check for end date change
+            if (project_update.end_date is not None and project_update.end_date != current_project.end_date):
+                print(f"    📅 End date change detected")
+                old_date = current_project.end_date.strftime("%Y-%m-%d") if current_project.end_date else "Not set"
+                new_date = project_update.end_date.strftime("%Y-%m-%d")
+                notification_helper.create_project_updated_notification(
+                    db=db,
+                    project_id=project_id,
+                    project_name=updated_project.name,
+                    updated_field="end_date",
+                    old_value=old_date,
+                    new_value=new_date,
+                    updated_by_user_id=current_user.id
+                )
+            else:
+                print(f"    ❌ No end date change: provided = {project_update.end_date is not None}")
+                
+        except Exception as e:
+            # Log the error but don't fail the project update
+            print(f"❌ Failed to create project update notification: {e}")
+            import traceback
+            traceback.print_exc()
         
         # Get project statistics
         project_stats = project_crud.get_project_with_user_role(db, project_id, current_user.id)

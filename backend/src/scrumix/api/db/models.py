@@ -18,6 +18,8 @@ from scrumix.api.models.acceptance_criteria import AcceptanceCriteria
 from scrumix.api.models.meeting_agenda import MeetingAgenda
 from scrumix.api.models.meeting_note import MeetingNote
 from scrumix.api.models.meeting_action_item import MeetingActionItem
+from scrumix.api.models.notification import Notification, UserNotification
+from scrumix.api.models.user_notification_preference import UserNotificationPreference
 
 # Import all association tables
 from scrumix.api.models.user_project import UserProject
@@ -43,6 +45,9 @@ __all__ = [
     'MeetingAgenda',
     'MeetingNote',
     'MeetingActionItem',
+    'Notification',
+    'UserNotification',
+    'UserNotificationPreference',
     'UserTask',
     'MeetingParticipant',
     'UserDocumentation',
