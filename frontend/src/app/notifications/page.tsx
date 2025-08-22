@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { Bell, Filter, CheckCircle, X, ExternalLink, Loader2, RefreshCw, Search, Calendar, ChevronDown, Settings, Archive, Trash2, Eye, EyeOff } from 'lucide-react';
+import { Bell, Filter, CheckCircle, X, ExternalLink, Loader2, Search, Calendar, ChevronDown, Settings, Archive, Trash2, Eye, EyeOff } from 'lucide-react';
 import { notificationsApi } from '../../utils/notifications-api';
 import { 
   UserNotification, 
@@ -181,11 +181,7 @@ const NotificationsPage: React.FC = () => {
     }
   };
 
-  // Refresh all data
-  const refresh = () => {
-    fetchNotifications(1, true);
-    fetchStats();
-  };
+
 
   // Bulk operations
   const handleSelectAll = () => {
@@ -359,13 +355,6 @@ const NotificationsPage: React.FC = () => {
 
             {/* Action Buttons */}
             <div className="flex items-center gap-3">
-              <button
-                onClick={refresh}
-                className="flex items-center gap-2 px-4 py-2 text-sm text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
-              >
-                <RefreshCw className="w-4 h-4" />
-                Refresh
-              </button>
               
               {selectedNotifications.length > 0 && (
                 <>

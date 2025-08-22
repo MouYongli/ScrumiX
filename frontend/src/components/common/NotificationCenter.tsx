@@ -318,7 +318,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ className = '' 
           />
           
           {/* Panel */}
-          <div className="absolute right-0 top-full mt-2 w-96 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50 max-h-96">
+          <div className="absolute right-0 top-full mt-2 w-96 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50">
             {/* Header */}
             <div className="p-4 border-b border-gray-200 dark:border-gray-700">
               <div className="flex justify-between items-center">
@@ -357,7 +357,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ className = '' 
             )}
 
             {/* Notifications List */}
-            <div className="max-h-80 overflow-y-auto">
+            <div className="overflow-y-auto" style={{ maxHeight: '320px' }}>
               {loading && notifications.length === 0 ? (
                 <div className="p-8 text-center">
                   <Loader2 className="w-6 h-6 text-gray-400 mx-auto mb-2 animate-spin" />
