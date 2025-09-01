@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func
 
 from scrumix.api.models.sprint import Sprint, SprintStatus
+from scrumix.api.models.user_project import UserProject
 from scrumix.api.schemas.sprint import SprintCreate, SprintUpdate
 from scrumix.api.crud.base import CRUDBase
 
@@ -46,13 +47,43 @@ class SprintCRUD(CRUDBase[Sprint, SprintCreate, SprintUpdate]):
         """Get sprint by name"""
         return db.query(Sprint).filter(Sprint.sprint_name == sprint_name).first()
     
+    def get_active_sprints(
+        self, 
+        db: Session, 
+        user_id: int,
+        skip: int = 0, 
+        limit: int = 100
+    ) -> List[Sprint]:
+        """Get currently active sprints for a specific user"""
+        now = datetime.now()
+        return (
+            db.query(Sprint)
+            .join(Sprint.project)
+            .join(UserProject)
+            .filter(
+                and_(
+                    UserProject.user_id == user_id,
+                    Sprint.status == SprintStatus.ACTIVE,
+                    Sprint.start_date <= now,
+                    Sprint.end_date >= now
+                )
+            )
+            .order_by(Sprint.start_date.desc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+    
     def get_sprints(self, db: Session, skip: int = 0, limit: int = 100, 
-                   status: Optional[SprintStatus] = None) -> List[Sprint]:
+                   status: Optional[SprintStatus] = None, project_id: Optional[int] = None) -> List[Sprint]:
         """Get list of sprints"""
         query = db.query(Sprint)
         
         if status:
             query = query.filter(Sprint.status == status)
+        
+        if project_id:
+            query = query.filter(Sprint.project_id == project_id)
         
         return query.order_by(Sprint.start_date.desc()).offset(skip).limit(limit).all()
     
@@ -66,6 +97,30 @@ class SprintCRUD(CRUDBase[Sprint, SprintCreate, SprintUpdate]):
         )
         
         return query.order_by(Sprint.start_date.desc()).offset(skip).limit(limit).all()
+    
+    def search_sprints_by_project(
+        self,
+        db: Session,
+        project_id: int,
+        query: str,
+        skip: int = 0,
+        limit: int = 100
+    ) -> List[Sprint]:
+        """Search sprints by project ID and search query."""
+        search_filter = or_(
+            Sprint.sprint_name.ilike(f"%{query}%"),
+            Sprint.sprint_goal.ilike(f"%{query}%")
+        )
+        
+        return (
+            db.query(Sprint)
+            .filter(Sprint.project_id == project_id)
+            .filter(search_filter)
+            .order_by(Sprint.start_date.desc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
     
     def update_sprint(self, db: Session, sprint_id: int, sprint_update: SprintUpdate) -> Optional[Sprint]:
         """Update sprint information"""
@@ -112,8 +167,8 @@ class SprintCRUD(CRUDBase[Sprint, SprintCreate, SprintUpdate]):
                  .order_by(Sprint.start_date.desc())\
                  .offset(skip).limit(limit).all()
     
-    def get_active_sprints(self, db: Session, skip: int = 0, limit: int = 100) -> List[Sprint]:
-        """Get currently active sprints"""
+    def get_active_sprints_general(self, db: Session, skip: int = 0, limit: int = 100) -> List[Sprint]:
+        """Get currently active sprints (general method)"""
         now = datetime.now()
         return db.query(Sprint).filter(
             and_(
@@ -165,7 +220,7 @@ class SprintCRUD(CRUDBase[Sprint, SprintCreate, SprintUpdate]):
             status_counts[sprint_status.value] = self.count_sprints(db, sprint_status)
         
         # Get currently active sprints
-        active_count = len(self.get_active_sprints(db))
+        active_count = len(self.get_active_sprints_general(db))
         
         # Get average sprint duration
         sprints = db.query(Sprint).all()

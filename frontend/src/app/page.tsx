@@ -1,10 +1,54 @@
 'use client';
 
 import Link from 'next/link';
-import { Search, Bell, User } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { Search, Bell, User, Sun, Moon, Monitor } from 'lucide-react';
+import { useTheme } from '@/contexts/ThemeContext';
+import { isAuthenticated } from '@/utils/auth';
 
 export default function Home() {
-  // Public product introduction page, no authentication check required
+  const router = useRouter();
+  const { theme, setTheme, effectiveTheme } = useTheme();
+
+  // Theme toggle functionality
+  const getThemeIcon = () => {
+    switch (theme) {
+      case 'light':
+        return Sun;
+      case 'dark':
+        return Moon;
+      case 'system':
+        return Monitor;
+      default:
+        return effectiveTheme === 'dark' ? Moon : Sun;
+    }
+  };
+
+  const cycleTheme = () => {
+    const themes: ('light' | 'dark' | 'system')[] = ['light', 'dark', 'system'];
+    const currentIndex = themes.indexOf(theme);
+    const nextIndex = (currentIndex + 1) % themes.length;
+    setTheme(themes[nextIndex]);
+  };
+
+  // Handle login click
+  const handleLoginClick = async () => {
+    try {
+      const isLoggedIn = await isAuthenticated();
+      if (isLoggedIn) {
+        // User is already logged in, redirect to workspace
+        router.push('/workspace');
+      } else {
+        // User is not logged in, go to login page
+        router.push('/auth/login');
+      }
+    } catch (error) {
+      console.error('Auth check failed:', error);
+      // If auth check fails, proceed to login page
+      router.push('/auth/login');
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white dark:from-gray-900 dark:to-gray-800">
       {/* Header - consistent with post-login interface */}
@@ -40,8 +84,20 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Right: Login and signup buttons */}
+            {/* Right: Theme toggle, login and signup buttons */}
             <div className="flex items-center space-x-3">
+              {/* Theme Toggle */}
+              <button
+                onClick={cycleTheme}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+                title={`Current theme: ${theme} (Click to cycle: Light → Dark → System)`}
+              >
+                {(() => {
+                  const IconComponent = getThemeIcon();
+                  return <IconComponent className="w-5 h-5 text-gray-600 dark:text-gray-400" />;
+                })()}
+              </button>
+
               {/* Notification icon placeholder */}
               <button className="p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 relative">
                 <Bell className="h-5 w-5" />
@@ -49,12 +105,12 @@ export default function Home() {
 
               {/* Login and signup buttons */}
               <div className="flex items-center space-x-2">
-                <Link
-                  href="/auth/login"
+                <button
+                  onClick={handleLoginClick}
                   className="text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white px-3 py-2 text-sm font-medium transition-colors"
                 >
                   Login
-                </Link>
+                </button>
                 <Link
                   href="/auth/signup"
                   className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-medium transition-colors"
@@ -78,12 +134,12 @@ export default function Home() {
             Professional agile project management platform that makes team collaboration more efficient and Scrum management simpler
           </p>
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link
-              href="/auth/login"
+            <button
+              onClick={handleLoginClick}
               className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 rounded-lg font-medium transition-colors"
             >
               Get Started
-            </Link>
+            </button>
           </div>
         </div>
 

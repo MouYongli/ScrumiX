@@ -1,0 +1,271 @@
+# ScrumiX Frontend Development Guidelines
+
+## TypeScript Standards
+
+- Use TypeScript strictly - no `any` types unless absolutely necessary
+- Define proper interfaces and types for all components and functions
+- Use type imports: `import type { ComponentProps } from 'react'`
+- Leverage TypeScript 5+ features like `satisfies` operator
+- Export interfaces for components that will be reused or tested
+- Use union types for status/state enums: `'pending' | 'completed' | 'in-progress'`
+
+## Next.js App Router
+
+- Use App Router with `app/` directory structure exclusively
+- Follow file naming: kebab-case for files, PascalCase for components
+- Use `'use client'` directive only when client-side features are needed
+- Organize pages in feature-based folders under `app/`
+- Keep reusable components in `src/components/` with logical grouping:
+  - `components/auth/` - Authentication related
+  - `components/common/` - Shared business components
+  - `components/layout/` - Layout and navigation components
+- Use dynamic routes with proper TypeScript typing: `[project-id]`, `[meeting-id]`
+
+## UI Framework - Radix UI + Tailwind CSS
+
+### Component Structure
+```typescript
+// Use Radix UI primitives with proper Tailwind styling
+import { Dialog } from '@radix-ui/react-dialog';
+import { Select } from '@radix-ui/react-select';
+import { DropdownMenu } from '@radix-ui/react-dropdown-menu';
+
+// Component pattern with proper TypeScript
+interface ComponentProps {
+  isOpen: boolean;
+  onClose: () => void;
+  // Define all props explicitly
+}
+
+const Component: React.FC<ComponentProps> = ({ isOpen, onClose }) => (
+  <Dialog open={isOpen} onOpenChange={onClose}>
+    {/* Use semantic class names and Tailwind utilities */}
+  </Dialog>
+);
+```
+
+### Styling Guidelines
+- Use Tailwind CSS v4 syntax
+- Follow utility-first approach with semantic class grouping
+- Use CSS custom properties for theme variables: `var(--background)`, `var(--foreground)`
+- Implement proper dark mode with `.dark` class variants
+- Use consistent spacing scale: `space-2`, `space-4`, `space-6`, etc.
+- Apply smooth transitions: `transition-colors`, `transition-transform`
+
+## State Management
+
+- **Global State**: Zustand for application-wide state
+- **Server State**: Native fetch with proper error handling (no React Query detected)
+- **Local State**: React hooks (`useState`, `useReducer`, `useEffect`)
+- **Forms**: Controlled components with proper validation
+
+```typescript
+// Zustand store pattern
+import { create } from 'zustand';
+
+interface StoreState {
+  // Define state shape
+  data: SomeType[];
+  // Define actions
+  setData: (data: SomeType[]) => void;
+}
+
+const useStore = create<StoreState>((set) => ({
+  data: [],
+  setData: (data) => set({ data }),
+}));
+```
+
+## Authentication & API Integration
+
+- Use cookie-based authentication with `authenticatedFetch` utility
+- Handle both mock and real authentication modes
+- Always include `credentials: 'include'` for API calls
+- Implement proper error handling with user feedback
+- Use TypeScript interfaces for all API responses
+
+```typescript
+// API call pattern
+const fetchData = async (): Promise<DataType[]> => {
+  try {
+    const response = await authenticatedFetch('/api/v1/endpoint');
+    if (!response.ok) throw new Error('Failed to fetch');
+    return response.json();
+  } catch (error) {
+    console.error('API Error:', error);
+    throw error;
+  }
+};
+```
+
+## Performance & Best Practices
+
+- Use `React.FC<Props>` for component typing
+- Implement proper loading states and error boundaries
+- Use `useEffect` cleanup functions for subscriptions
+- Avoid inline object/function creation in JSX
+- Use proper key props for list items
+- Implement proper TypeScript for event handlers
+
+```typescript
+// Event handler typing
+const handleClick = (event: React.MouseEvent<HTMLButtonElement>) => {
+  // Handler logic
+};
+
+const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  event.preventDefault();
+  // Form submission logic
+};
+```
+
+## Icon and Asset Usage
+
+- Use Lucide React icons consistently: `import { Calendar, Users, Plus } from 'lucide-react'`
+- Use descriptive icon names that match their purpose
+- Apply consistent icon sizing: `size={16}`, `size={20}`, `size={24}`
+- Use semantic color classes for icons: `text-gray-500`, `text-blue-600`
+
+## Component Architecture
+
+```typescript
+// Component structure template
+interface ComponentProps {
+  // Required props
+  id: string;
+  title: string;
+  // Optional props
+  description?: string;
+  onAction?: (id: string) => void;
+  // Union types for controlled values
+  status: 'active' | 'inactive' | 'pending';
+}
+
+const Component: React.FC<ComponentProps> = ({
+  id,
+  title,
+  description,
+  onAction,
+  status
+}) => {
+  // Local state
+  const [isLoading, setIsLoading] = useState(false);
+  
+  // Event handlers
+  const handleClick = useCallback(() => {
+    onAction?.(id);
+  }, [id, onAction]);
+  
+  // Render
+  return (
+    <div className="component-container">
+      {/* Component JSX */}
+    </div>
+  );
+};
+
+export default Component;
+```
+
+## Data Flow Patterns
+
+- Use props for component configuration
+- Use callbacks for child-to-parent communication
+- Implement proper loading/error states for async operations
+- Use TypeScript discriminated unions for complex state
+
+```typescript
+// State management pattern
+type AsyncState<T> = 
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'success'; data: T }
+  | { status: 'error'; error: string };
+```
+
+## File Organization
+
+```
+src/
+├── app/                    # Next.js App Router pages
+│   ├── auth/              # Authentication pages
+│   ├── project/           # Project-related pages
+│   └── ...
+├── components/            # Reusable components
+│   ├── auth/             # Auth-specific components
+│   ├── common/           # Shared business components
+│   ├── layout/           # Layout components
+│   └── ...
+├── contexts/             # React contexts
+├── utils/                # Utility functions
+└── types/                # Shared TypeScript types (if needed)
+```
+
+## Testing Considerations
+
+- Write components to be easily testable
+- Use data-testid attributes for testing: `data-testid="component-name"`
+- Avoid testing implementation details
+- Focus on user interactions and behavior
+
+## Error Handling
+
+- Always handle promise rejections
+- Provide meaningful error messages to users
+- Use proper TypeScript error types
+- Implement error boundaries for components that might fail
+
+## Accessibility
+
+- Use semantic HTML elements
+- Implement proper ARIA attributes
+- Ensure keyboard navigation works
+- Use proper heading hierarchy
+- Include alt text for images
+- Test with screen readers
+
+## Development Environment
+
+- Use the existing development server: `npm run dev`
+- Follow the mock authentication patterns for development
+- Use browser dev tools for debugging
+- Leverage TypeScript compiler for type checking
+
+## Key Dependencies to Leverage
+
+- **@radix-ui/react-*** for accessible UI primitives
+- **clsx** for conditional className joining
+- **lucide-react** for consistent iconography
+- **framer-motion** for animations
+- **date-fns** for date manipulation
+- **@tanstack/react-virtual** for large list virtualization
+- **recharts** for data visualization
+
+## Code Quality
+
+- Follow existing patterns in the codebase
+- Use consistent naming conventions
+- Write self-documenting code with clear variable names
+- Add comments for complex business logic
+- Use TypeScript exhaustiveness checking with `never` type
+- Prefer composition over inheritance
+- Keep components focused and single-purpose
+- Do not use emojis in comments, or console logs
+- Use descriptive text instead of emojis for status indicators
+description: Frontend development guidelines for the ScrumiX project
+globs: ["frontend/**/*"]
+alwaysApply: true
+
+## No Emoji Policy
+
+- Do not use emojis anywhere in the codebase:
+  - No emojis in comments
+  - No emojis in console.log statements
+  - No emojis in documentation files
+  - No emojis in commit messages
+- Instead use:
+  - SVG icons for UI elements
+  - Text-based status indicators
+  - Descriptive log prefixes (e.g., "[Auth]", "[Error]")
+  - Clear text descriptions in documentation
+---

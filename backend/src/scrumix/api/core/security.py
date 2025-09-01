@@ -105,44 +105,58 @@ async def get_current_user_hybrid(
     
     from scrumix.api.crud.user import user_crud
     
-    # Handle both local users (int IDs) and Keycloak users (string UUIDs)
-    if isinstance(token_data.user_id, int):
+    # Handle both local users and Keycloak users
+    # Check provider field first, then fall back to user_id type checking
+    provider = getattr(token_data, 'provider', 'local')
+    
+    if provider == 'local' or (isinstance(token_data.user_id, int) or (isinstance(token_data.user_id, str) and token_data.user_id.isdigit())):
         # Local user - lookup in database
-        user = user_crud.get_by_id(db, user_id=token_data.user_id)
-        if user is None:
-            raise credentials_exception
-        
-        if not user.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Inactive user"
-            )
-        return user
-    else:
-        # Keycloak user - create virtual user object from token data
-        # For Keycloak users, we trust the token and create a virtual user
-        from scrumix.api.models.user import UserStatus
-        
-        # Create a virtual user object that behaves like a database user
-        class VirtualUser:
-            def __init__(self, token_data: TokenData):
-                self.id = token_data.user_id
-                self.email = token_data.email
-                # Use Keycloak data from token if available
-                self.username = getattr(token_data, 'username', None) or (token_data.email.split('@')[0] if token_data.email else None)
-                self.full_name = getattr(token_data, 'full_name', None)
-                self.avatar_url = getattr(token_data, 'avatar_url', None)
-                self.timezone = "UTC"
-                self.language = "en"
-                self.is_active = True
-                self.is_verified = True
-                self.is_superuser = False
-                self.status = UserStatus.ACTIVE
-                self.created_at = datetime.now()
-                self.updated_at = datetime.now()
-                self.last_login_at = None
-                
-        return VirtualUser(token_data)
+        try:
+            user_id = int(token_data.user_id) if isinstance(token_data.user_id, str) else token_data.user_id
+            user = user_crud.get_by_id(db, user_id=user_id)
+            if user is None:
+                raise credentials_exception
+            
+            if not user.is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Inactive user"
+                )
+            return user
+        except (ValueError, TypeError):
+            # If we can't convert to int, treat as Keycloak user
+            pass
+    
+    # Keycloak user - create virtual user object from token data
+    # For Keycloak users, we trust the token and create a virtual user
+    from scrumix.api.models.user import UserStatus
+    
+    # Create a virtual user object that behaves like a database user
+    class VirtualUser:
+        def __init__(self, token_data: TokenData):
+            self.id = token_data.user_id
+            self.email = token_data.email
+            # Use Keycloak data from token if available
+            self.username = getattr(token_data, 'username', None) or (token_data.email.split('@')[0] if token_data.email else None)
+            self.full_name = getattr(token_data, 'full_name', None)
+            self.avatar_url = getattr(token_data, 'avatar_url', None)
+            self.timezone = "UTC"
+            self.language = "en"
+            self.is_active = True
+            self.is_verified = True
+            self.is_superuser = False
+            self.status = UserStatus.ACTIVE
+            self.created_at = datetime.now()
+            self.updated_at = datetime.now()
+            self.last_login_at = None
+            # Add profile fields for profile updates
+            self.phone = None
+            self.department = None
+            self.location = None
+            self.bio = None
+            self.provider = "keycloak"
+            
+    return VirtualUser(token_data)
 
 async def get_current_user_from_cookie(
     request: Request,
@@ -170,44 +184,58 @@ async def get_current_user_from_cookie(
     
     from scrumix.api.crud.user import user_crud
     
-    # Handle both local users (int IDs) and Keycloak users (string UUIDs)
-    if isinstance(token_data.user_id, int):
+    # Handle both local users and Keycloak users
+    # Check provider field first, then fall back to user_id type checking
+    provider = getattr(token_data, 'provider', 'local')
+    
+    if provider == 'local' or (isinstance(token_data.user_id, int) or (isinstance(token_data.user_id, str) and token_data.user_id.isdigit())):
         # Local user - lookup in database
-        user = user_crud.get_by_id(db, user_id=token_data.user_id)
-        if user is None:
-            raise credentials_exception
-        
-        if not user.is_active:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Inactive user"
-            )
-        return user
-    else:
-        # Keycloak user - create virtual user object from token data
-        # For Keycloak users, we trust the token and create a virtual user
-        from scrumix.api.models.user import UserStatus
-        
-        # Create a virtual user object that behaves like a database user
-        class VirtualUser:
-            def __init__(self, token_data: TokenData):
-                self.id = token_data.user_id
-                self.email = token_data.email
-                # Use Keycloak data from token if available
-                self.username = getattr(token_data, 'username', None) or (token_data.email.split('@')[0] if token_data.email else None)
-                self.full_name = getattr(token_data, 'full_name', None)
-                self.avatar_url = getattr(token_data, 'avatar_url', None)
-                self.timezone = "UTC"
-                self.language = "en"
-                self.is_active = True
-                self.is_verified = True
-                self.is_superuser = False
-                self.status = UserStatus.ACTIVE
-                self.created_at = datetime.now()
-                self.updated_at = datetime.now()
-                self.last_login_at = None
-                
-        return VirtualUser(token_data)
+        try:
+            user_id = int(token_data.user_id) if isinstance(token_data.user_id, str) else token_data.user_id
+            user = user_crud.get_by_id(db, user_id=user_id)
+            if user is None:
+                raise credentials_exception
+            
+            if not user.is_active:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Inactive user"
+                )
+            return user
+        except (ValueError, TypeError):
+            # If we can't convert to int, treat as Keycloak user
+            pass
+    
+    # Keycloak user - create virtual user object from token data
+    # For Keycloak users, we trust the token and create a virtual user
+    from scrumix.api.models.user import UserStatus
+    
+    # Create a virtual user object that behaves like a database user
+    class VirtualUser:
+        def __init__(self, token_data: TokenData):
+            self.id = token_data.user_id
+            self.email = token_data.email
+            # Use Keycloak data from token if available
+            self.username = getattr(token_data, 'username', None) or (token_data.email.split('@')[0] if token_data.email else None)
+            self.full_name = getattr(token_data, 'full_name', None)
+            self.avatar_url = getattr(token_data, 'avatar_url', None)
+            self.timezone = "UTC"
+            self.language = "en"
+            self.is_active = True
+            self.is_verified = True
+            self.is_superuser = False
+            self.status = UserStatus.ACTIVE
+            self.created_at = datetime.now()
+            self.updated_at = datetime.now()
+            self.last_login_at = None
+            # Add profile fields for profile updates
+            self.phone = None
+            self.department = None
+            self.location = None
+            self.bio = None
+            self.provider = "keycloak"
+            
+    return VirtualUser(token_data)
 
 # Create a wrapper for get_current_user that matches the expected signature
 async def get_current_user(

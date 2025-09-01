@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field, ConfigDict, field_validator, computed_field
+from pydantic import BaseModel, Field, ConfigDict, field_validator, computed_field, field_serializer
 from typing import Optional
 from datetime import datetime, timedelta
 
@@ -20,8 +20,18 @@ class MeetingBase(BaseModel):
     @classmethod
     def validate_start_datetime(cls, v):
         """Validate start datetime is not in the past."""
-        if v < datetime.now():
-            raise ValueError('Meeting start time cannot be in the past')
+        if v:
+            from datetime import timezone
+            # Convert to timezone-aware datetime for comparison
+            now = datetime.now(timezone.utc)
+            # Ensure v is timezone-aware for comparison
+            if v.tzinfo is None:
+                # If naive, assume it's in UTC
+                v_aware = v.replace(tzinfo=timezone.utc)
+            else:
+                v_aware = v
+            if v_aware < now:
+                raise ValueError('Meeting start time cannot be in the past')
         return v
     
     @field_validator('duration')
@@ -55,8 +65,18 @@ class MeetingUpdate(BaseModel):
     @classmethod
     def validate_start_datetime(cls, v):
         """Validate start datetime is not in the past."""
-        if v and v < datetime.now():
-            raise ValueError('Meeting start time cannot be in the past')
+        if v:
+            from datetime import timezone
+            # Convert to timezone-aware datetime for comparison
+            now = datetime.now(timezone.utc)
+            # Ensure v is timezone-aware for comparison
+            if v.tzinfo is None:
+                # If naive, assume it's in UTC
+                v_aware = v.replace(tzinfo=timezone.utc)
+            else:
+                v_aware = v
+            if v_aware < now:
+                raise ValueError('Meeting start time cannot be in the past')
         return v
     
     class Config:
@@ -74,19 +94,43 @@ class MeetingInDB(MeetingBase):
 
 class MeetingResponse(BaseModel):
     """Schema for meeting API responses with frontend field aliasing."""
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
     
     id: int
     title: str
-    meetingType: MeetingType = Field(alias="meeting_type")
-    startDatetime: datetime = Field(alias="start_datetime")
+    meetingType: MeetingType = Field(alias="meeting_type", serialization_alias="meetingType")
+    startDatetime: datetime = Field(alias="start_datetime", serialization_alias="startDatetime")
     description: Optional[str]
     duration: int
     location: Optional[str]
-    sprintId: int = Field(alias="sprint_id")
-    projectId: int = Field(alias="project_id")
-    createdAt: datetime = Field(alias="created_at")
-    updatedAt: datetime = Field(alias="updated_at")
+    sprintId: int = Field(alias="sprint_id", serialization_alias="sprintId")
+    projectId: int = Field(alias="project_id", serialization_alias="projectId")
+    createdAt: datetime = Field(alias="created_at", serialization_alias="createdAt")
+    updatedAt: datetime = Field(alias="updated_at", serialization_alias="updatedAt")
+    
+    @field_serializer('startDatetime', 'createdAt', 'updatedAt')
+    def serialize_datetime(self, value: datetime) -> str:
+        """Serialize datetime fields to ISO format strings."""
+        if value:
+            return value.isoformat()
+        return None
+    
+    @classmethod
+    def from_orm(cls, obj):
+        """Create response object from ORM model (for compatibility)"""
+        return cls(
+            id=obj.id,
+            title=obj.title,
+            meeting_type=obj.meeting_type,
+            start_datetime=obj.start_datetime,
+            description=obj.description,
+            duration=obj.duration,
+            location=obj.location,
+            sprint_id=obj.sprint_id,
+            project_id=obj.project_id,
+            created_at=obj.created_at,
+            updated_at=obj.updated_at
+        )
     
     @computed_field
     @property
@@ -98,14 +142,34 @@ class MeetingResponse(BaseModel):
     @property
     def isUpcoming(self) -> bool:
         """Check if meeting is in the future."""
-        return self.startDatetime > datetime.now()
+        from datetime import timezone
+        now = datetime.now(timezone.utc)
+        # Ensure startDatetime is timezone-aware for comparison
+        if self.startDatetime.tzinfo is None:
+            # If naive, assume it's in UTC
+            start_dt = self.startDatetime.replace(tzinfo=timezone.utc)
+        else:
+            start_dt = self.startDatetime
+        return start_dt > now
     
     @computed_field
     @property
     def isOngoing(self) -> bool:
         """Check if meeting is currently happening."""
-        now = datetime.now()
-        return self.startDatetime <= now <= self.endDatetime
+        from datetime import timezone
+        now = datetime.now(timezone.utc)
+        # Ensure both datetimes are timezone-aware for comparison
+        if self.startDatetime.tzinfo is None:
+            start_dt = self.startDatetime.replace(tzinfo=timezone.utc)
+        else:
+            start_dt = self.startDatetime
+            
+        if self.endDatetime.tzinfo is None:
+            end_dt = self.endDatetime.replace(tzinfo=timezone.utc)
+        else:
+            end_dt = self.endDatetime
+            
+        return start_dt <= now <= end_dt
     
     @computed_field
     @property

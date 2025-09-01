@@ -1,53 +1,29 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   Settings, Save, Trash2, Users, Shield, Bell, Calendar, 
   Archive, FolderOpen, Globe, Lock, Eye, EyeOff, AlertTriangle,
   Plus, X, Edit2, Check
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
+import { api, notificationPreferences as notificationAPI } from '@/utils/api';
+import { ApiProject, NotificationPreferencesResponse, DeliveryChannel } from '@/types/api';
+import { ProjectStatus } from '@/types/enums';
 
 interface ProjectSettingsProps {
   params: Promise<{ 'project-id': string }>;
 }
 
-// Mock project data
-const mockProjectData = {
-  id: '1',
-  name: 'E-commerce Platform Refactoring',
-  description: 'Modern e-commerce platform development project based on React and Node.js',
-  status: 'active',
-  visibility: 'private',
-  createdAt: '2024-01-15',
-  owner: {
-    id: '1',
-    name: 'John Smith',
-    email: 'john.smith@company.com',
-  },
+// Local UI defaults for sections not yet integrated with backend
+const defaultUISettings = {
   settings: {
     notifications: {
-      emailDigest: true,
       taskUpdates: true,
       sprintUpdates: true,
       meetingReminders: true,
     },
-    workflow: {
-      autoAssignReviewer: true,
-      requirePeerReview: true,
-      autoCloseCompletedSprints: false,
-    },
-    permissions: {
-      allowGuestView: false,
-      requireApprovalForTasks: true,
-      teamCanEditProject: true,
-    },
   },
-  integrations: [
-    { id: '1', name: 'GitHub', status: 'connected', icon: '🐙' },
-    { id: '2', name: 'Slack', status: 'connected', icon: '💬' },
-    { id: '3', name: 'Jira', status: 'disconnected', icon: '🔷' },
-  ],
 };
 
 const mockTeamMembers = [
@@ -60,38 +36,142 @@ const mockTeamMembers = [
 const ProjectSettings: React.FC<ProjectSettingsProps> = ({ params }) => {
   const resolvedParams = React.use(params);
   const projectId = resolvedParams['project-id'];
-  const project = mockProjectData;
+
+  // Predefined color options matching the project creation modal
+  const colorOptions = [
+    { value: 'bg-blue-500', label: 'Blue' },
+    { value: 'bg-green-500', label: 'Green' },
+    { value: 'bg-purple-500', label: 'Purple' },
+    { value: 'bg-emerald-500', label: 'Emerald' },
+    { value: 'bg-orange-500', label: 'Orange' },
+    { value: 'bg-red-500', label: 'Red' },
+    { value: 'bg-indigo-500', label: 'Indigo' },
+    { value: 'bg-pink-500', label: 'Pink' }
+  ];
 
   const [activeTab, setActiveTab] = useState('general');
-  const [projectData, setProjectData] = useState(project);
+  const [projectData, setProjectData] = useState<any>({ ...defaultUISettings });
+  const [initialProjectData, setInitialProjectData] = useState<any | null>(null);
   const [isEditing, setIsEditing] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteConfirmationText, setDeleteConfirmationText] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
   const [unsavedChanges, setUnsavedChanges] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  
+  // Notification preferences state
+  const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferencesResponse | null>(null);
+  const [notificationLoading, setNotificationLoading] = useState(false);
+  const [notificationError, setNotificationError] = useState<string | null>(null);
+
+  // Fetch notification preferences
+  const fetchNotificationPreferences = async () => {
+    setNotificationLoading(true);
+    setNotificationError(null);
+    try {
+      const resp = await notificationAPI.get(DeliveryChannel.IN_APP);
+      if (resp.error) throw new Error(resp.error);
+      setNotificationPreferences(resp.data);
+    } catch (e: any) {
+      setNotificationError(e?.message || 'Failed to load notification preferences');
+    } finally {
+      setNotificationLoading(false);
+    }
+  };
+
+  // Fetch real project data
+  useEffect(() => {
+    const fetchProject = async () => {
+      if (!projectId) return;
+      setIsLoading(true);
+      setError(null);
+      const idNum = parseInt(projectId);
+      try {
+        const resp = await api.projects.getById(idNum);
+        if (resp.error) throw new Error(resp.error);
+        const data = resp.data as ApiProject;
+        const merged = { ...defaultUISettings, ...data };
+        setProjectData(merged);
+        setInitialProjectData(merged);
+      } catch (e: any) {
+        setError(e?.message || 'Failed to load project');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchProject();
+    fetchNotificationPreferences();
+  }, [projectId]);
 
   // Breadcrumb navigation
   const breadcrumbItems = [
-    { label: 'Projects', href: '/project', icon: <FolderOpen className="w-4 h-4" /> },
-    { label: project.name, href: `/project/${projectId}/dashboard` },
+    { label: projectData?.name || 'Project', href: `/project/${projectId}/dashboard` },
     { label: 'Settings', icon: <Settings className="w-4 h-4" /> }
   ];
 
   const tabs = [
     { id: 'general', label: 'General', icon: <Settings className="w-4 h-4" /> },
-    { id: 'team', label: 'Team & Permissions', icon: <Users className="w-4 h-4" /> },
     { id: 'notifications', label: 'Notifications', icon: <Bell className="w-4 h-4" /> },
     { id: 'integrations', label: 'Integrations', icon: <Globe className="w-4 h-4" /> },
     { id: 'danger', label: 'Danger Zone', icon: <AlertTriangle className="w-4 h-4" /> },
   ];
 
-  const handleSave = () => {
-    console.log('Saving project settings...', projectData);
+  // Helpers to convert date strings
+  const toInputDate = (iso?: string) => {
+    if (!iso) return '';
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return '';
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+  const toISODate = (dateStr?: string) => {
+    if (!dateStr) return undefined;
+    const d = new Date(dateStr);
+    if (Number.isNaN(d.getTime())) return undefined;
+    return d.toISOString();
+  };
+
+  const handleSave = async () => {
+    try {
+      const idNum = parseInt(projectId);
+      const payload: Partial<ApiProject> = {
+        name: projectData.name,
+        description: projectData.description,
+        status: projectData.status,
+        start_date: projectData.start_date,
+        end_date: projectData.end_date,
+        color: projectData.color,
+      } as any;
+
+      // Validate dates (optional, backend also validates)
+      if (payload.start_date && payload.end_date) {
+        const s = new Date(payload.start_date);
+        const e = new Date(payload.end_date);
+        if (s >= e) {
+          setError('End date must be after start date');
+          return;
+        }
+      }
+
+      const resp = await api.projects.update(idNum, payload as any);
+      if (resp.error) throw new Error(resp.error);
+
+      const updated = { ...defaultUISettings, ...resp.data };
+      setProjectData(updated);
+      setInitialProjectData(updated);
     setUnsavedChanges(false);
     setIsEditing(false);
-    // TODO: Implement actual save logic
+      setError(null);
+    } catch (e: any) {
+      setError(e?.message || 'Failed to save project');
+    }
   };
 
   const handleInputChange = (field: string, value: any) => {
-    setProjectData(prev => ({
+    setProjectData((prev: any) => ({
       ...prev,
       [field]: value
     }));
@@ -99,7 +179,7 @@ const ProjectSettings: React.FC<ProjectSettingsProps> = ({ params }) => {
   };
 
   const handleSettingsChange = (category: string, field: string, value: any) => {
-    setProjectData(prev => ({
+    setProjectData((prev: any) => ({
       ...prev,
       settings: {
         ...prev.settings,
@@ -110,6 +190,54 @@ const ProjectSettings: React.FC<ProjectSettingsProps> = ({ params }) => {
       }
     }));
     setUnsavedChanges(true);
+  };
+
+  const handleNotificationPreferenceChange = async (category: string, enabled: boolean) => {
+    if (!notificationPreferences) return;
+
+    try {
+      setNotificationLoading(true);
+      setNotificationError(null);
+
+      const updatedPreferences = {
+        ...notificationPreferences.preferences,
+        [category]: enabled
+      };
+
+      const resp = await notificationAPI.update({
+        preferences: updatedPreferences,
+        delivery_channel: DeliveryChannel.IN_APP
+      });
+
+      if (resp.error) throw new Error(resp.error);
+      setNotificationPreferences(resp.data);
+    } catch (e: any) {
+      setNotificationError(e?.message || 'Failed to update notification preferences');
+    } finally {
+      setNotificationLoading(false);
+    }
+  };
+
+  const handleDeleteProject = async () => {
+    if (deleteConfirmationText !== projectData?.name) {
+      setError('Project name confirmation does not match');
+      return;
+    }
+
+    try {
+      setIsDeleting(true);
+      setError(null);
+      const idNum = parseInt(projectId);
+      const resp = await api.projects.delete(idNum);
+      if (resp.error) throw new Error(resp.error);
+      
+      // Redirect to projects list after successful deletion
+      window.location.href = '/project';
+    } catch (e: any) {
+      setError(e?.message || 'Failed to delete project');
+    } finally {
+      setIsDeleting(false);
+    }
   };
 
   const renderGeneralTab = () => (
@@ -146,41 +274,70 @@ const ProjectSettings: React.FC<ProjectSettingsProps> = ({ params }) => {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Project Visibility
+              Project Status
             </label>
             <select
-              value={projectData.visibility}
-              onChange={(e) => handleInputChange('visibility', e.target.value)}
+              value={projectData.status || ProjectStatus.ACTIVE}
+              onChange={(e) => handleInputChange('status', e.target.value as ProjectStatus)}
               className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
               disabled={!isEditing}
             >
-              <option value="private">Private</option>
-              <option value="internal">Internal</option>
-              <option value="public">Public</option>
+              <option value={ProjectStatus.PLANNING}>Planning</option>
+              <option value={ProjectStatus.ACTIVE}>Active</option>
+              <option value={ProjectStatus.ON_HOLD}>On Hold</option>
+              <option value={ProjectStatus.COMPLETED}>Completed</option>
+              <option value={ProjectStatus.CANCELLED}>Cancelled</option>
             </select>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              {projectData.visibility === 'private' && 'Only team members can view this project'}
-              {projectData.visibility === 'internal' && 'Anyone in your organization can view this project'}
-              {projectData.visibility === 'public' && 'Anyone can view this project'}
-            </p>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Start Date
+              </label>
+              <input
+                type="date"
+                value={toInputDate(projectData.start_date)}
+                onChange={(e) => handleInputChange('start_date', toISODate(e.target.value))}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                disabled={!isEditing}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                End Date
+              </label>
+              <input
+                type="date"
+                value={toInputDate(projectData.end_date)}
+                onChange={(e) => handleInputChange('end_date', toISODate(e.target.value))}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+                disabled={!isEditing}
+              />
+            </div>
           </div>
 
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Project Status
+              Project Color
             </label>
-            <select
-              value={projectData.status}
-              onChange={(e) => handleInputChange('status', e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-gray-700 dark:text-white"
+            <div className="grid grid-cols-4 gap-2">
+              {colorOptions.map((color) => (
+                <button
+                  key={color.value}
+                  type="button"
+                  onClick={() => handleInputChange('color', color.value)}
+                  className={`w-10 h-10 rounded-lg ${color.value} border-2 transition-colors ${
+                    projectData.color === color.value ? 'border-gray-900 dark:border-white' : 'border-transparent hover:border-gray-300 dark:hover:border-gray-600'
+                  }`}
+                  title={color.label}
               disabled={!isEditing}
-            >
-              <option value="planning">Planning</option>
-              <option value="active">Active</option>
-              <option value="on-hold">On Hold</option>
-              <option value="completed">Completed</option>
-              <option value="archived">Archived</option>
-            </select>
+                />
+              ))}
+            </div>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
+              Select a color to represent this project
+            </p>
           </div>
         </div>
 
@@ -205,7 +362,7 @@ const ProjectSettings: React.FC<ProjectSettingsProps> = ({ params }) => {
               <button
                 onClick={() => {
                   setIsEditing(false);
-                  setProjectData(project);
+                  if (initialProjectData) setProjectData(initialProjectData);
                   setUnsavedChanges(false);
                 }}
                 className="flex items-center gap-2 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors"
@@ -218,233 +375,95 @@ const ProjectSettings: React.FC<ProjectSettingsProps> = ({ params }) => {
         </div>
       </div>
 
-      {/* Workflow Settings */}
-      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg border border-gray-200 dark:border-gray-700">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Workflow Settings</h3>
-        
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h4 className="font-medium text-gray-900 dark:text-white">Auto-assign reviewer</h4>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Automatically assign a reviewer to new tasks</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={projectData.settings.workflow.autoAssignReviewer}
-                onChange={(e) => handleSettingsChange('workflow', 'autoAssignReviewer', e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-            </label>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <h4 className="font-medium text-gray-900 dark:text-white">Require peer review</h4>
-              <p className="text-sm text-gray-500 dark:text-gray-400">All tasks must be reviewed before completion</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={projectData.settings.workflow.requirePeerReview}
-                onChange={(e) => handleSettingsChange('workflow', 'requirePeerReview', e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-            </label>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <h4 className="font-medium text-gray-900 dark:text-white">Auto-close completed sprints</h4>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Automatically close sprints when all tasks are completed</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={projectData.settings.workflow.autoCloseCompletedSprints}
-                onChange={(e) => handleSettingsChange('workflow', 'autoCloseCompletedSprints', e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-            </label>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-
-  const renderTeamTab = () => (
-    <div className="space-y-6">
-      {/* Team Members */}
-      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg border border-gray-200 dark:border-gray-700">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Team Members</h3>
-          <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
-            <Plus className="w-4 h-4" />
-            Add Member
-          </button>
-        </div>
-
-        <div className="space-y-3">
-          {mockTeamMembers.map((member) => (
-            <div key={member.id} className="flex items-center justify-between p-3 border border-gray-200 dark:border-gray-600 rounded-lg">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-blue-100 dark:bg-blue-900/20 rounded-full flex items-center justify-center">
-                  <span className="text-blue-600 dark:text-blue-400 font-medium">
-                    {member.name.split(' ').map(n => n[0]).join('')}
-                  </span>
-                </div>
-                <div>
-                  <p className="font-medium text-gray-900 dark:text-white">{member.name}</p>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">{member.email}</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <select
-                  value={member.role}
-                  className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded-lg text-sm dark:bg-gray-700 dark:text-white"
-                >
-                  <option value="Product Owner">Product Owner</option>
-                  <option value="Scrum Master">Scrum Master</option>
-                  <option value="Developer">Developer</option>
-                  <option value="Tester">Tester</option>
-                  <option value="Designer">Designer</option>
-                </select>
-                <button className="text-red-600 hover:text-red-700 p-1">
-                  <Trash2 className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Permissions */}
-      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg border border-gray-200 dark:border-gray-700">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Permissions</h3>
-        
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <h4 className="font-medium text-gray-900 dark:text-white">Allow guest view</h4>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Allow non-team members to view project</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={projectData.settings.permissions.allowGuestView}
-                onChange={(e) => handleSettingsChange('permissions', 'allowGuestView', e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-            </label>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <h4 className="font-medium text-gray-900 dark:text-white">Require approval for tasks</h4>
-              <p className="text-sm text-gray-500 dark:text-gray-400">New tasks need approval before being added to sprint</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={projectData.settings.permissions.requireApprovalForTasks}
-                onChange={(e) => handleSettingsChange('permissions', 'requireApprovalForTasks', e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-            </label>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <h4 className="font-medium text-gray-900 dark:text-white">Team can edit project</h4>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Allow team members to edit project settings</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer">
-              <input
-                type="checkbox"
-                checked={projectData.settings.permissions.teamCanEditProject}
-                onChange={(e) => handleSettingsChange('permissions', 'teamCanEditProject', e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-            </label>
-          </div>
-        </div>
-      </div>
     </div>
   );
 
   const renderNotificationsTab = () => (
+    <div className="space-y-6">
     <div className="bg-white dark:bg-gray-800 p-6 rounded-lg border border-gray-200 dark:border-gray-700">
       <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">Notification Settings</h3>
+        
+        {notificationError && (
+          <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+            <p className="text-red-600 dark:text-red-400 text-sm">{notificationError}</p>
+          </div>
+        )}
+
+        {notificationLoading && (
+          <div className="mb-4 flex items-center gap-2 text-gray-600 dark:text-gray-400">
+            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-500"></div>
+            Updating preferences...
+          </div>
+        )}
       
-      <div className="space-y-4">
-        <div className="flex items-center justify-between">
-          <div>
-            <h4 className="font-medium text-gray-900 dark:text-white">Email digest</h4>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Receive daily/weekly project summary emails</p>
+              <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="font-medium text-gray-900 dark:text-white">Meeting reminders</h4>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Reminders for upcoming meetings and standups</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={notificationPreferences?.meeting_reminders ?? true}
+                onChange={(e) => handleNotificationPreferenceChange('meeting_reminders', e.target.checked)}
+                disabled={notificationLoading}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600 peer-disabled:opacity-50"></div>
+            </label>
           </div>
-          <label className="relative inline-flex items-center cursor-pointer">
-            <input
-              type="checkbox"
-              checked={projectData.settings.notifications.emailDigest}
-              onChange={(e) => handleSettingsChange('notifications', 'emailDigest', e.target.checked)}
-              className="sr-only peer"
-            />
-            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-          </label>
-        </div>
 
-        <div className="flex items-center justify-between">
-          <div>
-            <h4 className="font-medium text-gray-900 dark:text-white">Task updates</h4>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Get notified when tasks are updated or completed</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="font-medium text-gray-900 dark:text-white">Documentation reminders</h4>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Get notified when new documentation is added</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={notificationPreferences?.documentation_reminders ?? true}
+                onChange={(e) => handleNotificationPreferenceChange('documentation_reminders', e.target.checked)}
+                disabled={notificationLoading}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600 peer-disabled:opacity-50"></div>
+            </label>
           </div>
-          <label className="relative inline-flex items-center cursor-pointer">
-            <input
-              type="checkbox"
-              checked={projectData.settings.notifications.taskUpdates}
-              onChange={(e) => handleSettingsChange('notifications', 'taskUpdates', e.target.checked)}
-              className="sr-only peer"
-            />
-            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-          </label>
-        </div>
 
-        <div className="flex items-center justify-between">
-          <div>
-            <h4 className="font-medium text-gray-900 dark:text-white">Sprint updates</h4>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Notifications about sprint planning and completion</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="font-medium text-gray-900 dark:text-white">Project updates</h4>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Notifications about project changes (name, status) and member additions</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={notificationPreferences?.project_updates ?? true}
+                onChange={(e) => handleNotificationPreferenceChange('project_updates', e.target.checked)}
+                disabled={notificationLoading}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600 peer-disabled:opacity-50"></div>
+            </label>
           </div>
-          <label className="relative inline-flex items-center cursor-pointer">
-            <input
-              type="checkbox"
-              checked={projectData.settings.notifications.sprintUpdates}
-              onChange={(e) => handleSettingsChange('notifications', 'sprintUpdates', e.target.checked)}
-              className="sr-only peer"
-            />
-            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-          </label>
-        </div>
 
-        <div className="flex items-center justify-between">
-          <div>
-            <h4 className="font-medium text-gray-900 dark:text-white">Meeting reminders</h4>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Reminders for upcoming meetings and standups</p>
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="font-medium text-gray-900 dark:text-white">Deadline reminders</h4>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Get notified when deadlines are approaching</p>
+            </div>
+            <label className="relative inline-flex items-center cursor-pointer">
+              <input
+                type="checkbox"
+                checked={notificationPreferences?.deadline_reminders ?? true}
+                onChange={(e) => handleNotificationPreferenceChange('deadline_reminders', e.target.checked)}
+                disabled={notificationLoading}
+                className="sr-only peer"
+              />
+              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600 peer-disabled:opacity-50"></div>
+            </label>
           </div>
-          <label className="relative inline-flex items-center cursor-pointer">
-            <input
-              type="checkbox"
-              checked={projectData.settings.notifications.meetingReminders}
-              onChange={(e) => handleSettingsChange('notifications', 'meetingReminders', e.target.checked)}
-              className="sr-only peer"
-            />
-            <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-700 peer-checked:after:translate-x-full peer-checked:after-border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-          </label>
         </div>
       </div>
     </div>
@@ -452,66 +471,21 @@ const ProjectSettings: React.FC<ProjectSettingsProps> = ({ params }) => {
 
   const renderIntegrationsTab = () => (
     <div className="bg-white dark:bg-gray-800 p-6 rounded-lg border border-gray-200 dark:border-gray-700">
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Integrations</h3>
-        <button className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors">
-          <Plus className="w-4 h-4" />
-          Add Integration
-        </button>
-      </div>
-
-      <div className="space-y-3">
-        {projectData.integrations.map((integration) => (
-          <div key={integration.id} className="flex items-center justify-between p-4 border border-gray-200 dark:border-gray-600 rounded-lg">
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">{integration.icon}</span>
-              <div>
-                <h4 className="font-medium text-gray-900 dark:text-white">{integration.name}</h4>
-                <p className="text-sm text-gray-500 dark:text-gray-400">
-                  Status: <span className={`capitalize ${integration.status === 'connected' ? 'text-green-600' : 'text-red-600'}`}>
-                    {integration.status}
-                  </span>
-                </p>
-              </div>
-            </div>
-            <div className="flex gap-2">
-              {integration.status === 'connected' ? (
-                <button className="px-3 py-1 text-red-600 hover:text-red-700 border border-red-300 hover:border-red-400 rounded-lg transition-colors">
-                  Disconnect
-                </button>
-              ) : (
-                <button className="px-3 py-1 text-blue-600 hover:text-blue-700 border border-blue-300 hover:border-blue-400 rounded-lg transition-colors">
-                  Connect
-                </button>
-              )}
-              <button className="px-3 py-1 text-gray-600 hover:text-gray-700 border border-gray-300 hover:border-gray-400 rounded-lg transition-colors">
-                Settings
-              </button>
-            </div>
-          </div>
-        ))}
+      <div className="text-center py-12">
+        <Globe className="w-16 h-16 text-gray-400 mx-auto mb-4" />
+        <h3 className="text-xl font-semibold text-gray-900 dark:text-white mb-2">
+          Integrations Coming Soon
+        </h3>
+        <p className="text-gray-600 dark:text-gray-400 max-w-md mx-auto">
+          We're working hard to bring you powerful integrations with popular tools and services. 
+          This feature will be available in a future update.
+        </p>
       </div>
     </div>
   );
 
   const renderDangerTab = () => (
     <div className="space-y-6">
-      {/* Archive Project */}
-      <div className="bg-white dark:bg-gray-800 p-6 rounded-lg border border-orange-200 dark:border-orange-800">
-        <div className="flex items-start gap-3">
-          <Archive className="w-5 h-5 text-orange-600 mt-1" />
-          <div className="flex-1">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Archive Project</h3>
-            <p className="text-gray-600 dark:text-gray-400 mt-1">
-              Archive this project to make it read-only. You can restore it later if needed.
-            </p>
-            <button className="mt-3 px-4 py-2 bg-orange-600 hover:bg-orange-700 text-white rounded-lg transition-colors">
-              Archive Project
-            </button>
-          </div>
-        </div>
-      </div>
-
       {/* Delete Project */}
       <div className="bg-white dark:bg-gray-800 p-6 rounded-lg border border-red-200 dark:border-red-800">
         <div className="flex items-start gap-3">
@@ -534,19 +508,42 @@ const ProjectSettings: React.FC<ProjectSettingsProps> = ({ params }) => {
                   Are you sure you want to delete this project?
                 </p>
                 <p className="text-red-700 dark:text-red-300 text-sm mb-4">
-                  Type <strong>{project.name}</strong> to confirm deletion.
+                  Type <strong>{projectData?.name}</strong> to confirm deletion.
                 </p>
                 <input
                   type="text"
+                  value={deleteConfirmationText}
+                  onChange={(e) => setDeleteConfirmationText(e.target.value)}
                   placeholder="Type project name here"
                   className="w-full px-3 py-2 border border-red-300 dark:border-red-600 rounded-lg mb-3 focus:outline-none focus:ring-2 focus:ring-red-500 dark:bg-gray-700 dark:text-white"
                 />
+                {error && (
+                  <p className="text-red-600 dark:text-red-400 text-sm mb-3">{error}</p>
+                )}
                 <div className="flex gap-3">
-                  <button className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors">
+                  <button
+                    onClick={handleDeleteProject}
+                    disabled={isDeleting || deleteConfirmationText !== projectData?.name}
+                    className="px-4 py-2 bg-red-600 hover:bg-red-700 disabled:bg-red-400 text-white rounded-lg transition-colors flex items-center gap-2"
+                  >
+                    {isDeleting ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                        Deleting...
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="w-4 h-4" />
                     Delete Project
+                      </>
+                    )}
                   </button>
                   <button
-                    onClick={() => setShowDeleteConfirm(false)}
+                    onClick={() => {
+                      setShowDeleteConfirm(false);
+                      setDeleteConfirmationText('');
+                      setError(null);
+                    }}
                     className="px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors"
                   >
                     Cancel
@@ -563,7 +560,30 @@ const ProjectSettings: React.FC<ProjectSettingsProps> = ({ params }) => {
   return (
     <div className="space-y-8">
       <Breadcrumb items={breadcrumbItems} />
+      {isLoading && (
+        <div className="text-center py-12">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto"></div>
+          <p className="mt-4 text-gray-600 dark:text-gray-400">Loading project settings...</p>
+        </div>
+      )}
+      {!isLoading && error && (
+        <div className="text-center py-8 bg-white dark:bg-gray-800 rounded-lg border border-red-200 dark:border-red-900">
+          <AlertTriangle className="w-12 h-12 text-red-500 mx-auto mb-4" />
+          <h3 className="text-lg font-semibold text-red-600 dark:text-red-400 mb-2">
+            Error Loading Project
+          </h3>
+          <p className="text-gray-600 dark:text-gray-400">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="mt-4 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+          >
+            Try Again
+          </button>
+        </div>
+      )}
       
+      {!isLoading && !error && (
+        <>
       {/* Page Header */}
       <div className="flex justify-between items-start">
         <div>
@@ -574,12 +594,6 @@ const ProjectSettings: React.FC<ProjectSettingsProps> = ({ params }) => {
             Manage your project configuration, team members, and integrations
           </p>
         </div>
-        {unsavedChanges && (
-          <div className="flex items-center gap-2 text-orange-600 dark:text-orange-400">
-            <AlertTriangle className="w-4 h-4" />
-            <span className="text-sm">You have unsaved changes</span>
-          </div>
-        )}
       </div>
 
       {/* Tab Navigation */}
@@ -605,11 +619,12 @@ const ProjectSettings: React.FC<ProjectSettingsProps> = ({ params }) => {
       {/* Tab Content */}
       <div>
         {activeTab === 'general' && renderGeneralTab()}
-        {activeTab === 'team' && renderTeamTab()}
         {activeTab === 'notifications' && renderNotificationsTab()}
         {activeTab === 'integrations' && renderIntegrationsTab()}
         {activeTab === 'danger' && renderDangerTab()}
       </div>
+        </>
+      )}
     </div>
   );
 };

@@ -9,11 +9,12 @@ from scrumix.api.db.base import Base
 
 class DocumentationType(str, Enum):
     """Documentation type enumeration"""
-    USER_GUIDE = "user_guide"
-    API_DOC = "api_doc"
-    DESIGN_DOC = "design_doc"
+    SPRINT_REVIEW = "sprint_review"
+    SPRINT_RETROSPECTIVE = "sprint_retrospective"
     REQUIREMENT = "requirement"
-    ARCHITECTURE = "architecture"
+    DESIGN_ARCHITECTURE = "design_architecture"
+    MEETING_REPORT = "meeting_report"
+    USER_GUIDE = "user_guide"
     OTHER = "other"
 
 class Documentation(Base):
@@ -25,7 +26,7 @@ class Documentation(Base):
     title = Column(String(500), nullable=False, index=True)
     type = Column(SQLEnum(DocumentationType), nullable=False, default=DocumentationType.OTHER)
     description = Column(Text, nullable=True)
-    file_url = Column(String(1000), nullable=False)
+    file_url = Column(String(1000), nullable=True)
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

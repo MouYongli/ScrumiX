@@ -64,65 +64,68 @@ export default function RootLayout({
             </div>
           ) : (
             // Main app layout - with full navigation
-            <div className="flex flex-col h-screen">
+            <div className="flex flex-col min-h-screen">
               {/* Header - occupies entire top width */}
               <Header onMenuToggle={toggleMobileSidebar} />
-              
-              {/* Main Content Area with Sidebar */}
-              <div className="flex flex-1 overflow-hidden">
-                {/* Desktop Sidebar - smart toggle */}
-                <div className="hidden lg:block">
-                  <ConditionalSidebar 
-                    isCollapsed={isSidebarCollapsed} 
+
+              {/* Desktop Sidebar - Fixed positioning */}
+              <div className="hidden lg:block">
+                <div className={`fixed left-0 top-0 h-full z-40 transition-all duration-300 ${
+                  isSidebarCollapsed ? 'w-16' : 'w-64'
+                }`} style={{ top: '64px' }}>
+                  <ConditionalSidebar
+                    isCollapsed={isSidebarCollapsed}
                     onToggle={toggleSidebar}
                   />
                 </div>
-                
-                {/* Mobile Sidebar Overlay */}
-                {isMobileSidebarOpen && (
-                  <div className="fixed inset-0 z-50 lg:hidden">
-                    {/* Backdrop */}
-                    <div 
-                      className="fixed inset-0 bg-gray-900/20 dark:bg-black/50 backdrop-blur-sm transition-opacity duration-300 opacity-100"
-                      onClick={() => setIsMobileSidebarOpen(false)}
-                    />
-                    
-                    {/* Mobile Sidebar */}
-                    <div className="fixed left-0 top-0 h-full w-64 z-50 transform translate-x-0 transition-all duration-300 ease-out shadow-2xl animate-in slide-in-from-left"
-                         style={{ animationDuration: '300ms' }}>
-                      <div className="h-full bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 flex flex-col">
-                        {/* Mobile Header */}
-                        <div className="flex items-center px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 flex-shrink-0">
-                          <div className="flex items-center space-x-3">
-                            <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
-                              <span className="text-white font-bold text-sm">S</span>
-                            </div>
-                            <span className="text-lg font-bold text-gray-900 dark:text-white">
-                              Scrumix
-                            </span>
+              </div>
+              
+              {/* Mobile Sidebar Overlay */}
+              {isMobileSidebarOpen && (
+                <div className="fixed inset-0 z-50 lg:hidden">
+                  {/* Backdrop */}
+                  <div 
+                    className="fixed inset-0 bg-gray-900/20 dark:bg-black/50 backdrop-blur-sm transition-opacity duration-300 opacity-100"
+                    onClick={() => setIsMobileSidebarOpen(false)}
+                  />
+                  
+                  {/* Mobile Sidebar */}
+                  <div className="fixed left-0 top-0 h-full w-64 z-50 transform translate-x-0 transition-all duration-300 ease-out shadow-2xl animate-in slide-in-from-left mt-16"
+                       style={{ animationDuration: '300ms' }}>
+                    <div className="h-full bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 flex flex-col">
+                      {/* Mobile Header */}
+                      <div className="flex items-center px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-900 flex-shrink-0">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center">
+                            <span className="text-white font-bold text-sm">S</span>
                           </div>
+                          <span className="text-lg font-bold text-gray-900 dark:text-white">
+                            Scrumix
+                          </span>
                         </div>
-                        
-                        {/* Sidebar Content */}
-                        <div className="flex-1 min-h-0">
-                          <ConditionalSidebar 
-                            isCollapsed={false} 
-                            onToggle={() => setIsMobileSidebarOpen(false)}
-                          />
-                        </div>
+                      </div>
+                      
+                      {/* Sidebar Content */}
+                      <div className="flex-1 min-h-0">
+                        <ConditionalSidebar 
+                          isCollapsed={false} 
+                          onToggle={() => setIsMobileSidebarOpen(false)}
+                        />
                       </div>
                     </div>
                   </div>
-                )}
-                
-                {/* Main Content */}
-                <main className="flex-1 overflow-y-auto bg-gray-50 dark:bg-gray-900">
-                  <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-                    {children}
-                  </div>
-                </main>
-              </div>
+                </div>
+              )}
               
+              {/* Main Content with margin for fixed sidebar */}
+              <main className={`bg-gray-50 dark:bg-gray-900 transition-all duration-300 flex-1 ${
+                isSidebarCollapsed ? 'lg:ml-16' : 'lg:ml-64'
+              }`}>
+                <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+                  {children}
+                </div>
+              </main>
+
               {/* Footer */}
               <Footer />
             </div>

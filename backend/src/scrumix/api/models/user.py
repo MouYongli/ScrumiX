@@ -28,7 +28,9 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     email = Column(String(255), unique=True, index=True, nullable=False)
     username = Column(String(100), unique=True, index=True, nullable=True)
-    full_name = Column(String(255), nullable=True)
+    first_name = Column(String(100), nullable=True)
+    last_name = Column(String(100), nullable=True)
+    full_name = Column(String(255), nullable=True)  # Keep for backward compatibility
     hashed_password = Column(String(255), nullable=True)  # Used for local login
     
     # User status and permissions
@@ -39,8 +41,13 @@ class User(Base):
     
     # Personal information
     avatar_url = Column(String(500), nullable=True)
+    phone = Column(String(20), nullable=True)
+    department = Column(String(100), nullable=True)
+    location = Column(String(100), nullable=True)
+    bio = Column(Text, nullable=True)
     timezone = Column(String(100), default="UTC")
-    language = Column(String(10), default="zh-CN")
+    language = Column(String(10), default="en")
+    date_format = Column(String(20), default="YYYY-MM-DD")
     
     # Timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -54,11 +61,16 @@ class User(Base):
     projects = relationship("Project", secondary="user_project", back_populates="users", overlaps="user_projects")
     user_tasks = relationship("UserTask", back_populates="user", cascade="all, delete-orphan")
     tasks = relationship("Task", secondary="user_task", back_populates="users", overlaps="user_tasks")
-    user_meetings = relationship("UserMeeting", back_populates="user", cascade="all, delete-orphan")
-    meetings = relationship("Meeting", secondary="user_meeting", back_populates="users", overlaps="user_meetings")
+    meeting_participants = relationship("MeetingParticipant", back_populates="user", cascade="all, delete-orphan")
+    meetings = relationship("Meeting", secondary="meeting_participant", back_populates="users", overlaps="meeting_participants") 
     user_documentations = relationship("UserDocumentation", back_populates="user", cascade="all, delete-orphan")
     documentations = relationship("Documentation", secondary="user_documentation", back_populates="users", overlaps="user_documentations")
     meeting_notes = relationship("MeetingNote", back_populates="user", cascade="all, delete-orphan")
+    meeting_action_items = relationship("MeetingActionItem", back_populates="user", cascade="all, delete-orphan")
+    
+    # Notification relationships
+    user_notifications = relationship("UserNotification", back_populates="user", cascade="all, delete-orphan")
+    notification_preferences = relationship("UserNotificationPreference", back_populates="user", cascade="all, delete-orphan")
 
 class UserOAuth(Base):
     """OAuth account association table"""
@@ -66,10 +78,6 @@ class UserOAuth(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    username = Column(String(255), nullable=False)
-    email = Column(String(255), nullable=False)
-    password = Column(String(255), nullable=False)
-    avatar_url = Column(String(500), nullable=True)
     
     # OAuth information
     provider = Column(SQLEnum(AuthProvider), nullable=False)
@@ -91,11 +99,6 @@ class UserOAuth(Base):
     
     # Relationships
     user = relationship("User", back_populates="oauth_accounts")
-    
-    # Composite unique index: a user can only have one account per OAuth provider
-    __table_args__ = (
-        {"schema": None},
-    )
 
 class UserSession(Base):
     """User session table"""
@@ -121,6 +124,7 @@ class UserSession(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     last_activity_at = Column(DateTime(timezone=True), server_default=func.now())
+    deactivated_at = Column(DateTime(timezone=True), nullable=True)
     
     # Relationships
-    user = relationship("User", back_populates="sessions") 
+    user = relationship("User", back_populates="sessions")

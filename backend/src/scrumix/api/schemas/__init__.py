@@ -13,3 +13,4 @@ from .acceptance_criteria import AcceptanceCriteriaCreate, AcceptanceCriteriaUpd
 from .meeting_agenda import MeetingAgendaCreate, MeetingAgendaUpdate, MeetingAgendaResponse, MeetingAgendaInDB
 from .meeting_note import MeetingNoteCreate, MeetingNoteUpdate, MeetingNoteResponse, MeetingNoteInDB
 from .meeting_action_item import MeetingActionItemCreate, MeetingActionItemUpdate, MeetingActionItemResponse, MeetingActionItemInDB
+from .meeting_participant import MeetingParticipantCreate, MeetingParticipantUpdate, MeetingParticipantResponse, MeetingParticipantWithUser, MeetingParticipantsRequest, MeetingParticipantsResponse, AddParticipantRequest, UpdateParticipantRoleRequest, RemoveParticipantRequest

@@ -27,14 +27,31 @@ class UserCRUD(CRUDBase[User, UserCreate, UserUpdate]):
         if obj_in.username and self.get_by_username(db, obj_in.username):
             raise ValueError("Username already taken")
         
+        # Handle name fields - prioritize first_name/last_name, fall back to full_name
+        first_name = obj_in.first_name
+        last_name = obj_in.last_name
+        full_name = obj_in.full_name
+        
+        # If first_name and last_name are provided, use them and construct full_name
+        if first_name or last_name:
+            full_name = f"{first_name or ''} {last_name or ''}".strip()
+        # If only full_name is provided, try to split it
+        elif full_name and not first_name and not last_name:
+            name_parts = full_name.strip().split(' ', 1)
+            first_name = name_parts[0] if name_parts else None
+            last_name = name_parts[1] if len(name_parts) > 1 else None
+        
         # Create user object
         db_user = User(
             email=obj_in.email,
             username=obj_in.username,
-            full_name=obj_in.full_name,
+            first_name=first_name,
+            last_name=last_name,
+            full_name=full_name,
             avatar_url=obj_in.avatar_url,
             timezone=obj_in.timezone,
             language=obj_in.language,
+            date_format=getattr(obj_in, 'date_format', 'YYYY-MM-DD'),
             hashed_password=get_password_hash(obj_in.password) if obj_in.password else None,
             is_verified=False  # Requires email verification
         )
@@ -90,6 +107,30 @@ class UserCRUD(CRUDBase[User, UserCreate, UserUpdate]):
             existing_user = self.get_by_email(db, update_data["email"])
             if existing_user and existing_user.id != user_id:
                 raise ValueError("Email already taken")
+        
+        # Handle name fields with proper logic
+        if "first_name" in update_data or "last_name" in update_data or "full_name" in update_data:
+            first_name = update_data.get("first_name", user.first_name)
+            last_name = update_data.get("last_name", user.last_name)
+            full_name = update_data.get("full_name", user.full_name)
+            
+            # If first_name and last_name are provided, construct full_name
+            if "first_name" in update_data or "last_name" in update_data:
+                full_name = f"{first_name or ''} {last_name or ''}".strip()
+            # If only full_name is provided, try to split it
+            elif "full_name" in update_data and full_name:
+                name_parts = full_name.strip().split(' ', 1)
+                first_name = name_parts[0] if name_parts else None
+                last_name = name_parts[1] if len(name_parts) > 1 else None
+            
+            user.first_name = first_name
+            user.last_name = last_name
+            user.full_name = full_name
+            
+            # Remove these from update_data to avoid double setting
+            update_data.pop("first_name", None)
+            update_data.pop("last_name", None)
+            update_data.pop("full_name", None)
         
         for field, value in update_data.items():
             setattr(user, field, value)
@@ -310,12 +351,12 @@ class UserSessionCRUD:
         ).first()
         
         if session:
-            return self.get(db, session.user_id)
+            return user_crud.get(db, session.user_id)
         return None
     
     def update_activity(self, db: Session, user_id: int) -> Optional[User]:
         """Update user's last activity timestamp"""
-        user = self.get(db, user_id)
+        user = user_crud.get(db, user_id)
         if user:
             user.last_activity_at = datetime.now()
             db.commit()

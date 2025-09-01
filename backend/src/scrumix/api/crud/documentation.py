@@ -9,6 +9,7 @@ from sqlalchemy import and_, or_, func
 from scrumix.api.models.documentation import Documentation, DocumentationType
 from scrumix.api.schemas.documentation import DocumentationCreate, DocumentationUpdate
 from scrumix.api.crud.base import CRUDBase
+from scrumix.api.crud.user_documentation import user_documentation_crud
 
 class DocumentationCRUD(CRUDBase[Documentation, DocumentationCreate, DocumentationUpdate]):
     def create_documentation(self, db: Session, documentation_create: DocumentationCreate) -> Documentation:
@@ -30,6 +31,15 @@ class DocumentationCRUD(CRUDBase[Documentation, DocumentationCreate, Documentati
         db.add(db_documentation)
         db.commit()
         db.refresh(db_documentation)
+        
+        # Handle author associations
+        if documentation_create.author_ids:
+            for user_id in documentation_create.author_ids:
+                user_documentation_crud.create_user_documentation(
+                    db, user_id, db_documentation.id, 
+                    role="author"
+                )
+        
         return db_documentation
     
     def get_by_id(self, db: Session, doc_id: int) -> Optional[Documentation]:
@@ -41,16 +51,21 @@ class DocumentationCRUD(CRUDBase[Documentation, DocumentationCreate, Documentati
         return db.query(Documentation).filter(Documentation.title == title).first()
     
     def get_documentations(self, db: Session, skip: int = 0, limit: int = 100, 
-                          doc_type: Optional[DocumentationType] = None) -> List[Documentation]:
+                          doc_type: Optional[DocumentationType] = None,
+                          project_id: Optional[int] = None) -> List[Documentation]:
         """Get list of documentation items"""
         query = db.query(Documentation)
         
         if doc_type:
             query = query.filter(Documentation.type == doc_type)
         
+        if project_id:
+            query = query.filter(Documentation.project_id == project_id)
+        
         return query.order_by(Documentation.updated_at.desc()).offset(skip).limit(limit).all()
     
-    def search_documentations(self, db: Session, search_term: str, skip: int = 0, limit: int = 100) -> List[Documentation]:
+    def search_documentations(self, db: Session, search_term: str, skip: int = 0, limit: int = 100,
+                            project_id: Optional[int] = None) -> List[Documentation]:
         """Search documentation items by title and description"""
         query = db.query(Documentation).filter(
             or_(
@@ -58,6 +73,9 @@ class DocumentationCRUD(CRUDBase[Documentation, DocumentationCreate, Documentati
                 Documentation.description.ilike(f"%{search_term}%")
             )
         )
+        
+        if project_id:
+            query = query.filter(Documentation.project_id == project_id)
         
         return query.order_by(Documentation.updated_at.desc()).offset(skip).limit(limit).all()
     
@@ -82,6 +100,22 @@ class DocumentationCRUD(CRUDBase[Documentation, DocumentationCreate, Documentati
             existing_doc = self.get_by_title(db, update_data["title"])
             if existing_doc and existing_doc.id != doc_id:
                 raise ValueError("Documentation title already in use")
+        
+        # Handle author associations update
+        if "author_ids" in update_data:
+            # Remove existing author associations
+            user_documentation_crud.remove_all_users_from_documentation(db, doc_id)
+            
+            # Add new author associations
+            if update_data["author_ids"]:
+                for user_id in update_data["author_ids"]:
+                    user_documentation_crud.create_user_documentation(
+                        db, user_id, doc_id, 
+                        role="author"
+                    )
+            
+            # Remove author_ids from update_data since we've handled it separately
+            del update_data["author_ids"]
         
         for field, value in update_data.items():
             setattr(documentation, field, value)
@@ -139,6 +173,25 @@ class DocumentationCRUD(CRUDBase[Documentation, DocumentationCreate, Documentati
             "total_documents": total,
             "documents_by_type": type_counts
         }
+
+    def get_project_users(self, db: Session, project_id: int) -> List[dict]:
+        """Get all users in a project for author selection"""
+        from scrumix.api.models.user import User
+        from scrumix.api.models.user_project import UserProject
+        
+        users = db.query(User).join(UserProject).filter(
+            UserProject.project_id == project_id
+        ).all()
+        
+        return [
+            {
+                "id": user.id,
+                "full_name": user.full_name or user.username or user.email,
+                "email": user.email,
+                "username": user.username
+            }
+            for user in users
+        ]
 
 # Create CRUD instance
 documentation_crud = DocumentationCRUD(Documentation)

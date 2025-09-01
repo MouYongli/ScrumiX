@@ -1,5 +1,5 @@
 """
-Backlog-related database models - OPTIMIZED VERSION
+Backlog-related database models 
 """
 from sqlalchemy import Column, Integer, String, DateTime, Enum as SQLEnum, Text, ForeignKey, Index, func
 from sqlalchemy.orm import relationship
@@ -76,6 +76,7 @@ class Backlog(Base):
     assignee = relationship("User", foreign_keys=[assigned_to_id], backref="assigned_backlog_items")
     project = relationship("Project", backref="backlog_items")
     sprint = relationship("Sprint", backref="backlog_items")
+    tasks = relationship("Task", back_populates="backlog", cascade="all, delete-orphan")
     
     # Composite indexes for common query patterns
     __table_args__ = (
@@ -97,8 +98,9 @@ class Backlog(Base):
         # Index for hierarchical queries
         Index('idx_backlog_root_level', 'root_id', 'level'),
         
-        # Full-text search index for title and description
-        Index('idx_backlog_fts', 'title', 'description', postgresql_using='gin'),
+        # B-tree indexes for title and description
+        Index('idx_backlog_title', 'title'),
+        Index('idx_backlog_description', 'description'),
         
         # Index for type + status queries
         Index('idx_backlog_type_status', 'item_type', 'status'),
