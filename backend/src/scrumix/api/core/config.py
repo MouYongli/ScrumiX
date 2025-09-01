@@ -57,10 +57,10 @@ class Settings(BaseSettings):
     FRONTEND_URL: str = os.environ.get("FRONTEND_URL", "http://localhost:3000")
 
     # Postgres Configuration
-    POSTGRES_SERVER: str = os.environ.get("POSTGRES_SERVER", "localhost")
-    POSTGRES_USER: str = os.environ.get("POSTGRES_USER", "admin")
-    POSTGRES_PASSWORD: str = os.environ.get("POSTGRES_PASSWORD", "postgres")
-    POSTGRES_DB: str = os.environ.get("POSTGRES_DB", "scrumix")
+    POSTGRES_SERVER: str = os.environ.get("POSTGRES_SERVER", "localhost")  # Default to localhost for local dev
+    POSTGRES_USER: str = os.environ.get("POSTGRES_USER", "postgres")
+    POSTGRES_PASSWORD: str = os.environ.get("POSTGRES_PASSWORD", "scrumix")
+    POSTGRES_DB: str = os.environ.get("POSTGRES_DB", "scrumix_dev")  
     POSTGRES_PORT: str = os.environ.get("POSTGRES_PORT", "5433")
 
     # OAuth/Keycloak Configuration
@@ -98,8 +98,8 @@ class Settings(BaseSettings):
             
         data = info.data or {}
 
-        user = data.get("POSTGRES_USER") or "admin"
-        password = data.get("POSTGRES_PASSWORD") or "postgres"
+        user = data.get("POSTGRES_USER") or "postgres"
+        password = data.get("POSTGRES_PASSWORD") or "scrumix"
         host = data.get("POSTGRES_SERVER") or "localhost"
         port = data.get("POSTGRES_PORT") or "5433"
         db = data.get("POSTGRES_DB") or "scrumix"
@@ -107,7 +107,8 @@ class Settings(BaseSettings):
         if isinstance(port, str):
             port = int(port)
         
-        return PostgresDsn.build(
+        # Build PostgreSQL URL with connection optimization parameters
+        base_url = PostgresDsn.build(
             scheme="postgresql",
             username=user,
             password=password,
@@ -115,5 +116,16 @@ class Settings(BaseSettings):
             port=port,
             path=f"{db or ''}",
         )
+        
+        # Add connection optimization parameters
+        optimizations = [
+            "connect_timeout=10",
+            "application_name=scrumix-fastapi",
+            "sslmode=prefer",  # Use SSL if available
+        ]
+        
+        # Add optimizations to URL
+        separator = "?" if "?" not in str(base_url) else "&"
+        return f"{base_url}{separator}{'&'.join(optimizations)}"
 
 settings = Settings() 

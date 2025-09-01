@@ -137,3 +137,4 @@ def initialize_user_notification_preferences(
             status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Error initializing notification preferences: {str(e)}"
         )
+

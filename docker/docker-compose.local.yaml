@@ -1,74 +1,67 @@
 version: '3.8'
 
 services:
-  scrumix-postgres:
+  # PostgreSQL Database - Updated to match your config.py settings
+  db:
     image: postgres:16
     container_name: scrumix-postgres-local
     restart: unless-stopped
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C"
+      POSTGRES_DB: scrumix_dev
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: scrumix
+      # Remove POSTGRES_HOST_AUTH_METHOD to use password authentication
     ports:
-      - "${POSTGRES_PORT}:5432"
+      - "5433:5432"  # External port 5433 (matches your config)
     volumes:
-      - scrumix_postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
       - ./postgres/init:/docker-entrypoint-initdb.d/
     networks:
       - scrumix-local
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
-      interval: 10s
-      timeout: 5s
+      test: ["CMD-SHELL", "pg_isready -U postgres -d scrumix_dev"]
+      interval: 15s
+      timeout: 10s
       retries: 5
-  
-  scrumix-keycloak:
-    image: quay.io/keycloak/keycloak:latest
-    container_name: scrumix-keycloak-local
+      start_period: 30s
+
+  # FastAPI Backend
+  backend:
+    build:
+      context: ../backend
+      dockerfile: Dockerfile
+    container_name: scrumix-backend-local
     restart: unless-stopped
     environment:
-      # Keycloak Admin
-      KEYCLOAK_ADMIN: ${KEYCLOAK_ADMIN}
-      KEYCLOAK_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD}
+      # Database connection - using service name 'db' to match your config
+      POSTGRES_SERVER: db  # Matches your config.py setting
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: scrumix
+      POSTGRES_DB: scrumix_dev
+      POSTGRES_PORT: 5432  # Internal Docker port
       
-      # Database Configuration
-      KC_DB: postgres
-      KC_DB_URL: jdbc:postgresql://scrumix-postgres:5432/${POSTGRES_DB}
-      KC_DB_USERNAME: ${POSTGRES_USER}
-      KC_DB_PASSWORD: ${POSTGRES_PASSWORD}
+      # Application settings
+      SECRET_KEY: dev-secret-key-not-for-production
+      ENVIRONMENT: development
+      DEBUG_OAUTH: true
       
-      # Development Settings
-      KC_HOSTNAME: localhost
-      KC_HOSTNAME_PORT: 8080
-      KC_HOSTNAME_STRICT: false
-      KC_HOSTNAME_STRICT_HTTPS: false
-      KC_LOG_LEVEL: info
-      KC_METRICS_ENABLED: true
-      KC_HEALTH_ENABLED: true
-      
-      # Development Mode
-      KC_DEV: true
+      # URLs
+      BACKEND_URL: http://localhost:8000
+      FRONTEND_URL: http://localhost:3000
     ports:
-      - "8080:8080"
+      - "8000:8000"
     volumes:
-      - scrumix_keycloak_data:/opt/keycloak/data
+      - ../backend:/app  # Mount source code for development
     depends_on:
-      scrumix-postgres:
+      db:
         condition: service_healthy
     networks:
       - scrumix-local
-    command: start-dev
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/health/ready || exit 1"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
+    command: ["uvicorn", "scrumix.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+  
 networks:
   scrumix-local:
     driver: bridge
 
 volumes:
-  scrumix_postgres_data:
-  scrumix_keycloak_data:
+  postgres_data:
