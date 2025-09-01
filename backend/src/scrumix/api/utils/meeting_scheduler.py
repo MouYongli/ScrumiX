@@ -22,20 +22,20 @@ class MeetingReminderScheduler:
     async def start(self):
         """Start the scheduler"""
         self.is_running = True
-        print(f"🔔 Meeting reminder scheduler started (checking every {self.check_interval}s)")
+        print(f" Meeting reminder scheduler started (checking every {self.check_interval}s)")
         
         while self.is_running:
             try:
                 await self.check_upcoming_meetings()
                 await asyncio.sleep(self.check_interval)
             except Exception as e:
-                print(f"❌ Error in meeting reminder scheduler: {e}")
+                print(f" Error in meeting reminder scheduler: {e}")
                 await asyncio.sleep(self.check_interval)
     
     def stop(self):
         """Stop the scheduler"""
         self.is_running = False
-        print("🛑 Meeting reminder scheduler stopped")
+        print(" Meeting reminder scheduler stopped")
     
     async def check_upcoming_meetings(self):
         """Check for meetings that need reminders"""
@@ -79,7 +79,7 @@ class MeetingReminderScheduler:
             result = db.execute(meetings_query, params).fetchall()
             
             if result:
-                print(f"📅 Found {len(result)} meetings needing reminders")
+                print(f" Found {len(result)} meetings needing reminders")
                 
                 for row in result:
                     meeting_id, title, start_datetime, project_id, _ = row
@@ -90,7 +90,7 @@ class MeetingReminderScheduler:
                     # Calculate exact minutes until meeting
                     minutes_until = int((start_time - now).total_seconds() / 60)
                     
-                    print(f"🔔 Sending reminder for meeting '{title}' (starts in {minutes_until} minutes)")
+                    print(f" Sending reminder for meeting '{title}' (starts in {minutes_until} minutes)")
                     
                     try:
                         # Send the reminder notification
@@ -102,17 +102,17 @@ class MeetingReminderScheduler:
                             project_id=project_id,
                             minutes_until_meeting=minutes_until
                         )
-                        print(f"✅ Reminder sent for meeting '{title}'")
+                        print(f" Reminder sent for meeting '{title}'")
                         
                     except Exception as e:
-                        print(f"❌ Failed to send reminder for meeting '{title}': {e}")
+                        print(f" Failed to send reminder for meeting '{title}': {e}")
             else:
                 # Only print this occasionally to avoid spam
                 if now.minute % 5 == 0:  # Every 5 minutes
-                    print(f"⏰ No meetings need reminders (checked at {now.strftime('%H:%M')})")
+                    print(f" No meetings need reminders (checked at {now.strftime('%H:%M')})")
             
         except Exception as e:
-            print(f"❌ Error checking meetings: {e}")
+            print(f" Error checking meetings: {e}")
         finally:
             db.close()
 

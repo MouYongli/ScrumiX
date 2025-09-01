@@ -38,8 +38,34 @@ def get_database_url():
     # Fallback to SQLite from settings
     return settings.DATABASE_URL
 
+# Create database engine with optimized settings
+def create_database_engine():
+    """Create database engine with environment-specific optimizations"""
+    database_url = get_database_url()
+    
+    # Base engine configuration
+    engine_kwargs = {
+        "echo": settings.ENVIRONMENT == "development",  # SQL logging in dev only
+        "pool_pre_ping": True,  # Verify connections before use
+        "pool_recycle": 300,    # Recycle connections every 5 minutes
+    }
+    
+    # PostgreSQL-specific optimizations
+    if database_url.startswith('postgresql'):
+        engine_kwargs.update({
+            "pool_size": 5,          # Connection pool size
+            "max_overflow": 10,      # Max connections beyond pool_size
+            "pool_timeout": 30,      # Timeout when getting connection from pool
+            "connect_args": {
+                "connect_timeout": 10,
+                "application_name": f"scrumix-{settings.ENVIRONMENT}"
+            }
+        })
+    
+    return create_engine(database_url, **engine_kwargs)
+
 # Create database engine
-engine = create_engine(get_database_url())
+engine = create_database_engine()
 
 # Create SessionLocal class
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

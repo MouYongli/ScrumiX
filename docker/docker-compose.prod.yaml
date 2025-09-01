@@ -3,16 +3,22 @@ version: '3.8'
 services:
   # PostgreSQL Database
   postgres:
-    image: postgres:16
+    image: postgres:16-alpine
     container_name: scrumix-postgres
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-scrumix}
       POSTGRES_USER: ${POSTGRES_USER:-scrumix_user}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_HOST_AUTH_METHOD: scram-sha-256  # More secure authentication
+      POSTGRES_INITDB_ARGS: "--encoding=UTF-8 --lc-collate=C --lc-ctype=C --auth-host=scram-sha-256"
+      # Production optimizations
+      POSTGRES_SHARED_PRELOAD_LIBRARIES: "pg_stat_statements"
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./postgres/init:/docker-entrypoint-initdb.d/
+      - ./postgres/prod-postgresql.conf:/etc/postgresql/postgresql.conf:ro
+      - ./ssl:/var/lib/postgresql/ssl:ro  # SSL certificates
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     networks:
@@ -21,7 +27,19 @@ services:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-scrumix_user} -d ${POSTGRES_DB:-scrumix}"]
       interval: 30s
       timeout: 10s
-      retries: 3
+      retries: 5
+      start_period: 60s  # More time for production startup
+    # Security and resource limits
+    security_opt:
+      - no-new-privileges:true
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+          cpus: '1.0'
+        reservations:
+          memory: 512M
+          cpus: '0.5'
 
   # Redis for Caching
   redis:
