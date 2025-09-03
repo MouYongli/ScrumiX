@@ -86,7 +86,7 @@ export const mapApiProjectToDomain = (apiProject: ApiProject): Project => ({
   tasksCompleted: apiProject.tasks.completed,
   tasksTotal: apiProject.tasks.total,
   // Computed UI properties
-  memberCount: apiProject.member_count,
+  memberCount: apiProject.members,
   isActive: apiProject.status === 'active',
   statusDisplay: formatProjectStatus(apiProject.status),
 });

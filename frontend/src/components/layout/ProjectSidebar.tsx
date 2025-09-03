@@ -140,20 +140,25 @@ const ProjectSidebar = forwardRef<ProjectSidebarRef, ProjectSidebarProps>(({
       
       const projectBacklogItems = backlogResponse.data;
       
-      // Calculate progress based on completed backlog items (status = 'done')
-      const totalBacklogItems = projectBacklogItems.length;
-      const completedBacklogItems = projectBacklogItems.filter(item => item.status === 'done').length;
-      const progress = totalBacklogItems > 0
-        ? Math.round((completedBacklogItems / totalBacklogItems) * 100)
+      // Filter to only count user stories and bugs for progress calculation
+      const storyAndBugItems = projectBacklogItems.filter(item => 
+        item.item_type === 'story' || item.item_type === 'bug'
+      );
+      
+      // Calculate progress based on completed user stories and bugs (status = 'done')
+      const totalStoryAndBugItems = storyAndBugItems.length;
+      const completedStoryAndBugItems = storyAndBugItems.filter(item => item.status === 'done').length;
+      const progress = totalStoryAndBugItems > 0
+        ? Math.round((completedStoryAndBugItems / totalStoryAndBugItems) * 100)
         : 0;
       
-      // Calculate status breakdown
+      // Calculate status breakdown based on user stories and bugs only
       const backlogStatusBreakdown = {
-        todo: projectBacklogItems.filter(item => item.status === 'todo').length,
-        in_progress: projectBacklogItems.filter(item => item.status === 'in_progress').length,
-        in_review: projectBacklogItems.filter(item => item.status === 'in_review').length,
-        done: completedBacklogItems,
-        cancelled: projectBacklogItems.filter(item => item.status === 'cancelled').length
+        todo: storyAndBugItems.filter(item => item.status === 'todo').length,
+        in_progress: storyAndBugItems.filter(item => item.status === 'in_progress').length,
+        in_review: storyAndBugItems.filter(item => item.status === 'in_review').length,
+        done: completedStoryAndBugItems,
+        cancelled: storyAndBugItems.filter(item => item.status === 'cancelled').length
       };
 
       setProject({
@@ -163,8 +168,8 @@ const ProjectSidebar = forwardRef<ProjectSidebarRef, ProjectSidebarProps>(({
         sprintContext: sprintContext as 'active' | 'planning' | 'completed' | null,
         progress,
         color: 'bg-blue-500', // You can map this based on project status or type
-        totalBacklogItems,
-        completedBacklogItems,
+        totalBacklogItems: totalStoryAndBugItems,
+        completedBacklogItems: completedStoryAndBugItems,
         backlogStatusBreakdown
       });
     } catch (error) {

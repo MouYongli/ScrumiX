@@ -40,7 +40,6 @@ interface DashboardData {
   } | null;
   team: {
     totalMembers: number;
-    activeMembers: number;
     roles: {
       productOwner: number;
       scrumMaster: number;
@@ -98,7 +97,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
     project: null,
     tasks: { total: 0, completed: 0, inProgress: 0, pending: 0 },
     currentSprint: null,
-    team: { totalMembers: 0, activeMembers: 0, roles: { productOwner: 0, scrumMaster: 0, developers: 0 } },
+    team: { totalMembers: 0, roles: { productOwner: 0, scrumMaster: 0, developers: 0 } },
     velocity: { planned: 0, completed: 0, average: 0 },
     recentActivities: [],
     upcomingMeetings: [],
@@ -300,9 +299,9 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
         
         // Calculate team composition
         const teamRoles = {
-          productOwner: project.project_members?.filter(member => member.role === ScrumRole.PRODUCT_OWNER).length || 0,
-          scrumMaster: project.project_members?.filter(member => member.role === ScrumRole.SCRUM_MASTER).length || 0,
-          developers: project.project_members?.filter(member => member.role === ScrumRole.DEVELOPER).length || 0
+          productOwner: project?.project_members?.filter(member => member.role === ScrumRole.PRODUCT_OWNER).length || 0,
+          scrumMaster: project?.project_members?.filter(member => member.role === ScrumRole.SCRUM_MASTER).length || 0,
+          developers: project?.project_members?.filter(member => member.role === ScrumRole.DEVELOPER).length || 0
         };
         
         // Calculate velocity from backlog items (user stories) since tasks don't have story points
@@ -316,10 +315,26 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
         let totalStoryPoints = 0;
         let completedStoryPoints = 0;
         
+        // Calculate project progress based on completed user stories and bugs
+        let projectProgress = 0;
+        
         if (!backlogResponse.error && backlogResponse.data) {
           const backlogItems = backlogResponse.data;
-          totalStoryPoints = backlogItems.reduce((sum, item) => sum + (item.story_point || 0), 0);
-          completedStoryPoints = backlogItems
+          // Only count user stories and bugs for progress and velocity calculation
+          const storyAndBugItems = backlogItems.filter(item => 
+            item.item_type === 'story' || item.item_type === 'bug'
+          );
+          
+          // Calculate progress based on count of completed items (not story points)
+          const totalStoryAndBugCount = storyAndBugItems.length;
+          const completedStoryAndBugCount = storyAndBugItems.filter(item => item.status === 'done').length;
+          projectProgress = totalStoryAndBugCount > 0 
+            ? Math.round((completedStoryAndBugCount / totalStoryAndBugCount) * 100)
+            : 0;
+          
+          // Calculate velocity based on story points
+          totalStoryPoints = storyAndBugItems.reduce((sum, item) => sum + (item.story_point || 0), 0);
+          completedStoryPoints = storyAndBugItems
             .filter(item => item.status === 'done')
             .reduce((sum, item) => sum + (item.story_point || 0), 0);
         }
@@ -416,9 +431,14 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
           attendees: 0 // Backend doesn't provide attendee count yet
         }));
         
-        // Update dashboard data
+        // Update dashboard data with calculated project progress
+        const projectWithProgress = project ? {
+          ...project,
+          progress: projectProgress // Override with calculated progress based on user stories and bugs
+        } : null;
+        
         setDashboardData({
-          project,
+          project: projectWithProgress,
           tasks: {
             total: tasksWithAssignees.length,
             completed: completedTasks.length,
@@ -435,8 +455,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
             status: currentSprint.status || 'active'
           } : null,
           team: {
-            totalMembers: project.members,
-            activeMembers: project.members, // Assuming all members are active
+            totalMembers: project?.members || 0,
             roles: teamRoles
           },
           velocity: {
@@ -1213,13 +1232,10 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-600 dark:text-gray-400">Team Members</p>
-                      <p className="text-2xl font-bold text-green-600">{dashboardData.team.activeMembers}/{dashboardData.team.totalMembers}</p>
+                      <p className="text-2xl font-bold text-green-600">{dashboardData.team.totalMembers}</p>
             </div>
             <Users className="w-8 h-8 text-green-500" />
           </div>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                    {dashboardData.team.activeMembers} active
-          </p>
         </div>
 
         <div className="bg-white dark:bg-gray-800 p-6 rounded-lg border border-gray-200 dark:border-gray-700">

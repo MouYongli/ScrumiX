@@ -150,7 +150,7 @@ export interface ApiProject {
   updated_at?: string;
   // Computed fields from backend (matching ProjectResponse schema)
   progress: number;
-  member_count: number;                      // Count, not array
+  members: number;                           // Count, not array (matches backend ProjectResponse.members)
   tasks: { completed: number; total: number }; // Object structure
   // User relationship data
   user_role?: ScrumRole;              // Current user's role in the project

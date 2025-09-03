@@ -273,7 +273,7 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
 
   // Breadcrumb navigation
   const breadcrumbItems = [
-    { label: project?.name || 'Project', href: `/project/${projectId}` },
+    { label: project?.name || 'Project', href: `/project/${projectId}/dashboard` },
     { label: 'Product Backlog', href: `/project/${projectId}/backlog` }
   ];
 
@@ -639,8 +639,8 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
             handleEditItem(editData);
           } else {
             handleAddItem({
-              ...item,
-              story_point: 0
+              ...item
+              // story_point is now preserved from the form data
               // item_type is now preserved from the form data
             });
           }

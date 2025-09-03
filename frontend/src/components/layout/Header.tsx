@@ -6,6 +6,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { Search, Bell, ChevronDown, User, Settings, HelpCircle, LogOut, Menu, Sun, Moon, Monitor } from 'lucide-react';
 import NotificationCenter from '../common/NotificationCenter';
 import SearchBar from '../common/SearchBar';
+import LogoutModal from '../common/LogoutModal';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useAuth } from '../auth/AuthGuard';
 
@@ -15,6 +16,7 @@ interface HeaderProps {
 
 const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
   const pathname = usePathname();
@@ -93,10 +95,27 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
 
   // Handle logout
   const handleLogout = () => {
-    console.log('User logout');
-    if (confirm('Are you sure you want to logout?')) {
-      authLogout(); // This will handle clearing all auth data and redirect
+    setIsUserMenuOpen(false); // Close user menu
+    setIsLogoutModalOpen(true); // Open logout modal
+  };
+
+  // Confirm logout
+  const confirmLogout = async () => {
+    console.log('[Header] Starting logout process...');
+    setIsLogoutModalOpen(false);
+    try {
+      await authLogout(); // This will handle clearing all auth data and redirect
+      console.log('[Header] Logout completed successfully');
+    } catch (error) {
+      console.error('[Header] Logout failed:', error);
+      // Force redirect even if logout fails
+      window.location.href = '/auth/login';
     }
+  };
+
+  // Cancel logout
+  const cancelLogout = () => {
+    setIsLogoutModalOpen(false);
   };
 
   // Click outside to close user menu
@@ -115,6 +134,26 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
   }, [isUserMenuOpen]);
+
+  // Keyboard shortcut for logout (Ctrl+Alt+L)
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.ctrlKey && event.altKey && event.key.toLowerCase() === 'l') {
+        event.preventDefault();
+        handleLogout();
+      }
+      
+      // ESC to close logout modal
+      if (event.key === 'Escape' && isLogoutModalOpen) {
+        cancelLogout();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isLogoutModalOpen]);
 
   // Render user avatar
   const renderUserAvatar = () => {
@@ -254,6 +293,14 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
           </div>
         </div>
       </div>
+
+      {/* Logout Confirmation Modal */}
+      <LogoutModal
+        isOpen={isLogoutModalOpen}
+        onClose={cancelLogout}
+        onConfirm={confirmLogout}
+        userName={displayUser.name}
+      />
     </header>
   );
 };

@@ -76,7 +76,7 @@ const MyWorkspacePage = () => {
             meeting.projectId === project.id
           );
 
-          // Calculate project progress based on backlog items
+          // Calculate project progress based on user stories and bugs only
           let progress = 0;
           try {
             const backlogResponse = await api.backlogs.getAll({ 
@@ -85,10 +85,15 @@ const MyWorkspacePage = () => {
             });
             const projectBacklogItems = backlogResponse.data || [];
             
-            const totalBacklogItems = projectBacklogItems.length;
-            const completedBacklogItems = projectBacklogItems.filter((item: any) => item.status === 'done').length;
-            progress = totalBacklogItems > 0
-              ? Math.round((completedBacklogItems / totalBacklogItems) * 100)
+            // Filter to only count user stories and bugs for progress calculation
+            const storyAndBugItems = projectBacklogItems.filter((item: any) => 
+              item.item_type === 'story' || item.item_type === 'bug'
+            );
+            
+            const totalStoryAndBugItems = storyAndBugItems.length;
+            const completedStoryAndBugItems = storyAndBugItems.filter((item: any) => item.status === 'done').length;
+            progress = totalStoryAndBugItems > 0
+              ? Math.round((completedStoryAndBugItems / totalStoryAndBugItems) * 100)
               : 0;
           } catch (err) {
             console.error(`Error fetching backlog for project ${project.id}:`, err);

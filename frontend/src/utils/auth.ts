@@ -391,15 +391,23 @@ export const logout = async (): Promise<void> => {
 
   try {
     const baseUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
-    await fetch(`${baseUrl}/api/v1/auth/logout`, {
+    console.log('[Auth] Attempting logout API call to:', `${baseUrl}/api/v1/auth/logout`);
+    
+    const response = await fetch(`${baseUrl}/api/v1/auth/logout`, {
       method: 'POST',
       credentials: 'include', // Include cookies for logout
       headers: {
         'Content-Type': 'application/json',
       },
     });
+    
+    if (!response.ok) {
+      console.warn('[Auth] Logout API returned non-OK status:', response.status, response.statusText);
+    } else {
+      console.log('[Auth] Logout API call successful');
+    }
   } catch (error) {
-    console.error('Logout API call failed:', error);
+    console.error('[Auth] Logout API call failed:', error);
     // Continue with local cleanup even if API call fails
   }
   

@@ -240,13 +240,25 @@ export const useAuth = () => {
   }, []); // Empty dependency array - no dependencies that change!
 
   const handleLogout = async () => {
+    console.log('[AuthGuard] Starting logout process...');
     try {
       await logout();
+      console.log('[AuthGuard] Logout API call completed');
       // The auth manager will handle the state update
       window.location.href = '/auth/login';
     } catch (error) {
-      console.error('Logout failed:', error);
-      // Force logout even if API call fails
+      console.error('[AuthGuard] Logout failed:', error);
+      // Force logout even if API call fails - clear local data and redirect
+      if (typeof window !== 'undefined') {
+        localStorage.removeItem('user');
+        localStorage.removeItem('auth_provider');
+        localStorage.removeItem('oauth_state');
+        // Also clear any mock auth tokens
+        localStorage.removeItem('mock_auth_token');
+        localStorage.removeItem('mock_auth_expires');
+        localStorage.removeItem('mock_refresh_token');
+        localStorage.removeItem('mock_refresh_expires');
+      }
       window.location.href = '/auth/login';
     }
   };
