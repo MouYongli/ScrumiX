@@ -572,27 +572,66 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
     try {
       console.log('Refreshing kanban data...');
       
-      // Fetch fresh task data for the current project
-      const tasksResponse = await api.tasks.getAll({ 
-        limit: 100 
-      });
+      // Fetch current sprint information fresh from API to avoid stale data
+      let currentSprint = null;
+      try {
+        const sprintsResponse = await api.sprints.getAll();
+        if (!sprintsResponse.error && sprintsResponse.data) {
+          const projectSprints = sprintsResponse.data.filter(sprint => 
+            sprint.projectId === parseInt(projectId)
+          );
+          currentSprint = projectSprints.find(sprint => sprint.status === 'active') || null;
+        }
+      } catch (error) {
+        console.warn('Failed to fetch current sprint, using dashboard data:', error);
+        currentSprint = dashboardData.currentSprint;
+      }
       
-      if (tasksResponse.error) {
-        console.warn('Failed to refresh tasks, using current data:', tasksResponse.error);
+      if (!currentSprint) {
+        console.log('No active sprint, clearing kanban data');
+        const emptyKanbanData = { todo: [], inProgress: [], done: [] };
+        setKanbanData(emptyKanbanData);
+        setDashboardData(prev => ({
+          ...prev,
+          tasks: { total: 0, completed: 0, inProgress: 0, pending: 0 },
+          sprintKanbanData: emptyKanbanData
+        }));
+        return;
+      }
+
+      // Fetch tasks from current sprint backlog only
+      const sprintId = 'id' in currentSprint ? currentSprint.id : null;
+      if (!sprintId) {
+        console.warn('Current sprint has no ID, cannot fetch backlog');
         return;
       }
       
-      const allTasks = tasksResponse.data?.tasks || [];
-      
-      // Filter tasks by project (assuming tasks have project_id field)
-      const tasks = allTasks.filter(task => {
-        return (task as any).project_id === parseInt(projectId) || !(task as any).project_id;
+      const sprintBacklogResponse = await api.sprints.getSprintBacklog(sprintId, {
+        include_acceptance_criteria: false,
+        limit: 1000
       });
       
+      if (sprintBacklogResponse.error) {
+        console.warn('Failed to refresh sprint backlog:', sprintBacklogResponse.error);
+        return;
+      }
+      
+      // Extract tasks from sprint backlog items
+      const sprintTasks: any[] = [];
+      if (sprintBacklogResponse.data) {
+        sprintBacklogResponse.data.forEach(backlogItem => {
+          if (backlogItem.tasks && Array.isArray(backlogItem.tasks)) {
+            sprintTasks.push(...backlogItem.tasks);
+          }
+        });
+      }
+      
+      console.log('Refreshed sprint tasks:', sprintTasks.length);
+      
       // Re-categorize tasks by status
-      const completedTasks = tasks.filter(task => task.status === TaskStatus.DONE);
-      const inProgressTasks = tasks.filter(task => task.status === TaskStatus.IN_PROGRESS);
-      const pendingTasks = tasks.filter(task => task.status === TaskStatus.TODO);
+      const completedTasks = sprintTasks.filter(task => task.status === TaskStatus.DONE);
+      const inProgressTasks = sprintTasks.filter(task => task.status === TaskStatus.IN_PROGRESS);
+      const pendingTasks = sprintTasks.filter(task => task.status === TaskStatus.TODO);
       
       // Create new kanban data
       const newKanbanData = {
@@ -626,7 +665,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
       setDashboardData(prev => ({
         ...prev,
         tasks: {
-          total: tasks.length,
+          total: sprintTasks.length,
           completed: completedTasks.length,
           inProgress: inProgressTasks.length,
           pending: pendingTasks.length
@@ -635,7 +674,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
       }));
       
       console.log('Kanban data refreshed successfully:', {
-        total: tasks.length,
+        total: sprintTasks.length,
         todo: newKanbanData.todo.length,
         inProgress: newKanbanData.inProgress.length,
         done: newKanbanData.done.length
@@ -879,9 +918,10 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
         refreshDashboardMetrics();
         
         // Refresh the kanban data in the background to ensure consistency with backend
+        // Use a shorter delay and pass the current sprint info to avoid stale data
         setTimeout(() => {
           refreshKanbanData();
-        }, 1000); // Slightly longer delay to ensure backend has processed the update
+        }, 500); // Shorter delay for better UX
         
       } catch (err) {
         console.error('Failed to update task status with dedicated endpoint, trying fallback:', err);
@@ -916,7 +956,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
           // Refresh the kanban data in the background to ensure consistency with backend
           setTimeout(() => {
             refreshKanbanData();
-          }, 1000);
+          }, 500);
           
         } catch (fallbackErr) {
           console.error('Fallback update also failed:', fallbackErr);
