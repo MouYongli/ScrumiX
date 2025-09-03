@@ -47,6 +47,7 @@ const MyWorkspacePage = () => {
           const domainProject = mapApiProjectToDomain(apiProject);
           return {
             ...domainProject,
+            memberCount: apiProject.member_count || 0,  // Use the actual member count from workspace API
             role: formatScrumRole(apiProject.user_role) || 'Member'  // Add formatted role from workspace API response
           };
         });
