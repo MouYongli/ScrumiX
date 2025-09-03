@@ -53,7 +53,7 @@ const CreateSprintModal: React.FC<{
     sprintGoal: '',
     startDate: '',
     endDate: '',
-    sprintCapacity: 40,
+    sprintCapacity: 0,
       status: 'planning' as const
     });
 
@@ -92,7 +92,7 @@ const CreateSprintModal: React.FC<{
       sprintGoal: '',
       startDate: '',
       endDate: '',
-      sprintCapacity: 40,
+      sprintCapacity: 0,
         status: 'planning'
     });
     onClose();

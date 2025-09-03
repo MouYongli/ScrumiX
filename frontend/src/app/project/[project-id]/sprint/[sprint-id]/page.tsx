@@ -1184,7 +1184,17 @@ const EditSprintModal: React.FC<{
 
   // Initialize form data when sprint changes
   useEffect(() => {
-    setFormData(sprint);
+    // Format dates for HTML date inputs (YYYY-MM-DD format)
+    const formatDateForInput = (dateString: string) => {
+      const date = new Date(dateString);
+      return date.toISOString().split('T')[0];
+    };
+    
+    setFormData({
+      ...sprint,
+      start_date: formatDateForInput(sprint.start_date),
+      end_date: formatDateForInput(sprint.end_date)
+    });
   }, [sprint]);
 
   // Team members are now fetched from the API via projectDevelopers
@@ -2146,9 +2156,63 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
   };
 
   // Add handler for sprint updates
-  const handleUpdateSprint = (updatedSprint: Sprint) => {
-    setSprint(updatedSprint);
-    setIsEditModalOpen(false);
+  const handleUpdateSprint = async (updatedSprint: Sprint) => {
+    try {
+      // Call the API to update the sprint
+      const response = await api.sprints.update(updatedSprint.id, {
+        sprint_name: updatedSprint.sprint_name,
+        sprint_goal: updatedSprint.sprint_goal,
+        start_date: updatedSprint.start_date,
+        end_date: updatedSprint.end_date,
+        sprint_capacity: updatedSprint.sprint_capacity,
+        status: updatedSprint.status,
+      });
+
+      if (response.error) {
+        throw new Error(response.error);
+      }
+
+      if (response.data) {
+        // Transform backend response to frontend format
+        const updatedSprintData: Sprint = {
+          id: response.data.id,
+          sprint_name: response.data.sprintName,
+          sprint_goal: response.data.sprintGoal || '',
+          status: response.data.status as 'planning' | 'active' | 'completed' | 'cancelled',
+          start_date: response.data.startDate,
+          end_date: response.data.endDate,
+          sprint_capacity: response.data.sprintCapacity || 0,
+          project_id: response.data.projectId,
+          created_at: response.data.createdAt,
+          updated_at: response.data.updatedAt,
+          // Keep existing calculated fields
+          totalStoryPoints: sprint?.totalStoryPoints || 0,
+          completedStoryPoints: sprint?.completedStoryPoints || 0,
+          totalStories: sprint?.totalStories || 0,
+          completedStories: sprint?.completedStories || 0,
+          teamMembers: sprint?.teamMembers || [],
+          velocity: sprint?.velocity || 0,
+          stories: sprint?.stories || []
+        };
+
+        setSprint(updatedSprintData);
+        setIsEditModalOpen(false);
+        
+        // Show success message
+        showMessage(
+          'success',
+          'Sprint Updated',
+          `Successfully updated "${updatedSprintData.sprint_name}"`
+        );
+      }
+    } catch (err) {
+      console.error('Error updating sprint:', err);
+      showMessage(
+        'error',
+        'Failed to Update Sprint',
+        `Failed to update sprint: ${err instanceof Error ? err.message : 'Unknown error'}`
+      );
+    }
   };
 
   // Add handler for adding stories to sprint
