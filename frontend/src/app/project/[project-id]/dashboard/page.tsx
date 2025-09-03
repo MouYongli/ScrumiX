@@ -52,7 +52,7 @@ interface DashboardData {
     average: number;
   };
   recentActivities: Array<{
-    id: number;
+    id: string;
     user: string;
     action: string;
     target: string;
@@ -238,6 +238,327 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
         </div>
       </div>
     );
+  };
+
+  // Helper function to calculate time difference in hours
+  const getHoursDifference = (timestamp: string): number => {
+    const now = new Date();
+    const then = new Date(timestamp);
+    return Math.abs(now.getTime() - then.getTime()) / (1000 * 60 * 60);
+  };
+
+  // Helper function to format time ago
+  const formatTimeAgo = (timestamp: string): string => {
+    const hours = getHoursDifference(timestamp);
+    
+    if (hours < 1) {
+      const minutes = Math.floor(hours * 60);
+      return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`;
+    } else if (hours < 24) {
+      const wholeHours = Math.floor(hours);
+      return `${wholeHours} hour${wholeHours !== 1 ? 's' : ''} ago`;
+    } else {
+      const days = Math.floor(hours / 24);
+      return `${days} day${days !== 1 ? 's' : ''} ago`;
+    }
+  };
+
+  // Function to fetch recent activities from multiple sources
+  const fetchRecentActivities = async (projectId: number): Promise<Array<{
+    id: string;
+    user: string;
+    action: string;
+    target: string;
+    time: string;
+    type: string;
+    timestamp: string;
+  }>> => {
+    const activities: Array<{
+      id: string;
+      user: string;
+      action: string;
+      target: string;
+      time: string;
+      type: string;
+      timestamp: string;
+    }> = [];
+    const now = new Date();
+    const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+    try {
+      // 1. Fetch recent sprint activities
+      const sprintsResponse = await api.sprints.getAll();
+      if (!sprintsResponse.error && sprintsResponse.data) {
+        const projectSprints = sprintsResponse.data.filter(sprint => 
+          sprint.projectId === projectId
+        );
+        
+        projectSprints.forEach(sprint => {
+          const updatedAt = new Date(sprint.updatedAt);
+          if (updatedAt > twentyFourHoursAgo) {
+            // Determine activity type based on status and creation/update time
+            const createdAt = new Date(sprint.createdAt);
+            const isNewSprint = Math.abs(updatedAt.getTime() - createdAt.getTime()) < 60000; // Within 1 minute
+            
+            let action = '';
+            if (isNewSprint) {
+              action = 'created sprint';
+            } else {
+              // Check if this is a status change or other update
+              switch (sprint.status) {
+                case 'active':
+                  action = 'started sprint';
+                  break;
+                case 'completed':
+                  action = 'completed sprint';
+                  break;
+                case 'cancelled':
+                  action = 'cancelled sprint';
+                  break;
+                case 'planning':
+                  // If updated but still in planning, it's likely a metadata update
+                  action = 'updated sprint details';
+                  break;
+                default:
+                  action = 'updated sprint';
+              }
+            }
+            
+            activities.push({
+              id: `sprint-${sprint.id}`,
+              user: 'Team Member', // We don't have user info in sprint data
+              action,
+              target: sprint.sprintName,
+              time: formatTimeAgo(sprint.updatedAt),
+              type: 'sprint',
+              timestamp: sprint.updatedAt
+            });
+          }
+        });
+      }
+
+      // 2. Fetch recent backlog item activities and detect sprint backlog assignments
+      const backlogResponse = await api.backlogs.getAll({
+        project_id: projectId,
+        limit: 100
+      });
+      
+      if (!backlogResponse.error && backlogResponse.data) {
+        backlogResponse.data.forEach(item => {
+          const updatedAt = new Date(item.updated_at);
+          if (updatedAt > twentyFourHoursAgo) {
+            const createdAt = new Date(item.created_at);
+            const isNewItem = Math.abs(updatedAt.getTime() - createdAt.getTime()) < 60000; // Within 1 minute
+            
+            let action = '';
+            let activityType = 'backlog';
+            
+            if (isNewItem) {
+              // This is a newly created backlog item
+              if (item.sprint_id) {
+                action = `created ${item.item_type} and added to sprint`;
+                activityType = 'sprint_backlog';
+              } else {
+                action = `created ${item.item_type}`;
+              }
+            } else {
+              // This is an update to an existing item
+              // KEY INSIGHT: If a backlog item has a sprint_id and was recently updated,
+              // it's very likely it was just added to a sprint backlog
+              if (item.sprint_id) {
+                // IMPROVED LOGIC: Any item with sprint_id that was recently updated 
+                // is most likely a sprint backlog addition (remove time restriction)
+                const timeSinceCreation = updatedAt.getTime() - createdAt.getTime();
+                const minutesSinceCreation = timeSinceCreation / (1000 * 60);
+                
+                // If item has sprint_id and was updated recently, it's a sprint backlog activity
+                console.log(`Detected sprint backlog addition: ${item.title} (created ${minutesSinceCreation.toFixed(1)} minutes ago, updated recently, sprint_id: ${item.sprint_id})`);
+                action = `added ${item.item_type} to sprint backlog`;
+                activityType = 'sprint_backlog';
+              } else {
+                // Item is not in any sprint - could be removed from sprint or general update
+                action = `updated ${item.item_type}`;
+                activityType = 'backlog';
+              }
+            }
+            
+            // Get assignee name - we only have assigned_to_id, not full assignee data
+            const assigneeName = 'Team Member'; // TODO: Fetch user details from assigned_to_id if needed
+            
+            activities.push({
+              id: `backlog-${item.id}`,
+              user: assigneeName,
+              action,
+              target: item.title,
+              time: formatTimeAgo(item.updated_at),
+              type: activityType,
+              timestamp: item.updated_at
+            });
+          }
+        });
+      }
+
+      // 2.5. Enhanced sprint backlog change detection with sprint names
+      // Get sprint information to provide more detailed activity messages
+      const sprintMap = new Map<number, string>();
+      try {
+        const allSprintsResponse = await api.sprints.getAll();
+        if (!allSprintsResponse.error && allSprintsResponse.data) {
+          const projectSprints = allSprintsResponse.data.filter(sprint => 
+            sprint.projectId === projectId
+          );
+          
+          // Create a map of sprint_id to sprint_name for better activity messages
+          projectSprints.forEach(sprint => {
+            sprintMap.set(sprint.id, sprint.sprintName);
+          });
+          
+          // Update existing sprint_backlog activities to include sprint names
+          activities.forEach(activity => {
+            if (activity.type === 'sprint_backlog' && activity.action.includes('to sprint backlog')) {
+              // Try to find which sprint this item belongs to by checking the backlog items
+              const backlogItem = backlogResponse.data?.find(item => 
+                item.title === activity.target && item.sprint_id
+              );
+              if (backlogItem && backlogItem.sprint_id && sprintMap.has(backlogItem.sprint_id)) {
+                const sprintName = sprintMap.get(backlogItem.sprint_id);
+                if (sprintName) {
+                  activity.action = activity.action.replace('to sprint backlog', `to "${sprintName}" backlog`);
+                }
+              }
+            }
+          });
+          
+          // Additional detection: Check each sprint's backlog directly for comprehensive coverage
+          for (const sprint of projectSprints) {
+            try {
+              const sprintBacklogResponse = await api.sprints.getSprintBacklog(sprint.id, {
+                include_acceptance_criteria: false,
+                limit: 50
+              });
+              
+              if (!sprintBacklogResponse.error && sprintBacklogResponse.data) {
+                sprintBacklogResponse.data.forEach(backlogItem => {
+                  const updatedAt = new Date(backlogItem.updated_at);
+                  if (updatedAt > twentyFourHoursAgo) {
+                    const createdAt = new Date(backlogItem.created_at);
+                    const timeDifference = updatedAt.getTime() - createdAt.getTime();
+                    const minutesDifference = timeDifference / (1000 * 60);
+                    
+                    // MOST AGGRESSIVE detection: if item is in sprint and was updated recently
+                    // it was likely added to sprint (remove time restrictions)
+                    if (backlogItem.sprint_id === sprint.id) {
+                      // Check if we already have this activity to avoid duplicates
+                      const existingActivity = activities.find(act => 
+                        act.id === `backlog-${backlogItem.id}` || 
+                        act.id === `sprint-backlog-enhanced-${backlogItem.id}`
+                      );
+                      
+                      if (!existingActivity) {
+                        console.log(`Enhanced detection: Found sprint backlog addition - ${backlogItem.title} to ${sprint.sprintName}`);
+                        activities.push({
+                          id: `sprint-backlog-enhanced-${backlogItem.id}`,
+                          user: 'Team Member',
+                          action: `added ${backlogItem.item_type} to "${sprint.sprintName}" backlog`,
+                          target: backlogItem.title,
+                          time: formatTimeAgo(backlogItem.updated_at),
+                          type: 'sprint_backlog',
+                          timestamp: backlogItem.updated_at
+                        });
+                      }
+                    }
+                  }
+                });
+              }
+            } catch (error) {
+              console.warn(`Failed to fetch backlog for sprint ${sprint.id}:`, error);
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to enhance sprint backlog activity messages:', error);
+      }
+
+      // 3. Fetch recent task activities (from current sprint if available)
+      const currentSprintResponse = await api.sprints.getAll();
+      if (!currentSprintResponse.error && currentSprintResponse.data) {
+        const currentSprint = currentSprintResponse.data.find(sprint => 
+          sprint.projectId === projectId && sprint.status === 'active'
+        );
+        
+        if (currentSprint) {
+          try {
+            const sprintBacklogResponse = await api.sprints.getSprintBacklog(currentSprint.id, {
+              include_acceptance_criteria: false,
+              limit: 1000
+            });
+            
+            if (!sprintBacklogResponse.error && sprintBacklogResponse.data) {
+              // Extract tasks from sprint backlog items
+              sprintBacklogResponse.data.forEach(backlogItem => {
+                if (backlogItem.tasks && Array.isArray(backlogItem.tasks)) {
+                  backlogItem.tasks.forEach((task: any) => {
+                    const updatedAt = new Date(task.updated_at);
+                    if (updatedAt > twentyFourHoursAgo) {
+                      // Determine if this is a new task or status update
+                      const createdAt = new Date(task.created_at);
+                      const isNewTask = Math.abs(updatedAt.getTime() - createdAt.getTime()) < 60000; // Within 1 minute
+                      
+                      let action = '';
+                      if (isNewTask) {
+                        action = 'created task';
+                      } else {
+                        action = `moved task to ${task.status === 'todo' ? 'To Do' : task.status === 'in_progress' ? 'In Progress' : 'Done'}`;
+                      }
+                      
+                      // Get assignee display name
+                      const assigneeName = getAssigneeDisplay(task.assignees || []);
+                      
+                      activities.push({
+                        id: `task-${task.id}`,
+                        user: assigneeName !== 'Unassigned' ? assigneeName : 'Team Member',
+                        action,
+                        target: task.title,
+                        time: formatTimeAgo(task.updated_at),
+                        type: 'task',
+                        timestamp: task.updated_at
+                      });
+                    }
+                  });
+                }
+              });
+            }
+          } catch (error) {
+            console.warn('Failed to fetch sprint tasks for recent activities:', error);
+          }
+        }
+      }
+
+    } catch (error) {
+      console.error('Error fetching recent activities:', error);
+    }
+
+    // Sort by timestamp (most recent first) and return top 5
+    const sortedActivities = activities
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, 5);
+    
+    console.log(`Found ${activities.length} total activities, showing ${sortedActivities.length} most recent:`, sortedActivities);
+    
+    // Debug: Log activity breakdown by type
+    const activityBreakdown = sortedActivities.reduce((acc, activity) => {
+      acc[activity.type] = (acc[activity.type] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    console.log('Activity breakdown by type:', activityBreakdown);
+    
+    // Debug: Log sprint backlog activities specifically
+    const sprintBacklogActivities = sortedActivities.filter(act => act.type === 'sprint_backlog');
+    if (sprintBacklogActivities.length > 0) {
+      console.log('Sprint backlog activities detected:', sprintBacklogActivities);
+    }
+    
+    return sortedActivities;
   };
 
   // Fetch dashboard data
@@ -476,19 +797,8 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
         };
         
 
-        
-                 // Prepare recent activities (simplified - using task updates)
-         const recentActivities = tasksWithAssignees
-           .slice(0, 4)
-           .map((task, index) => ({
-             id: task.id,
-             user: getAssigneeDisplay(task.assignees || []),
-             action: task.status === TaskStatus.DONE ? 'completed task' : 
-                    task.status === TaskStatus.IN_PROGRESS ? 'started task' : 'updated task',
-             target: task.title,
-             time: `${index + 1} hour${index > 0 ? 's' : ''} ago`,
-             type: task.status === TaskStatus.DONE ? 'task_completed' : 'task_updated'
-           }));
+        // Fetch recent activities from multiple sources
+        const recentActivities = await fetchRecentActivities(parseInt(projectId));
         
         // Prepare upcoming meetings
         const upcomingMeetings = projectMeetings.slice(0, 3).map(meeting => ({
@@ -1845,26 +2155,66 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                 Recent Activities
               </h3>
+              <Link 
+                href={`/project/${projectId}/activities`}
+                className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 flex items-center gap-1 text-sm transition-colors"
+              >
+                View All
+                <ArrowRight className="w-4 h-4" />
+              </Link>
             </div>
 
             <div className="space-y-3">
-              {dashboardData.recentActivities.map((activity) => (
-                <div key={activity.id} className="flex items-start gap-3">
-                  <div className="p-2 rounded-lg bg-gray-50 dark:bg-gray-700">
-                    <Activity className="w-4 h-4 text-gray-600 dark:text-gray-400" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-900 dark:text-white">
-                      <span className="font-medium">{activity.user}</span>
-                      {' '}{activity.action}{' '}
-                      <span className="font-medium">{activity.target}</span>
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      {activity.time}
-                    </p>
-                  </div>
+              {dashboardData.recentActivities.length > 0 ? (
+                dashboardData.recentActivities.map((activity) => {
+                  // Determine icon and color based on activity type
+                  let icon = <Activity className="w-4 h-4" />;
+                  let bgColor = 'bg-gray-50 dark:bg-gray-700';
+                  let iconColor = 'text-gray-600 dark:text-gray-400';
+                  
+                  if (activity.type === 'sprint') {
+                    icon = <Zap className="w-4 h-4" />;
+                    bgColor = 'bg-blue-50 dark:bg-blue-900/20';
+                    iconColor = 'text-blue-600 dark:text-blue-400';
+                  } else if (activity.type === 'sprint_backlog') {
+                    icon = <Plus className="w-4 h-4" />;
+                    bgColor = 'bg-indigo-50 dark:bg-indigo-900/20';
+                    iconColor = 'text-indigo-600 dark:text-indigo-400';
+                  } else if (activity.type === 'task') {
+                    icon = <CheckCircle2 className="w-4 h-4" />;
+                    bgColor = 'bg-green-50 dark:bg-green-900/20';
+                    iconColor = 'text-green-600 dark:text-green-400';
+                  } else if (activity.type === 'backlog') {
+                    icon = <FolderOpen className="w-4 h-4" />;
+                    bgColor = 'bg-purple-50 dark:bg-purple-900/20';
+                    iconColor = 'text-purple-600 dark:text-purple-400';
+                  }
+                  
+                  return (
+                    <div key={activity.id} className="flex items-start gap-3">
+                      <div className={`p-2 rounded-lg ${bgColor}`}>
+                        <div className={iconColor}>{icon}</div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-gray-900 dark:text-white">
+                          <span className="font-medium">{activity.user}</span>
+                          {' '}{activity.action}{' '}
+                          <span className="font-medium text-blue-600 dark:text-blue-400">{activity.target}</span>
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          {activity.time}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="text-center py-6 text-gray-500 dark:text-gray-400">
+                  <Activity className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">No recent activities in the last 24 hours</p>
+                  <p className="text-xs mt-1">Activities include sprint updates, backlog changes, task movements, and sprint planning</p>
                 </div>
-              ))}
+              )}
             </div>
           </div>
 
