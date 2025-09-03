@@ -34,11 +34,13 @@ class CRUDMeeting(CRUDBase[Meeting, MeetingCreate, MeetingUpdate]):
     ) -> List[Meeting]:
         """Get upcoming meetings for a specific user within specified days."""
         from datetime import timezone
+        from sqlalchemy.orm import joinedload
         now = datetime.now(timezone.utc)
         end_date = now + timedelta(days=days)
         return (
             db.query(self.model)
             .join(MeetingParticipant)
+            .options(joinedload(self.model.meeting_participants))  # Eager load participants
             .filter(
                 and_(
                     MeetingParticipant.user_id == user_id,

@@ -53,7 +53,13 @@ const MyWorkspacePage = () => {
         });
         const sprints = workspaceData.active_sprints.map(mapApiSprintToDomain);
         const allTasks = workspaceData.recent_tasks.map(mapApiTaskToDomain);
-        const allMeetings = workspaceData.upcoming_meetings.map(mapApiMeetingToDomain);
+        const allMeetings = workspaceData.upcoming_meetings.map((apiMeeting: any) => {
+          const domainMeeting = mapApiMeetingToDomain(apiMeeting);
+          return {
+            ...domainMeeting,
+            participantCount: apiMeeting.participant_count || 0  // Use the actual participant count from workspace API
+          };
+        });
 
         // Create sprint-to-project mapping
         const sprintToProject = new Map<number, number>();
@@ -384,7 +390,7 @@ const MyWorkspacePage = () => {
                             <div className="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400">
                               <Calendar className="w-3 h-3" />
                               <span>{meeting.startDateTime.toLocaleDateString()}</span>
-                              <span>• {meeting.participants.length} participants</span>
+                              <span>• {(meeting as any).participantCount || 0} participants</span>
                             </div>
                             <span className="text-xs text-gray-600 dark:text-gray-400">
                               {meeting.displayDuration}

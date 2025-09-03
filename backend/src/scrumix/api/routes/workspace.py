@@ -61,6 +61,16 @@ async def get_workspace_overview(
             project_response_dict["user_role"] = project_detail["user_role"].value if project_detail["user_role"] else None
             project_responses.append(project_response_dict)
         
+        # Create meeting responses with participant count
+        meeting_responses = []
+        for meeting in upcoming_meetings[:5]:  # Top 5 meetings
+            meeting_response = MeetingResponse.from_orm(meeting)
+            # Add participant count to the response
+            meeting_response_dict = meeting_response.dict()
+            participant_count = len(meeting.meeting_participants) if hasattr(meeting, 'meeting_participants') and meeting.meeting_participants else 0
+            meeting_response_dict["participant_count"] = participant_count
+            meeting_responses.append(meeting_response_dict)
+        
         return {
             "statistics": {
                 "total_projects": total_projects,
@@ -72,7 +82,7 @@ async def get_workspace_overview(
             },
             "projects": project_responses,
             "recent_tasks": [TaskResponse.from_orm(t) for t in recent_tasks[:10]],  # Top 10 tasks
-            "upcoming_meetings": [MeetingResponse.from_orm(m) for m in upcoming_meetings[:5]],  # Top 5 meetings
+            "upcoming_meetings": meeting_responses,  # Top 5 meetings with participant count
             "active_sprints": [SprintResponse.from_orm(s) for s in active_sprints[:3]]  # Top 3 sprints
         }
         
