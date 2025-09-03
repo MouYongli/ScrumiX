@@ -72,18 +72,21 @@ interface DashboardData {
       title: string;
       priority: string;
       assignee: string;
+      assignees?: any[];
     }>;
     inProgress: Array<{
       id: number;
       title: string;
       priority: string;
       assignee: string;
+      assignees?: any[];
     }>;
     done: Array<{
       id: number;
       title: string;
       priority: string;
       assignee: string;
+      assignees?: any[];
     }>;
   };
 }
@@ -178,6 +181,65 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
     }
   };
 
+  // Component for displaying assignee avatars
+  const AssigneeAvatars: React.FC<{ assignees: any[]; className?: string }> = ({ assignees, className = '' }) => {
+    if (!assignees || assignees.length === 0) {
+      return (
+        <div className={`flex items-center text-xs text-gray-500 dark:text-gray-400 ${className}`}>
+          <span>Unassigned</span>
+        </div>
+      );
+    }
+
+    // Process assignees to get display names and initials
+    const processedAssignees = assignees.map(assignee => {
+      let displayName = 'Unknown User';
+      let initials = 'U';
+
+      if (typeof assignee === 'object') {
+        if (assignee.full_name && assignee.full_name.trim()) {
+          displayName = assignee.full_name;
+          initials = displayName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+        } else if (assignee.username && assignee.username.trim()) {
+          displayName = assignee.username;
+          initials = displayName.substring(0, 2).toUpperCase();
+        } else if (assignee.email) {
+          displayName = assignee.email.split('@')[0];
+          initials = displayName.substring(0, 2).toUpperCase();
+        }
+      }
+
+      return { displayName, initials };
+    });
+
+    const displayAssignees = processedAssignees.slice(0, 2);
+    const remainingCount = Math.max(0, assignees.length - 2);
+
+    return (
+      <div className={`flex items-center gap-1 ${className}`}>
+        <div className="flex -space-x-1">
+          {displayAssignees.map((assignee, index) => (
+            <div
+              key={index}
+              className="w-6 h-6 rounded-full bg-blue-500 text-white text-xs font-medium flex items-center justify-center border-2 border-white dark:border-gray-800 hover:z-10 transition-all duration-200 cursor-pointer"
+              title={assignee.displayName}
+            >
+              {assignee.initials}
+            </div>
+          ))}
+          {remainingCount > 0 && (
+            <div
+              className="w-6 h-6 rounded-full bg-gray-400 text-white text-xs font-medium flex items-center justify-center border-2 border-white dark:border-gray-800 hover:z-10 transition-all duration-200 cursor-pointer"
+              title={`+${remainingCount} more`}
+            >
+              +{remainingCount}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
   // Fetch dashboard data
   useEffect(() => {
     const fetchDashboardData = async () => {
@@ -246,12 +308,11 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
           sprint.projectId === parseInt(projectId)
         ) || [];
         
-        // Find current sprint (most recent active sprint)
+        // Find current sprint (active sprint only)
         const currentSprint = projectSprints
-          .filter(sprint => new Date(sprint.endDate) >= new Date())
-          .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime())[0];
+          .find(sprint => sprint.status === 'active') || null;
         
-        // Try to get tasks with assignee information from sprint endpoints
+        // Get tasks from current sprint only
         if (currentSprint) {
           try {
             const sprintBacklogResponse = await api.sprints.getSprintBacklog(currentSprint.id, {
@@ -268,15 +329,25 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                 }
               });
               
-              // If we got tasks with assignee info, use them
+              // Use sprint tasks exclusively for dashboard display
               if (sprintTasks.length > 0) {
-                console.log('Found tasks with assignee info from sprint backlog:', sprintTasks.slice(0, 2));
+                console.log('Found tasks from current sprint backlog:', sprintTasks.slice(0, 2));
                 tasksWithAssignees = sprintTasks;
+              } else {
+                // No tasks in current sprint
+                tasksWithAssignees = [];
               }
+            } else {
+              // No backlog data for current sprint
+              tasksWithAssignees = [];
             }
           } catch (error) {
-            console.warn('Failed to fetch sprint backlog for assignee info:', error);
+            console.warn('Failed to fetch sprint backlog for current sprint:', error);
+            tasksWithAssignees = []; // Clear tasks if sprint data fetch fails
           }
+        } else {
+          // No active sprint, so no tasks to display
+          tasksWithAssignees = [];
         }
         
         // Calculate sprint progress
@@ -375,9 +446,8 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
           });
         }
         
-        // Prepare kanban data (without story points) - ensure no duplicates
-        // Clear tasks if sprint is completed
-        const sprintKanbanData = currentSprint && currentSprint.status === 'completed' ? {
+        // Prepare kanban data - only show tasks if there's an active sprint
+        const sprintKanbanData = !currentSprint ? {
           todo: [],
           inProgress: [],
           done: []
@@ -386,19 +456,22 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
             id: task.id,
             title: task.title,
             priority: task.priority,
-            assignee: getAssigneeDisplay(task.assignees || [])
+            assignee: getAssigneeDisplay(task.assignees || []),
+            assignees: task.assignees || [] // Keep full assignee data for avatar display
           })),
           inProgress: inProgressTasks.map(task => ({
             id: task.id,
             title: task.title,
             priority: task.priority,
-            assignee: getAssigneeDisplay(task.assignees || [])
+            assignee: getAssigneeDisplay(task.assignees || []),
+            assignees: task.assignees || [] // Keep full assignee data for avatar display
           })),
           done: completedTasks.map(task => ({
             id: task.id,
             title: task.title,
             priority: task.priority,
-            assignee: getAssigneeDisplay(task.assignees || [])
+            assignee: getAssigneeDisplay(task.assignees || []),
+            assignees: task.assignees || [] // Keep full assignee data for avatar display
           }))
         };
         
@@ -527,19 +600,22 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
           id: task.id,
           title: task.title,
           priority: task.priority,
-          assignee: getAssigneeDisplay(task.assignees || [])
+          assignee: getAssigneeDisplay(task.assignees || []),
+          assignees: task.assignees || [] // Keep full assignee data for avatar display
         })),
         inProgress: inProgressTasks.map(task => ({
           id: task.id,
           title: task.title,
           priority: task.priority,
-          assignee: getAssigneeDisplay(task.assignees || [])
+          assignee: getAssigneeDisplay(task.assignees || []),
+          assignees: task.assignees || [] // Keep full assignee data for avatar display
         })),
         done: completedTasks.map(task => ({
           id: task.id,
           title: task.title,
           priority: task.priority,
-          assignee: getAssigneeDisplay(task.assignees || [])
+          assignee: getAssigneeDisplay(task.assignees || []),
+          assignees: task.assignees || [] // Keep full assignee data for avatar display
         }))
       };
       
@@ -1393,10 +1469,10 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
               )}
 
               {/* Sprint Status Message */}
-              {dashboardData.currentSprint?.status === 'completed' ? (
-                <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800 rounded-lg">
-                  <p className="text-sm text-gray-700 dark:text-gray-300">
-                    📋 <strong>Sprint Completed:</strong> This sprint has been completed. All tasks have been cleared from the board.
+              {!dashboardData.currentSprint ? (
+                <div className="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                  <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                    ⚠️ <strong>No Active Sprint:</strong> There is currently no active sprint. Please create and start a sprint to see tasks here.
                   </p>
                 </div>
               ) : (
@@ -1437,8 +1513,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                           <h6 className="text-xs font-medium text-gray-900 dark:text-white mb-2 line-clamp-2">
                             {task.title}
                           </h6>
-                          <div className="flex justify-between items-center text-xs">
-                            <span className="text-gray-500 dark:text-gray-400">{task.assignee}</span>
+                          <div className="flex justify-between items-center text-xs mb-2">
                             <div className="flex items-center gap-1">
                               {isUpdatingTask === task.id && (
                                 <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-500"></div>
@@ -1453,11 +1528,15 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                               <span className="text-gray-500 dark:text-gray-400">Task</span>
                             </div>
                           </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-500 dark:text-gray-400">Assignees:</span>
+                            <AssigneeAvatars assignees={task.assignees || []} />
+                          </div>
                         </div>
                       ))}
                       {(!Array.isArray(kanbanData.todo) || kanbanData.todo.length === 0) && (
                         <div className="text-center py-8 text-gray-500 dark:text-gray-400 text-sm">
-                          No tasks in To Do
+                          {!dashboardData.currentSprint ? 'No active sprint' : 'No tasks in To Do'}
                         </div>
                       )}
                     </div>
@@ -1490,8 +1569,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                           <h6 className="text-xs font-medium text-gray-900 dark:text-white mb-2 line-clamp-2">
                             {task.title}
                           </h6>
-                          <div className="flex justify-between items-center text-xs">
-                            <span className="text-gray-500 dark:text-gray-400">{task.assignee}</span>
+                          <div className="flex justify-between items-center text-xs mb-2">
                             <div className="flex items-center gap-1">
                               {isUpdatingTask === task.id && (
                                 <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-500"></div>
@@ -1506,11 +1584,15 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                               <span className="text-gray-500 dark:text-gray-400">Task</span>
                             </div>
                           </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-500 dark:text-gray-400">Assignees:</span>
+                            <AssigneeAvatars assignees={task.assignees || []} />
+                          </div>
                         </div>
                       ))}
                       {(!Array.isArray(kanbanData.inProgress) || kanbanData.inProgress.length === 0) && (
                         <div className="text-center py-8 text-gray-500 dark:text-gray-400 text-sm">
-                          No tasks in progress
+                          {!dashboardData.currentSprint ? 'No active sprint' : 'No tasks in progress'}
                         </div>
                       )}
                     </div>
@@ -1543,8 +1625,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                           <h6 className="text-xs font-medium text-gray-900 dark:text-white mb-2 line-clamp-2">
                             {task.title}
                           </h6>
-                          <div className="flex justify-between items-center text-xs">
-                            <span className="text-gray-500 dark:text-gray-400">{task.assignee}</span>
+                          <div className="flex justify-between items-center text-xs mb-2">
                             <div className="flex items-center gap-1">
                               {isUpdatingTask === task.id && (
                                 <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-500"></div>
@@ -1559,11 +1640,15 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                               <span className="text-gray-500 dark:text-gray-400">Task</span>
                             </div>
                           </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-500 dark:text-gray-400">Assignees:</span>
+                            <AssigneeAvatars assignees={task.assignees || []} />
+                          </div>
                         </div>
                       ))}
                       {(!Array.isArray(kanbanData.done) || kanbanData.done.length === 0) && (
                         <div className="text-center py-8 text-gray-500 dark:text-gray-400 text-sm">
-                          No completed tasks
+                          {!dashboardData.currentSprint ? 'No active sprint' : 'No completed tasks'}
                         </div>
                       )}
                     </div>
