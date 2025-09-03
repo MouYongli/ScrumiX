@@ -593,6 +593,17 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
     return diffDays;
   };
 
+  const canStartSprint = (sprint: Sprint) => {
+    const today = new Date();
+    const sprintStartDate = new Date(sprint.startDate);
+    
+    // Compare dates (ignoring time)
+    const todayDateString = today.toISOString().split('T')[0];
+    const sprintStartDateString = sprintStartDate.toISOString().split('T')[0];
+    
+    return todayDateString === sprintStartDateString;
+  };
+
   // Add useEffect to fetch sprints from API
   useEffect(() => {
     const fetchSprints = async () => {
@@ -675,6 +686,26 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
     
     if (hasActiveSprint) {
       alert('Cannot start a new sprint while another sprint is active. Please complete the current sprint first.');
+      return;
+    }
+
+    // Find the sprint to check its start date
+    const sprintToStart = sprints.find(sprint => sprint.id === sprintId);
+    if (!sprintToStart) {
+      alert('Sprint not found.');
+      return;
+    }
+
+    // Check if current date matches sprint start date
+    const today = new Date();
+    const sprintStartDate = new Date(sprintToStart.startDate);
+    
+    // Compare dates (ignoring time)
+    const todayDateString = today.toISOString().split('T')[0];
+    const sprintStartDateString = sprintStartDate.toISOString().split('T')[0];
+    
+    if (todayDateString !== sprintStartDateString) {
+      alert('⚠️ The start date doesn\'t match today. Please update the Sprint information before starting.');
       return;
     }
     
@@ -1187,18 +1218,21 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
                     <div className="relative group">
                       <button
                         onClick={() => handleStartSprint(sprint.id)}
-                        disabled={hasActiveSprint}
+                        disabled={hasActiveSprint || !canStartSprint(sprint)}
                         className={`px-3 py-1 rounded text-sm transition-colors ${
-                          hasActiveSprint
+                          hasActiveSprint || !canStartSprint(sprint)
                             ? 'bg-gray-400 cursor-not-allowed text-gray-600'
                             : 'bg-green-600 hover:bg-green-700 text-white'
                         }`}
                       >
                         Start Sprint
                       </button>
-                      {hasActiveSprint && (
+                      {(hasActiveSprint || !canStartSprint(sprint)) && (
                         <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 px-3 py-2 bg-gray-900 text-white text-xs rounded-lg opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-10">
-                          Complete the active sprint first
+                          {hasActiveSprint 
+                            ? 'Complete the active sprint first'
+                            : '⚠️ The start date doesn\'t match today. Please update the Sprint information before starting.'
+                          }
                           <div className="absolute top-full left-1/2 transform -translate-x-1/2 border-4 border-transparent border-t-gray-900"></div>
                         </div>
                       )}
