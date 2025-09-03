@@ -386,36 +386,6 @@ const NotificationsPage: React.FC = () => {
               )}
             </div>
           </div>
-
-          {/* Stats */}
-          {stats && (
-            <div className="mt-6 grid grid-cols-1 md:grid-cols-4 gap-4">
-              <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
-                <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                  {stats.totalNotifications}
-                </div>
-                <div className="text-sm text-gray-600 dark:text-gray-400">Total</div>
-              </div>
-              <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
-                <div className="text-2xl font-bold text-blue-600">
-                  {stats.unreadCount}
-                </div>
-                <div className="text-sm text-gray-600 dark:text-gray-400">Unread</div>
-              </div>
-              <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
-                <div className="text-2xl font-bold text-green-600">
-                  {stats.readCount}
-                </div>
-                <div className="text-sm text-gray-600 dark:text-gray-400">Read</div>
-              </div>
-              <div className="bg-white dark:bg-gray-800 p-4 rounded-lg border border-gray-200 dark:border-gray-700">
-                <div className="text-2xl font-bold text-gray-600">
-                  {stats.dismissedCount}
-                </div>
-                <div className="text-sm text-gray-600 dark:text-gray-400">Dismissed</div>
-              </div>
-            </div>
-          )}
         </div>
 
         {/* Enhanced Search and Filters */}
