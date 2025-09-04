@@ -24,6 +24,7 @@ class DocumentationCRUD(CRUDBase[Documentation, DocumentationCreate, Documentati
             title=documentation_create.title,
             type=documentation_create.type,
             description=documentation_create.description,
+            content=documentation_create.content,
             file_url=documentation_create.file_url,
             project_id=documentation_create.project_id
         )

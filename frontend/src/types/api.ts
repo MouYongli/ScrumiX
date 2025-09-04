@@ -274,6 +274,7 @@ export interface Documentation {
   title: string;
   type: DocumentationType;
   description?: string;
+  content?: string;
   file_url?: string;
   project_id: number;
   created_at: string;
@@ -290,6 +291,7 @@ export interface DocumentationCreate {
   title: string;
   type: DocumentationType;
   description?: string;
+  content?: string;
   file_url?: string;
   project_id: number;
   author_ids?: number[];
@@ -299,6 +301,7 @@ export interface DocumentationUpdate {
   title?: string;
   type?: DocumentationType;
   description?: string;
+  content?: string;
   file_url?: string;
   author_ids?: number[];
 }

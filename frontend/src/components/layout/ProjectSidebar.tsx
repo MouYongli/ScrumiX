@@ -234,7 +234,7 @@ const ProjectSidebar = forwardRef<ProjectSidebarRef, ProjectSidebarProps>(({
       icon: Calendar,
     },
     {
-      name: 'Documentation',
+      name: 'Wiki',
       href: `/project/${projectId}/documentation`,
       icon: FileText,
     },

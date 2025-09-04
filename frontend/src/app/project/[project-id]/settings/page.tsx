@@ -416,8 +416,8 @@ const ProjectSettings: React.FC<ProjectSettingsProps> = ({ params }) => {
 
           <div className="flex items-center justify-between">
             <div>
-              <h4 className="font-medium text-gray-900 dark:text-white">Documentation reminders</h4>
-              <p className="text-sm text-gray-500 dark:text-gray-400">Get notified when new documentation is added</p>
+              <h4 className="font-medium text-gray-900 dark:text-white">Wiki reminders</h4>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Get notified when new wiki pages are added</p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer">
               <input
