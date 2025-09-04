@@ -13,6 +13,7 @@ class MeetingAgenda(Base):
     id = Column(Integer, primary_key=True, index=True, autoincrement=True)
     meeting_id = Column(Integer, ForeignKey("meetings.id"), nullable=False, index=True)
     title = Column(String(500), nullable=False, comment="Agenda item title/description")
+    order_index = Column(Integer, nullable=False, default=0, index=True, comment="Order of agenda item in the meeting")
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
 

@@ -1470,12 +1470,25 @@ const MeetingDetail = () => {
     setAgendaLoading(true);
     try {
       // Send reorder request to backend
-      console.log('DEBUG: newAgenda before mapping:', newAgenda);
-      const agendaIds = newAgenda.map(item => {
-        console.log('DEBUG: mapping item:', item, 'agendaId:', item.agendaId);
-        return item.agendaId;
+      console.log('DEBUG: newAgenda items:', newAgenda);
+      
+      const agendaIds = newAgenda.map((item, index) => {
+        console.log(`DEBUG: Item ${index}:`, item);
+        console.log(`DEBUG: Item keys:`, Object.keys(item || {}));
+        
+        if (!item) {
+          throw new Error(`Agenda item at index ${index} is null or undefined`);
+        }
+        
+        // Check for both possible field names
+        const id = item.agendaId || item.id;
+        if (typeof id !== 'number') {
+          console.error('Invalid agenda item:', item);
+          throw new Error(`Invalid agenda item at index ${index}: missing or invalid agendaId/id (got ${typeof id})`);
+        }
+        return id;
       });
-      console.log('DEBUG: final agendaIds:', agendaIds);
+      
       const response = await api.meetingAgenda.reorder(agendaIds);
       
       if (response.error) {

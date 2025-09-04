@@ -74,6 +74,7 @@ export interface ApiMeetingAgenda {
   agendaId: number;                // camelCase (alias in backend)
   meetingId: number;               // camelCase (alias in backend)
   title: string;
+  orderIndex: number;              // Order of agenda item in the meeting
   createdAt: string;               // camelCase (alias in backend)
   updatedAt: string;               // camelCase (alias in backend)
 }

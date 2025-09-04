@@ -68,45 +68,75 @@ def create_meeting_agenda(
     return MeetingAgendaResponse.model_validate(db_agenda)
 
 
-@router.post("/reorder")
-async def reorder_agenda_items(
-    request: Request,
+@router.post("/reorder", response_model=List[MeetingAgendaResponse])
+def reorder_agenda_items(
+    reorder_request: MeetingAgendaReorderRequest,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
     """Reorder agenda items by providing a new order of agenda IDs."""
     try:
-        # Get raw request body for debugging
-        body = await request.body()
-        print(f"DEBUG: Raw request body: {body}")
+        # Validate all agenda items exist
+        for agenda_id in reorder_request.agenda_ids:
+            agenda_obj = meeting_agenda.get(db=db, id=agenda_id)
+            if not agenda_obj:
+                raise HTTPException(
+                    status_code=404, 
+                    detail=f"Agenda item with ID {agenda_id} not found"
+                )
         
-        # Parse JSON manually for debugging
-        body_data = json.loads(body)
-        print(f"DEBUG: Parsed body data: {body_data}")
-        print(f"DEBUG: Body data type: {type(body_data)}")
+        # Reorder the items
+        reordered_items = meeting_agenda.reorder_agenda_items(
+            db=db, agenda_ids=reorder_request.agenda_ids
+        )
         
-        # Check if agenda_ids exists
-        if 'agenda_ids' not in body_data:
-            print(f"DEBUG: agenda_ids not found in body_data. Keys: {list(body_data.keys())}")
-            return {"error": "agenda_ids field is missing", "received": body_data}
+        return [MeetingAgendaResponse.model_validate(item) for item in reordered_items]
         
-        agenda_ids = body_data['agenda_ids']
-        print(f"DEBUG: agenda_ids: {agenda_ids}")
-        print(f"DEBUG: agenda_ids type: {type(agenda_ids)}")
-        
-        # Basic validation
-        if not isinstance(agenda_ids, list):
-            return {"error": "agenda_ids must be a list", "received_type": str(type(agenda_ids))}
-        
-        if not agenda_ids:
-            return {"error": "agenda_ids cannot be empty"}
-        
-        # For now, just return success
-        return {"success": True, "received_ids": agenda_ids, "count": len(agenda_ids)}
-        
+    except HTTPException:
+        raise
     except Exception as e:
-        print(f"DEBUG: Error processing request: {e}")
-        return {"error": f"Invalid request format: {e}"}
+        raise HTTPException(status_code=500, detail=f"Error reordering agenda items: {str(e)}")
+
+
+@router.get("/debug-serialization/{meeting_id}")
+def debug_agenda_serialization(
+    meeting_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Debug endpoint to check agenda item serialization."""
+    agenda_items = meeting_agenda.get_by_meeting_id(db=db, meeting_id=meeting_id)
+    
+    result = []
+    for item in agenda_items:
+        try:
+            # Try to serialize each item
+            serialized = MeetingAgendaResponse.model_validate(item)
+            result.append({
+                "raw_item": {
+                    "id": item.id,
+                    "meeting_id": item.meeting_id,
+                    "title": item.title,
+                    "order_index": getattr(item, 'order_index', 'MISSING'),
+                    "created_at": str(item.created_at),
+                    "updated_at": str(item.updated_at)
+                },
+                "serialized": serialized.model_dump(),
+                "status": "success"
+            })
+        except Exception as e:
+            result.append({
+                "raw_item": {
+                    "id": getattr(item, 'id', 'MISSING'),
+                    "meeting_id": getattr(item, 'meeting_id', 'MISSING'),
+                    "title": getattr(item, 'title', 'MISSING'),
+                    "order_index": getattr(item, 'order_index', 'MISSING'),
+                },
+                "error": str(e),
+                "status": "error"
+            })
+    
+    return {"agenda_items": result, "count": len(agenda_items)}
 
 
 @router.get("/{agenda_id}", response_model=MeetingAgendaResponse)
@@ -136,6 +166,23 @@ def update_meeting_agenda(
     
     db_agenda = meeting_agenda.update(db=db, db_obj=db_agenda, obj_in=agenda_in)
     return MeetingAgendaResponse.model_validate(db_agenda)
+
+
+@router.put("/{agenda_id}/order", response_model=MeetingAgendaResponse)
+def update_agenda_order(
+    agenda_id: int,
+    new_order_index: int = Query(..., ge=1, description="New order position for the agenda item"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """Update the order of a specific agenda item."""
+    updated_agenda = meeting_agenda.update_order(
+        db=db, agenda_id=agenda_id, new_order=new_order_index
+    )
+    if not updated_agenda:
+        raise HTTPException(status_code=404, detail="Meeting agenda item not found")
+    
+    return MeetingAgendaResponse.model_validate(updated_agenda)
 
 
 @router.delete("/{agenda_id}")

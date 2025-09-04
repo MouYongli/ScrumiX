@@ -447,7 +447,7 @@ export const api = {
     getByMeeting: (meeting_id: number) => 
       jsonFetch<ApiMeetingAgenda[]>(`/api/v1/meeting-agendas/meeting/${meeting_id}`),
     
-    create: (data: { meeting_id: number; title: string }) => 
+    create: (data: { meeting_id: number; title: string; order_index?: number }) => 
       jsonFetch<ApiMeetingAgenda>('/api/v1/meeting-agendas/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -461,11 +461,16 @@ export const api = {
         body: JSON.stringify(agenda_titles),
       }),
     
-    update: (id: number, data: { title: string }) => 
+    update: (id: number, data: { title?: string; order_index?: number }) => 
       jsonFetch<ApiMeetingAgenda>(`/api/v1/meeting-agendas/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
+      }),
+    
+    updateOrder: (id: number, new_order_index: number) => 
+      jsonFetch<ApiMeetingAgenda>(`/api/v1/meeting-agendas/${id}/order?new_order_index=${new_order_index}`, {
+        method: 'PUT',
       }),
     
     delete: (id: number) => jsonFetch<void>(`/api/v1/meeting-agendas/${id}`, {
