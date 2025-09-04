@@ -3583,12 +3583,6 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                   const developerName = developer.full_name || developer.username || developer.email;
                   const initials = developerName.split(' ').map(n => n[0]).join('').toUpperCase();
                   
-                  // Find stories assigned to this developer (by label or other criteria)
-                  const developerStories = (sprint?.stories || []).filter(s => 
-                    s.label && s.label.toLowerCase().includes(developerName.toLowerCase())
-                  );
-                  const developerPoints = developerStories.reduce((sum, s) => sum + (s.story_point || 0), 0);
-                  const completedPoints = developerStories.filter(s => s.status === BacklogStatus.DONE).reduce((sum, s) => sum + (s.story_point || 0), 0);
                   
                   return (
                     <div key={developer.id} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4">
@@ -3604,20 +3598,6 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                         </div>
                       </div>
                       <div className="space-y-2">
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-600 dark:text-gray-400">Stories Assigned</span>
-                          <span className="font-medium text-gray-900 dark:text-white">{developerStories.length}</span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span className="text-gray-600 dark:text-gray-400">Story Points</span>
-                          <span className="font-medium text-gray-900 dark:text-white">{completedPoints} / {developerPoints}</span>
-                        </div>
-                        <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
-                          <div 
-                            className="bg-green-600 h-2 rounded-full" 
-                            style={{ width: `${developerPoints > 0 ? (completedPoints / developerPoints) * 100 : 0}%` }}
-                          ></div>
-                        </div>
                         <div className="text-xs text-gray-500 dark:text-gray-400">
                           Joined: <FormattedDate date={new Date(developer.joined_at)} short={true} />
                         </div>

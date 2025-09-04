@@ -304,6 +304,7 @@ const SignupPage = () => {
 
           {/* Social signup */}
           <div className="space-y-3 mb-6">
+            {/* Google signup - temporarily hidden
             <button
               onClick={() => handleSocialSignup('google')}
               className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
@@ -313,6 +314,8 @@ const SignupPage = () => {
               </svg>
               <span className="text-gray-700 dark:text-gray-300">Sign up with Google</span>
             </button>
+            */}
+            {/* GitHub signup - temporarily hidden
             <button
               onClick={() => handleSocialSignup('github')}
               className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
@@ -320,6 +323,7 @@ const SignupPage = () => {
               <Github className="w-5 h-5" />
               <span className="text-gray-700 dark:text-gray-300">Sign up with GitHub</span>
             </button>
+            */}
             <button
               onClick={handleKeycloakSignup}
               className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"

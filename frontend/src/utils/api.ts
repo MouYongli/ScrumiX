@@ -139,6 +139,14 @@ export const api = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(passwordData)
       }),
+    deleteAccount: () => {
+      // Clear all cache entries since user will be deleted
+      clearApiCache();
+      
+      return jsonFetch<{ message: string }>('/api/v1/users/me', {
+        method: 'DELETE'
+      });
+    },
   },
   
   workspace: {
