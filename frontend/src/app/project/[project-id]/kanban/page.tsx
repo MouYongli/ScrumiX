@@ -430,7 +430,6 @@ const TimelineView: React.FC<{
                   <div class="story-timeline-title">${task.title}</div>
                   <div class="story-timeline-meta">
                     <span class="story-priority">${getPriorityIcon(task.priority)} ${task.priority.toUpperCase()}</span>
-                    <span class="story-points">${task.storyPoints}SP</span>
                     <span class="story-assignees">${task.assignees.join(', ') || 'Unassigned'}</span>
                   </div>
                   ${task.labels.length > 0 ? `
@@ -1696,7 +1695,6 @@ const KanbanView: React.FC<{
                     <span className={`px-2 py-1 rounded-full ${getPriorityColor(task.priority)}`}>
                       {getPriorityIcon(task.priority)} {task.priority.toUpperCase()}
                     </span>
-                    <span className="font-medium">{task.storyPoints}SP</span>
                   </div>
                 </div>
 
@@ -1801,7 +1799,7 @@ const CreateTaskModal: React.FC<{
       assignees: formData.assignees,
       priority: formData.priority,
       status: formData.status,
-      storyPoints: 1, // Default story points
+      storyPoints: 0, // Tasks don't have story points
       labels: formData.labels,
       sprintId: 1, // Default sprint ID
       backlogId: 1 // Default backlog ID
@@ -2275,7 +2273,7 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ params }) => {
           description: apiTask.description || '',
           assignees: uniqueAssigneeNames,
           priority: apiTask.priority?.toLowerCase() || 'medium',
-          storyPoints: apiTask.story_point || 1,
+          storyPoints: 0, // Tasks don't have story points
           status: mappedStatus,
           labels: [], // Tasks don't have labels in the current model
           dueDate: undefined, // Tasks don't have due dates in the current model

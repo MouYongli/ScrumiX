@@ -156,6 +156,41 @@ async def revoke_all_user_sessions(
     count = session_crud.deactivate_user_sessions(db, current_user.id)
     return {"message": f"Revoked {count} sessions"}
 
+@router.delete("/me")
+async def delete_current_user_account(
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete current user's own account"""
+    try:
+        # Check if this is a virtual user (Keycloak user)
+        if hasattr(current_user, '__class__') and current_user.__class__.__name__ == 'VirtualUser':
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Keycloak users cannot be deleted through this API. Please contact your administrator."
+            )
+        
+        # Delete user account from database
+        success = user_crud.delete_user(db, current_user.id)
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User account not found"
+            )
+        
+        # Deactivate all user sessions
+        session_crud.deactivate_user_sessions(db, current_user.id)
+        
+        return {"message": "Account deleted successfully"}
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete account: {str(e)}"
+        )
+
 # Admin related routes
 @router.get("/", response_model=List[UserResponse])
 async def get_users(

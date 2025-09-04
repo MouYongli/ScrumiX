@@ -8,6 +8,7 @@ import {
   ChevronDown, X, Loader2, BookOpen, User, Calendar, Download
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
+import ConfirmationModal from '@/components/common/ConfirmationModal';
 import { documentationApi } from '@/utils/api';
 import { api } from '@/utils/api';
 import { DocumentationType, DocumentationCreate } from '@/types/api';
@@ -39,9 +40,33 @@ const CreateDocumentation: React.FC<CreateDocumentationProps> = ({ params }) => 
     email: string;
     username?: string;
   }>>([]);
+  
+  // Unsaved changes modal state
+  const [unsavedChangesModalOpen, setUnsavedChangesModalOpen] = useState(false);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [pendingNavigation, setPendingNavigation] = useState<string | null>(null);
 
   // Editor references
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Track unsaved changes
+  useEffect(() => {
+    const hasChanges = Boolean(title.trim() || content.trim() || description.trim() || selectedAuthors.length > 0);
+    setHasUnsavedChanges(hasChanges);
+  }, [title, content, description, selectedAuthors]);
+
+  // Prevent navigation with unsaved changes
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedChanges]);
 
   // Fetch project data
   useEffect(() => {
@@ -184,7 +209,8 @@ const CreateDocumentation: React.FC<CreateDocumentationProps> = ({ params }) => 
         throw new Error(response.error);
       }
 
-      // Navigate back to documentation list
+      // Mark as saved and navigate back
+      setHasUnsavedChanges(false);
       router.push(`/project/${projectId}/documentation`);
     } catch (error) {
       console.error('Error saving document:', error);
@@ -202,15 +228,34 @@ const CreateDocumentation: React.FC<CreateDocumentationProps> = ({ params }) => 
     }
   };
 
+  // Handle navigation with unsaved changes check
+  const handleNavigateAway = (destination: string) => {
+    if (hasUnsavedChanges) {
+      setPendingNavigation(destination);
+      setUnsavedChangesModalOpen(true);
+    } else {
+      router.push(destination);
+    }
+  };
+
   // Cancel and go back
   const handleCancel = () => {
-    if (title.trim() || content.trim() || description.trim()) {
-      if (window.confirm('You have unsaved changes. Are you sure you want to leave?')) {
-        router.push(`/project/${projectId}/documentation`);
-      }
-    } else {
-      router.push(`/project/${projectId}/documentation`);
+    handleNavigateAway(`/project/${projectId}/documentation`);
+  };
+
+  // Confirm navigation away with unsaved changes
+  const confirmNavigateAway = () => {
+    if (pendingNavigation) {
+      setHasUnsavedChanges(false);
+      router.push(pendingNavigation);
     }
+    setUnsavedChangesModalOpen(false);
+    setPendingNavigation(null);
+  };
+
+  const cancelNavigateAway = () => {
+    setUnsavedChangesModalOpen(false);
+    setPendingNavigation(null);
   };
 
   // Download document as markdown file
@@ -305,6 +350,12 @@ const CreateDocumentation: React.FC<CreateDocumentationProps> = ({ params }) => 
               <ArrowLeft className="w-5 h-5" />
               <span>Back to Wiki</span>
             </button>
+            {hasUnsavedChanges && (
+              <div className="flex items-center space-x-2 text-orange-600 dark:text-orange-400 text-sm">
+                <div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse"></div>
+                <span>Unsaved changes</span>
+              </div>
+            )}
           </div>
           
           <div className="flex items-center space-x-3">
@@ -622,6 +673,18 @@ You can use Markdown formatting:
             </div>
           </div>
         </div>
+
+        {/* Unsaved Changes Confirmation Modal */}
+        <ConfirmationModal
+          isOpen={unsavedChangesModalOpen}
+          onClose={cancelNavigateAway}
+          onConfirm={confirmNavigateAway}
+          title="Unsaved Changes"
+          message="You have unsaved changes that will be lost if you leave this page. Are you sure you want to continue?"
+          confirmText="Leave Page"
+          cancelText="Stay Here"
+          variant="warning"
+        />
       </div>
     </div>
   );

@@ -8,6 +8,7 @@ import {
   ChevronDown, X, Loader2, BookOpen, User, Calendar, Download
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
+import ConfirmationModal from '@/components/common/ConfirmationModal';
 import { documentationApi } from '@/utils/api';
 import { api } from '@/utils/api';
 import { DocumentationType, DocumentationUpdate, Documentation } from '@/types/api';
@@ -44,6 +45,18 @@ const EditDocumentation: React.FC<EditDocumentationProps> = ({ params }) => {
     username?: string;
   }>>([]);
 
+  // Track changes for unsaved detection
+  const [originalData, setOriginalData] = useState({
+    title: '',
+    content: '',
+    description: '',
+    type: DocumentationType.OTHER,
+    selectedAuthors: [] as number[]
+  });
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [unsavedChangesModalOpen, setUnsavedChangesModalOpen] = useState(false);
+  const [pendingNavigation, setPendingNavigation] = useState<string | null>(null);
+
   // Editor references
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -64,12 +77,23 @@ const EditDocumentation: React.FC<EditDocumentationProps> = ({ params }) => {
         
         if (docResponse.data) {
           const doc = docResponse.data;
-          setTitle(doc.title);
-          setDescription(doc.description || '');
-          setContent(doc.content || '');
-          setType(doc.type);
-          setSelectedAuthors(doc.authors?.map(author => author.id) || []);
-          setDocumentTitle(doc.title);
+          const docData = {
+            title: doc.title,
+            content: doc.content || '',
+            description: doc.description || '',
+            type: doc.type,
+            selectedAuthors: doc.authors?.map(author => author.id) || []
+          };
+          
+          setTitle(docData.title);
+          setDescription(docData.description);
+          setContent(docData.content);
+          setType(docData.type);
+          setSelectedAuthors(docData.selectedAuthors);
+          setDocumentTitle(docData.title);
+          
+          // Store original data for change detection
+          setOriginalData(docData);
         }
 
         // Fetch project name
@@ -93,6 +117,31 @@ const EditDocumentation: React.FC<EditDocumentationProps> = ({ params }) => {
 
     fetchData();
   }, [projectId, docId]);
+
+  // Track unsaved changes
+  useEffect(() => {
+    const hasChanges = (
+      title !== originalData.title ||
+      content !== originalData.content ||
+      description !== originalData.description ||
+      type !== originalData.type ||
+      JSON.stringify(selectedAuthors.sort()) !== JSON.stringify(originalData.selectedAuthors.sort())
+    );
+    setHasUnsavedChanges(hasChanges);
+  }, [title, content, description, type, selectedAuthors, originalData]);
+
+  // Prevent navigation with unsaved changes
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedChanges]);
 
   // Breadcrumb navigation
   const breadcrumbItems = [
@@ -204,7 +253,8 @@ const EditDocumentation: React.FC<EditDocumentationProps> = ({ params }) => {
         throw new Error(response.error);
       }
 
-      // Navigate back to documentation list
+      // Mark as saved and navigate back
+      setHasUnsavedChanges(false);
       router.push(`/project/${projectId}/documentation`);
     } catch (error) {
       console.error('Error saving document:', error);
@@ -222,9 +272,34 @@ const EditDocumentation: React.FC<EditDocumentationProps> = ({ params }) => {
     }
   };
 
+  // Handle navigation with unsaved changes check
+  const handleNavigateAway = (destination: string) => {
+    if (hasUnsavedChanges) {
+      setPendingNavigation(destination);
+      setUnsavedChangesModalOpen(true);
+    } else {
+      router.push(destination);
+    }
+  };
+
   // Cancel and go back
   const handleCancel = () => {
-    router.push(`/project/${projectId}/documentation`);
+    handleNavigateAway(`/project/${projectId}/documentation`);
+  };
+
+  // Confirm navigation away with unsaved changes
+  const confirmNavigateAway = () => {
+    if (pendingNavigation) {
+      setHasUnsavedChanges(false);
+      router.push(pendingNavigation);
+    }
+    setUnsavedChangesModalOpen(false);
+    setPendingNavigation(null);
+  };
+
+  const cancelNavigateAway = () => {
+    setUnsavedChangesModalOpen(false);
+    setPendingNavigation(null);
   };
 
   // Download document as markdown file
@@ -355,6 +430,12 @@ const EditDocumentation: React.FC<EditDocumentationProps> = ({ params }) => {
               <ArrowLeft className="w-5 h-5" />
               <span>Back to Wiki</span>
             </button>
+            {hasUnsavedChanges && (
+              <div className="flex items-center space-x-2 text-orange-600 dark:text-orange-400 text-sm">
+                <div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse"></div>
+                <span>Unsaved changes</span>
+              </div>
+            )}
           </div>
           
           <div className="flex items-center space-x-3">
@@ -672,6 +753,18 @@ You can use Markdown formatting:
             </div>
           </div>
         </div>
+
+        {/* Unsaved Changes Confirmation Modal */}
+        <ConfirmationModal
+          isOpen={unsavedChangesModalOpen}
+          onClose={cancelNavigateAway}
+          onConfirm={confirmNavigateAway}
+          title="Unsaved Changes"
+          message="You have unsaved changes that will be lost if you leave this page. Are you sure you want to continue?"
+          confirmText="Leave Page"
+          cancelText="Stay Here"
+          variant="warning"
+        />
       </div>
     </div>
   );
