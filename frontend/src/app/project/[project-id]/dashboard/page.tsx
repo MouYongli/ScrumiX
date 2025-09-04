@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import FavoriteButton from '@/components/common/FavoriteButton';
 import Breadcrumb from '@/components/common/Breadcrumb';
+import { useDateFormat } from '@/hooks/useDateFormat';
 import { Timeline } from 'vis-timeline/standalone';
 import { DataSet } from 'vis-data/standalone';
 import 'vis-timeline/styles/vis-timeline-graph2d.css';
@@ -19,6 +20,60 @@ import { ProjectStatus, TaskStatus } from '@/types/enums';
 interface ProjectDashboardProps {
   params: Promise<{ 'project-id': string }>;
 }
+
+// Component for rendering user-aware formatted dates and times
+const FormattedDateTime: React.FC<{ 
+  date: Date; 
+  includeTime?: boolean; 
+  short?: boolean;
+}> = ({ date, includeTime = false, short = false }) => {
+  const [formattedDateTime, setFormattedDateTime] = useState<string>(
+    includeTime 
+      ? `${date.toLocaleDateString()} ${date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`
+      : date.toLocaleDateString()
+  );
+  const { formatDate, formatDateShort } = useDateFormat();
+
+  useEffect(() => {
+    let isMounted = true;
+    
+    const format = async () => {
+      try {
+        // When includeTime is true, always use formatDate regardless of short flag
+        // formatDateShort doesn't support time display
+        const result = includeTime 
+          ? await formatDate(date, true)
+          : short 
+            ? await formatDateShort(date)
+            : await formatDate(date, false);
+        
+        if (isMounted) {
+          setFormattedDateTime(result);
+        }
+      } catch (error) {
+        console.error('Error formatting date:', error);
+        // Fallback to simple formatting
+        if (isMounted) {
+          setFormattedDateTime(
+            includeTime 
+              ? `${date.toLocaleDateString()} ${date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`
+              : date.toLocaleDateString()
+          );
+        }
+      }
+    };
+
+    // Add a small delay to batch API calls
+    const timeoutId = setTimeout(format, 100);
+    
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+    };
+  }, [date, includeTime, short, formatDate, formatDateShort]);
+
+  return <span>{formattedDateTime}</span>;
+};
 
 // Interface for computed dashboard data
 interface DashboardData {
@@ -63,7 +118,7 @@ interface DashboardData {
     id: number;
     title: string;
     type: string;
-    time: string;
+    startDatetime: string;
     attendees: number;
   }>;
   sprintKanbanData: {
@@ -800,19 +855,29 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
         // Fetch recent activities from multiple sources
         const recentActivities = await fetchRecentActivities(parseInt(projectId));
         
-        // Prepare upcoming meetings
-        const upcomingMeetings = projectMeetings.slice(0, 3).map(meeting => ({
-          id: meeting.id,
-          title: meeting.title,
-          type: meeting.meetingType,
-          time: new Date(meeting.startDatetime).toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-          }),
-          attendees: 0 // Backend doesn't provide attendee count yet
-        }));
+        // Prepare upcoming meetings with participant count
+        const upcomingMeetings = await Promise.all(
+          projectMeetings.slice(0, 3).map(async (meeting) => {
+            // Fetch participants for each meeting
+            let participantCount = 0;
+            try {
+              const participantsResponse = await api.meetingParticipants.getParticipantsCount(meeting.id);
+              if (!participantsResponse.error && participantsResponse.data) {
+                participantCount = participantsResponse.data.participants_count;
+              }
+            } catch (error) {
+              console.warn(`Failed to fetch participants for meeting ${meeting.id}:`, error);
+            }
+
+            return {
+              id: meeting.id,
+              title: meeting.title,
+              type: meeting.meetingType,
+              startDatetime: meeting.startDatetime, // Keep raw datetime for FormattedDateTime component
+              attendees: participantCount
+            };
+          })
+        );
         
         // Update dashboard data with calculated project progress
         const projectWithProgress = project ? {
@@ -1772,15 +1837,16 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                   Kanban
                 </button>
                 <button
-                  onClick={() => setSprintViewType('timeline')}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                    sprintViewType === 'timeline'
-                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
-                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-                  }`}
+                  onClick={() => {}} // Disabled - no action
+                  disabled={true}
+                  className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors text-gray-400 dark:text-gray-500 cursor-not-allowed opacity-60"
+                  title="Timeline view is in progress - coming soon"
                 >
                   <BarChart4 className="w-4 h-4" />
                   Timeline
+                  <span className="ml-1 text-xs bg-yellow-100 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 px-1.5 py-0.5 rounded-full">
+                    In Progress
+                  </span>
                 </button>
                 <button
                   onClick={() => setSprintViewType('calendar')}
@@ -2044,50 +2110,159 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                 </div>
               )}
 
-              {/* Calendar View */}
+                              {/* Calendar View - Sprint-Focused Preview */}
               {sprintViewType === 'calendar' && (
-                <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
-                  <div className="grid grid-cols-7 gap-1 mb-2">
-                    {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
-                      <div key={day} className="text-center text-xs font-medium text-gray-600 dark:text-gray-400 p-2">
+                  <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+                    {/* Calendar Header */}
+                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <CalendarDays className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                          <h6 className="text-sm font-semibold text-gray-900 dark:text-white">
+                            Sprint Calendar Preview
+                          </h6>
+                        </div>
+                        {dashboardData.currentSprint && (
+                          <div className="text-xs text-gray-600 dark:text-gray-400">
+                            <FormattedDateTime date={new Date(dashboardData.currentSprint.startDate)} includeTime={false} short={true} />
+                            {' - '}
+                            <FormattedDateTime date={new Date(dashboardData.currentSprint.endDate)} includeTime={false} short={true} />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {dashboardData.currentSprint ? (
+                      <div className="p-4">
+                        {/* Week Days Header */}
+                        <div className="grid grid-cols-7 gap-1 mb-3">
+                          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                            <div key={day} className="text-center text-xs font-medium text-gray-500 dark:text-gray-400 py-2">
                         {day}
                       </div>
                     ))}
                   </div>
+
+                        {/* Calendar Grid - Show current sprint duration */}
                   <div className="grid grid-cols-7 gap-1">
-                    {Array.from({ length: 14 }, (_, i) => {
-                      const date = i + 1;
-                                             const tasksForDay = [...kanbanData.todo, ...kanbanData.inProgress]
-                         .filter((_, taskIndex) => (taskIndex + date) % 7 < 3);
+                          {(() => {
+                            const startDate = new Date(dashboardData.currentSprint.startDate);
+                            const endDate = new Date(dashboardData.currentSprint.endDate);
+                            const today = new Date();
+                            
+                            // Create array of dates for the sprint period
+                            const sprintDates: Date[] = [];
+                            const currentDate = new Date(startDate);
+                            
+                            // Start from the beginning of the week containing sprint start
+                            currentDate.setDate(currentDate.getDate() - currentDate.getDay());
+                            
+                            // Generate dates for 2-3 weeks (14-21 days) to cover most sprint durations
+                            for (let i = 0; i < 21; i++) {
+                              sprintDates.push(new Date(currentDate));
+                              currentDate.setDate(currentDate.getDate() + 1);
+                              
+                              // Stop if we've gone well past the sprint end date
+                              if (currentDate > endDate && i >= 13) break;
+                            }
+
+                            return sprintDates.map((date, index) => {
+                              const dateStr = date.toISOString().split('T')[0];
+                              const isInSprint = date >= startDate && date <= endDate;
+                              const isToday = date.toDateString() === today.toDateString();
+                              const isPastDate = date < today;
+                              
+                              // Distribute meetings across sprint dates (mock distribution)
+                              const meetingsForDay = dashboardData.upcomingMeetings.filter((_, meetingIndex) => {
+                                const meetingDate = new Date(dashboardData.upcomingMeetings[meetingIndex]?.startDatetime);
+                                return meetingDate.toDateString() === date.toDateString();
+                              });
+                              
+                              // No tasks in calendar preview - only meetings and personal notes
+                              const tasksForDay: any[] = [];
                       
                       return (
-                        <div key={date} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded p-1 min-h-[60px]">
-                          <div className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                            Mar {date}
+                                <div
+                                  key={index}
+                                  className={`min-h-[70px] border border-gray-200 dark:border-gray-700 rounded-md p-1 transition-colors ${
+                                    !isInSprint 
+                                      ? 'bg-gray-50 dark:bg-gray-900/30 opacity-60' 
+                                      : isToday 
+                                        ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-600'
+                                        : 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                                  }`}
+                                >
+                                  {/* Date Number */}
+                                  <div className={`text-xs font-medium mb-1 ${
+                                    isToday 
+                                      ? 'w-5 h-5 bg-blue-600 text-white rounded-full flex items-center justify-center text-[10px] font-bold'
+                                      : isInSprint 
+                                        ? 'text-gray-900 dark:text-white' 
+                                        : 'text-gray-400 dark:text-gray-600'
+                                  }`}>
+                                    {date.getDate()}
                           </div>
-                          <div className="space-y-1">
-                            {tasksForDay.slice(0, 2).map((task) => (
-                              <div 
-                                key={task.id}
-                                className={`text-xs px-1 py-0.5 rounded truncate ${
-                                  task.priority === 'high' ? 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400' :
-                                  task.priority === 'medium' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-400' :
-                                  'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400'
-                                }`}
-                              >
-                                {task.title}
-                              </div>
-                            ))}
-                            {tasksForDay.length > 2 && (
-                              <div className="text-xs text-gray-500 dark:text-gray-400">
-                                +{tasksForDay.length - 2} more
-                              </div>
-                            )}
+
+                                  {/* Items for this date */}
+                                  <div className="space-y-0.5">
+                                    {/* Meetings */}
+                                    {meetingsForDay.slice(0, 1).map((meeting) => (
+                                      <div
+                                        key={`meeting-${meeting.id}`}
+                                        className="text-[10px] px-1 py-0.5 rounded bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300 border-l-2 border-purple-400"
+                                        title={`Meeting: ${meeting.title} at ${new Date(meeting.startDatetime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`}
+                                      >
+                                        <div className="flex items-center gap-1">
+                                          <span>📅</span>
+                                          <span className="truncate font-medium">{meeting.title}</span>
+                                        </div>
+                                      </div>
+                                    ))}
+
+                                    {/* Tasks removed from calendar preview */}
+
+                                    {/* Show count if there are more items */}
+                                    {meetingsForDay.length > 1 && (
+                                      <div className="text-[10px] text-gray-500 dark:text-gray-400 px-1 font-medium">
+                                        +{meetingsForDay.length - 1} more meeting{meetingsForDay.length - 1 !== 1 ? 's' : ''}
+                                      </div>
+                                    )}
                           </div>
                         </div>
                       );
-                    })}
+                            });
+                          })()}
                   </div>
+
+                        {/* Legend */}
+                        <div className="mt-4 pt-3 border-t border-gray-200 dark:border-gray-700">
+                          <div className="flex flex-wrap items-center justify-center gap-4 text-xs">
+                            <div className="flex items-center gap-1">
+                              <div className="w-2 h-2 bg-purple-400 rounded border-l-2 border-purple-500"></div>
+                              <span className="text-gray-600 dark:text-gray-400">Meetings</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <div className="w-2 h-2 bg-blue-400 rounded border-l-2 border-blue-500"></div>
+                              <span className="text-gray-600 dark:text-gray-400">Sprint Period</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <div className="w-4 h-4 bg-blue-600 rounded-full"></div>
+                              <span className="text-gray-600 dark:text-gray-400">Today</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-8 text-center">
+                        <CalendarDays className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                        <h6 className="text-sm font-medium text-gray-900 dark:text-white mb-2">
+                          No Active Sprint
+                        </h6>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          Start a sprint to see the calendar preview with your tasks and meetings.
+                        </p>
+                      </div>
+                    )}
                 </div>
               )}
             </div>
@@ -2138,10 +2313,10 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                   </h4>
                   <div className="flex justify-between items-center mt-2">
                     <p className="text-xs text-gray-600 dark:text-gray-400">
-                      {meeting.time}
+                      <FormattedDateTime date={new Date(meeting.startDatetime)} includeTime={true} short={true} />
                     </p>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {meeting.attendees} attendees
+                      {meeting.attendees} participant{meeting.attendees !== 1 ? 's' : ''}
                     </p>
                   </div>
                 </Link>

@@ -12,8 +12,59 @@ import FavoriteButton from '@/components/common/FavoriteButton';
 import InviteMemberModal from '@/components/common/InviteMemberModal';
 import EditMemberModal from '@/components/common/EditMemberModal';
 import DeleteMemberModal from '@/components/common/DeleteMemberModal';
+import { useDateFormat } from '@/hooks/useDateFormat';
 import { api } from '@/utils/api';
 import { ProjectMemberResponse } from '@/types/api';
+
+// Component for rendering user-aware formatted dates
+const FormattedDate: React.FC<{ 
+  date: Date; 
+  includeTime?: boolean; 
+  short?: boolean;
+}> = ({ date, includeTime = false, short = false }) => {
+  const [formattedDate, setFormattedDate] = useState<string>(date.toLocaleDateString());
+  const { formatDate, formatDateShort } = useDateFormat();
+
+  useEffect(() => {
+    let isMounted = true;
+    
+    const format = async () => {
+      try {
+        // When includeTime is true, always use formatDate regardless of short flag
+        // formatDateShort doesn't support time display
+        const result = includeTime 
+          ? await formatDate(date, true)
+          : short 
+            ? await formatDateShort(date)
+            : await formatDate(date, false);
+        
+        if (isMounted) {
+          setFormattedDate(result);
+        }
+      } catch (error) {
+        console.error('Error formatting date:', error);
+        // Fallback to simple formatting
+        if (isMounted) {
+          setFormattedDate(
+            includeTime 
+              ? `${date.toLocaleDateString()} ${date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`
+              : date.toLocaleDateString()
+          );
+        }
+      }
+    };
+    
+    // Add a small delay to batch API calls
+    const timeoutId = setTimeout(format, 100);
+    
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+    };
+  }, [date, includeTime, short, formatDate, formatDateShort]);
+
+  return <span>{formattedDate}</span>;
+};
 
 interface TeamMember extends ProjectMemberResponse {}
 
@@ -361,7 +412,7 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
                     </div>
                     <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                       <Calendar className="w-4 h-4" />
-                      Joined {new Date(member.joined_at).toLocaleDateString()}
+                      Joined <FormattedDate date={new Date(member.joined_at)} short={true} />
                     </div>
                   </div>
 

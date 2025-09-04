@@ -7,9 +7,60 @@ import {
   BookOpen, ChevronDown, X, Loader2
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
+import { useDateFormat } from '@/hooks/useDateFormat';
 import { api } from '@/utils/api';
 import { documentationApi } from '@/utils/api';
 import { Documentation, DocumentationType, DocumentationCreate, DocumentationUpdate } from '@/types/api';
+
+// Component for rendering user-aware formatted dates
+const FormattedDate: React.FC<{ 
+  date: Date; 
+  includeTime?: boolean; 
+  short?: boolean;
+}> = ({ date, includeTime = false, short = false }) => {
+  const [formattedDate, setFormattedDate] = useState<string>(date.toLocaleDateString());
+  const { formatDate, formatDateShort } = useDateFormat();
+
+  useEffect(() => {
+    let isMounted = true;
+    
+    const format = async () => {
+      try {
+        // When includeTime is true, always use formatDate regardless of short flag
+        // formatDateShort doesn't support time display
+        const result = includeTime 
+          ? await formatDate(date, true)
+          : short 
+            ? await formatDateShort(date)
+            : await formatDate(date, false);
+        
+        if (isMounted) {
+          setFormattedDate(result);
+        }
+      } catch (error) {
+        console.error('Error formatting date:', error);
+        // Fallback to simple formatting
+        if (isMounted) {
+          setFormattedDate(
+            includeTime 
+              ? `${date.toLocaleDateString()} ${date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`
+              : date.toLocaleDateString()
+          );
+        }
+      }
+    };
+    
+    // Add a small delay to batch API calls
+    const timeoutId = setTimeout(format, 100);
+    
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+    };
+  }, [date, includeTime, short, formatDate, formatDateShort]);
+
+  return <span>{formattedDate}</span>;
+};
 
 interface ProjectDocumentationProps {
   params: Promise<{ 'project-id': string }>;
@@ -621,14 +672,6 @@ const ProjectDocumentation: React.FC<ProjectDocumentationProps> = ({ params }) =
     }
   };
 
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', { 
-      day: 'numeric', 
-      month: 'long', 
-      year: 'numeric' 
-    });
-  };
 
   if (isLoading) {
     return (
@@ -737,7 +780,7 @@ const ProjectDocumentation: React.FC<ProjectDocumentationProps> = ({ params }) =
                   <div className="flex items-center space-x-4 text-sm text-gray-500 dark:text-gray-400">
                     <div className="flex items-center space-x-1">
                       <Calendar className="w-4 h-4" />
-                      <span>{formatDate(doc.created_at)}</span>
+                      <span><FormattedDate date={new Date(doc.created_at)} short={false} /></span>
                     </div>
                   </div>
                 </div>

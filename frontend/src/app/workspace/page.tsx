@@ -17,12 +17,56 @@ import {
   createProjectWithDetails,
   formatScrumRole
 } from '@/utils/mappers';
+import { useDateFormat } from '@/hooks/useDateFormat';
+
+// Component for rendering user-aware formatted dates
+const FormattedDate: React.FC<{ 
+  date: Date; 
+  includeTime?: boolean; 
+  short?: boolean;
+}> = ({ date, includeTime = false, short = false }) => {
+  const [formattedDate, setFormattedDate] = useState<string>(date.toLocaleDateString());
+  const { formatDate, formatDateShort } = useDateFormat();
+
+  useEffect(() => {
+    let isMounted = true;
+    
+    const format = async () => {
+      try {
+        const result = short 
+          ? await formatDateShort(date)
+          : await formatDate(date, includeTime);
+        
+        if (isMounted) {
+          setFormattedDate(result);
+        }
+      } catch (error) {
+        console.error('Error formatting date:', error);
+        // Fallback to simple formatting
+        if (isMounted) {
+          setFormattedDate(date.toLocaleDateString());
+        }
+      }
+    };
+
+    // Add a small delay to batch API calls
+    const timeoutId = setTimeout(format, 100);
+    
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+    };
+  }, [date, includeTime, short, formatDate, formatDateShort]);
+
+  return <span>{formattedDate}</span>;
+};
 
 const MyWorkspacePage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [projects, setProjects] = useState<ProjectWithDetails[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const { formatDate, formatDateShort } = useDateFormat();
 
   useEffect(() => {
     const fetchData = async () => {
@@ -319,7 +363,7 @@ const MyWorkspacePage = () => {
                           </p>
                           <div className="flex items-center justify-between">
                             <span className="text-xs text-gray-600 dark:text-gray-400">
-                              Created: {task.createdAt.toLocaleDateString()}
+                              Created: <FormattedDate date={task.createdAt} short={true} />
                             </span>
                             <span className={`px-2 py-1 text-xs rounded ${task.priorityColor}`}>
                               {task.priority}
@@ -349,7 +393,7 @@ const MyWorkspacePage = () => {
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
                               <span className="text-xs text-gray-600 dark:text-gray-400">
-                                Updated: {task.updatedAt.toLocaleDateString()}
+                                Updated: <FormattedDate date={task.updatedAt} short={true} />
                               </span>
                               {task.assignedUsers.length > 0 && (
                                 <span className="text-xs text-gray-600 dark:text-gray-400">
@@ -389,7 +433,7 @@ const MyWorkspacePage = () => {
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400">
                               <Calendar className="w-3 h-3" />
-                              <span>{meeting.startDateTime.toLocaleDateString()}</span>
+                              <FormattedDate date={meeting.startDateTime} short={true} />
                               <span>• {(meeting as any).participantCount || 0} participants</span>
                             </div>
                             <span className="text-xs text-gray-600 dark:text-gray-400">

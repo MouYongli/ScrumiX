@@ -9,7 +9,50 @@ import {
   X, ChevronDown, BarChart3, ArrowRight
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
+import { useDateFormat } from '@/hooks/useDateFormat';
 import { api } from '@/utils/api';
+
+// Component for rendering user-aware formatted dates
+const FormattedDate: React.FC<{ 
+  date: Date; 
+  includeTime?: boolean; 
+  short?: boolean;
+}> = ({ date, includeTime = false, short = false }) => {
+  const [formattedDate, setFormattedDate] = useState<string>(date.toLocaleDateString());
+  const { formatDate, formatDateShort } = useDateFormat();
+
+  useEffect(() => {
+    let isMounted = true;
+    
+    const format = async () => {
+      try {
+        const result = short 
+          ? await formatDateShort(date)
+          : await formatDate(date, includeTime);
+        
+        if (isMounted) {
+          setFormattedDate(result);
+        }
+      } catch (error) {
+        console.error('Error formatting date:', error);
+        // Fallback to simple formatting
+        if (isMounted) {
+          setFormattedDate(date.toLocaleDateString());
+        }
+      }
+    };
+
+    // Add a small delay to batch API calls
+    const timeoutId = setTimeout(format, 100);
+    
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+    };
+  }, [date, includeTime, short, formatDate, formatDateShort]);
+
+  return <span>{formattedDate}</span>;
+};
 
 // Updated interface to match backend schema
 interface Sprint {
@@ -1198,7 +1241,7 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
                   <div className="flex items-center gap-6 text-sm text-gray-600 dark:text-gray-400">
                     <span className="flex items-center gap-1">
                       <Calendar className="w-4 h-4" />
-                      {new Date(sprint.startDate).toLocaleDateString()} - {new Date(sprint.endDate).toLocaleDateString()}
+                      <FormattedDate date={new Date(sprint.startDate)} short={true} /> - <FormattedDate date={new Date(sprint.endDate)} short={true} />
                     </span>
                     <span className="flex items-center gap-1">
                       <Users className="w-4 h-4" />

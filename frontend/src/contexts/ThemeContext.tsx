@@ -13,21 +13,31 @@ interface ThemeContextType {
 const ThemeContext = createContext<ThemeContextType | undefined>(undefined);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
+  // Always initialize with 'system' for SSR consistency
   const [theme, setThemeState] = useState<Theme>('system');
   const [effectiveTheme, setEffectiveTheme] = useState<'light' | 'dark'>('light'); // Default to light for SSR consistency
   const [mounted, setMounted] = useState(false);
 
-  // Set mounted flag and load theme from localStorage on mount
+  // Set mounted flag and load theme after hydration
   useEffect(() => {
     setMounted(true);
     
+    // Load theme from localStorage after component mounts (client-side only)
     try {
+      // First try to load from userSettings (preferred location)
       const savedSettings = localStorage.getItem('userSettings');
       if (savedSettings) {
         const settings = JSON.parse(savedSettings);
-        if (settings.profile?.theme) {
-          setThemeState(settings.profile.theme);
+        if (settings.profile?.theme && ['light', 'dark', 'system'].includes(settings.profile.theme)) {
+          setThemeState(settings.profile.theme as Theme);
+          return;
         }
+      }
+      
+      // Fallback to direct theme storage
+      const savedTheme = localStorage.getItem('theme');
+      if (savedTheme && ['light', 'dark', 'system'].includes(savedTheme)) {
+        setThemeState(savedTheme as Theme);
       }
     } catch (error) {
       console.error('Failed to load theme from localStorage:', error);
@@ -80,6 +90,7 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     // Update localStorage (only on client side)
     if (typeof window !== 'undefined') {
       try {
+        // Save to userSettings (preferred location)
         const savedSettings = localStorage.getItem('userSettings');
         const settings = savedSettings ? JSON.parse(savedSettings) : {};
         
@@ -92,6 +103,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
         };
         
         localStorage.setItem('userSettings', JSON.stringify(updatedSettings));
+        
+        // Also save to direct theme storage for fallback compatibility
+        localStorage.setItem('theme', newTheme);
       } catch (error) {
         console.error('Failed to save theme to localStorage:', error);
       }

@@ -24,9 +24,9 @@ async function getUserPreferences(): Promise<{ timezone: string; dateFormat: str
   }
 
   try {
-    const response = await fetch('/api/v1/users/me/profile', {
-      credentials: 'include',
-    });
+    // Import authenticatedFetch dynamically to avoid circular imports
+    const { authenticatedFetch } = await import('@/utils/auth');
+    const response = await authenticatedFetch('/api/v1/users/me/profile');
     
     if (response.ok) {
       const userData = await response.json();
@@ -140,7 +140,7 @@ export async function formatUserDate(
 }
 
 /**
- * Format a date for display in lists (shorter format)
+ * Format a date for display in lists (respects user's date format preference)
  */
 export async function formatUserDateShort(date: string | Date | undefined): Promise<string> {
   if (!date) return 'Unknown';
@@ -150,17 +150,19 @@ export async function formatUserDateShort(date: string | Date | undefined): Prom
   
   try {
     const preferences = await getUserPreferences();
+    const locale = getLocaleFromDateFormat(preferences.dateFormat);
+    const dateFormatOptions = getDateFormatOptions(preferences.dateFormat);
     
-    return dateObj.toLocaleDateString(getLocaleFromDateFormat(preferences.dateFormat), {
-      month: 'short',
-      day: 'numeric',
+    return dateObj.toLocaleDateString(locale, {
+      ...dateFormatOptions,
       timeZone: preferences.timezone,
     });
   } catch (error) {
     console.warn('Error formatting short date, using fallback:', error);
     return dateObj.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
       timeZone: 'Europe/Berlin'
     });
   }

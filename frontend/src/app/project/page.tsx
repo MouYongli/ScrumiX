@@ -9,9 +9,52 @@ import {
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
 import FavoriteButton from '@/components/common/FavoriteButton';
+import { useDateFormat } from '@/hooks/useDateFormat';
 
 import { ApiProject, ScrumRole } from '@/types/api';
 import { ProjectStatus } from '@/types/enums';
+
+// Component for rendering user-aware formatted dates
+const FormattedDate: React.FC<{ 
+  date: Date; 
+  includeTime?: boolean; 
+  short?: boolean;
+}> = ({ date, includeTime = false, short = false }) => {
+  const [formattedDate, setFormattedDate] = useState<string>(date.toLocaleDateString());
+  const { formatDate, formatDateShort } = useDateFormat();
+
+  useEffect(() => {
+    let isMounted = true;
+    
+    const format = async () => {
+      try {
+        const result = short 
+          ? await formatDateShort(date)
+          : await formatDate(date, includeTime);
+        
+        if (isMounted) {
+          setFormattedDate(result);
+        }
+      } catch (error) {
+        console.error('Error formatting date:', error);
+        // Fallback to simple formatting
+        if (isMounted) {
+          setFormattedDate(date.toLocaleDateString());
+        }
+      }
+    };
+
+    // Add a small delay to batch API calls
+    const timeoutId = setTimeout(format, 100);
+    
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+    };
+  }, [date, includeTime, short, formatDate, formatDateShort]);
+
+  return <span>{formattedDate}</span>;
+};
 
 // Frontend Project interface extends ApiProject with some UI-specific fields
 interface Project extends Omit<ApiProject, 'id' | 'start_date' | 'end_date' | 'last_activity_at'> {
@@ -669,13 +712,7 @@ const ProjectsPage = () => {
                 <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
                   <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                     <Clock className="w-3 h-3" />
-                    Last activity: {new Date(project.lastActivity).toLocaleString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                      timeZone: 'Europe/Berlin'
-                    })}
+                    Last activity: <FormattedDate date={new Date(project.lastActivity)} includeTime={true} short={true} />
                   </div>
                 </div>
               </div>

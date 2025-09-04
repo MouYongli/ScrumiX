@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Plus, User, Calendar, Flag, MoreHorizontal, Filter, Search, FolderOpen, Kanban, X, ChevronDown, Clock, CalendarDays, LayoutGrid, RotateCcw } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
+import { useDateFormat } from '@/hooks/useDateFormat';
 import { api } from '@/utils/api';
 import { mapApiUserToDomain } from '@/utils/mappers';
 import { ApiBacklog, ApiUser } from '@/types/api';
@@ -32,6 +33,60 @@ interface Column {
   limit?: number;
 }
 
+// Component for rendering user-aware formatted dates and times
+const FormattedDateTime: React.FC<{ 
+  date: Date; 
+  includeTime?: boolean; 
+  short?: boolean;
+}> = ({ date, includeTime = false, short = false }) => {
+  const [formattedDateTime, setFormattedDateTime] = useState<string>(
+    includeTime 
+      ? `${date.toLocaleDateString()} ${date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`
+      : date.toLocaleDateString()
+  );
+  const { formatDate, formatDateShort } = useDateFormat();
+
+  useEffect(() => {
+    let isMounted = true;
+    
+    const format = async () => {
+      try {
+        // When includeTime is true, always use formatDate regardless of short flag
+        // formatDateShort doesn't support time display
+        const result = includeTime 
+          ? await formatDate(date, true)
+          : short 
+            ? await formatDateShort(date)
+            : await formatDate(date, false);
+        
+        if (isMounted) {
+          setFormattedDateTime(result);
+        }
+      } catch (error) {
+        console.error('Error formatting date:', error);
+        // Fallback to simple formatting
+        if (isMounted) {
+          setFormattedDateTime(
+            includeTime 
+              ? `${date.toLocaleDateString()} ${date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`
+              : date.toLocaleDateString()
+          );
+        }
+      }
+    };
+
+    // Add a small delay to batch API calls
+    const timeoutId = setTimeout(format, 100);
+    
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+    };
+  }, [date, includeTime, short, formatDate, formatDateShort]);
+
+  return <span>{formattedDateTime}</span>;
+};
+
 const columns: Column[] = [
   { id: 'todo', title: 'To Do', color: 'bg-gray-100 dark:bg-gray-700', tasks: [] },
   { id: 'in_progress', title: 'In Progress', color: 'bg-blue-100 dark:bg-blue-900/20', tasks: [] },
@@ -59,15 +114,22 @@ const ViewSelector: React.FC<{
         return (
           <button
             key={view.id}
-            onClick={() => onViewChange(view.id)}
+            onClick={() => view.id !== 'timeline' ? onViewChange(view.id) : null}
+            disabled={view.id === 'timeline'}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-              currentView === view.id
-                ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+              view.id === 'timeline'
+                ? 'text-gray-400 dark:text-gray-500 cursor-not-allowed opacity-60'
+                : currentView === view.id
+                  ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
             }`}
+            title={view.id === 'timeline' ? 'Timeline view is coming soon' : undefined}
           >
             <Icon className="w-4 h-4" />
-            <span className="font-medium">{view.label}</span>
+            <span className="font-medium">
+              {view.label}
+              {view.id === 'timeline' && <span className="ml-1 text-xs">(Coming Soon)</span>}
+            </span>
           </button>
         );
       })}
@@ -1073,7 +1135,7 @@ const CalendarView: React.FC<{
     priority?: string;
     status?: string;
     assignees?: string[];
-    time?: string;
+    startDatetime?: string;
     note?: string;
   }>>();
   
@@ -1083,7 +1145,7 @@ const CalendarView: React.FC<{
     const meetingTime = new Date(meeting.startDatetime).toLocaleTimeString('en-US', {
       hour: '2-digit',
       minute: '2-digit'
-    });
+    }); // Note: This will be replaced with FormattedDateTime component in the render
     
     if (!itemsByDate.has(meetingDate)) {
       itemsByDate.set(meetingDate, []);
@@ -1093,7 +1155,7 @@ const CalendarView: React.FC<{
       type: 'meeting',
       item: meeting,
       displayTitle: meeting.title,
-      time: meetingTime
+      startDatetime: meeting.startDatetime // Store raw datetime for FormattedDateTime component
           });
         });
   
@@ -1197,7 +1259,7 @@ const CalendarView: React.FC<{
               <ChevronDown className="w-4 h-4 rotate-90" />
             </button>
             <span className="text-lg font-medium text-gray-900 dark:text-white min-w-[200px] text-center">
-              {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+              <FormattedDateTime date={currentDate} includeTime={false} short={false} />
             </span>
             <button
               onClick={() => navigateMonth('next')}
@@ -1293,7 +1355,7 @@ const CalendarView: React.FC<{
                       }`}
                       title={
                         item.type === 'meeting' 
-                          ? `Meeting: ${item.displayTitle} at ${item.time}`
+                          ? `Meeting: ${item.displayTitle}${item.startDatetime ? ` at ${new Date(item.startDatetime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` : ''}`
                           : item.type === 'personal'
                           ? `Personal: ${item.displayTitle}`
                           : `Task: ${item.displayTitle}`
@@ -1304,8 +1366,10 @@ const CalendarView: React.FC<{
                           <span className="text-xs">
                             {item.type === 'meeting' ? '📅' : item.type === 'personal' ? '📝' : '⚡'}
                         </span>
-                          {item.type === 'meeting' && item.time && (
-                            <span className="text-xs font-mono">{item.time}</span>
+                          {item.type === 'meeting' && item.startDatetime && (
+                            <span className="text-xs font-mono">
+                              <FormattedDateTime date={new Date(item.startDatetime)} includeTime={true} short={true} />
+                            </span>
                           )}
                         </div>
                         {item.type === 'personal' && (
@@ -1360,12 +1424,7 @@ const CalendarView: React.FC<{
               Add Personal Note
             </h3>
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
-              Add a personal note for {new Date(isAddingPersonalDate).toLocaleDateString('en-US', {
-                weekday: 'long',
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric'
-              })}
+              Add a personal note for <FormattedDateTime date={new Date(isAddingPersonalDate)} includeTime={false} short={false} />
             </p>
             <input
               type="text"
@@ -1406,7 +1465,7 @@ const CalendarView: React.FC<{
       )}
       
       {/* Legend */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
         {/* Meetings Legend */}
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
           <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-3 flex items-center gap-2">
@@ -1437,20 +1496,6 @@ const CalendarView: React.FC<{
           </p>
         </div>
 
-        {/* Tasks Legend */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-          <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-            <span>⚡</span>
-            In-Progress Tasks
-          </h4>
-          <div className="flex items-center gap-2 text-xs mb-2">
-            <div className="w-3 h-3 bg-blue-400 rounded"></div>
-            <span className="text-gray-600 dark:text-gray-400">Active tasks</span>
-          </div>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-            Tasks shown on their due date or current date if no due date
-          </p>
-        </div>
       </div>
       
       {/* Empty state */}
@@ -2015,6 +2060,7 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ params }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentSprint, setCurrentSprint] = useState<any>(null);
+  const [currentProject, setCurrentProject] = useState<any>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [updateMessage, setUpdateMessage] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [sprintBacklogItems, setSprintBacklogItems] = useState<any[]>([]);
@@ -2025,8 +2071,7 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ params }) => {
 
   // Breadcrumb navigation
   const breadcrumbItems = [
-    { label: 'Project', href: '/project', icon: <FolderOpen className="w-4 h-4" /> },
-    { label: 'Mobile App Development', href: `/project/${projectId}/dashboard` },
+    { label: currentProject?.name || 'Project', href: `/project/${projectId}/dashboard` },
     { label: 'Task Board', icon: <Kanban className="w-4 h-4" /> }
   ];
 
@@ -2038,7 +2083,17 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ params }) => {
       setIsLoading(true);
       setError(null);
       
-      // First, get project sprints to find the current/active sprint
+      // First, get project data for breadcrumb
+      try {
+        const projectResponse = await api.projects.getById(parseInt(projectId));
+        if (!projectResponse.error && projectResponse.data) {
+          setCurrentProject(projectResponse.data);
+        }
+      } catch (error) {
+        console.warn('Failed to fetch project data:', error);
+      }
+      
+      // Get project sprints to find the current/active sprint
       const sprintsResponse = await api.sprints.getAll();
       if (sprintsResponse.error) throw new Error(sprintsResponse.error);
       
@@ -2435,8 +2490,8 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ params }) => {
                     </p>
                   )}
                   <div className="flex items-center gap-4 mt-2 text-xs text-blue-600 dark:text-blue-300">
-                    <span>Start: {new Date(currentSprint.startDate).toLocaleDateString()}</span>
-                    <span>End: {new Date(currentSprint.endDate).toLocaleDateString()}</span>
+                    <span>Start: <FormattedDateTime date={new Date(currentSprint.startDate)} short={true} /></span>
+                    <span>End: <FormattedDateTime date={new Date(currentSprint.endDate)} short={true} /></span>
                     <span>Status: {currentSprint.status}</span>
                   </div>
                 </div>

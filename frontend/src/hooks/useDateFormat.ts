@@ -93,7 +93,7 @@ export function formatDateSync(
 }
 
 /**
- * Format date for display in Berlin timezone with short format
+ * Format date for display in Berlin timezone with default format (fallback)
  */
 export function formatDateShortSync(date: string | Date | undefined): string {
   if (!date) return 'Unknown';
@@ -101,9 +101,10 @@ export function formatDateShortSync(date: string | Date | undefined): string {
   const dateObj = new Date(date);
   if (isNaN(dateObj.getTime())) return 'Invalid';
   
-  return dateObj.toLocaleDateString('en-US', {
-    month: 'short',
-    day: 'numeric',
+  return dateObj.toLocaleDateString('sv-SE', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
     timeZone: 'Europe/Berlin'
   });
 }
