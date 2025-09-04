@@ -64,6 +64,7 @@ const UserStoryModal: React.FC<UserStoryModalProps> = ({
       const { id, createdAt, ...rest } = editingStory;
       setFormData(rest);
     } else {
+      // Reset form to default values when opening for new story creation
       setFormData({
         title: '',
         asA: '',
@@ -80,7 +81,7 @@ const UserStoryModal: React.FC<UserStoryModalProps> = ({
         estimatedHours: 0
       });
     }
-  }, [editingStory]);
+  }, [editingStory, isOpen]); // Added isOpen to dependency array to reset form when modal opens
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

@@ -3,7 +3,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Plus, User, Calendar, Flag, MoreHorizontal, Filter, Search, FolderOpen, Kanban, X, ChevronDown, Clock, CalendarDays, LayoutGrid, RotateCcw } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
-import { api } from '@/utils/api';
+import { useDateFormat } from '@/hooks/useDateFormat';
+import { api, personalNotesApi, PersonalNote } from '@/utils/api';
 import { mapApiUserToDomain } from '@/utils/mappers';
 import { ApiBacklog, ApiUser } from '@/types/api';
 import { TaskStatus } from '@/types/enums';
@@ -32,6 +33,60 @@ interface Column {
   limit?: number;
 }
 
+// Component for rendering user-aware formatted dates and times
+const FormattedDateTime: React.FC<{ 
+  date: Date; 
+  includeTime?: boolean; 
+  short?: boolean;
+}> = ({ date, includeTime = false, short = false }) => {
+  const [formattedDateTime, setFormattedDateTime] = useState<string>(
+    includeTime 
+      ? `${date.toLocaleDateString()} ${date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`
+      : date.toLocaleDateString()
+  );
+  const { formatDate, formatDateShort } = useDateFormat();
+
+  useEffect(() => {
+    let isMounted = true;
+    
+    const format = async () => {
+      try {
+        // When includeTime is true, always use formatDate regardless of short flag
+        // formatDateShort doesn't support time display
+        const result = includeTime 
+          ? await formatDate(date, true)
+          : short 
+            ? await formatDateShort(date)
+            : await formatDate(date, false);
+        
+        if (isMounted) {
+          setFormattedDateTime(result);
+        }
+      } catch (error) {
+        console.error('Error formatting date:', error);
+        // Fallback to simple formatting
+        if (isMounted) {
+          setFormattedDateTime(
+            includeTime 
+              ? `${date.toLocaleDateString()} ${date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`
+              : date.toLocaleDateString()
+          );
+        }
+      }
+    };
+
+    // Add a small delay to batch API calls
+    const timeoutId = setTimeout(format, 100);
+    
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+    };
+  }, [date, includeTime, short, formatDate, formatDateShort]);
+
+  return <span>{formattedDateTime}</span>;
+};
+
 const columns: Column[] = [
   { id: 'todo', title: 'To Do', color: 'bg-gray-100 dark:bg-gray-700', tasks: [] },
   { id: 'in_progress', title: 'In Progress', color: 'bg-blue-100 dark:bg-blue-900/20', tasks: [] },
@@ -59,15 +114,22 @@ const ViewSelector: React.FC<{
         return (
           <button
             key={view.id}
-            onClick={() => onViewChange(view.id)}
+            onClick={() => view.id !== 'timeline' ? onViewChange(view.id) : null}
+            disabled={view.id === 'timeline'}
             className={`flex items-center gap-2 px-4 py-2 rounded-lg transition-colors ${
-              currentView === view.id
-                ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm'
-                : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
+              view.id === 'timeline'
+                ? 'text-gray-400 dark:text-gray-500 cursor-not-allowed opacity-60'
+                : currentView === view.id
+                  ? 'bg-white dark:bg-gray-800 text-blue-600 dark:text-blue-400 shadow-sm'
+                  : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-200'
             }`}
+            title={view.id === 'timeline' ? 'Timeline view is coming soon' : undefined}
           >
             <Icon className="w-4 h-4" />
-            <span className="font-medium">{view.label}</span>
+            <span className="font-medium">
+              {view.label}
+              {view.id === 'timeline' && <span className="ml-1 text-xs">(Coming Soon)</span>}
+            </span>
           </button>
         );
       })}
@@ -966,6 +1028,10 @@ const CalendarView: React.FC<{
   selectedPriority: string;
 }> = ({ tasks, onCreateTask, getPriorityColor, getPriorityIcon, currentSprint, sprintBacklogItems, searchTerm, selectedAssignee, selectedPriority }) => {
   const [currentDate, setCurrentDate] = useState(new Date());
+  const [meetings, setMeetings] = useState<any[]>([]);
+  const [personalDates, setPersonalDates] = useState<{[key: string]: string}>({});
+  const [isAddingPersonalDate, setIsAddingPersonalDate] = useState<string | null>(null);
+  const [personalDateNote, setPersonalDateNote] = useState('');
   
   // Get current month info
   const year = currentDate.getFullYear();
@@ -984,21 +1050,105 @@ const CalendarView: React.FC<{
     currentDay.setDate(currentDay.getDate() + 1);
   }
   
-  // Filter items based on search, assignee, and priority
-  const filteredSprintBacklogItems = sprintBacklogItems.filter((backlogItem: any) => {
-    const matchesSearch = !searchTerm || 
-      backlogItem.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      (backlogItem.description && backlogItem.description.toLowerCase().includes(searchTerm.toLowerCase()));
+  // Fetch meetings for the project
+  useEffect(() => {
+    const fetchMeetings = async () => {
+      if (!currentSprint?.projectId) return;
+      
+      try {
+        const response = await api.meetings.getUpcoming(30); // Get meetings for next 30 days
+        if (!response.error && response.data) {
+          // Filter meetings for this project
+          const projectMeetings = response.data.filter(meeting => 
+            meeting.projectId === currentSprint.projectId
+          );
+          setMeetings(projectMeetings);
+        }
+      } catch (error) {
+        console.warn('Failed to fetch meetings:', error);
+      }
+    };
     
-    const matchesAssignee = !selectedAssignee || 
-      (backlogItem.assigned_to_id && `User ${backlogItem.assigned_to_id}` === selectedAssignee);
+    fetchMeetings();
+  }, [currentSprint?.projectId, currentDate]);
+  
+  // Load personal dates from backend API
+  useEffect(() => {
+    const loadPersonalDates = async () => {
+      if (!currentSprint?.projectId) return;
+      
+      try {
+        const response = await personalNotesApi.getByProject(currentSprint.projectId);
+        if (!response.error && response.data) {
+          const notesMap: {[key: string]: string} = {};
+          response.data.forEach((note: PersonalNote) => {
+            notesMap[note.note_date] = note.content;
+          });
+          setPersonalDates(notesMap);
+        }
+      } catch (error) {
+        console.warn('Failed to load personal dates:', error);
+      }
+    };
     
-    // Priority filter does NOT apply to user stories - they are always visible
-    // const matchesPriority = !selectedPriority || 
-    //   (backlogItem.priority && backlogItem.priority.toLowerCase() === selectedPriority.toLowerCase());
+    loadPersonalDates();
+  }, [currentSprint?.projectId]);
+  
+  // Save personal dates to backend API
+  const savePersonalDates = async (dates: {[key: string]: string}) => {
+    setPersonalDates(dates);
+    // Note: Individual save/update/delete operations are handled in the respective functions
+  };
+  
+  // Personal calendar handlers
+  const handleAddPersonalDate = (dateStr: string) => {
+    setIsAddingPersonalDate(dateStr);
+    setPersonalDateNote('');
+  };
+  
+  const handleSavePersonalDate = async () => {
+    if (isAddingPersonalDate && personalDateNote.trim() && currentSprint?.projectId) {
+      try {
+        const response = await personalNotesApi.create(currentSprint.projectId, {
+          note_date: isAddingPersonalDate,
+          content: personalDateNote.trim()
+        });
+        
+        if (!response.error && response.data) {
+          const newDates = { ...personalDates, [isAddingPersonalDate]: personalDateNote.trim() };
+          setPersonalDates(newDates);
+          setIsAddingPersonalDate(null);
+          setPersonalDateNote('');
+        } else {
+          console.error('Failed to save personal note:', response.error);
+          alert('Failed to save personal note. Please try again.');
+        }
+      } catch (error) {
+        console.error('Error saving personal note:', error);
+        alert('Failed to save personal note. Please try again.');
+      }
+    }
+  };
+  
+  const handleRemovePersonalDate = async (dateStr: string) => {
+    if (!currentSprint?.projectId) return;
     
-    return matchesSearch && matchesAssignee; // Removed priority filtering for user stories
-  });
+    try {
+      const response = await personalNotesApi.delete(currentSprint.projectId, dateStr);
+      
+      if (!response.error) {
+        const newDates = { ...personalDates };
+        delete newDates[dateStr];
+        setPersonalDates(newDates);
+      } else {
+        console.error('Failed to delete personal note:', response.error);
+        alert('Failed to delete personal note. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error deleting personal note:', error);
+      alert('Failed to delete personal note. Please try again.');
+    }
+  };
   
   const filteredTasks = tasks.filter((task) => {
     const matchesSearch = !searchTerm || 
@@ -1016,85 +1166,59 @@ const CalendarView: React.FC<{
     return matchesSearch && matchesAssignee && matchesPriority && matchesStatus;
   });
   
-  // Group items by date - include both filtered backlog items and filtered tasks
+  // Helper function to format date consistently (same as dashboard calendar)
+  const formatDate = (date: Date) => {
+    return date.toISOString().split('T')[0];
+  };
+  
+  // Group items by date - include meetings, personal dates, and tasks (removed user stories)
   const itemsByDate = new Map<string, Array<{
-    type: 'backlog' | 'task';
+    type: 'meeting' | 'task' | 'personal';
     item: any;
     displayTitle: string;
-    priority: string;
-    status: string;
-    assignees: string[];
-    parentStory?: string;
+    priority?: string;
+    status?: string;
+    assignees?: string[];
+    startDatetime?: string;
+    note?: string;
   }>>();
   
-  // Add filtered sprint backlog items (user stories) - show for every day within sprint time span
-  if (filteredSprintBacklogItems && filteredSprintBacklogItems.length > 0) {
-    if (currentSprint) {
-      // Real sprint data - show for every day within sprint time span
-      const sprintStartDate = new Date(currentSprint.startDate);
-      const sprintEndDate = new Date(currentSprint.endDate);
-      
-      // Generate all dates within the sprint
-      const sprintDates: string[] = [];
-      const currentDate = new Date(sprintStartDate);
-      
-      while (currentDate <= sprintEndDate) {
-        sprintDates.push(currentDate.toISOString().split('T')[0]);
-        currentDate.setDate(currentDate.getDate() + 1);
+  // Add meetings - show only on the specific meeting day (same logic as dashboard preview)
+  meetings.forEach((meeting) => {
+    const meetingDateObj = new Date(meeting.startDatetime);
+    
+    // Find the calendar day that matches this meeting date using the same comparison as dashboard
+    calendarDays.forEach((calendarDate) => {
+      if (meetingDateObj.toDateString() === calendarDate.toDateString()) {
+        const dateStr = formatDate(calendarDate);
+        
+        if (!itemsByDate.has(dateStr)) {
+          itemsByDate.set(dateStr, []);
+        }
+        
+        itemsByDate.get(dateStr)!.push({
+          type: 'meeting',
+          item: meeting,
+          displayTitle: meeting.title,
+          startDatetime: meeting.startDatetime // Store raw datetime for FormattedDateTime component
+        });
       }
-      
-      // Add each filtered backlog item to every day within the sprint
-      filteredSprintBacklogItems.forEach((backlogItem: any) => {
-        sprintDates.forEach(dateStr => {
+    });
+  });
+  
+  // Add personal dates
+  Object.entries(personalDates).forEach(([dateStr, note]) => {
           if (!itemsByDate.has(dateStr)) {
             itemsByDate.set(dateStr, []);
           }
           
           itemsByDate.get(dateStr)!.push({
-            type: 'backlog',
-            item: backlogItem,
-            displayTitle: backlogItem.title,
-            priority: backlogItem.priority || 'medium',
-            status: backlogItem.status || 'todo',
-            assignees: backlogItem.assigned_to_id ? [`User ${backlogItem.assigned_to_id}`] : [],
-            parentStory: undefined // Backlog items are the parent stories
+      type: 'personal',
+      item: { id: dateStr, note },
+      displayTitle: note,
+      note: note
           });
         });
-      });
-    } else {
-      // Mock data - show for every day within the month being viewed
-      const monthStart = new Date(year, month, 1);
-      const monthEnd = new Date(year, month + 1, 0);
-      
-      // Generate all dates within the viewed month
-      const monthDates: string[] = [];
-      const currentDate = new Date(monthStart);
-      
-      while (currentDate <= monthEnd) {
-        monthDates.push(currentDate.toISOString().split('T')[0]);
-        currentDate.setDate(currentDate.getDate() + 1);
-      }
-      
-      // Add each filtered backlog item to every day within the month
-      filteredSprintBacklogItems.forEach((backlogItem: any) => {
-        monthDates.forEach(dateStr => {
-          if (!itemsByDate.has(dateStr)) {
-            itemsByDate.set(dateStr, []);
-          }
-          
-          itemsByDate.get(dateStr)!.push({
-            type: 'backlog',
-            item: backlogItem,
-            displayTitle: backlogItem.title,
-            priority: backlogItem.priority || 'medium',
-            status: backlogItem.status || 'todo',
-            assignees: backlogItem.assigned_to_id ? [`User ${backlogItem.assigned_to_id}`] : [],
-            parentStory: undefined // Backlog items are the parent stories
-          });
-        });
-      });
-    }
-  }
   
   // Add filtered in-progress tasks only
   filteredTasks.forEach((task) => {
@@ -1107,32 +1231,16 @@ const CalendarView: React.FC<{
         itemsByDate.set(taskDate, []);
       }
       
-      // Find the parent backlog item for this task
-      let parentStory = 'Unknown Story';
-      if (filteredSprintBacklogItems && filteredSprintBacklogItems.length > 0) {
-        const parentBacklog = filteredSprintBacklogItems.find((backlog: any) => 
-          backlog.tasks && backlog.tasks.some((t: any) => t.id === task.id)
-        );
-        if (parentBacklog) {
-          parentStory = parentBacklog.title;
-        }
-      }
-      
       itemsByDate.get(taskDate)!.push({
         type: 'task',
         item: task,
         displayTitle: task.title,
         priority: task.priority,
         status: task.status,
-        assignees: task.assignees,
-        parentStory: parentStory
+        assignees: task.assignees
       });
     }
   });
-  
-  const formatDate = (date: Date) => {
-    return date.toISOString().split('T')[0];
-  };
   
   const isToday = (date: Date) => {
     const today = new Date();
@@ -1194,7 +1302,7 @@ const CalendarView: React.FC<{
               <ChevronDown className="w-4 h-4 rotate-90" />
             </button>
             <span className="text-lg font-medium text-gray-900 dark:text-white min-w-[200px] text-center">
-              {currentDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+              <FormattedDateTime date={currentDate} includeTime={false} short={false} />
             </span>
             <button
               onClick={() => navigateMonth('next')}
@@ -1235,7 +1343,7 @@ const CalendarView: React.FC<{
               </span>
             )}
             <span className="ml-auto text-xs">
-              Showing {filteredSprintBacklogItems.length} user stories and {filteredTasks.filter(t => t.status === 'in_progress').length} in-progress tasks
+              Showing {meetings.length} meetings, {Object.keys(personalDates).length} personal notes, and {filteredTasks.filter(t => t.status === 'in_progress').length} in-progress tasks
             </span>
           </div>
         </div>
@@ -1278,35 +1386,49 @@ const CalendarView: React.FC<{
                 </div>
                 
                 <div className="space-y-1">
-                  {dayItems.slice(0, 4).map((item, itemIndex) => (
+                  {dayItems.slice(0, 3).map((item, itemIndex) => (
                     <div
-                      key={`${item.type}-${item.item.id}-${itemIndex}`}
-                      className={`text-xs p-2 rounded border-l-4 ${getDisplayColor(item.type, item.priority, item.status)}`}
-                      title={`${item.type === 'backlog' ? 'User Story' : 'Task'}: ${item.displayTitle}${item.parentStory ? ` (from: ${item.parentStory})` : ''}`}
+                      key={`${item.type}-${item.item.id || itemIndex}`}
+                      className={`text-xs p-2 rounded border-l-4 relative ${
+                        item.type === 'meeting' 
+                          ? 'bg-purple-50 dark:bg-purple-900/20 border-purple-400 text-purple-800 dark:text-purple-300'
+                          : item.type === 'personal'
+                          ? 'bg-green-50 dark:bg-green-900/20 border-green-400 text-green-800 dark:text-green-300'
+                          : 'bg-blue-50 dark:bg-blue-900/20 border-blue-400 text-blue-800 dark:text-blue-300'
+                      }`}
+                      title={
+                        item.type === 'meeting' 
+                          ? `Meeting: ${item.displayTitle}${item.startDatetime ? ` at ${new Date(item.startDatetime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}` : ''}`
+                          : item.type === 'personal'
+                          ? `Personal: ${item.displayTitle}`
+                          : `Task: ${item.displayTitle}`
+                      }
                     >
-                      <div className="flex items-center gap-1 mb-1">
-                        <span className="font-medium">{getDisplayIcon(item.type, item.priority)}</span>
-                        <span className="text-xs opacity-75">
-                          {item.type === 'backlog' ? '📋' : '⚡'}
+                      <div className="flex items-center justify-between gap-1 mb-1">
+                        <div className="flex items-center gap-1">
+                          <span className="text-xs">
+                            {item.type === 'meeting' ? '📅' : item.type === 'personal' ? '📝' : '⚡'}
                         </span>
-                        {item.type === 'backlog' && (
-                          <span 
-                            className="text-xs opacity-75 text-blue-600 dark:text-blue-400 cursor-help"
-                            title="User story visible throughout sprint/month"
+                          {item.type === 'meeting' && item.startDatetime && (
+                            <span className="text-xs font-mono">
+                              <FormattedDateTime date={new Date(item.startDatetime)} includeTime={true} short={true} />
+                            </span>
+                          )}
+                        </div>
+                        {item.type === 'personal' && (
+                          <button
+                            onClick={() => handleRemovePersonalDate(dateStr)}
+                            className="text-red-500 hover:text-red-700 opacity-60 hover:opacity-100"
+                            title="Remove personal date"
                           >
-                            📅
-                          </span>
+                            <X className="w-3 h-3" />
+                          </button>
                         )}
                       </div>
                       <div className="font-medium truncate" title={item.displayTitle}>
                         {item.displayTitle}
                       </div>
-                      {item.parentStory && (
-                        <div className="text-xs opacity-75 truncate" title={`From: ${item.parentStory}`}>
-                          📖 {item.parentStory}
-                        </div>
-                      )}
-                      {item.assignees.length > 0 && (
+                      {item.assignees && item.assignees.length > 0 && (
                         <div className="text-xs opacity-75 truncate" title={`Assigned to: ${item.assignees.join(', ')}`}>
                           👤 {item.assignees.join(', ')}
                         </div>
@@ -1314,10 +1436,21 @@ const CalendarView: React.FC<{
                     </div>
                   ))}
                   
-                  {dayItems.length > 4 && (
+                  {dayItems.length > 3 && (
                     <div className="text-xs text-gray-500 dark:text-gray-400 p-1">
-                      +{dayItems.length - 4} more
+                      +{dayItems.length - 3} more
                     </div>
+                  )}
+                  
+                  {/* Add Personal Date Button */}
+                  {isCurrentMonthDay && !personalDates[dateStr] && (
+                    <button
+                      onClick={() => handleAddPersonalDate(dateStr)}
+                      className="w-full text-xs text-gray-400 dark:text-gray-500 hover:text-green-600 dark:hover:text-green-400 border border-dashed border-gray-300 dark:border-gray-600 hover:border-green-400 rounded p-1 transition-colors"
+                      title="Add personal note for this date"
+                    >
+                      + Add note
+                    </button>
                   )}
                 </div>
               </div>
@@ -1326,67 +1459,94 @@ const CalendarView: React.FC<{
         </div>
       </div>
       
-      {/* Legend */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {/* User Stories Legend */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
-          <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-            <span>📋</span>
-            User Stories (Sprint Backlog Items)
-          </h4>
-          <div className="grid grid-cols-2 gap-3 text-xs">
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-red-500 rounded"></div>
-              <span className="text-gray-600 dark:text-gray-400">Critical</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-orange-500 rounded"></div>
-              <span className="text-gray-600 dark:text-gray-400">High</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-blue-500 rounded"></div>
-              <span className="text-gray-600 dark:text-gray-400">Medium</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-green-500 rounded"></div>
-              <span className="text-gray-600 dark:text-gray-400">Low</span>
+      {/* Personal Date Input Modal */}
+      {isAddingPersonalDate && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-md flex items-center justify-center z-50 p-4" style={{backdropFilter: 'blur(8px)'}}>
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full p-6">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+              Add Personal Note
+            </h3>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
+              Add a personal note for <FormattedDateTime date={new Date(isAddingPersonalDate)} includeTime={false} short={false} />
+            </p>
+            <input
+              type="text"
+              value={personalDateNote}
+              onChange={(e) => setPersonalDateNote(e.target.value)}
+              placeholder="Enter your note"
+              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-green-500 focus:border-green-500 mb-4"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && personalDateNote.trim()) {
+                  handleSavePersonalDate();
+                } else if (e.key === 'Escape') {
+                  setIsAddingPersonalDate(null);
+                  setPersonalDateNote('');
+                }
+              }}
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={() => {
+                  setIsAddingPersonalDate(null);
+                  setPersonalDateNote('');
+                }}
+                className="flex-1 px-4 py-2 text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSavePersonalDate}
+                disabled={!personalDateNote.trim()}
+                className="flex-1 px-4 py-2 bg-green-600 hover:bg-green-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-lg transition-colors"
+              >
+                Save Note
+              </button>
             </div>
           </div>
+        </div>
+      )}
+      
+      {/* Legend */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Meetings Legend */}
+        <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+          <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-3 flex items-center gap-2">
+            <span>📅</span>
+            Project Meetings
+          </h4>
+          <div className="flex items-center gap-2 text-xs mb-2">
+            <div className="w-3 h-3 bg-purple-400 rounded"></div>
+            <span className="text-gray-600 dark:text-gray-400">Scheduled meetings</span>
+          </div>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-            Shown for every day within the sprint/month time span
-          </p>
-          <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-            ⚡ Filters apply: Search, Assignee (Priority only affects tasks)
+            Shows meetings on their specific scheduled date only
           </p>
         </div>
 
-        {/* Tasks Legend */}
+        {/* Personal Calendar Legend */}
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
           <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-3 flex items-center gap-2">
-            <span>⚡</span>
-            In-Progress Tasks
+            <span>📝</span>
+            Personal Calendar
           </h4>
-          <div className="grid grid-cols-1 gap-3 text-xs">
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 bg-blue-500 rounded"></div>
-              <span className="text-gray-600 dark:text-gray-400">In Progress</span>
-            </div>
+          <div className="flex items-center gap-2 text-xs mb-2">
+            <div className="w-3 h-3 bg-green-400 rounded"></div>
+            <span className="text-gray-600 dark:text-gray-400">Personal notes</span>
           </div>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-            Only shows tasks currently being worked on
-          </p>
-          <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-            ⚡ Filters apply: Search, Assignee, Priority
+            Click "+ Add note" on any date to add personal reminders
           </p>
         </div>
+
       </div>
       
       {/* Empty state */}
       {Array.from(itemsByDate.values()).every(items => items.length === 0) && (
         <div className="text-center py-12 text-gray-500 dark:text-gray-400">
           <CalendarDays className="w-12 h-12 mx-auto mb-4 opacity-50" />
-          <p className="text-lg mb-2">No items scheduled</p>
-          <p className="text-sm">Create user stories and tasks to see them on the calendar</p>
+          <p className="text-lg mb-2">No items on calendar</p>
+          <p className="text-sm">Add personal notes, schedule meetings, or work on tasks to see them here</p>
         </div>
       )}
     </div>
@@ -1943,6 +2103,7 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ params }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [currentSprint, setCurrentSprint] = useState<any>(null);
+  const [currentProject, setCurrentProject] = useState<any>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [updateMessage, setUpdateMessage] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [sprintBacklogItems, setSprintBacklogItems] = useState<any[]>([]);
@@ -1953,8 +2114,7 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ params }) => {
 
   // Breadcrumb navigation
   const breadcrumbItems = [
-    { label: 'Project', href: '/project', icon: <FolderOpen className="w-4 h-4" /> },
-    { label: 'Mobile App Development', href: `/project/${projectId}/dashboard` },
+    { label: currentProject?.name || 'Project', href: `/project/${projectId}/dashboard` },
     { label: 'Task Board', icon: <Kanban className="w-4 h-4" /> }
   ];
 
@@ -1966,7 +2126,17 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ params }) => {
       setIsLoading(true);
       setError(null);
       
-      // First, get project sprints to find the current/active sprint
+      // First, get project data for breadcrumb
+      try {
+        const projectResponse = await api.projects.getById(parseInt(projectId));
+        if (!projectResponse.error && projectResponse.data) {
+          setCurrentProject(projectResponse.data);
+        }
+      } catch (error) {
+        console.warn('Failed to fetch project data:', error);
+      }
+      
+      // Get project sprints to find the current/active sprint
       const sprintsResponse = await api.sprints.getAll();
       if (sprintsResponse.error) throw new Error(sprintsResponse.error);
       
@@ -2363,8 +2533,8 @@ const TaskBoard: React.FC<TaskBoardProps> = ({ params }) => {
                     </p>
                   )}
                   <div className="flex items-center gap-4 mt-2 text-xs text-blue-600 dark:text-blue-300">
-                    <span>Start: {new Date(currentSprint.startDate).toLocaleDateString()}</span>
-                    <span>End: {new Date(currentSprint.endDate).toLocaleDateString()}</span>
+                    <span>Start: <FormattedDateTime date={new Date(currentSprint.startDate)} short={true} /></span>
+                    <span>End: <FormattedDateTime date={new Date(currentSprint.endDate)} short={true} /></span>
                     <span>Status: {currentSprint.status}</span>
                   </div>
                 </div>

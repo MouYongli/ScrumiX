@@ -9,16 +9,71 @@ import {
 } from 'lucide-react';
 import FavoriteButton from '@/components/common/FavoriteButton';
 import Breadcrumb from '@/components/common/Breadcrumb';
+import { useDateFormat } from '@/hooks/useDateFormat';
 import { Timeline } from 'vis-timeline/standalone';
 import { DataSet } from 'vis-data/standalone';
 import 'vis-timeline/styles/vis-timeline-graph2d.css';
-import { api } from '@/utils/api';
+import { api, personalNotesApi, PersonalNote } from '@/utils/api';
 import { ApiProject, ApiTask, ApiMeeting, ApiSprint, ScrumRole } from '@/types/api';
 import { ProjectStatus, TaskStatus } from '@/types/enums';
 
 interface ProjectDashboardProps {
   params: Promise<{ 'project-id': string }>;
 }
+
+// Component for rendering user-aware formatted dates and times
+const FormattedDateTime: React.FC<{ 
+  date: Date; 
+  includeTime?: boolean; 
+  short?: boolean;
+}> = ({ date, includeTime = false, short = false }) => {
+  const [formattedDateTime, setFormattedDateTime] = useState<string>(
+    includeTime 
+      ? `${date.toLocaleDateString()} ${date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`
+      : date.toLocaleDateString()
+  );
+  const { formatDate, formatDateShort } = useDateFormat();
+
+  useEffect(() => {
+    let isMounted = true;
+    
+    const format = async () => {
+      try {
+        // When includeTime is true, always use formatDate regardless of short flag
+        // formatDateShort doesn't support time display
+        const result = includeTime 
+          ? await formatDate(date, true)
+          : short 
+            ? await formatDateShort(date)
+            : await formatDate(date, false);
+        
+        if (isMounted) {
+          setFormattedDateTime(result);
+        }
+      } catch (error) {
+        console.error('Error formatting date:', error);
+        // Fallback to simple formatting
+        if (isMounted) {
+          setFormattedDateTime(
+            includeTime 
+              ? `${date.toLocaleDateString()} ${date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`
+              : date.toLocaleDateString()
+          );
+        }
+      }
+    };
+
+    // Add a small delay to batch API calls
+    const timeoutId = setTimeout(format, 100);
+    
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+    };
+  }, [date, includeTime, short, formatDate, formatDateShort]);
+
+  return <span>{formattedDateTime}</span>;
+};
 
 // Interface for computed dashboard data
 interface DashboardData {
@@ -40,7 +95,6 @@ interface DashboardData {
   } | null;
   team: {
     totalMembers: number;
-    activeMembers: number;
     roles: {
       productOwner: number;
       scrumMaster: number;
@@ -53,7 +107,7 @@ interface DashboardData {
     average: number;
   };
   recentActivities: Array<{
-    id: number;
+    id: string;
     user: string;
     action: string;
     target: string;
@@ -64,7 +118,7 @@ interface DashboardData {
     id: number;
     title: string;
     type: string;
-    time: string;
+    startDatetime: string;
     attendees: number;
   }>;
   sprintKanbanData: {
@@ -73,18 +127,21 @@ interface DashboardData {
       title: string;
       priority: string;
       assignee: string;
+      assignees?: any[];
     }>;
     inProgress: Array<{
       id: number;
       title: string;
       priority: string;
       assignee: string;
+      assignees?: any[];
     }>;
     done: Array<{
       id: number;
       title: string;
       priority: string;
       assignee: string;
+      assignees?: any[];
     }>;
   };
 }
@@ -98,7 +155,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
     project: null,
     tasks: { total: 0, completed: 0, inProgress: 0, pending: 0 },
     currentSprint: null,
-    team: { totalMembers: 0, activeMembers: 0, roles: { productOwner: 0, scrumMaster: 0, developers: 0 } },
+    team: { totalMembers: 0, roles: { productOwner: 0, scrumMaster: 0, developers: 0 } },
     velocity: { planned: 0, completed: 0, average: 0 },
     recentActivities: [],
     upcomingMeetings: [],
@@ -120,6 +177,31 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
   });
   const [draggedItem, setDraggedItem] = useState<any>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
+  
+  // Personal notes for calendar preview
+  const [personalDates, setPersonalDates] = useState<{[key: string]: string}>({});
+  
+  // Load personal dates from backend API for calendar preview
+  useEffect(() => {
+    const loadPersonalDates = async () => {
+      if (!projectId) return;
+      
+      try {
+        const response = await personalNotesApi.getByProject(parseInt(projectId));
+        if (!response.error && response.data) {
+          const notesMap: {[key: string]: string} = {};
+          response.data.forEach((note: PersonalNote) => {
+            notesMap[note.note_date] = note.content;
+          });
+          setPersonalDates(notesMap);
+        }
+      } catch (error) {
+        console.warn('Failed to load personal dates for calendar preview:', error);
+      }
+    };
+    
+    loadPersonalDates();
+  }, [projectId]);
   const [isUpdatingTask, setIsUpdatingTask] = useState<number | null>(null); // Track which task is being updated
   const [updateMessage, setUpdateMessage] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [tempDragState, setTempDragState] = useState<{
@@ -177,6 +259,386 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
     } else {
       return `${validUsers[0]} +${validUsers.length - 1} more`;
     }
+  };
+
+  // Component for displaying assignee avatars
+  const AssigneeAvatars: React.FC<{ assignees: any[]; className?: string }> = ({ assignees, className = '' }) => {
+    if (!assignees || assignees.length === 0) {
+      return (
+        <div className={`flex items-center text-xs text-gray-500 dark:text-gray-400 ${className}`}>
+          <span>Unassigned</span>
+        </div>
+      );
+    }
+
+    // Process assignees to get display names and initials
+    const processedAssignees = assignees.map(assignee => {
+      let displayName = 'Unknown User';
+      let initials = 'U';
+
+      if (typeof assignee === 'object') {
+        if (assignee.full_name && assignee.full_name.trim()) {
+          displayName = assignee.full_name;
+          initials = displayName.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase();
+        } else if (assignee.username && assignee.username.trim()) {
+          displayName = assignee.username;
+          initials = displayName.substring(0, 2).toUpperCase();
+        } else if (assignee.email) {
+          displayName = assignee.email.split('@')[0];
+          initials = displayName.substring(0, 2).toUpperCase();
+        }
+      }
+
+      return { displayName, initials };
+    });
+
+    const displayAssignees = processedAssignees.slice(0, 2);
+    const remainingCount = Math.max(0, assignees.length - 2);
+
+    return (
+      <div className={`flex items-center gap-1 ${className}`}>
+        <div className="flex -space-x-1">
+          {displayAssignees.map((assignee, index) => (
+            <div
+              key={index}
+              className="w-6 h-6 rounded-full bg-blue-500 text-white text-xs font-medium flex items-center justify-center border-2 border-white dark:border-gray-800 hover:z-10 transition-all duration-200 cursor-pointer"
+              title={assignee.displayName}
+            >
+              {assignee.initials}
+            </div>
+          ))}
+          {remainingCount > 0 && (
+            <div
+              className="w-6 h-6 rounded-full bg-gray-400 text-white text-xs font-medium flex items-center justify-center border-2 border-white dark:border-gray-800 hover:z-10 transition-all duration-200 cursor-pointer"
+              title={`+${remainingCount} more`}
+            >
+              +{remainingCount}
+            </div>
+          )}
+        </div>
+      </div>
+    );
+  };
+
+  // Helper function to calculate time difference in hours
+  const getHoursDifference = (timestamp: string): number => {
+    const now = new Date();
+    const then = new Date(timestamp);
+    return Math.abs(now.getTime() - then.getTime()) / (1000 * 60 * 60);
+  };
+
+  // Helper function to format time ago
+  const formatTimeAgo = (timestamp: string): string => {
+    const hours = getHoursDifference(timestamp);
+    
+    if (hours < 1) {
+      const minutes = Math.floor(hours * 60);
+      return `${minutes} minute${minutes !== 1 ? 's' : ''} ago`;
+    } else if (hours < 24) {
+      const wholeHours = Math.floor(hours);
+      return `${wholeHours} hour${wholeHours !== 1 ? 's' : ''} ago`;
+    } else {
+      const days = Math.floor(hours / 24);
+      return `${days} day${days !== 1 ? 's' : ''} ago`;
+    }
+  };
+
+  // Function to fetch recent activities from multiple sources
+  const fetchRecentActivities = async (projectId: number): Promise<Array<{
+    id: string;
+    user: string;
+    action: string;
+    target: string;
+    time: string;
+    type: string;
+    timestamp: string;
+  }>> => {
+    const activities: Array<{
+      id: string;
+      user: string;
+      action: string;
+      target: string;
+      time: string;
+      type: string;
+      timestamp: string;
+    }> = [];
+    const now = new Date();
+    const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+
+    try {
+      // 1. Fetch recent sprint activities
+      const sprintsResponse = await api.sprints.getAll();
+      if (!sprintsResponse.error && sprintsResponse.data) {
+        const projectSprints = sprintsResponse.data.filter(sprint => 
+          sprint.projectId === projectId
+        );
+        
+        projectSprints.forEach(sprint => {
+          const updatedAt = new Date(sprint.updatedAt);
+          if (updatedAt > twentyFourHoursAgo) {
+            // Determine activity type based on status and creation/update time
+            const createdAt = new Date(sprint.createdAt);
+            const isNewSprint = Math.abs(updatedAt.getTime() - createdAt.getTime()) < 60000; // Within 1 minute
+            
+            let action = '';
+            if (isNewSprint) {
+              action = 'created sprint';
+            } else {
+              // Check if this is a status change or other update
+              switch (sprint.status) {
+                case 'active':
+                  action = 'started sprint';
+                  break;
+                case 'completed':
+                  action = 'completed sprint';
+                  break;
+                case 'cancelled':
+                  action = 'cancelled sprint';
+                  break;
+                case 'planning':
+                  // If updated but still in planning, it's likely a metadata update
+                  action = 'updated sprint details';
+                  break;
+                default:
+                  action = 'updated sprint';
+              }
+            }
+            
+            activities.push({
+              id: `sprint-${sprint.id}`,
+              user: 'Team Member', // We don't have user info in sprint data
+              action,
+              target: sprint.sprintName,
+              time: formatTimeAgo(sprint.updatedAt),
+              type: 'sprint',
+              timestamp: sprint.updatedAt
+            });
+          }
+        });
+      }
+
+      // 2. Fetch recent backlog item activities and detect sprint backlog assignments
+      const backlogResponse = await api.backlogs.getAll({
+        project_id: projectId,
+        limit: 100
+      });
+      
+      if (!backlogResponse.error && backlogResponse.data) {
+        backlogResponse.data.forEach(item => {
+          const updatedAt = new Date(item.updated_at);
+          if (updatedAt > twentyFourHoursAgo) {
+            const createdAt = new Date(item.created_at);
+            const isNewItem = Math.abs(updatedAt.getTime() - createdAt.getTime()) < 60000; // Within 1 minute
+            
+            let action = '';
+            let activityType = 'backlog';
+            
+            if (isNewItem) {
+              // This is a newly created backlog item
+              if (item.sprint_id) {
+                action = `created ${item.item_type} and added to sprint`;
+                activityType = 'sprint_backlog';
+              } else {
+                action = `created ${item.item_type}`;
+              }
+            } else {
+              // This is an update to an existing item
+              // KEY INSIGHT: If a backlog item has a sprint_id and was recently updated,
+              // it's very likely it was just added to a sprint backlog
+              if (item.sprint_id) {
+                // IMPROVED LOGIC: Any item with sprint_id that was recently updated 
+                // is most likely a sprint backlog addition (remove time restriction)
+                const timeSinceCreation = updatedAt.getTime() - createdAt.getTime();
+                const minutesSinceCreation = timeSinceCreation / (1000 * 60);
+                
+                // If item has sprint_id and was updated recently, it's a sprint backlog activity
+                console.log(`Detected sprint backlog addition: ${item.title} (created ${minutesSinceCreation.toFixed(1)} minutes ago, updated recently, sprint_id: ${item.sprint_id})`);
+                action = `added ${item.item_type} to sprint backlog`;
+                activityType = 'sprint_backlog';
+              } else {
+                // Item is not in any sprint - could be removed from sprint or general update
+                action = `updated ${item.item_type}`;
+                activityType = 'backlog';
+              }
+            }
+            
+            // Get assignee name - we only have assigned_to_id, not full assignee data
+            const assigneeName = 'Team Member'; // TODO: Fetch user details from assigned_to_id if needed
+            
+            activities.push({
+              id: `backlog-${item.id}`,
+              user: assigneeName,
+              action,
+              target: item.title,
+              time: formatTimeAgo(item.updated_at),
+              type: activityType,
+              timestamp: item.updated_at
+            });
+          }
+        });
+      }
+
+      // 2.5. Enhanced sprint backlog change detection with sprint names
+      // Get sprint information to provide more detailed activity messages
+      const sprintMap = new Map<number, string>();
+      try {
+        const allSprintsResponse = await api.sprints.getAll();
+        if (!allSprintsResponse.error && allSprintsResponse.data) {
+          const projectSprints = allSprintsResponse.data.filter(sprint => 
+            sprint.projectId === projectId
+          );
+          
+          // Create a map of sprint_id to sprint_name for better activity messages
+          projectSprints.forEach(sprint => {
+            sprintMap.set(sprint.id, sprint.sprintName);
+          });
+          
+          // Update existing sprint_backlog activities to include sprint names
+          activities.forEach(activity => {
+            if (activity.type === 'sprint_backlog' && activity.action.includes('to sprint backlog')) {
+              // Try to find which sprint this item belongs to by checking the backlog items
+              const backlogItem = backlogResponse.data?.find(item => 
+                item.title === activity.target && item.sprint_id
+              );
+              if (backlogItem && backlogItem.sprint_id && sprintMap.has(backlogItem.sprint_id)) {
+                const sprintName = sprintMap.get(backlogItem.sprint_id);
+                if (sprintName) {
+                  activity.action = activity.action.replace('to sprint backlog', `to "${sprintName}" backlog`);
+                }
+              }
+            }
+          });
+          
+          // Additional detection: Check each sprint's backlog directly for comprehensive coverage
+          for (const sprint of projectSprints) {
+            try {
+              const sprintBacklogResponse = await api.sprints.getSprintBacklog(sprint.id, {
+                include_acceptance_criteria: false,
+                limit: 50
+              });
+              
+              if (!sprintBacklogResponse.error && sprintBacklogResponse.data) {
+                sprintBacklogResponse.data.forEach(backlogItem => {
+                  const updatedAt = new Date(backlogItem.updated_at);
+                  if (updatedAt > twentyFourHoursAgo) {
+                    const createdAt = new Date(backlogItem.created_at);
+                    const timeDifference = updatedAt.getTime() - createdAt.getTime();
+                    const minutesDifference = timeDifference / (1000 * 60);
+                    
+                    // MOST AGGRESSIVE detection: if item is in sprint and was updated recently
+                    // it was likely added to sprint (remove time restrictions)
+                    if (backlogItem.sprint_id === sprint.id) {
+                      // Check if we already have this activity to avoid duplicates
+                      const existingActivity = activities.find(act => 
+                        act.id === `backlog-${backlogItem.id}` || 
+                        act.id === `sprint-backlog-enhanced-${backlogItem.id}`
+                      );
+                      
+                      if (!existingActivity) {
+                        console.log(`Enhanced detection: Found sprint backlog addition - ${backlogItem.title} to ${sprint.sprintName}`);
+                        activities.push({
+                          id: `sprint-backlog-enhanced-${backlogItem.id}`,
+                          user: 'Team Member',
+                          action: `added ${backlogItem.item_type} to "${sprint.sprintName}" backlog`,
+                          target: backlogItem.title,
+                          time: formatTimeAgo(backlogItem.updated_at),
+                          type: 'sprint_backlog',
+                          timestamp: backlogItem.updated_at
+                        });
+                      }
+                    }
+                  }
+                });
+              }
+            } catch (error) {
+              console.warn(`Failed to fetch backlog for sprint ${sprint.id}:`, error);
+            }
+          }
+        }
+      } catch (error) {
+        console.warn('Failed to enhance sprint backlog activity messages:', error);
+      }
+
+      // 3. Fetch recent task activities (from current sprint if available)
+      const currentSprintResponse = await api.sprints.getAll();
+      if (!currentSprintResponse.error && currentSprintResponse.data) {
+        const currentSprint = currentSprintResponse.data.find(sprint => 
+          sprint.projectId === projectId && sprint.status === 'active'
+        );
+        
+        if (currentSprint) {
+          try {
+            const sprintBacklogResponse = await api.sprints.getSprintBacklog(currentSprint.id, {
+              include_acceptance_criteria: false,
+              limit: 1000
+            });
+            
+            if (!sprintBacklogResponse.error && sprintBacklogResponse.data) {
+              // Extract tasks from sprint backlog items
+              sprintBacklogResponse.data.forEach(backlogItem => {
+                if (backlogItem.tasks && Array.isArray(backlogItem.tasks)) {
+                  backlogItem.tasks.forEach((task: any) => {
+                    const updatedAt = new Date(task.updated_at);
+                    if (updatedAt > twentyFourHoursAgo) {
+                      // Determine if this is a new task or status update
+                      const createdAt = new Date(task.created_at);
+                      const isNewTask = Math.abs(updatedAt.getTime() - createdAt.getTime()) < 60000; // Within 1 minute
+                      
+                      let action = '';
+                      if (isNewTask) {
+                        action = 'created task';
+                      } else {
+                        action = `moved task to ${task.status === 'todo' ? 'To Do' : task.status === 'in_progress' ? 'In Progress' : 'Done'}`;
+                      }
+                      
+                      // Get assignee display name
+                      const assigneeName = getAssigneeDisplay(task.assignees || []);
+                      
+                      activities.push({
+                        id: `task-${task.id}`,
+                        user: assigneeName !== 'Unassigned' ? assigneeName : 'Team Member',
+                        action,
+                        target: task.title,
+                        time: formatTimeAgo(task.updated_at),
+                        type: 'task',
+                        timestamp: task.updated_at
+                      });
+                    }
+                  });
+                }
+              });
+            }
+          } catch (error) {
+            console.warn('Failed to fetch sprint tasks for recent activities:', error);
+          }
+        }
+      }
+
+    } catch (error) {
+      console.error('Error fetching recent activities:', error);
+    }
+
+    // Sort by timestamp (most recent first) and return top 5
+    const sortedActivities = activities
+      .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+      .slice(0, 5);
+    
+    console.log(`Found ${activities.length} total activities, showing ${sortedActivities.length} most recent:`, sortedActivities);
+    
+    // Debug: Log activity breakdown by type
+    const activityBreakdown = sortedActivities.reduce((acc, activity) => {
+      acc[activity.type] = (acc[activity.type] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>);
+    console.log('Activity breakdown by type:', activityBreakdown);
+    
+    // Debug: Log sprint backlog activities specifically
+    const sprintBacklogActivities = sortedActivities.filter(act => act.type === 'sprint_backlog');
+    if (sprintBacklogActivities.length > 0) {
+      console.log('Sprint backlog activities detected:', sprintBacklogActivities);
+    }
+    
+    return sortedActivities;
   };
 
   // Fetch dashboard data
@@ -247,12 +709,11 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
           sprint.projectId === parseInt(projectId)
         ) || [];
         
-        // Find current sprint (most recent active sprint)
+        // Find current sprint (active sprint only)
         const currentSprint = projectSprints
-          .filter(sprint => new Date(sprint.endDate) >= new Date())
-          .sort((a, b) => new Date(b.startDate).getTime() - new Date(a.startDate).getTime())[0];
+          .find(sprint => sprint.status === 'active') || null;
         
-        // Try to get tasks with assignee information from sprint endpoints
+        // Get tasks from current sprint only
         if (currentSprint) {
           try {
             const sprintBacklogResponse = await api.sprints.getSprintBacklog(currentSprint.id, {
@@ -269,15 +730,25 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                 }
               });
               
-              // If we got tasks with assignee info, use them
+              // Use sprint tasks exclusively for dashboard display
               if (sprintTasks.length > 0) {
-                console.log('Found tasks with assignee info from sprint backlog:', sprintTasks.slice(0, 2));
+                console.log('Found tasks from current sprint backlog:', sprintTasks.slice(0, 2));
                 tasksWithAssignees = sprintTasks;
+              } else {
+                // No tasks in current sprint
+                tasksWithAssignees = [];
               }
+            } else {
+              // No backlog data for current sprint
+              tasksWithAssignees = [];
             }
           } catch (error) {
-            console.warn('Failed to fetch sprint backlog for assignee info:', error);
+            console.warn('Failed to fetch sprint backlog for current sprint:', error);
+            tasksWithAssignees = []; // Clear tasks if sprint data fetch fails
           }
+        } else {
+          // No active sprint, so no tasks to display
+          tasksWithAssignees = [];
         }
         
         // Calculate sprint progress
@@ -300,9 +771,9 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
         
         // Calculate team composition
         const teamRoles = {
-          productOwner: project.project_members?.filter(member => member.role === ScrumRole.PRODUCT_OWNER).length || 0,
-          scrumMaster: project.project_members?.filter(member => member.role === ScrumRole.SCRUM_MASTER).length || 0,
-          developers: project.project_members?.filter(member => member.role === ScrumRole.DEVELOPER).length || 0
+          productOwner: project?.project_members?.filter(member => member.role === ScrumRole.PRODUCT_OWNER).length || 0,
+          scrumMaster: project?.project_members?.filter(member => member.role === ScrumRole.SCRUM_MASTER).length || 0,
+          developers: project?.project_members?.filter(member => member.role === ScrumRole.DEVELOPER).length || 0
         };
         
         // Calculate velocity from backlog items (user stories) since tasks don't have story points
@@ -316,10 +787,26 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
         let totalStoryPoints = 0;
         let completedStoryPoints = 0;
         
+        // Calculate project progress based on completed user stories and bugs
+        let projectProgress = 0;
+        
         if (!backlogResponse.error && backlogResponse.data) {
           const backlogItems = backlogResponse.data;
-          totalStoryPoints = backlogItems.reduce((sum, item) => sum + (item.story_point || 0), 0);
-          completedStoryPoints = backlogItems
+          // Only count user stories and bugs for progress and velocity calculation
+          const storyAndBugItems = backlogItems.filter(item => 
+            item.item_type === 'story' || item.item_type === 'bug'
+          );
+          
+          // Calculate progress based on count of completed items (not story points)
+          const totalStoryAndBugCount = storyAndBugItems.length;
+          const completedStoryAndBugCount = storyAndBugItems.filter(item => item.status === 'done').length;
+          projectProgress = totalStoryAndBugCount > 0 
+            ? Math.round((completedStoryAndBugCount / totalStoryAndBugCount) * 100)
+            : 0;
+          
+          // Calculate velocity based on story points
+          totalStoryPoints = storyAndBugItems.reduce((sum, item) => sum + (item.story_point || 0), 0);
+          completedStoryPoints = storyAndBugItems
             .filter(item => item.status === 'done')
             .reduce((sum, item) => sum + (item.story_point || 0), 0);
         }
@@ -360,9 +847,8 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
           });
         }
         
-        // Prepare kanban data (without story points) - ensure no duplicates
-        // Clear tasks if sprint is completed
-        const sprintKanbanData = currentSprint && currentSprint.status === 'completed' ? {
+        // Prepare kanban data - only show tasks if there's an active sprint
+        const sprintKanbanData = !currentSprint ? {
           todo: [],
           inProgress: [],
           done: []
@@ -371,54 +857,61 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
             id: task.id,
             title: task.title,
             priority: task.priority,
-            assignee: getAssigneeDisplay(task.assignees || [])
+            assignee: getAssigneeDisplay(task.assignees || []),
+            assignees: task.assignees || [] // Keep full assignee data for avatar display
           })),
           inProgress: inProgressTasks.map(task => ({
             id: task.id,
             title: task.title,
             priority: task.priority,
-            assignee: getAssigneeDisplay(task.assignees || [])
+            assignee: getAssigneeDisplay(task.assignees || []),
+            assignees: task.assignees || [] // Keep full assignee data for avatar display
           })),
           done: completedTasks.map(task => ({
             id: task.id,
             title: task.title,
             priority: task.priority,
-            assignee: getAssigneeDisplay(task.assignees || [])
+            assignee: getAssigneeDisplay(task.assignees || []),
+            assignees: task.assignees || [] // Keep full assignee data for avatar display
           }))
         };
         
 
+        // Fetch recent activities from multiple sources
+        const recentActivities = await fetchRecentActivities(parseInt(projectId));
         
-                 // Prepare recent activities (simplified - using task updates)
-         const recentActivities = tasksWithAssignees
-           .slice(0, 4)
-           .map((task, index) => ({
-             id: task.id,
-             user: getAssigneeDisplay(task.assignees || []),
-             action: task.status === TaskStatus.DONE ? 'completed task' : 
-                    task.status === TaskStatus.IN_PROGRESS ? 'started task' : 'updated task',
-             target: task.title,
-             time: `${index + 1} hour${index > 0 ? 's' : ''} ago`,
-             type: task.status === TaskStatus.DONE ? 'task_completed' : 'task_updated'
-           }));
+        // Prepare upcoming meetings with participant count
+        const upcomingMeetings = await Promise.all(
+          projectMeetings.slice(0, 3).map(async (meeting) => {
+            // Fetch participants for each meeting
+            let participantCount = 0;
+            try {
+              const participantsResponse = await api.meetingParticipants.getParticipantsCount(meeting.id);
+              if (!participantsResponse.error && participantsResponse.data) {
+                participantCount = participantsResponse.data.participants_count;
+              }
+            } catch (error) {
+              console.warn(`Failed to fetch participants for meeting ${meeting.id}:`, error);
+            }
+
+            return {
+              id: meeting.id,
+              title: meeting.title,
+              type: meeting.meetingType,
+              startDatetime: meeting.startDatetime, // Keep raw datetime for FormattedDateTime component
+              attendees: participantCount
+            };
+          })
+        );
         
-        // Prepare upcoming meetings
-        const upcomingMeetings = projectMeetings.slice(0, 3).map(meeting => ({
-          id: meeting.id,
-          title: meeting.title,
-          type: meeting.meetingType,
-          time: new Date(meeting.startDatetime).toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-            hour: '2-digit',
-            minute: '2-digit'
-          }),
-          attendees: 0 // Backend doesn't provide attendee count yet
-        }));
+        // Update dashboard data with calculated project progress
+        const projectWithProgress = project ? {
+          ...project,
+          progress: projectProgress // Override with calculated progress based on user stories and bugs
+        } : null;
         
-        // Update dashboard data
         setDashboardData({
-          project,
+          project: projectWithProgress,
           tasks: {
             total: tasksWithAssignees.length,
             completed: completedTasks.length,
@@ -435,8 +928,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
             status: currentSprint.status || 'active'
           } : null,
           team: {
-            totalMembers: project.members,
-            activeMembers: project.members, // Assuming all members are active
+            totalMembers: project?.members || 0,
             roles: teamRoles
           },
           velocity: {
@@ -480,27 +972,66 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
     try {
       console.log('Refreshing kanban data...');
       
-      // Fetch fresh task data for the current project
-      const tasksResponse = await api.tasks.getAll({ 
-        limit: 100 
-      });
+      // Fetch current sprint information fresh from API to avoid stale data
+      let currentSprint = null;
+      try {
+        const sprintsResponse = await api.sprints.getAll();
+        if (!sprintsResponse.error && sprintsResponse.data) {
+          const projectSprints = sprintsResponse.data.filter(sprint => 
+            sprint.projectId === parseInt(projectId)
+          );
+          currentSprint = projectSprints.find(sprint => sprint.status === 'active') || null;
+        }
+      } catch (error) {
+        console.warn('Failed to fetch current sprint, using dashboard data:', error);
+        currentSprint = dashboardData.currentSprint;
+      }
       
-      if (tasksResponse.error) {
-        console.warn('Failed to refresh tasks, using current data:', tasksResponse.error);
+      if (!currentSprint) {
+        console.log('No active sprint, clearing kanban data');
+        const emptyKanbanData = { todo: [], inProgress: [], done: [] };
+        setKanbanData(emptyKanbanData);
+        setDashboardData(prev => ({
+          ...prev,
+          tasks: { total: 0, completed: 0, inProgress: 0, pending: 0 },
+          sprintKanbanData: emptyKanbanData
+        }));
+        return;
+      }
+
+      // Fetch tasks from current sprint backlog only
+      const sprintId = 'id' in currentSprint ? currentSprint.id : null;
+      if (!sprintId) {
+        console.warn('Current sprint has no ID, cannot fetch backlog');
         return;
       }
       
-      const allTasks = tasksResponse.data?.tasks || [];
-      
-      // Filter tasks by project (assuming tasks have project_id field)
-      const tasks = allTasks.filter(task => {
-        return (task as any).project_id === parseInt(projectId) || !(task as any).project_id;
+      const sprintBacklogResponse = await api.sprints.getSprintBacklog(sprintId, {
+        include_acceptance_criteria: false,
+        limit: 1000
       });
       
+      if (sprintBacklogResponse.error) {
+        console.warn('Failed to refresh sprint backlog:', sprintBacklogResponse.error);
+        return;
+      }
+      
+      // Extract tasks from sprint backlog items
+      const sprintTasks: any[] = [];
+      if (sprintBacklogResponse.data) {
+        sprintBacklogResponse.data.forEach(backlogItem => {
+          if (backlogItem.tasks && Array.isArray(backlogItem.tasks)) {
+            sprintTasks.push(...backlogItem.tasks);
+          }
+        });
+      }
+      
+      console.log('Refreshed sprint tasks:', sprintTasks.length);
+      
       // Re-categorize tasks by status
-      const completedTasks = tasks.filter(task => task.status === TaskStatus.DONE);
-      const inProgressTasks = tasks.filter(task => task.status === TaskStatus.IN_PROGRESS);
-      const pendingTasks = tasks.filter(task => task.status === TaskStatus.TODO);
+      const completedTasks = sprintTasks.filter(task => task.status === TaskStatus.DONE);
+      const inProgressTasks = sprintTasks.filter(task => task.status === TaskStatus.IN_PROGRESS);
+      const pendingTasks = sprintTasks.filter(task => task.status === TaskStatus.TODO);
       
       // Create new kanban data
       const newKanbanData = {
@@ -508,19 +1039,22 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
           id: task.id,
           title: task.title,
           priority: task.priority,
-          assignee: getAssigneeDisplay(task.assignees || [])
+          assignee: getAssigneeDisplay(task.assignees || []),
+          assignees: task.assignees || [] // Keep full assignee data for avatar display
         })),
         inProgress: inProgressTasks.map(task => ({
           id: task.id,
           title: task.title,
           priority: task.priority,
-          assignee: getAssigneeDisplay(task.assignees || [])
+          assignee: getAssigneeDisplay(task.assignees || []),
+          assignees: task.assignees || [] // Keep full assignee data for avatar display
         })),
         done: completedTasks.map(task => ({
           id: task.id,
           title: task.title,
           priority: task.priority,
-          assignee: getAssigneeDisplay(task.assignees || [])
+          assignee: getAssigneeDisplay(task.assignees || []),
+          assignees: task.assignees || [] // Keep full assignee data for avatar display
         }))
       };
       
@@ -531,7 +1065,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
       setDashboardData(prev => ({
         ...prev,
         tasks: {
-          total: tasks.length,
+          total: sprintTasks.length,
           completed: completedTasks.length,
           inProgress: inProgressTasks.length,
           pending: pendingTasks.length
@@ -540,7 +1074,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
       }));
       
       console.log('Kanban data refreshed successfully:', {
-        total: tasks.length,
+        total: sprintTasks.length,
         todo: newKanbanData.todo.length,
         inProgress: newKanbanData.inProgress.length,
         done: newKanbanData.done.length
@@ -784,9 +1318,10 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
         refreshDashboardMetrics();
         
         // Refresh the kanban data in the background to ensure consistency with backend
+        // Use a shorter delay and pass the current sprint info to avoid stale data
         setTimeout(() => {
           refreshKanbanData();
-        }, 1000); // Slightly longer delay to ensure backend has processed the update
+        }, 500); // Shorter delay for better UX
         
       } catch (err) {
         console.error('Failed to update task status with dedicated endpoint, trying fallback:', err);
@@ -821,7 +1356,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
           // Refresh the kanban data in the background to ensure consistency with backend
           setTimeout(() => {
             refreshKanbanData();
-          }, 1000);
+          }, 500);
           
         } catch (fallbackErr) {
           console.error('Fallback update also failed:', fallbackErr);
@@ -1213,13 +1748,10 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-sm text-gray-600 dark:text-gray-400">Team Members</p>
-                      <p className="text-2xl font-bold text-green-600">{dashboardData.team.activeMembers}/{dashboardData.team.totalMembers}</p>
+                      <p className="text-2xl font-bold text-green-600">{dashboardData.team.totalMembers}</p>
             </div>
             <Users className="w-8 h-8 text-green-500" />
           </div>
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                    {dashboardData.team.activeMembers} active
-          </p>
         </div>
 
         <div className="bg-white dark:bg-gray-800 p-6 rounded-lg border border-gray-200 dark:border-gray-700">
@@ -1284,17 +1816,17 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
 
             {/* Task Distribution */}
             <div className="grid grid-cols-3 gap-4 mb-6">
-              <div className="text-center p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                <p className="text-2xl font-bold text-green-600">{dashboardData.tasks.completed}</p>
-                <p className="text-sm text-green-700 dark:text-green-400">Completed</p>
+              <div className="text-center p-4 bg-gray-50 dark:bg-gray-900/20 rounded-lg">
+                <p className="text-2xl font-bold text-gray-600">{dashboardData.tasks.pending}</p>
+                <p className="text-sm text-gray-700 dark:text-gray-400">Pending</p>
               </div>
               <div className="text-center p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
                 <p className="text-2xl font-bold text-blue-600">{dashboardData.tasks.inProgress}</p>
                 <p className="text-sm text-blue-700 dark:text-blue-400">In Progress</p>
               </div>
-              <div className="text-center p-4 bg-gray-50 dark:bg-gray-900/20 rounded-lg">
-                <p className="text-2xl font-bold text-gray-600">{dashboardData.tasks.pending}</p>
-                <p className="text-sm text-gray-700 dark:text-gray-400">Pending</p>
+              <div className="text-center p-4 bg-green-50 dark:bg-green-900/20 rounded-lg">
+                <p className="text-2xl font-bold text-green-600">{dashboardData.tasks.completed}</p>
+                <p className="text-sm text-green-700 dark:text-green-400">Completed</p>
               </div>
             </div>
             {/* Sprint Preview with View Selector */}
@@ -1330,15 +1862,16 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                   Kanban
                 </button>
                 <button
-                  onClick={() => setSprintViewType('timeline')}
-                  className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                    sprintViewType === 'timeline'
-                      ? 'bg-white dark:bg-gray-600 text-gray-900 dark:text-white shadow-sm'
-                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white'
-                  }`}
+                  onClick={() => {}} // Disabled - no action
+                  disabled={true}
+                  className="flex items-center gap-2 px-3 py-2 rounded-md text-sm font-medium transition-colors text-gray-400 dark:text-gray-500 cursor-not-allowed opacity-60"
+                  title="Timeline view is in progress - coming soon"
                 >
                   <BarChart4 className="w-4 h-4" />
                   Timeline
+                  <span className="ml-1 text-xs bg-yellow-100 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 px-1.5 py-0.5 rounded-full">
+                    In Progress
+                  </span>
                 </button>
                 <button
                   onClick={() => setSprintViewType('calendar')}
@@ -1377,10 +1910,10 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
               )}
 
               {/* Sprint Status Message */}
-              {dashboardData.currentSprint?.status === 'completed' ? (
-                <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-900/20 border border-gray-200 dark:border-gray-800 rounded-lg">
-                  <p className="text-sm text-gray-700 dark:text-gray-300">
-                    📋 <strong>Sprint Completed:</strong> This sprint has been completed. All tasks have been cleared from the board.
+              {!dashboardData.currentSprint ? (
+                <div className="mb-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
+                  <p className="text-sm text-yellow-700 dark:text-yellow-300">
+                    ⚠️ <strong>No Active Sprint:</strong> There is currently no active sprint. Please create and start a sprint to see tasks here.
                   </p>
                 </div>
               ) : (
@@ -1421,8 +1954,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                           <h6 className="text-xs font-medium text-gray-900 dark:text-white mb-2 line-clamp-2">
                             {task.title}
                           </h6>
-                          <div className="flex justify-between items-center text-xs">
-                            <span className="text-gray-500 dark:text-gray-400">{task.assignee}</span>
+                          <div className="flex justify-between items-center text-xs mb-2">
                             <div className="flex items-center gap-1">
                               {isUpdatingTask === task.id && (
                                 <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-500"></div>
@@ -1437,11 +1969,15 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                               <span className="text-gray-500 dark:text-gray-400">Task</span>
                             </div>
                           </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-500 dark:text-gray-400">Assignees:</span>
+                            <AssigneeAvatars assignees={task.assignees || []} />
+                          </div>
                         </div>
                       ))}
                       {(!Array.isArray(kanbanData.todo) || kanbanData.todo.length === 0) && (
                         <div className="text-center py-8 text-gray-500 dark:text-gray-400 text-sm">
-                          No tasks in To Do
+                          {!dashboardData.currentSprint ? 'No active sprint' : 'No tasks in To Do'}
                         </div>
                       )}
                     </div>
@@ -1474,8 +2010,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                           <h6 className="text-xs font-medium text-gray-900 dark:text-white mb-2 line-clamp-2">
                             {task.title}
                           </h6>
-                          <div className="flex justify-between items-center text-xs">
-                            <span className="text-gray-500 dark:text-gray-400">{task.assignee}</span>
+                          <div className="flex justify-between items-center text-xs mb-2">
                             <div className="flex items-center gap-1">
                               {isUpdatingTask === task.id && (
                                 <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-500"></div>
@@ -1490,11 +2025,15 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                               <span className="text-gray-500 dark:text-gray-400">Task</span>
                             </div>
                           </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-500 dark:text-gray-400">Assignees:</span>
+                            <AssigneeAvatars assignees={task.assignees || []} />
+                          </div>
                         </div>
                       ))}
                       {(!Array.isArray(kanbanData.inProgress) || kanbanData.inProgress.length === 0) && (
                         <div className="text-center py-8 text-gray-500 dark:text-gray-400 text-sm">
-                          No tasks in progress
+                          {!dashboardData.currentSprint ? 'No active sprint' : 'No tasks in progress'}
                         </div>
                       )}
                     </div>
@@ -1527,8 +2066,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                           <h6 className="text-xs font-medium text-gray-900 dark:text-white mb-2 line-clamp-2">
                             {task.title}
                           </h6>
-                          <div className="flex justify-between items-center text-xs">
-                            <span className="text-gray-500 dark:text-gray-400">{task.assignee}</span>
+                          <div className="flex justify-between items-center text-xs mb-2">
                             <div className="flex items-center gap-1">
                               {isUpdatingTask === task.id && (
                                 <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-blue-500"></div>
@@ -1543,11 +2081,15 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                               <span className="text-gray-500 dark:text-gray-400">Task</span>
                             </div>
                           </div>
+                          <div className="flex justify-between items-center">
+                            <span className="text-xs text-gray-500 dark:text-gray-400">Assignees:</span>
+                            <AssigneeAvatars assignees={task.assignees || []} />
+                          </div>
                         </div>
                       ))}
                       {(!Array.isArray(kanbanData.done) || kanbanData.done.length === 0) && (
                         <div className="text-center py-8 text-gray-500 dark:text-gray-400 text-sm">
-                          No completed tasks
+                          {!dashboardData.currentSprint ? 'No active sprint' : 'No completed tasks'}
                         </div>
                       )}
                     </div>
@@ -1593,50 +2135,189 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                 </div>
               )}
 
-              {/* Calendar View */}
+                              {/* Calendar View - Sprint-Focused Preview */}
               {sprintViewType === 'calendar' && (
-                <div className="bg-gray-50 dark:bg-gray-900/50 rounded-lg p-4">
-                  <div className="grid grid-cols-7 gap-1 mb-2">
-                    {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
-                      <div key={day} className="text-center text-xs font-medium text-gray-600 dark:text-gray-400 p-2">
+                  <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+                    {/* Calendar Header */}
+                    <div className="bg-gradient-to-r from-blue-50 to-indigo-50 dark:from-blue-900/20 dark:to-indigo-900/20 px-4 py-3 border-b border-gray-200 dark:border-gray-700">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-2">
+                          <CalendarDays className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                          <h6 className="text-sm font-semibold text-gray-900 dark:text-white">
+                            Sprint Calendar Preview
+                          </h6>
+                        </div>
+                        {dashboardData.currentSprint && (
+                          <div className="text-xs text-gray-600 dark:text-gray-400">
+                            <FormattedDateTime date={new Date(dashboardData.currentSprint.startDate)} includeTime={false} short={true} />
+                            {' - '}
+                            <FormattedDateTime date={new Date(dashboardData.currentSprint.endDate)} includeTime={false} short={true} />
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {dashboardData.currentSprint ? (
+                      <div className="p-4">
+                        {/* Week Days Header */}
+                        <div className="grid grid-cols-7 gap-1 mb-3">
+                          {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((day) => (
+                            <div key={day} className="text-center text-xs font-medium text-gray-500 dark:text-gray-400 py-2">
                         {day}
                       </div>
                     ))}
                   </div>
+
+                        {/* Calendar Grid - Show current sprint duration */}
                   <div className="grid grid-cols-7 gap-1">
-                    {Array.from({ length: 14 }, (_, i) => {
-                      const date = i + 1;
-                                             const tasksForDay = [...kanbanData.todo, ...kanbanData.inProgress]
-                         .filter((_, taskIndex) => (taskIndex + date) % 7 < 3);
+                          {(() => {
+                            const sprintStartDate = new Date(dashboardData.currentSprint.startDate);
+                            const sprintEndDate = new Date(dashboardData.currentSprint.endDate);
+                            const today = new Date();
+                            
+                            // Use the same date generation logic as the kanban calendar
+                            // Get the month that contains the sprint start date
+                            const year = sprintStartDate.getFullYear();
+                            const month = sprintStartDate.getMonth();
+                            const firstDay = new Date(year, month, 1);
+                            const startDate = new Date(firstDay);
+                            startDate.setDate(startDate.getDate() - firstDay.getDay());
+                            
+                            // Generate calendar days (same as kanban calendar)
+                            const sprintDates: Date[] = [];
+                            const currentDate = new Date(startDate);
+                            
+                            // Generate 3 weeks to cover sprint duration
+                            for (let i = 0; i < 21; i++) {
+                              sprintDates.push(new Date(currentDate));
+                              currentDate.setDate(currentDate.getDate() + 1);
+                            }
+                            
+                            // Helper function to format date consistently (same as kanban calendar)
+                            const formatDate = (date: Date) => {
+                              return date.toISOString().split('T')[0];
+                            };
+                            
+                            // Helper function to check if date is in current month (same as kanban calendar)
+                            const isCurrentMonth = (date: Date) => {
+                              return date.getMonth() === month;
+                            };
+
+                            return sprintDates.map((date, index) => {
+                              const dateStr = formatDate(date);
+                              const isInSprint = date >= sprintStartDate && date <= sprintEndDate;
+                              const isToday = date.toDateString() === today.toDateString();
+                              const isPastDate = date < today;
+                              const isCurrentMonthDay = isCurrentMonth(date);
+                              
+                              // Filter meetings for this specific date
+                              const meetingsForDay = dashboardData.upcomingMeetings.filter((meeting) => {
+                                const meetingDate = new Date(meeting.startDatetime);
+                                return meetingDate.toDateString() === date.toDateString();
+                              });
+                              
+                              // No tasks in calendar preview - only meetings and personal notes
+                              const tasksForDay: any[] = [];
                       
                       return (
-                        <div key={date} className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded p-1 min-h-[60px]">
-                          <div className="text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">
-                            Mar {date}
+                                <div
+                                  key={index}
+                                  className={`min-h-[70px] border border-gray-200 dark:border-gray-700 rounded-md p-1 transition-colors ${
+                                    !isInSprint 
+                                      ? 'bg-gray-50 dark:bg-gray-900/30 opacity-60' 
+                                      : isToday 
+                                        ? 'bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-600'
+                                        : 'bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700/50'
+                                  }`}
+                                >
+                                  {/* Date Number */}
+                                  <div className={`text-xs font-medium mb-1 ${
+                                    isToday 
+                                      ? 'w-5 h-5 bg-blue-600 text-white rounded-full flex items-center justify-center text-[10px] font-bold'
+                                      : isInSprint 
+                                        ? 'text-gray-900 dark:text-white' 
+                                        : 'text-gray-400 dark:text-gray-600'
+                                  }`}>
+                                    {date.getDate()}
                           </div>
-                          <div className="space-y-1">
-                            {tasksForDay.slice(0, 2).map((task) => (
-                              <div 
-                                key={task.id}
-                                className={`text-xs px-1 py-0.5 rounded truncate ${
-                                  task.priority === 'high' ? 'bg-red-100 text-red-700 dark:bg-red-900/50 dark:text-red-400' :
-                                  task.priority === 'medium' ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/50 dark:text-yellow-400' :
-                                  'bg-green-100 text-green-700 dark:bg-green-900/50 dark:text-green-400'
-                                }`}
-                              >
-                                {task.title}
-                              </div>
-                            ))}
-                            {tasksForDay.length > 2 && (
-                              <div className="text-xs text-gray-500 dark:text-gray-400">
-                                +{tasksForDay.length - 2} more
-                              </div>
-                            )}
+
+                                  {/* Items for this date */}
+                                  <div className="space-y-0.5">
+                                    {/* Meetings */}
+                                    {meetingsForDay.slice(0, 1).map((meeting) => (
+                                      <div
+                                        key={`meeting-${meeting.id}`}
+                                        className="text-[10px] px-1 py-0.5 rounded bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300 border-l-2 border-purple-400"
+                                        title={`Meeting: ${meeting.title} at ${new Date(meeting.startDatetime).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`}
+                                      >
+                                        <div className="flex items-center gap-1">
+                                          <span>📅</span>
+                                          <span className="truncate font-medium">{meeting.title}</span>
+                                        </div>
+                                      </div>
+                                    ))}
+
+                                    {/* Personal Notes */}
+                                    {personalDates[dateStr] && (
+                                      <div
+                                        className="text-[10px] px-1 py-0.5 rounded bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 border-l-2 border-green-400"
+                                        title={`Personal Note: ${personalDates[dateStr]}`}
+                                      >
+                                        <div className="flex items-center gap-1">
+                                          <span>📝</span>
+                                          <span className="truncate font-medium">{personalDates[dateStr]}</span>
+                                        </div>
+                                      </div>
+                                    )}
+
+                                    {/* Show count if there are more items */}
+                                    {(() => {
+                                      const totalItems = meetingsForDay.length + (personalDates[dateStr] ? 1 : 0);
+                                      const visibleItems = (meetingsForDay.length > 0 ? 1 : 0) + (personalDates[dateStr] ? 1 : 0);
+                                      const moreItems = totalItems - visibleItems;
+                                      
+                                      return moreItems > 0 && (
+                                        <div className="text-[10px] text-gray-500 dark:text-gray-400 px-1 font-medium">
+                                          +{moreItems} more item{moreItems !== 1 ? 's' : ''}
+                                        </div>
+                                      );
+                                    })()}
                           </div>
                         </div>
                       );
-                    })}
+                            });
+                          })()}
                   </div>
+
+                        {/* Legend */}
+                        <div className="mt-4 pt-3 border-t border-gray-200 dark:border-gray-700">
+                          <div className="flex flex-wrap items-center justify-center gap-4 text-xs">
+                            <div className="flex items-center gap-1">
+                              <div className="w-2 h-2 bg-purple-400 rounded border-l-2 border-purple-500"></div>
+                              <span className="text-gray-600 dark:text-gray-400">Meetings</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <div className="w-2 h-2 bg-green-400 rounded border-l-2 border-green-500"></div>
+                              <span className="text-gray-600 dark:text-gray-400">Personal Notes</span>
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <div className="w-4 h-4 bg-blue-600 rounded-full"></div>
+                              <span className="text-gray-600 dark:text-gray-400">Today</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="p-8 text-center">
+                        <CalendarDays className="w-12 h-12 text-gray-400 mx-auto mb-3" />
+                        <h6 className="text-sm font-medium text-gray-900 dark:text-white mb-2">
+                          No Active Sprint
+                        </h6>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
+                          Start a sprint to see the calendar preview with your tasks and meetings.
+                        </p>
+                      </div>
+                    )}
                 </div>
               )}
             </div>
@@ -1687,10 +2368,10 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                   </h4>
                   <div className="flex justify-between items-center mt-2">
                     <p className="text-xs text-gray-600 dark:text-gray-400">
-                      {meeting.time}
+                      <FormattedDateTime date={new Date(meeting.startDatetime)} includeTime={true} short={true} />
                     </p>
                     <p className="text-xs text-gray-500 dark:text-gray-400">
-                      {meeting.attendees} attendees
+                      {meeting.attendees} participant{meeting.attendees !== 1 ? 's' : ''}
                     </p>
                   </div>
                 </Link>
@@ -1704,26 +2385,66 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
                 Recent Activities
               </h3>
+              <Link 
+                href={`/project/${projectId}/activities`}
+                className="text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 flex items-center gap-1 text-sm transition-colors"
+              >
+                View All
+                <ArrowRight className="w-4 h-4" />
+              </Link>
             </div>
 
             <div className="space-y-3">
-              {dashboardData.recentActivities.map((activity) => (
-                <div key={activity.id} className="flex items-start gap-3">
-                  <div className="p-2 rounded-lg bg-gray-50 dark:bg-gray-700">
-                    <Activity className="w-4 h-4 text-gray-600 dark:text-gray-400" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-gray-900 dark:text-white">
-                      <span className="font-medium">{activity.user}</span>
-                      {' '}{activity.action}{' '}
-                      <span className="font-medium">{activity.target}</span>
-                    </p>
-                    <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                      {activity.time}
-                    </p>
-                  </div>
+              {dashboardData.recentActivities.length > 0 ? (
+                dashboardData.recentActivities.map((activity) => {
+                  // Determine icon and color based on activity type
+                  let icon = <Activity className="w-4 h-4" />;
+                  let bgColor = 'bg-gray-50 dark:bg-gray-700';
+                  let iconColor = 'text-gray-600 dark:text-gray-400';
+                  
+                  if (activity.type === 'sprint') {
+                    icon = <Zap className="w-4 h-4" />;
+                    bgColor = 'bg-blue-50 dark:bg-blue-900/20';
+                    iconColor = 'text-blue-600 dark:text-blue-400';
+                  } else if (activity.type === 'sprint_backlog') {
+                    icon = <Plus className="w-4 h-4" />;
+                    bgColor = 'bg-indigo-50 dark:bg-indigo-900/20';
+                    iconColor = 'text-indigo-600 dark:text-indigo-400';
+                  } else if (activity.type === 'task') {
+                    icon = <CheckCircle2 className="w-4 h-4" />;
+                    bgColor = 'bg-green-50 dark:bg-green-900/20';
+                    iconColor = 'text-green-600 dark:text-green-400';
+                  } else if (activity.type === 'backlog') {
+                    icon = <FolderOpen className="w-4 h-4" />;
+                    bgColor = 'bg-purple-50 dark:bg-purple-900/20';
+                    iconColor = 'text-purple-600 dark:text-purple-400';
+                  }
+                  
+                  return (
+                    <div key={activity.id} className="flex items-start gap-3">
+                      <div className={`p-2 rounded-lg ${bgColor}`}>
+                        <div className={iconColor}>{icon}</div>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm text-gray-900 dark:text-white">
+                          <span className="font-medium">{activity.user}</span>
+                          {' '}{activity.action}{' '}
+                          <span className="font-medium text-blue-600 dark:text-blue-400">{activity.target}</span>
+                        </p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                          {activity.time}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })
+              ) : (
+                <div className="text-center py-6 text-gray-500 dark:text-gray-400">
+                  <Activity className="w-8 h-8 mx-auto mb-2 opacity-50" />
+                  <p className="text-sm">No recent activities in the last 24 hours</p>
+                  <p className="text-xs mt-1">Activities include sprint updates, backlog changes, task movements, and sprint planning</p>
                 </div>
-              ))}
+              )}
             </div>
           </div>
 

@@ -26,8 +26,8 @@ class UserProject(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relationships
-    user = relationship("User", back_populates="user_projects")
-    project = relationship("Project", back_populates="user_projects")
+    user = relationship("User", back_populates="user_projects", overlaps="projects,users")
+    project = relationship("Project", back_populates="user_projects", overlaps="projects,users")
 
     def __repr__(self):
         return f"<UserProject(user_id={self.user_id}, project_id={self.project_id}, role='{self.role.value}')>"

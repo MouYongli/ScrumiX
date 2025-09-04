@@ -9,9 +9,52 @@ import {
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
 import FavoriteButton from '@/components/common/FavoriteButton';
+import { useDateFormat } from '@/hooks/useDateFormat';
 
 import { ApiProject, ScrumRole } from '@/types/api';
 import { ProjectStatus } from '@/types/enums';
+
+// Component for rendering user-aware formatted dates
+const FormattedDate: React.FC<{ 
+  date: Date; 
+  includeTime?: boolean; 
+  short?: boolean;
+}> = ({ date, includeTime = false, short = false }) => {
+  const [formattedDate, setFormattedDate] = useState<string>(date.toLocaleDateString());
+  const { formatDate, formatDateShort } = useDateFormat();
+
+  useEffect(() => {
+    let isMounted = true;
+    
+    const format = async () => {
+      try {
+        const result = short 
+          ? await formatDateShort(date)
+          : await formatDate(date, includeTime);
+        
+        if (isMounted) {
+          setFormattedDate(result);
+        }
+      } catch (error) {
+        console.error('Error formatting date:', error);
+        // Fallback to simple formatting
+        if (isMounted) {
+          setFormattedDate(date.toLocaleDateString());
+        }
+      }
+    };
+
+    // Add a small delay to batch API calls
+    const timeoutId = setTimeout(format, 100);
+    
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+    };
+  }, [date, includeTime, short, formatDate, formatDateShort]);
+
+  return <span>{formattedDate}</span>;
+};
 
 // Frontend Project interface extends ApiProject with some UI-specific fields
 interface Project extends Omit<ApiProject, 'id' | 'start_date' | 'end_date' | 'last_activity_at'> {
@@ -308,19 +351,24 @@ const ProjectsPage = () => {
               });
               const projectBacklogItems = backlogResponse.data || [];
               
-              // Calculate progress based on completed backlog items (status = 'done')
-              const totalBacklogItems = projectBacklogItems.length;
-              const completedBacklogItems = projectBacklogItems.filter(item => item.status === 'done').length;
-              const progress = totalBacklogItems > 0
-                ? Math.round((completedBacklogItems / totalBacklogItems) * 100)
+              // Filter to only count user stories and bugs for progress calculation
+              const storyAndBugItems = projectBacklogItems.filter(item => 
+                item.item_type === 'story' || item.item_type === 'bug'
+              );
+              
+              // Calculate progress based on completed user stories and bugs (status = 'done')
+              const totalStoryAndBugItems = storyAndBugItems.length;
+              const completedStoryAndBugItems = storyAndBugItems.filter(item => item.status === 'done').length;
+              const progress = totalStoryAndBugItems > 0
+                ? Math.round((completedStoryAndBugItems / totalStoryAndBugItems) * 100)
                 : 0;
 
               return {
                 ...project,
                 progress,
                 tasks: {
-                  total: totalBacklogItems,
-                  completed: completedBacklogItems
+                  total: totalStoryAndBugItems,
+                  completed: completedStoryAndBugItems
                 }
               };
             } catch (err) {
@@ -566,11 +614,11 @@ const ProjectsPage = () => {
               href={`/project/${project.id}/dashboard`}
               className="block bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:shadow-lg transition-all duration-200 overflow-hidden group"
             >
-              {/* 项目颜色条 */}
+              {/* Project Color Bar*/}
               <div className={`h-2 ${project.color}`}></div>
               
               <div className="p-6">
-                {/* 项目头部 */}
+                {/* Project Header  */}
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex-1">
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
@@ -594,12 +642,12 @@ const ProjectsPage = () => {
                   </div>
                 </div>
 
-                {/* 项目描述 */}
+                {/* Project Description */}
                 <p className="text-gray-600 dark:text-gray-400 text-sm mb-4 line-clamp-2">
                   {project.description}
                 </p>
 
-                {/* 进度条 */}
+                {/* Progress bar */}
                 <div className="mb-4">
                   <div className="flex justify-between items-center mb-1">
                     <span className="text-sm text-gray-600 dark:text-gray-400">Progress</span>
@@ -615,7 +663,7 @@ const ProjectsPage = () => {
                   </div>
                 </div>
 
-                {/* 项目统计 */}
+                {/* Project Statistics */}
                 <div className="grid grid-cols-3 gap-4 text-center">
                   <div>
                     <div className="flex items-center justify-center gap-1 text-gray-400 mb-1">
@@ -660,16 +708,11 @@ const ProjectsPage = () => {
                   )}
                 </div>
 
-                {/* 最后活动时间 */}
+                {/* Final Activity Time */}
                 <div className="mt-4 pt-4 border-t border-gray-100 dark:border-gray-700">
                   <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
                     <Clock className="w-3 h-3" />
-                    Last activity: {new Date(project.lastActivity).toLocaleString('en-US', {
-                      month: 'short',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit'
-                    })}
+                    Last activity: <FormattedDate date={new Date(project.lastActivity)} includeTime={true} short={true} />
                   </div>
                 </div>
               </div>

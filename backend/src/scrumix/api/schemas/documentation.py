@@ -19,6 +19,7 @@ class DocumentationBase(BaseModel):
     title: str
     type: DocumentationType
     description: Optional[str] = None
+    content: Optional[str] = None
     file_url: Optional[str] = None
     project_id: int
 
@@ -41,6 +42,7 @@ class DocumentationUpdate(BaseModel):
     title: Optional[str] = None
     type: Optional[DocumentationType] = None
     description: Optional[str] = None
+    content: Optional[str] = None
     file_url: Optional[str] = None
     author_ids: Optional[List[int]] = Field(None, description="List of user IDs to assign as authors")
 
@@ -60,6 +62,7 @@ class DocumentationResponse(BaseModel):
     title: str
     type: DocumentationType
     description: Optional[str] = None
+    content: Optional[str] = None
     file_url: Optional[str] = None
     project_id: int
     created_at: datetime
@@ -88,6 +91,7 @@ class DocumentationResponse(BaseModel):
             title=documentation.title,
             type=documentation.type,
             description=documentation.description,
+            content=documentation.content,
             file_url=documentation.file_url,
             project_id=documentation.project_id,
             created_at=documentation.created_at,

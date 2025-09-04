@@ -74,6 +74,7 @@ export interface ApiMeetingAgenda {
   agendaId: number;                // camelCase (alias in backend)
   meetingId: number;               // camelCase (alias in backend)
   title: string;
+  orderIndex: number;              // Order of agenda item in the meeting
   createdAt: string;               // camelCase (alias in backend)
   updatedAt: string;               // camelCase (alias in backend)
 }
@@ -150,7 +151,7 @@ export interface ApiProject {
   updated_at?: string;
   // Computed fields from backend (matching ProjectResponse schema)
   progress: number;
-  member_count: number;                      // Count, not array
+  members: number;                           // Count, not array (matches backend ProjectResponse.members)
   tasks: { completed: number; total: number }; // Object structure
   // User relationship data
   user_role?: ScrumRole;              // Current user's role in the project
@@ -273,6 +274,7 @@ export interface Documentation {
   title: string;
   type: DocumentationType;
   description?: string;
+  content?: string;
   file_url?: string;
   project_id: number;
   created_at: string;
@@ -289,6 +291,7 @@ export interface DocumentationCreate {
   title: string;
   type: DocumentationType;
   description?: string;
+  content?: string;
   file_url?: string;
   project_id: number;
   author_ids?: number[];
@@ -298,6 +301,7 @@ export interface DocumentationUpdate {
   title?: string;
   type?: DocumentationType;
   description?: string;
+  content?: string;
   file_url?: string;
   author_ids?: number[];
 }

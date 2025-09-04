@@ -131,24 +131,14 @@ def get_action_items_by_meeting(
     
     action_items = meeting_action_item.get_by_meeting_id(db=db, meeting_id=meeting_id, skip=skip, limit=limit)
     
-    # Debug: Check what data is being returned
-    print(f"DEBUG: Found {len(action_items)} action items")
-    for item in action_items:
-        print(f"DEBUG: Action item {item.id} - Title: {item.title}")
-        if hasattr(item, 'user') and item.user:
-            print(f"DEBUG: User data - ID: {item.user.id}, Username: {item.user.username}, Full Name: {item.user.full_name}, Email: {item.user.email}")
-        else:
-            print(f"DEBUG: No user data for action item {item.id}")
     
     # Validate and convert to response schema
     response_items = []
     for item in action_items:
         try:
             response_item = MeetingActionItemResponse.model_validate(item)
-            print(f"DEBUG: Response item {response_item.actionId} - Creator: {response_item.creator}")
             response_items.append(response_item)
         except Exception as e:
-            print(f"DEBUG: Schema validation failed for item {item.id}: {e}")
             raise e
     
     return response_items

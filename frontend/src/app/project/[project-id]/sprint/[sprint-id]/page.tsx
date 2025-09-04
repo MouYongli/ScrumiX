@@ -9,8 +9,51 @@ import {
   Search, ExternalLink, Archive, Trash2, Loader2, Info
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
+import { useDateFormat } from '@/hooks/useDateFormat';
 import { api } from '@/utils/api';
 import { ApiSprint, ApiBacklog, BacklogStatus, BacklogPriority, BacklogType } from '@/types/api';
+
+// Component for rendering user-aware formatted dates
+const FormattedDate: React.FC<{ 
+  date: Date; 
+  includeTime?: boolean; 
+  short?: boolean;
+}> = ({ date, includeTime = false, short = false }) => {
+  const [formattedDate, setFormattedDate] = useState<string>(date.toLocaleDateString());
+  const { formatDate, formatDateShort } = useDateFormat();
+
+  useEffect(() => {
+    let isMounted = true;
+    
+    const format = async () => {
+      try {
+        const result = short 
+          ? await formatDateShort(date)
+          : await formatDate(date, includeTime);
+        
+        if (isMounted) {
+          setFormattedDate(result);
+        }
+      } catch (error) {
+        console.error('Error formatting date:', error);
+        // Fallback to simple formatting
+        if (isMounted) {
+          setFormattedDate(date.toLocaleDateString());
+        }
+      }
+    };
+
+    // Add a small delay to batch API calls
+    const timeoutId = setTimeout(format, 100);
+    
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+    };
+  }, [date, includeTime, short, formatDate, formatDateShort]);
+
+  return <span>{formattedDate}</span>;
+};
 
 interface Task {
   id: number;
@@ -117,16 +160,16 @@ const AddStoryModal: React.FC<{
   currentCapacity: number;
   usedCapacity: number;
   projectId: string;
+  sprintId: string;
   getTasksForStory: (storyId: string) => Task[];
   openCreateTaskModal: (story: BacklogItem) => void;
   getTaskStatusColor: (status: string) => string;
   confirmDeleteTask: (task: Task) => void;
   confirmDeleteStory: (story: BacklogItem) => void;
   getUserDisplayName: (userId: number) => string;
-}> = ({ isOpen, onClose, onAddStories, availableStories, currentCapacity, usedCapacity, projectId, getTasksForStory, openCreateTaskModal, getTaskStatusColor, confirmDeleteTask, confirmDeleteStory, getUserDisplayName }) => {
+}> = ({ isOpen, onClose, onAddStories, availableStories, currentCapacity, usedCapacity, projectId, sprintId, getTasksForStory, openCreateTaskModal, getTaskStatusColor, confirmDeleteTask, confirmDeleteStory, getUserDisplayName }) => {
   const [selectedStoryIds, setSelectedStoryIds] = useState<Set<string>>(new Set());
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('all');
   const [priorityFilter, setPriorityFilter] = useState<string>('all');
 
   const selectedStories = availableStories.filter(story => selectedStoryIds.has(story.id.toString()));
@@ -140,10 +183,9 @@ const AddStoryModal: React.FC<{
                          story.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
                          story.acceptanceCriteria.some(criteria => criteria.toLowerCase().includes(searchTerm.toLowerCase()));
     
-    const matchesStatus = statusFilter === 'all' || story.status === statusFilter;
     const matchesPriority = priorityFilter === 'all' || story.priority === priorityFilter;
     
-    return matchesSearch && matchesStatus && matchesPriority;
+    return matchesSearch && matchesPriority;
   });
   
   // Ensure no duplicates in filtered stories (extra safety)
@@ -186,13 +228,12 @@ const AddStoryModal: React.FC<{
   };
 
   const handlePlanInFullView = () => {
-    // Navigate to dedicated sprint planning page
-    window.location.href = `/project/${projectId}/sprint/planning`;
+    // Navigate to dedicated sprint planning page with sprint ID
+    window.open(`/project/${projectId}/sprint/planning?sprint-id=${sprintId}`, '_blank');
   };
 
   const resetFilters = () => {
     setSearchTerm('');
-    setStatusFilter('all');
     setPriorityFilter('all');
     setSelectedStoryIds(new Set());
   };
@@ -205,9 +246,9 @@ const AddStoryModal: React.FC<{
         {/* Modal Header */}
         <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
           <div>
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Add Stories to Sprint</h2>
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Add Items to Sprint</h2>
             <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-              Select from {availableStories.length} available stories
+              Select from {availableStories.length} available stories and bugs
             </p>
           </div>
           <button
@@ -219,9 +260,15 @@ const AddStoryModal: React.FC<{
         </div>
 
         {/* Capacity Overview */}
-        <div className="p-4 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+        <div className={`p-4 border-b border-gray-200 dark:border-gray-700 flex-shrink-0 transition-colors ${
+          selectedPoints > 0 
+            ? (isOverCapacity 
+                ? 'bg-red-50 dark:bg-red-900/10 border-red-200 dark:border-red-800' 
+                : 'bg-blue-50 dark:bg-blue-900/10 border-blue-200 dark:border-blue-800')
+            : 'bg-gray-50 dark:bg-gray-900'
+        }`}>
           <div className="flex items-center justify-between">
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-6">
               <div>
                 <span className="text-sm text-gray-600 dark:text-gray-400">Current Capacity:</span>
                 <span className="ml-1 font-medium text-gray-900 dark:text-white">
@@ -229,32 +276,74 @@ const AddStoryModal: React.FC<{
                 </span>
               </div>
               {selectedPoints > 0 && (
-                <div>
-                  <span className="text-sm text-gray-600 dark:text-gray-400">Adding:</span>
-                  <span className={`ml-1 font-medium ${isOverCapacity ? 'text-red-600' : 'text-green-600'}`}>
-                    +{selectedPoints} pts
-                  </span>
-                </div>
+                <>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-600 dark:text-gray-400">Preview:</span>
+                    <span className={`font-medium ${isOverCapacity ? 'text-red-600' : 'text-blue-600'}`}>
+                      {usedCapacity} + {selectedPoints} = {totalPointsAfterAdd} pts
+                    </span>
+                  </div>
+                  <div className={`px-3 py-1 rounded-full text-sm font-medium ${
+                    isOverCapacity 
+                      ? 'bg-red-100 dark:bg-red-900/20 text-red-800 dark:text-red-400' 
+                      : 'bg-blue-100 dark:bg-blue-900/20 text-blue-800 dark:text-blue-400'
+                  }`}>
+                    {isOverCapacity ? '⚠️ Over Capacity' : '✓ Within Capacity'}
+                  </div>
+                </>
               )}
             </div>
             <div className="flex items-center gap-2">
-              <div className="w-32 bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+              <div className="relative w-40 bg-gray-200 dark:bg-gray-700 rounded-full h-3">
+                {/* Current capacity bar */}
                 <div 
-                  className={`h-2 rounded-full transition-all ${
-                    isOverCapacity ? 'bg-red-500' : 'bg-blue-600'
-                  }`}
-                  style={{ width: `${Math.min((totalPointsAfterAdd / currentCapacity) * 100, 100)}%` }}
+                  className="absolute top-0 left-0 h-3 bg-gray-400 dark:bg-gray-600 rounded-full transition-all"
+                  style={{ width: `${Math.min((usedCapacity / currentCapacity) * 100, 100)}%` }}
                 ></div>
+                {/* Preview capacity bar */}
+                {selectedPoints > 0 && (
+                  <div 
+                    className={`absolute top-0 left-0 h-3 rounded-full transition-all ${
+                      isOverCapacity ? 'bg-red-500' : 'bg-blue-500'
+                    }`}
+                    style={{ width: `${Math.min((totalPointsAfterAdd / currentCapacity) * 100, 100)}%` }}
+                  ></div>
+                )}
               </div>
-              <span className={`text-sm font-medium ${isOverCapacity ? 'text-red-600' : 'text-gray-900 dark:text-white'}`}>
-                {Math.round((totalPointsAfterAdd / currentCapacity) * 100)}%
-              </span>
+              <div className="text-right">
+                <div className="text-sm font-medium text-gray-900 dark:text-white">
+                  {selectedPoints > 0 ? (
+                    <span className={isOverCapacity ? 'text-red-600' : 'text-blue-600'}>
+                      {Math.round((totalPointsAfterAdd / currentCapacity) * 100)}%
+                    </span>
+                  ) : (
+                    <span>{Math.round((usedCapacity / currentCapacity) * 100)}%</span>
+                  )}
+                </div>
+                {selectedPoints > 0 && (
+                  <div className="text-xs text-gray-500 dark:text-gray-400">
+                    Preview
+                  </div>
+                )}
+              </div>
             </div>
           </div>
           {isOverCapacity && (
-            <p className="text-sm text-red-600 mt-2">
-              ⚠️ Selected stories exceed sprint capacity by {totalPointsAfterAdd - currentCapacity} points
-            </p>
+            <div className="mt-3 p-3 bg-red-100 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+              <p className="text-sm text-red-700 dark:text-red-400 font-medium">
+                ⚠️ Warning: Selected items exceed sprint capacity by {totalPointsAfterAdd - currentCapacity} points
+              </p>
+              <p className="text-xs text-red-600 dark:text-red-500 mt-1">
+                Consider removing some items or increasing sprint capacity before adding.
+              </p>
+            </div>
+          )}
+          {selectedPoints > 0 && !isOverCapacity && (
+            <div className="mt-3 p-3 bg-blue-100 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
+              <p className="text-sm text-blue-700 dark:text-blue-400">
+                ✓ Ready to add {selectedStoryIds.size} item{selectedStoryIds.size !== 1 ? 's' : ''} ({selectedPoints} points) to sprint
+              </p>
+            </div>
           )}
         </div>
 
@@ -265,22 +354,12 @@ const AddStoryModal: React.FC<{
               <Search className="w-4 h-4 absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
-                placeholder="Search stories..."
+                placeholder="Search stories and bugs..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
               />
             </div>
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-            >
-              <option value="all">All Status</option>
-              <option value="ready">Ready</option>
-              <option value="draft">Draft</option>
-              <option value="blocked">Blocked</option>
-            </select>
             <select
               value={priorityFilter}
               onChange={(e) => setPriorityFilter(e.target.value)}
@@ -574,11 +653,24 @@ const AddStoryModal: React.FC<{
             <button
               onClick={handleAddStories}
               disabled={selectedStoryIds.size === 0}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center gap-2"
+              className={`px-4 py-2 text-white rounded-lg transition-all flex items-center gap-2 font-medium ${
+                selectedStoryIds.size === 0 
+                  ? 'bg-gray-400 cursor-not-allowed' 
+                  : isOverCapacity 
+                    ? 'bg-red-600 hover:bg-red-700 hover:shadow-lg' 
+                    : 'bg-blue-600 hover:bg-blue-700 hover:shadow-lg'
+              }`}
             >
               <Plus className="w-4 h-4" />
-              Add {selectedStoryIds.size} {selectedStoryIds.size === 1 ? 'Story' : 'Stories'}
-              {selectedPoints > 0 && <span>({selectedPoints} pts)</span>}
+              {selectedStoryIds.size === 0 
+                ? 'Select Items to Add'
+                : `Add ${selectedStoryIds.size} Item${selectedStoryIds.size !== 1 ? 's' : ''}`
+              }
+              {selectedPoints > 0 && (
+                <span className="bg-white/20 px-2 py-0.5 rounded text-sm">
+                  {selectedPoints} pts
+                </span>
+              )}
             </button>
           </div>
         </div>
@@ -1135,7 +1227,17 @@ const EditSprintModal: React.FC<{
 
   // Initialize form data when sprint changes
   useEffect(() => {
-    setFormData(sprint);
+    // Format dates for HTML date inputs (YYYY-MM-DD format)
+    const formatDateForInput = (dateString: string) => {
+      const date = new Date(dateString);
+      return date.toISOString().split('T')[0];
+    };
+    
+    setFormData({
+      ...sprint,
+      start_date: formatDateForInput(sprint.start_date),
+      end_date: formatDateForInput(sprint.end_date)
+    });
   }, [sprint]);
 
   // Team members are now fetched from the API via projectDevelopers
@@ -1522,6 +1624,10 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
     message: string;
     show: boolean;
   } | null>(null);
+  
+  // Add state for velocity calculation
+  const [teamVelocity, setTeamVelocity] = useState<number>(0);
+  const [isCalculatingVelocity, setIsCalculatingVelocity] = useState<boolean>(false);
   
   // Task modal state
   const [isCreateTaskModalOpen, setIsCreateTaskModalOpen] = useState(false);
@@ -1935,6 +2041,16 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
     }
   }, [sprint?.start_date, sprint?.end_date, sprint?.totalStoryPoints, sprint?.stories]);
 
+  // Calculate team velocity when sprint data is loaded
+  useEffect(() => {
+    if (sprint && projectId) {
+      setIsCalculatingVelocity(true);
+      getSprintVelocity()
+        .then(setTeamVelocity)
+        .finally(() => setIsCalculatingVelocity(false));
+    }
+  }, [sprint, projectId]);
+
   // Calculate current sprint progress
   const getCurrentSprintProgress = () => {
     if (!sprint || !sprint.start_date || !sprint.end_date) return 0;
@@ -1951,15 +2067,47 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
     return Math.round((elapsed / totalDuration) * 100);
   };
 
-  // Calculate sprint velocity (story points per working day)
-  const getSprintVelocity = () => {
-    if (!sprint || !sprint.totalStoryPoints || !burndownData.length) return 0;
-    
-    // Calculate velocity based on actual completed story points
-    const totalCompleted = burndownData.reduce((sum, data) => sum + data.completedPoints, 0);
-    const workingDaysElapsed = Math.max(1, getCurrentWorkingDay());
-    
-    return Math.round((totalCompleted / workingDaysElapsed) * 100) / 100;
+  // Calculate sprint velocity (average story points per sprint from completed sprints)
+  const getSprintVelocity = async () => {
+    try {
+      if (!sprint || !projectId) return 0;
+      
+      // Fetch all sprints for this project
+      const sprintsResponse = await api.sprints.getByProject(parseInt(projectId, 10));
+      if (!sprintsResponse.data) return 0;
+      
+      // Filter for completed sprints only
+      const completedSprints = sprintsResponse.data.filter((s: any) => s.status === 'completed');
+      
+      // Sort by completion date (end date)
+      completedSprints.sort((a: any, b: any) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime());
+      
+      let totalCompletedStoryPoints = 0;
+      let sprintCount = 0;
+      
+      // Fetch backlog items for each completed sprint to get actual story points
+      for (const completedSprint of completedSprints) {
+        try {
+          const backlogResponse = await api.sprints.getSprintBacklog(completedSprint.id);
+          if (backlogResponse.data) {
+            const backlogItems = backlogResponse.data;
+            // Calculate completed story points (only items with status 'done')
+            const completedItems = backlogItems.filter((item: any) => item.status === 'done');
+            const completedStoryPoints = completedItems.reduce((sum: number, item: any) => sum + (item.story_point || 0), 0);
+            totalCompletedStoryPoints += completedStoryPoints;
+            sprintCount++;
+          }
+        } catch (backlogError) {
+          console.error(`Error fetching backlog for sprint ${completedSprint.id}:`, backlogError);
+          // Skip this sprint if backlog fetch fails
+        }
+      }
+      
+      return sprintCount > 0 ? Math.round(totalCompletedStoryPoints / sprintCount) : 0;
+    } catch (error) {
+      console.error('Error calculating velocity:', error);
+      return 0;
+    }
   };
 
   // Calculate burndown trend (ahead/behind/on track)
@@ -2051,9 +2199,63 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
   };
 
   // Add handler for sprint updates
-  const handleUpdateSprint = (updatedSprint: Sprint) => {
-    setSprint(updatedSprint);
-    setIsEditModalOpen(false);
+  const handleUpdateSprint = async (updatedSprint: Sprint) => {
+    try {
+      // Call the API to update the sprint
+      const response = await api.sprints.update(updatedSprint.id, {
+        sprint_name: updatedSprint.sprint_name,
+        sprint_goal: updatedSprint.sprint_goal,
+        start_date: updatedSprint.start_date,
+        end_date: updatedSprint.end_date,
+        sprint_capacity: updatedSprint.sprint_capacity,
+        status: updatedSprint.status,
+      });
+
+      if (response.error) {
+        throw new Error(response.error);
+      }
+
+      if (response.data) {
+        // Transform backend response to frontend format
+        const updatedSprintData: Sprint = {
+          id: response.data.id,
+          sprint_name: response.data.sprintName,
+          sprint_goal: response.data.sprintGoal || '',
+          status: response.data.status as 'planning' | 'active' | 'completed' | 'cancelled',
+          start_date: response.data.startDate,
+          end_date: response.data.endDate,
+          sprint_capacity: response.data.sprintCapacity || 0,
+          project_id: response.data.projectId,
+          created_at: response.data.createdAt,
+          updated_at: response.data.updatedAt,
+          // Keep existing calculated fields
+          totalStoryPoints: sprint?.totalStoryPoints || 0,
+          completedStoryPoints: sprint?.completedStoryPoints || 0,
+          totalStories: sprint?.totalStories || 0,
+          completedStories: sprint?.completedStories || 0,
+          teamMembers: sprint?.teamMembers || [],
+          velocity: sprint?.velocity || 0,
+          stories: sprint?.stories || []
+        };
+
+        setSprint(updatedSprintData);
+        setIsEditModalOpen(false);
+        
+        // Show success message
+        showMessage(
+          'success',
+          'Sprint Updated',
+          `Successfully updated "${updatedSprintData.sprint_name}"`
+        );
+      }
+    } catch (err) {
+      console.error('Error updating sprint:', err);
+      showMessage(
+        'error',
+        'Failed to Update Sprint',
+        `Failed to update sprint: ${err instanceof Error ? err.message : 'Unknown error'}`
+      );
+    }
   };
 
   // Add handler for adding stories to sprint
@@ -2682,7 +2884,7 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
             <div className="flex items-center gap-6 text-sm text-gray-600 dark:text-gray-400">
               <span className="flex items-center gap-1">
                 <Calendar className="w-4 h-4" />
-                {new Date(sprint.start_date).toLocaleDateString()} - {new Date(sprint.end_date).toLocaleDateString()}
+                <FormattedDate date={new Date(sprint.start_date)} short={true} /> - <FormattedDate date={new Date(sprint.end_date)} short={true} />
               </span>
               <span className="flex items-center gap-1">
                 <Users className="w-4 h-4" />
@@ -2775,7 +2977,11 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
             <p className="text-sm text-gray-600 dark:text-gray-400 mb-1">Team Velocity</p>
             <div className="flex items-center gap-2">
               <span className="text-2xl font-bold text-gray-900 dark:text-white">
-                {sprint.velocity}
+                {isCalculatingVelocity ? (
+                  <span className="animate-spin rounded-full h-6 w-6 border-b-2 border-gray-900 dark:border-white"></span>
+                ) : (
+                  teamVelocity
+                )}
               </span>
               <TrendingUp className="w-5 h-5 text-green-500" />
               <span className="text-sm text-gray-600 dark:text-gray-400">
@@ -2825,12 +3031,12 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                     <ExternalLink className="w-4 h-4" />
                     View Kanban
                   </Link>
-                  <button 
+                                    <button
                     onClick={() => setIsAddStoryModalOpen(true)}
                     className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2"
                   >
                     <Plus className="w-4 h-4" />
-                    Add Story
+                    Add Items
                   </button>
                 </div>
               </div>
@@ -3064,8 +3270,14 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                     <div className="text-sm text-gray-600 dark:text-gray-400">Sprint Progress</div>
                   </div>
                   <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                    <div className="text-2xl font-bold text-indigo-600">{getSprintVelocity()}</div>
-                    <div className="text-sm text-gray-600 dark:text-gray-400">Points/Day</div>
+                    <div className="text-2xl font-bold text-indigo-600">
+                      {isCalculatingVelocity ? (
+                        <span className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600 mx-auto"></span>
+                      ) : (
+                        teamVelocity
+                      )}
+                    </div>
+                    <div className="text-sm text-gray-600 dark:text-gray-400">Pts/Sprint</div>
                   </div>
                 </div>
                 
@@ -3302,7 +3514,7 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                     {burndownData.filter(data => data.completedPoints > 0).map((data, index) => (
                       <div key={index} className="text-center p-2 bg-white dark:bg-gray-700 rounded border">
                         <div className="font-medium text-gray-900 dark:text-white">
-                          {new Date(data.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          <FormattedDate date={new Date(data.date)} short={true} />
                         </div>
                         <div className="text-green-600 dark:text-green-400 font-bold">
                           +{data.completedPoints} pts
@@ -3331,13 +3543,13 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                     </div>
                     <div className="text-center">
                       <div className="font-medium text-gray-900 dark:text-white">
-                        {sprint.start_date ? new Date(sprint.start_date).toLocaleDateString() : 'N/A'}
+                        {sprint.start_date ? <FormattedDate date={new Date(sprint.start_date)} short={true} /> : 'N/A'}
                       </div>
                       <div className="text-gray-600 dark:text-gray-400">Start Date</div>
                     </div>
                     <div className="text-center">
                       <div className="font-medium text-gray-900 dark:text-white">
-                        {sprint.end_date ? new Date(sprint.end_date).toLocaleDateString() : 'N/A'}
+                        {sprint.end_date ? <FormattedDate date={new Date(sprint.end_date)} short={true} /> : 'N/A'}
                       </div>
                       <div className="text-gray-600 dark:text-gray-400">End Date</div>
                     </div>
@@ -3407,7 +3619,7 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                           ></div>
                         </div>
                         <div className="text-xs text-gray-500 dark:text-gray-400">
-                          Joined: {new Date(developer.joined_at).toLocaleDateString()}
+                          Joined: <FormattedDate date={new Date(developer.joined_at)} short={true} />
                         </div>
                       </div>
                     </div>
@@ -3440,6 +3652,7 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
         currentCapacity={sprint.sprint_capacity || 0}
         usedCapacity={sprint.totalStoryPoints || 0}
         projectId={projectId}
+        sprintId={sprintId}
         getTasksForStory={getTasksForStory}
         openCreateTaskModal={openCreateTaskModal}
         getTaskStatusColor={getTaskStatusColor}

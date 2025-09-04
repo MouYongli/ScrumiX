@@ -40,7 +40,6 @@ def get_backlogs(
         if search:
             backlogs = backlog_crud.search_backlogs(db, search, skip, limit)
         else:
-            print(f"Fetching backlogs with include_acceptance_criteria={include_acceptance_criteria}")
             backlogs = backlog_crud.get_backlogs(
                 db,
                 skip,
@@ -55,10 +54,6 @@ def get_backlogs(
                 include_children,
                 include_acceptance_criteria
             )
-            print(f"Retrieved {len(backlogs)} backlogs")
-            for backlog in backlogs:
-                print(f"Backlog {backlog.id}: has acceptance_criteria={hasattr(backlog, 'acceptance_criteria')}, count={len(backlog.acceptance_criteria) if hasattr(backlog, 'acceptance_criteria') else 'N/A'}")
-        
         # Convert to response format
         return [
             BacklogResponse.from_db_model(backlog)

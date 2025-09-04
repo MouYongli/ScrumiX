@@ -11,9 +11,64 @@ import {
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
 import ParticipantsTooltip from '@/components/common/ParticipantsTooltip';
+import { useDateFormat } from '@/hooks/useDateFormat';
 import { api } from '@/utils/api';
 import { MeetingType } from '@/types/enums';
 import { ApiMeeting, ApiSprint, ApiProject } from '@/types/api';
+
+// Component for rendering user-aware formatted dates and times
+const FormattedDateTime: React.FC<{ 
+  date: Date; 
+  includeTime?: boolean; 
+  short?: boolean;
+}> = ({ date, includeTime = false, short = false }) => {
+  const [formattedDateTime, setFormattedDateTime] = useState<string>(
+    includeTime 
+      ? `${date.toLocaleDateString()} ${date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`
+      : date.toLocaleDateString()
+  );
+  const { formatDate, formatDateShort } = useDateFormat();
+
+  useEffect(() => {
+    let isMounted = true;
+    
+    const format = async () => {
+      try {
+        // When includeTime is true, always use formatDate regardless of short flag
+        // formatDateShort doesn't support time display
+        const result = includeTime 
+          ? await formatDate(date, true)
+          : short 
+            ? await formatDateShort(date)
+            : await formatDate(date, false);
+        
+        if (isMounted) {
+          setFormattedDateTime(result);
+        }
+      } catch (error) {
+        console.error('Error formatting date:', error);
+        // Fallback to simple formatting
+        if (isMounted) {
+          setFormattedDateTime(
+            includeTime 
+              ? `${date.toLocaleDateString()} ${date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`
+              : date.toLocaleDateString()
+          );
+        }
+      }
+    };
+
+    // Add a small delay to batch API calls
+    const timeoutId = setTimeout(format, 100);
+    
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+    };
+  }, [date, includeTime, short, formatDate, formatDateShort]);
+
+  return <span>{formattedDateTime}</span>;
+};
 
 // Meeting type configuration - maps backend enum values to display names
 const meetingTypes = {
@@ -278,11 +333,24 @@ const ProjectMeetings = () => {
       return { isValid: true }; // Don't validate incomplete input
     }
 
-    const inputDateTime = new Date(`${date}T${time}`);
-    const now = new Date();
+    // Parse the datetime consistently with how we save it
+    const [year, month, day] = date.split('-').map(Number);
+    const [hours, minutes] = time.split(':').map(Number);
+    const inputDateTime = new Date(Date.UTC(year, month - 1, day, hours, minutes, 0));
     
-    if (inputDateTime <= now) {
-      const diffMinutes = Math.floor((now.getTime() - inputDateTime.getTime()) / (1000 * 60));
+    // Compare with current time in the same format (UTC with local time values)
+    const now = new Date();
+    const nowAsLocal = new Date(Date.UTC(
+      now.getFullYear(), 
+      now.getMonth(), 
+      now.getDate(), 
+      now.getHours(), 
+      now.getMinutes(), 
+      now.getSeconds()
+    ));
+    
+    if (inputDateTime <= nowAsLocal) {
+      const diffMinutes = Math.floor((nowAsLocal.getTime() - inputDateTime.getTime()) / (1000 * 60));
       if (diffMinutes < 1) {
         return { isValid: false, error: 'Meeting time must be at least 1 minute in the future' };
       } else if (diffMinutes < 60) {
@@ -373,9 +441,6 @@ const ProjectMeetings = () => {
     
     try {
       // Create meeting data for API - handle timezone properly
-      // Parse the date and time as local time, then convert to UTC for storage
-      const localDateTime = new Date(`${formData.date}T${formData.time}`);
-      
       // Check for validation errors before submitting
       const dateTimeValidation = validateDateTime(formData.date, formData.time);
       if (!dateTimeValidation.isValid) {
@@ -383,9 +448,14 @@ const ProjectMeetings = () => {
         return;
       }
       
-      // Create a UTC datetime that represents the same local time
-      // This ensures the time the user sees is the time they entered
-      const utcDateTime = new Date(localDateTime.getTime() - localDateTime.getTimezoneOffset() * 60000);
+      // Create the datetime preserving the user's intended local time
+      // We construct the datetime in a way that preserves the exact time the user entered
+      // By treating the user's input as if it were in UTC, we avoid timezone conversion
+      const [year, month, day] = formData.date.split('-').map(Number);
+      const [hours, minutes] = formData.time.split(':').map(Number);
+      
+      // Create a Date object in UTC with the exact values the user entered
+      const datetimeToSend = new Date(Date.UTC(year, month - 1, day, hours, minutes, 0));
       
       // Get the first available sprint or create a default one if none exist
       let sprintId = 1; // Default fallback
@@ -419,7 +489,7 @@ const ProjectMeetings = () => {
       const meetingData = {
       title: formData.title,
         meeting_type: formData.type as MeetingType,
-        start_datetime: utcDateTime.toISOString(),
+        start_datetime: datetimeToSend.toISOString(),
         description: formData.description,
       duration: formData.duration,
       location: formData.location,
@@ -477,14 +547,16 @@ const ProjectMeetings = () => {
 
     try {
       // Update meeting data for API - handle timezone properly
-      // Parse the date and time as local time, then convert to UTC for storage
-      const localDateTime = new Date(`${formData.date}T${formData.time}`);
       // For editing, allow any date (including past dates for completed meetings)
       // No validation needed here - users should be able to edit historical meetings
       
-      // Create a UTC datetime that represents the same local time
-      // This ensures the time the user sees is the time they entered
-      const utcDateTime = new Date(localDateTime.getTime() - localDateTime.getTimezoneOffset() * 60000);
+      // Create the datetime preserving the user's intended local time
+      // We construct the datetime in a way that preserves the exact time the user entered
+      const [year, month, day] = formData.date.split('-').map(Number);
+      const [hours, minutes] = formData.time.split(':').map(Number);
+      
+      // Create a Date object in UTC with the exact values the user entered
+      const datetimeToSend = new Date(Date.UTC(year, month - 1, day, hours, minutes, 0));
       
       // Get the first available sprint or use a default (same logic as create)
       const sprintId = sprints.length > 0 ? sprints[0].id : 1;
@@ -492,7 +564,7 @@ const ProjectMeetings = () => {
       const updateData = {
       title: formData.title,
         meeting_type: formData.type as MeetingType,
-        start_datetime: utcDateTime.toISOString(),
+        start_datetime: datetimeToSend.toISOString(),
         description: formData.description,
       duration: formData.duration,
       location: formData.location,
@@ -688,11 +760,11 @@ const ProjectMeetings = () => {
     const startDate = parseDatetimeSafely(datetimeValue);
     
     if (startDate) {
-      // Convert from UTC back to local time for editing
-      // The startDate is in UTC, but we want to show the local time equivalent
-      const localDate = new Date(startDate.getTime() + startDate.getTimezoneOffset() * 60000);
-      dateStr = localDate.toISOString().split('T')[0];
-      timeStr = localDate.toISOString().split('T')[1].substring(0, 5);
+      // Since we're now storing the datetime as the user intended (without timezone conversion),
+      // we can extract the date and time directly from the ISO string
+      const isoString = startDate.toISOString();
+      dateStr = isoString.split('T')[0];
+      timeStr = isoString.split('T')[1].substring(0, 5);
 
     } else {
       console.warn('Could not parse startDatetime for meeting:', meeting.id, 'Value:', datetimeValue);
@@ -957,7 +1029,7 @@ const ProjectMeetings = () => {
                         const datetimeValue = meeting.startDatetime || (meeting as any).start_datetime;
                         const startDate = parseDatetimeSafely(datetimeValue);
                         if (startDate) {
-                          return `${startDate.toLocaleDateString()} ${startDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
+                          return <FormattedDateTime date={startDate} includeTime={true} short={true} />;
                         }
 
                         return 'Date not available';

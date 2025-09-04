@@ -4,42 +4,17 @@ User management related API routes
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
+from datetime import datetime
 
 
 from scrumix.api.core.security import get_current_user, get_current_superuser
-from scrumix.api.db.database import get_db
+from scrumix.api.db.session import get_db
 from scrumix.api.crud.user import user_crud, session_crud
 from scrumix.api.schemas.user import (
     UserResponse, UserUpdate, UserSessionResponse, ProfileUpdate, ProfileResponse, ChangePasswordRequest
 )
 
 router = APIRouter()
-
-@router.get("/me", response_model=UserResponse)
-async def get_current_user_profile(current_user = Depends(get_current_user)):
-    """Get current user profile"""
-    return current_user
-
-@router.put("/me", response_model=UserResponse)
-async def update_current_user_basic_profile(
-    user_update: UserUpdate,
-    current_user = Depends(get_current_user),
-    db: Session = Depends(get_db)
-):
-    """Update current user basic profile"""
-    try:
-        updated_user = user_crud.update_user(db, current_user.id, user_update)
-        if not updated_user:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="User not found"
-            )
-        return updated_user
-    except ValueError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
 
 @router.get("/me/profile", response_model=ProfileResponse)
 async def get_current_user_detailed_profile(current_user = Depends(get_current_user)):
@@ -54,6 +29,7 @@ async def update_current_user_profile(
 ):
     """Update current user profile"""
     try:
+        
         # Check if this is a virtual user (Keycloak user)
         if hasattr(current_user, '__class__') and current_user.__class__.__name__ == 'VirtualUser':
             # For Keycloak users, we can't update the database
@@ -84,6 +60,37 @@ async def update_current_user_profile(
                     detail="User not found"
                 )
             return updated_user
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Internal server error: {str(e)}"
+        )
+
+@router.get("/me", response_model=UserResponse)
+async def get_current_user_profile(current_user = Depends(get_current_user)):
+    """Get current user profile"""
+    return current_user
+
+@router.put("/me", response_model=UserResponse)
+async def update_current_user_basic_profile(
+    user_update: UserUpdate,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update current user basic profile"""
+    try:
+        updated_user = user_crud.update_user(db, current_user.id, user_update)
+        if not updated_user:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User not found"
+            )
+        return updated_user
     except ValueError as e:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

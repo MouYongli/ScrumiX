@@ -45,7 +45,7 @@ def create_database_engine():
     
     # Base engine configuration
     engine_kwargs = {
-        "echo": settings.ENVIRONMENT == "development",  # SQL logging in dev only
+        "echo": False,  # Disable SQL logging to reduce noise
         "pool_pre_ping": True,  # Verify connections before use
         "pool_recycle": 300,    # Recycle connections every 5 minutes
     }

@@ -8,6 +8,54 @@ import Footer from "@/components/layout/Footer";
 import ConditionalSidebar from "@/components/layout/ConditionalSidebar";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 
+// Script to apply theme before React hydrates to prevent flash
+const themeScript = `
+  (function() {
+    try {
+      // Function to apply theme to document
+      function applyTheme(theme) {
+        const root = document.documentElement;
+        if (theme === 'dark') {
+          root.classList.add('dark');
+        } else if (theme === 'light') {
+          root.classList.remove('dark');
+        } else {
+          // System theme
+          const isDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+          if (isDark) {
+            root.classList.add('dark');
+          } else {
+            root.classList.remove('dark');
+          }
+        }
+      }
+
+      // Load theme from localStorage
+      let savedTheme = null;
+      
+      // First try userSettings
+      const savedSettings = localStorage.getItem('userSettings');
+      if (savedSettings) {
+        const settings = JSON.parse(savedSettings);
+        if (settings.profile?.theme) {
+          savedTheme = settings.profile.theme;
+        }
+      }
+      
+      // Fallback to direct theme storage
+      if (!savedTheme) {
+        savedTheme = localStorage.getItem('theme');
+      }
+      
+      // Apply theme or default to system
+      applyTheme(savedTheme || 'system');
+    } catch (e) {
+      // If anything fails, default to light mode
+      document.documentElement.classList.remove('dark');
+    }
+  })();
+`;
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -38,24 +86,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="bg-gray-50 dark:bg-gray-900" suppressHydrationWarning>
-        <script dangerouslySetInnerHTML={{
-          __html: `
-            try {
-              const settings = JSON.parse(localStorage.getItem('userSettings') || '{}');
-              const theme = settings.profile?.theme || 'system';
-              const isDark = theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
-              if (isDark) {
-                document.documentElement.classList.add('dark');
-              } else {
-                document.documentElement.classList.remove('dark');
-              }
-            } catch (e) {
-              if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-                document.documentElement.classList.add('dark');
-              }
-            }
-          `
-        }} />
+        <script dangerouslySetInnerHTML={{ __html: themeScript }} />
         <ThemeProvider>
           {isPublicPage ? (
             // Public page layout - no navigation (home and auth pages)

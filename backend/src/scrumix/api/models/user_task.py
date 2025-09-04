@@ -26,8 +26,8 @@ class UserTask(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relationships
-    user = relationship("User", back_populates="user_tasks")
-    task = relationship("Task", back_populates="user_tasks")
+    user = relationship("User", back_populates="user_tasks", overlaps="tasks,users")
+    task = relationship("Task", back_populates="user_tasks", overlaps="tasks,users")
 
     def __repr__(self):
         return f"<UserTask(user_id={self.user_id}, task_id={self.task_id}, role='{self.role.value}')>"

@@ -24,16 +24,14 @@ class NotificationHelper:
         delivery_method: str = 'in_app'
     ) -> List[int]:
         """Filter user IDs based on their notification preferences"""
-        print(f"    🔍 DEBUG: Filtering {len(user_ids)} users for notification type '{notification_type}'")
+        # Filter user IDs based on their notification preferences
         filtered_user_ids = []
         for user_id in user_ids:
             should_send = user_notification_preference_crud.should_send_notification(
                 db, user_id, notification_type, delivery_method
             )
-            print(f"      User {user_id}: should_send = {should_send}")
             if should_send:
                 filtered_user_ids.append(user_id)
-        print(f"    🔍 DEBUG: {len(filtered_user_ids)} users will receive notification after filtering")
         return filtered_user_ids
     
     @staticmethod
@@ -235,7 +233,6 @@ class NotificationHelper:
         if new_participant_user_id == added_by_user_id:
             return  # Don't notify when adding yourself
         
-        print(f"🔔 DEBUG: Creating meeting participant notification for user {new_participant_user_id}")
         
         # Filter user based on their notification preferences
         filtered_user_ids = NotificationHelper._filter_users_by_preferences(
@@ -525,7 +522,6 @@ class NotificationHelper:
         updated_by_user_id: int
     ):
         """Create notification when project information is updated"""
-        print(f"🔔 DEBUG: Creating project notification for field '{updated_field}' in project {project_id}")
         print(f"    Old value: '{old_value}' -> New value: '{new_value}'")
         
         # Get all project members except the updater

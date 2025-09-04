@@ -17,12 +17,56 @@ import {
   createProjectWithDetails,
   formatScrumRole
 } from '@/utils/mappers';
+import { useDateFormat } from '@/hooks/useDateFormat';
+
+// Component for rendering user-aware formatted dates
+const FormattedDate: React.FC<{ 
+  date: Date; 
+  includeTime?: boolean; 
+  short?: boolean;
+}> = ({ date, includeTime = false, short = false }) => {
+  const [formattedDate, setFormattedDate] = useState<string>(date.toLocaleDateString());
+  const { formatDate, formatDateShort } = useDateFormat();
+
+  useEffect(() => {
+    let isMounted = true;
+    
+    const format = async () => {
+      try {
+        const result = short 
+          ? await formatDateShort(date)
+          : await formatDate(date, includeTime);
+        
+        if (isMounted) {
+          setFormattedDate(result);
+        }
+      } catch (error) {
+        console.error('Error formatting date:', error);
+        // Fallback to simple formatting
+        if (isMounted) {
+          setFormattedDate(date.toLocaleDateString());
+        }
+      }
+    };
+
+    // Add a small delay to batch API calls
+    const timeoutId = setTimeout(format, 100);
+    
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+    };
+  }, [date, includeTime, short, formatDate, formatDateShort]);
+
+  return <span>{formattedDate}</span>;
+};
 
 const MyWorkspacePage = () => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [projects, setProjects] = useState<ProjectWithDetails[]>([]);
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const { formatDate, formatDateShort } = useDateFormat();
 
   useEffect(() => {
     const fetchData = async () => {
@@ -47,12 +91,19 @@ const MyWorkspacePage = () => {
           const domainProject = mapApiProjectToDomain(apiProject);
           return {
             ...domainProject,
+            memberCount: apiProject.member_count || 0,  // Use the actual member count from workspace API
             role: formatScrumRole(apiProject.user_role) || 'Member'  // Add formatted role from workspace API response
           };
         });
         const sprints = workspaceData.active_sprints.map(mapApiSprintToDomain);
         const allTasks = workspaceData.recent_tasks.map(mapApiTaskToDomain);
-        const allMeetings = workspaceData.upcoming_meetings.map(mapApiMeetingToDomain);
+        const allMeetings = workspaceData.upcoming_meetings.map((apiMeeting: any) => {
+          const domainMeeting = mapApiMeetingToDomain(apiMeeting);
+          return {
+            ...domainMeeting,
+            participantCount: apiMeeting.participant_count || 0  // Use the actual participant count from workspace API
+          };
+        });
 
         // Create sprint-to-project mapping
         const sprintToProject = new Map<number, number>();
@@ -76,7 +127,7 @@ const MyWorkspacePage = () => {
             meeting.projectId === project.id
           );
 
-          // Calculate project progress based on backlog items
+          // Calculate project progress based on user stories and bugs only
           let progress = 0;
           try {
             const backlogResponse = await api.backlogs.getAll({ 
@@ -85,10 +136,15 @@ const MyWorkspacePage = () => {
             });
             const projectBacklogItems = backlogResponse.data || [];
             
-            const totalBacklogItems = projectBacklogItems.length;
-            const completedBacklogItems = projectBacklogItems.filter((item: any) => item.status === 'done').length;
-            progress = totalBacklogItems > 0
-              ? Math.round((completedBacklogItems / totalBacklogItems) * 100)
+            // Filter to only count user stories and bugs for progress calculation
+            const storyAndBugItems = projectBacklogItems.filter((item: any) => 
+              item.item_type === 'story' || item.item_type === 'bug'
+            );
+            
+            const totalStoryAndBugItems = storyAndBugItems.length;
+            const completedStoryAndBugItems = storyAndBugItems.filter((item: any) => item.status === 'done').length;
+            progress = totalStoryAndBugItems > 0
+              ? Math.round((completedStoryAndBugItems / totalStoryAndBugItems) * 100)
               : 0;
           } catch (err) {
             console.error(`Error fetching backlog for project ${project.id}:`, err);
@@ -307,7 +363,7 @@ const MyWorkspacePage = () => {
                           </p>
                           <div className="flex items-center justify-between">
                             <span className="text-xs text-gray-600 dark:text-gray-400">
-                              Created: {task.createdAt.toLocaleDateString()}
+                              Created: <FormattedDate date={task.createdAt} short={true} />
                             </span>
                             <span className={`px-2 py-1 text-xs rounded ${task.priorityColor}`}>
                               {task.priority}
@@ -337,7 +393,7 @@ const MyWorkspacePage = () => {
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
                               <span className="text-xs text-gray-600 dark:text-gray-400">
-                                Updated: {task.updatedAt.toLocaleDateString()}
+                                Updated: <FormattedDate date={task.updatedAt} short={true} />
                               </span>
                               {task.assignedUsers.length > 0 && (
                                 <span className="text-xs text-gray-600 dark:text-gray-400">
@@ -377,8 +433,8 @@ const MyWorkspacePage = () => {
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-1 text-xs text-gray-600 dark:text-gray-400">
                               <Calendar className="w-3 h-3" />
-                              <span>{meeting.startDateTime.toLocaleDateString()}</span>
-                              <span>• {meeting.participants.length} participants</span>
+                              <FormattedDate date={meeting.startDateTime} short={true} />
+                              <span>• {(meeting as any).participantCount || 0} participants</span>
                             </div>
                             <span className="text-xs text-gray-600 dark:text-gray-400">
                               {meeting.displayDuration}

@@ -15,3 +15,4 @@ from .meeting_note import MeetingNote
 from .meeting_action_item import MeetingActionItem
 from .notification import Notification, NotificationType, NotificationPriority, NotificationStatus, DeliveryMethod
 from .acceptance_criteria import AcceptanceCriteria
+from .personal_note import PersonalNote

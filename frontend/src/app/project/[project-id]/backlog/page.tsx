@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
 import BacklogItemModal from '@/components/common/BacklogItemModal';
+import { useDateFormat } from '@/hooks/useDateFormat';
 import { api } from '@/utils/api';
 import { 
   BacklogStatus, 
@@ -16,6 +17,48 @@ import {
   ApiBacklog as BacklogItem, 
   ApiAcceptanceCriteria as AcceptanceCriteria 
 } from '@/types/api';
+
+// Component for rendering user-aware formatted dates
+const FormattedDate: React.FC<{ 
+  date: Date; 
+  includeTime?: boolean; 
+  short?: boolean;
+}> = ({ date, includeTime = false, short = false }) => {
+  const [formattedDate, setFormattedDate] = useState<string>(date.toLocaleDateString());
+  const { formatDate, formatDateShort } = useDateFormat();
+
+  useEffect(() => {
+    let isMounted = true;
+    
+    const format = async () => {
+      try {
+        const result = short 
+          ? await formatDateShort(date)
+          : await formatDate(date, includeTime);
+        
+        if (isMounted) {
+          setFormattedDate(result);
+        }
+      } catch (error) {
+        console.error('Error formatting date:', error);
+        // Fallback to simple formatting
+        if (isMounted) {
+          setFormattedDate(date.toLocaleDateString());
+        }
+      }
+    };
+
+    // Add a small delay to batch API calls
+    const timeoutId = setTimeout(format, 100);
+    
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+    };
+  }, [date, includeTime, short, formatDate, formatDateShort]);
+
+  return <span>{formattedDate}</span>;
+};
 
 // Extended type for hierarchical display
 interface HierarchicalBacklogItem extends BacklogItem {
@@ -226,11 +269,11 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
               <div className="flex items-center gap-6 text-xs text-gray-500 dark:text-gray-400">
                 <div className="flex items-center gap-1">
                   <Calendar className="w-3 h-3" />
-                  Created: {new Date(item.created_at).toLocaleDateString()}
+                  Created: <FormattedDate date={new Date(item.created_at)} short={true} />
                 </div>
                 <div className="flex items-center gap-1">
                   <Clock className="w-3 h-3" />
-                  Updated: {new Date(item.updated_at).toLocaleDateString()}
+                  Updated: <FormattedDate date={new Date(item.updated_at)} short={true} />
                 </div>
               </div>
             </div>
@@ -273,7 +316,7 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
 
   // Breadcrumb navigation
   const breadcrumbItems = [
-    { label: project?.name || 'Project', href: `/project/${projectId}` },
+    { label: project?.name || 'Project', href: `/project/${projectId}/dashboard` },
     { label: 'Product Backlog', href: `/project/${projectId}/backlog` }
   ];
 
@@ -639,8 +682,8 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
             handleEditItem(editData);
           } else {
             handleAddItem({
-              ...item,
-              story_point: 0
+              ...item
+              // story_point is now preserved from the form data
               // item_type is now preserved from the form data
             });
           }

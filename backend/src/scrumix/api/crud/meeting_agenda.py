@@ -10,6 +10,23 @@ from ..schemas.meeting_agenda import MeetingAgendaCreate, MeetingAgendaUpdate
 class CRUDMeetingAgenda(CRUDBase[MeetingAgenda, MeetingAgendaCreate, MeetingAgendaUpdate]):
     """CRUD operations for MeetingAgenda."""
     
+    def create(self, db: Session, *, obj_in: MeetingAgendaCreate) -> MeetingAgenda:
+        """Create a new meeting agenda item with automatic order assignment."""
+        obj_in_data = obj_in.model_dump()
+        
+        # If order_index is not provided or is 0, assign the next available order
+        if obj_in_data.get('order_index', 0) == 0:
+            max_order = db.query(db.func.max(self.model.order_index)).filter(
+                self.model.meeting_id == obj_in_data['meeting_id']
+            ).scalar() or 0
+            obj_in_data['order_index'] = max_order + 1
+        
+        db_obj = self.model(**obj_in_data)
+        db.add(db_obj)
+        db.commit()
+        db.refresh(db_obj)
+        return db_obj
+    
     def get_multi_with_pagination(
         self,
         db: Session,
@@ -35,7 +52,7 @@ class CRUDMeetingAgenda(CRUDBase[MeetingAgenda, MeetingAgendaCreate, MeetingAgen
         total = query.count()
         
         # Apply pagination and ordering
-        agenda_items = query.order_by(self.model.id.asc()).offset(skip).limit(limit).all()
+        agenda_items = query.order_by(self.model.order_index.asc(), self.model.id.asc()).offset(skip).limit(limit).all()
         
         return agenda_items, total
     
@@ -51,7 +68,7 @@ class CRUDMeetingAgenda(CRUDBase[MeetingAgenda, MeetingAgendaCreate, MeetingAgen
         return (
             db.query(self.model)
             .filter(self.model.meeting_id == meeting_id)
-            .order_by(self.model.id.asc())
+            .order_by(self.model.order_index.asc(), self.model.id.asc())
             .offset(skip)
             .limit(limit)
             .all()
@@ -81,7 +98,7 @@ class CRUDMeetingAgenda(CRUDBase[MeetingAgenda, MeetingAgendaCreate, MeetingAgen
         
         return (
             db_query
-            .order_by(self.model.id.asc())
+            .order_by(self.model.order_index.asc(), self.model.id.asc())
             .offset(skip)
             .limit(limit)
             .all()
@@ -98,7 +115,7 @@ class CRUDMeetingAgenda(CRUDBase[MeetingAgenda, MeetingAgendaCreate, MeetingAgen
         return (
             db.query(self.model)
             .join(self.model.meeting)
-            .order_by(self.model.meeting_id.asc(), self.model.id.asc())
+            .order_by(self.model.meeting_id.asc(), self.model.order_index.asc(), self.model.id.asc())
             .offset(skip)
             .limit(limit)
             .all()
@@ -111,13 +128,20 @@ class CRUDMeetingAgenda(CRUDBase[MeetingAgenda, MeetingAgendaCreate, MeetingAgen
         meeting_id: int,
         agenda_titles: List[str]
     ) -> List[MeetingAgenda]:
-        """Create multiple agenda items for a meeting."""
+        """Create multiple agenda items for a meeting with automatic ordering."""
         agenda_objects = []
-        for title in agenda_titles:
+        
+        # Get the current maximum order for this meeting
+        max_order = db.query(db.func.max(self.model.order_index)).filter(
+            self.model.meeting_id == meeting_id
+        ).scalar() or 0
+        
+        for idx, title in enumerate(agenda_titles):
             if title and title.strip():  # Only create if title is not empty
                 agenda_create = MeetingAgendaCreate(
                     meeting_id=meeting_id,
-                    title=title.strip()
+                    title=title.strip(),
+                    order_index=max_order + idx + 1
                 )
                 agenda_obj = self.create(db=db, obj_in=agenda_create)
                 agenda_objects.append(agenda_obj)
@@ -137,17 +161,83 @@ class CRUDMeetingAgenda(CRUDBase[MeetingAgenda, MeetingAgendaCreate, MeetingAgen
         *,
         agenda_ids: List[int]
     ) -> List[MeetingAgenda]:
-        """Reorder agenda items by returning them in the requested order."""
-        # Note: This is a simple implementation that returns items in the requested order
-        # In production, you might want to add an 'order' field to the model for persistent ordering
+        """Reorder agenda items by updating their order field."""
         agenda_items = []
-        for agenda_id in agenda_ids:
+        
+        for new_order, agenda_id in enumerate(agenda_ids):
             agenda_obj = self.get(db=db, id=agenda_id)
             if agenda_obj:
+                # Update the order_index field
+                agenda_obj.order_index = new_order + 1  # Start from 1 instead of 0
+                db.add(agenda_obj)
                 agenda_items.append(agenda_obj)
         
-        # Return items in the exact order requested
+        db.commit()
+        
+        # Refresh all objects to get updated data
+        for item in agenda_items:
+            db.refresh(item)
+        
         return agenda_items
+    
+    def update_order(
+        self,
+        db: Session,
+        *,
+        agenda_id: int,
+        new_order: int
+    ) -> Optional[MeetingAgenda]:
+        """Update the order of a specific agenda item."""
+        agenda_obj = self.get(db=db, id=agenda_id)
+        if not agenda_obj:
+            return None
+        
+        old_order = agenda_obj.order_index
+        meeting_id = agenda_obj.meeting_id
+        
+        # Update the target item's order
+        agenda_obj.order_index = new_order
+        db.add(agenda_obj)
+        
+        # Adjust other items' orders to maintain sequence
+        if new_order > old_order:
+            # Moving down: decrease order of items between old and new position
+            items_to_update = db.query(self.model).filter(
+                and_(
+                    self.model.meeting_id == meeting_id,
+                    self.model.order_index > old_order,
+                    self.model.order_index <= new_order,
+                    self.model.id != agenda_id
+                )
+            ).all()
+            for item in items_to_update:
+                item.order_index = item.order_index - 1
+                db.add(item)
+                
+        elif new_order < old_order:
+            # Moving up: increase order of items between new and old position
+            items_to_update = db.query(self.model).filter(
+                and_(
+                    self.model.meeting_id == meeting_id,
+                    self.model.order_index >= new_order,
+                    self.model.order_index < old_order,
+                    self.model.id != agenda_id
+                )
+            ).all()
+            for item in items_to_update:
+                item.order_index = item.order_index + 1
+                db.add(item)
+        
+        db.commit()
+        db.refresh(agenda_obj)
+        return agenda_obj
+    
+    def get_next_order_for_meeting(self, db: Session, *, meeting_id: int) -> int:
+        """Get the next available order number for a meeting."""
+        max_order = db.query(db.func.max(self.model.order_index)).filter(
+            self.model.meeting_id == meeting_id
+        ).scalar() or 0
+        return max_order + 1
     
     def get_upcoming_meeting_agendas(
         self,

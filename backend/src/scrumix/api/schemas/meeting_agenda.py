@@ -7,6 +7,7 @@ class MeetingAgendaBase(BaseModel):
     """Base meeting agenda schema with common fields."""
     meeting_id: int = Field(..., gt=0, description="ID of the meeting this agenda item belongs to")
     title: str = Field(..., min_length=1, max_length=500, description="Agenda item title/description")
+    order_index: int = Field(0, ge=0, description="Order of agenda item in the meeting")
     
     @field_validator('title')
     @classmethod
@@ -25,6 +26,7 @@ class MeetingAgendaCreate(MeetingAgendaBase):
 class MeetingAgendaUpdate(BaseModel):
     """Schema for updating an existing meeting agenda item."""
     title: Optional[str] = Field(None, min_length=1, max_length=500, description="Agenda item title/description")
+    order_index: Optional[int] = Field(None, ge=0, description="Order of agenda item in the meeting")
     
     @field_validator('title')
     @classmethod
@@ -51,6 +53,7 @@ class MeetingAgendaResponse(BaseModel):
     agendaId: int = Field(alias="id")
     meetingId: int = Field(alias="meeting_id")
     title: str
+    orderIndex: int = Field(alias="order_index")
     createdAt: datetime = Field(alias="created_at")
     updatedAt: datetime = Field(alias="updated_at")
 

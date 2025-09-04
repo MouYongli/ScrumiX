@@ -5,6 +5,26 @@ import {
   ApiMeetingParticipant, ApiMeetingParticipantWithUser, MeetingParticipantsResponse, NotificationPreferencesResponse, NotificationPreferencesUpdate,
   ApiNotificationPreference, DeliveryChannel
 } from '@/types/api';
+
+// Personal Notes API types  
+export interface PersonalNote {
+  id: number;
+  user_id: number;
+  project_id: number;
+  note_date: string; // YYYY-MM-DD format
+  content: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PersonalNoteCreate {
+  note_date: string; // YYYY-MM-DD format
+  content: string;
+}
+
+export interface PersonalNoteUpdate {
+  content: string;
+}
 import { authenticatedFetch } from '@/utils/auth';
 
 interface ApiResponse<T> {
@@ -427,7 +447,7 @@ export const api = {
     getByMeeting: (meeting_id: number) => 
       jsonFetch<ApiMeetingAgenda[]>(`/api/v1/meeting-agendas/meeting/${meeting_id}`),
     
-    create: (data: { meeting_id: number; title: string }) => 
+    create: (data: { meeting_id: number; title: string; order_index?: number }) => 
       jsonFetch<ApiMeetingAgenda>('/api/v1/meeting-agendas/', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -441,11 +461,16 @@ export const api = {
         body: JSON.stringify(agenda_titles),
       }),
     
-    update: (id: number, data: { title: string }) => 
+    update: (id: number, data: { title?: string; order_index?: number }) => 
       jsonFetch<ApiMeetingAgenda>(`/api/v1/meeting-agendas/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
+      }),
+    
+    updateOrder: (id: number, new_order_index: number) => 
+      jsonFetch<ApiMeetingAgenda>(`/api/v1/meeting-agendas/${id}/order?new_order_index=${new_order_index}`, {
+        method: 'PUT',
       }),
     
     delete: (id: number) => jsonFetch<void>(`/api/v1/meeting-agendas/${id}`, {
@@ -1180,6 +1205,105 @@ export const documentationApi = {
       });
     }
   },
+
+  personalNotes: {
+    // Get personal notes for a project
+    getByProject: (projectId: number, startDate?: string, endDate?: string) => {
+      const params = new URLSearchParams();
+      if (startDate) params.append('start_date', startDate);
+      if (endDate) params.append('end_date', endDate);
+      const queryString = params.toString() ? `?${params.toString()}` : '';
+      
+      return deduplicateRequest(
+        `personalNotes:getByProject:${projectId}:${queryString}`,
+        () => jsonFetch<PersonalNote[]>(`/api/v1/projects/${projectId}/personal-notes${queryString}`)
+      );
+    },
+
+    // Create a personal note
+    create: (projectId: number, noteData: PersonalNoteCreate) => {
+      // Clear cache after creation
+      inFlightRequests.delete(`personalNotes:getByProject:${projectId}:`);
+      
+      return jsonFetch<PersonalNote>(`/api/v1/projects/${projectId}/personal-notes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(noteData)
+      });
+    },
+
+    // Update a personal note
+    update: (projectId: number, noteDate: string, noteData: PersonalNoteUpdate) => {
+      // Clear cache after update
+      inFlightRequests.delete(`personalNotes:getByProject:${projectId}:`);
+      
+      return jsonFetch<PersonalNote>(`/api/v1/projects/${projectId}/personal-notes/${noteDate}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(noteData)
+      });
+    },
+
+    // Delete a personal note
+    delete: (projectId: number, noteDate: string) => {
+      // Clear cache after deletion
+      inFlightRequests.delete(`personalNotes:getByProject:${projectId}:`);
+      
+      return jsonFetch<{ message: string }>(`/api/v1/projects/${projectId}/personal-notes/${noteDate}`, {
+        method: 'DELETE'
+      });
+    }
+  },
+};
+
+// Export personal notes API separately to ensure it's available
+export const personalNotesApi = {
+  // Get personal notes for a project
+  getByProject: (projectId: number, startDate?: string, endDate?: string) => {
+    const params = new URLSearchParams();
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+    const queryString = params.toString() ? `?${params.toString()}` : '';
+    
+    return deduplicateRequest(
+      `personalNotes:getByProject:${projectId}:${queryString}`,
+      () => jsonFetch<PersonalNote[]>(`/api/v1/projects/${projectId}/personal-notes${queryString}`)
+    );
+  },
+
+  // Create a personal note
+  create: (projectId: number, noteData: PersonalNoteCreate) => {
+    // Clear cache after creation
+    inFlightRequests.delete(`personalNotes:getByProject:${projectId}:`);
+    
+    return jsonFetch<PersonalNote>(`/api/v1/projects/${projectId}/personal-notes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(noteData)
+    });
+  },
+
+  // Update a personal note
+  update: (projectId: number, noteDate: string, noteData: PersonalNoteUpdate) => {
+    // Clear cache after update
+    inFlightRequests.delete(`personalNotes:getByProject:${projectId}:`);
+    
+    return jsonFetch<PersonalNote>(`/api/v1/projects/${projectId}/personal-notes/${noteDate}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(noteData)
+    });
+  },
+
+  // Delete a personal note
+  delete: (projectId: number, noteDate: string) => {
+    // Clear cache after deletion
+    inFlightRequests.delete(`personalNotes:getByProject:${projectId}:`);
+    
+    return jsonFetch<{ message: string }>(`/api/v1/projects/${projectId}/personal-notes/${noteDate}`, {
+      method: 'DELETE'
+    });
+  }
 };
 
 // Export notification preferences separately to ensure it's available

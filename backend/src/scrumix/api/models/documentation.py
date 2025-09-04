@@ -26,6 +26,7 @@ class Documentation(Base):
     title = Column(String(500), nullable=False, index=True)
     type = Column(SQLEnum(DocumentationType), nullable=False, default=DocumentationType.OTHER)
     description = Column(Text, nullable=True)
+    content = Column(Text, nullable=True, comment="Document content in markdown format")
     file_url = Column(String(1000), nullable=True)
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

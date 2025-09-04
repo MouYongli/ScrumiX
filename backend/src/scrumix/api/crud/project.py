@@ -191,7 +191,7 @@ class ProjectCRUD(CRUDBase[Project, ProjectCreate, ProjectUpdate]):
         backlog_completed = 0
         
         for sprint in project.sprints:
-            for backlog_item in sprint.backlog_items:
+            for backlog_item in sprint.backlogs:
                 backlog_total += 1
                 if backlog_item.status.value == "done":
                     backlog_completed += 1
@@ -247,7 +247,7 @@ class ProjectCRUD(CRUDBase[Project, ProjectCreate, ProjectUpdate]):
             backlog_completed = 0
             
             for sprint in project.sprints:
-                for backlog_item in sprint.backlog_items:
+                for backlog_item in sprint.backlogs:
                     backlog_total += 1
                     if backlog_item.status.value == "done":
                         backlog_completed += 1

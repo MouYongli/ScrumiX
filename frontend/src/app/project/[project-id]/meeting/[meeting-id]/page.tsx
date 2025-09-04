@@ -6,17 +6,72 @@ import { useParams } from 'next/navigation';
 import { 
   ArrowLeft, Calendar, Clock, Users, Video, Edit,
   MessageSquare, Target, BarChart3, UserCheck, 
-  CheckCircle, Plus, Save, Play, Pause, 
-  FileText, ListChecks, Mic, MicOff, Eye, 
+  CheckCircle, Plus, Save, 
+  FileText, ListChecks, Eye, 
   PenTool, Bold, Italic, Code, List,
   Quote, Image, Link as LinkIcon, Hash, FolderOpen,
   Trash2, X, Check, GripVertical
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
+import { useDateFormat } from '@/hooks/useDateFormat';
 import { api } from '@/utils/api';
 import { ApiMeeting, ApiProject, ApiMeetingAgenda, ApiMeetingActionItem, ApiMeetingNote, ApiUser, ApiMeetingParticipantWithUser, MeetingParticipantsResponse } from '@/types/api';
 import { MeetingType, MeetingParticipantRole } from '@/types/enums';
 import { ProjectMemberResponse } from '@/types/api';
+
+// Component for rendering user-aware formatted dates and times
+const FormattedDateTime: React.FC<{ 
+  date: Date; 
+  includeTime?: boolean; 
+  short?: boolean;
+}> = ({ date, includeTime = false, short = false }) => {
+  const [formattedDateTime, setFormattedDateTime] = useState<string>(
+    includeTime 
+      ? `${date.toLocaleDateString()} ${date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`
+      : date.toLocaleDateString()
+  );
+  const { formatDate, formatDateShort } = useDateFormat();
+
+  useEffect(() => {
+    let isMounted = true;
+    
+    const format = async () => {
+      try {
+        // When includeTime is true, always use formatDate regardless of short flag
+        // formatDateShort doesn't support time display
+        const result = includeTime 
+          ? await formatDate(date, true)
+          : short 
+            ? await formatDateShort(date)
+            : await formatDate(date, false);
+        
+        if (isMounted) {
+          setFormattedDateTime(result);
+        }
+      } catch (error) {
+        console.error('Error formatting date:', error);
+        // Fallback to simple formatting
+        if (isMounted) {
+          setFormattedDateTime(
+            includeTime 
+              ? `${date.toLocaleDateString()} ${date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`
+              : date.toLocaleDateString()
+          );
+        }
+      }
+    };
+    
+    // Add a small delay to batch API calls
+    const timeoutId = setTimeout(format, 100);
+    
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+    };
+  }, [date, includeTime, short, formatDate, formatDateShort]);
+
+  return <span>{formattedDateTime}</span>;
+};
 
 // Meeting type configuration - maps backend enum values to display names
 const meetingTypes = {
@@ -719,8 +774,6 @@ const MeetingDetail = () => {
   const [error, setError] = useState<string | null>(null);
   
   const [activeTab, setActiveTab] = useState('overview');
-  const [isRecording, setIsRecording] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
   const [currentNote, setCurrentNote] = useState('');
   const [hasUnsavedNotes, setHasUnsavedNotes] = useState(false);
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
@@ -1415,12 +1468,25 @@ const MeetingDetail = () => {
     setAgendaLoading(true);
     try {
       // Send reorder request to backend
-      console.log('DEBUG: newAgenda before mapping:', newAgenda);
-      const agendaIds = newAgenda.map(item => {
-        console.log('DEBUG: mapping item:', item, 'agendaId:', item.agendaId);
-        return item.agendaId;
+      console.log('DEBUG: newAgenda items:', newAgenda);
+      
+      const agendaIds = newAgenda.map((item, index) => {
+        console.log(`DEBUG: Item ${index}:`, item);
+        console.log(`DEBUG: Item keys:`, Object.keys(item || {}));
+        
+        if (!item) {
+          throw new Error(`Agenda item at index ${index} is null or undefined`);
+        }
+        
+        // Use the correct field name from ApiMeetingAgenda interface
+        const id = item.agendaId;
+        if (typeof id !== 'number') {
+          console.error('Invalid agenda item:', item);
+          throw new Error(`Invalid agenda item at index ${index}: missing or invalid agendaId (got ${typeof id})`);
+        }
+        return id;
       });
-      console.log('DEBUG: final agendaIds:', agendaIds);
+      
       const response = await api.meetingAgenda.reorder(agendaIds);
       
       if (response.error) {
@@ -1652,34 +1718,6 @@ const MeetingDetail = () => {
             <span className={`px-3 py-1 text-sm font-medium rounded-full ${statusStyle.className}`}>
               {statusStyle.text}
             </span>
-
-            {statusStyle.text === 'In Progress' && (
-              <div className="flex gap-2">
-                <button 
-                  onClick={() => setIsMuted(!isMuted)}
-                  className={`p-2 rounded-lg transition-colors ${
-                    isMuted 
-                      ? 'bg-red-600 hover:bg-red-700 text-white' 
-                      : 'bg-gray-600 hover:bg-gray-700 text-white'
-                  }`}
-                >
-                  {isMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-                </button>
-                <button 
-                  onClick={() => setIsRecording(!isRecording)}
-                  className={`px-3 py-2 rounded-lg transition-colors ${
-                    isRecording 
-                      ? 'bg-red-600 hover:bg-red-700 text-white' 
-                      : 'bg-blue-600 hover:bg-blue-700 text-white'
-                  }`}
-                >
-                  {isRecording ? 'Stop Recording' : 'Start Recording'}
-                </button>
-                <button className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg">
-                  End Meeting
-                </button>
-              </div>
-            )}
           </div>
         </div>
 
@@ -1693,7 +1731,7 @@ const MeetingDetail = () => {
                 {(() => {
                   const startDate = parseDatetimeSafely(meeting.startDatetime);
                   if (startDate) {
-                    return `${startDate.toLocaleDateString()} ${startDate.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`;
+                    return <FormattedDateTime date={startDate} includeTime={true} short={false} />;
                   }
                   return 'Date not available';
                 })()}
@@ -2242,7 +2280,7 @@ const MeetingDetail = () => {
                                 </span>
                               )}
                               <span className="text-sm text-gray-500 dark:text-gray-400">
-                                {(note.createdAt || note.created_at) ? new Date(note.createdAt || note.created_at!).toLocaleString() : 'Unknown time'}
+                                {(note.createdAt || note.created_at) ? <FormattedDateTime date={new Date(note.createdAt || note.created_at!)} includeTime={true} short={true} /> : 'Unknown time'}
                               </span>
                             </div>
                             <div className="prose prose-sm max-w-none dark:prose-invert">
@@ -2285,7 +2323,7 @@ const MeetingDetail = () => {
                                         </span>
                                       )}
                                       <span className="text-xs text-gray-500 dark:text-gray-400">
-                                        {(childNote.createdAt || childNote.created_at) ? new Date(childNote.createdAt || childNote.created_at!).toLocaleString() : 'Unknown time'}
+                                        {(childNote.createdAt || childNote.created_at) ? <FormattedDateTime date={new Date(childNote.createdAt || childNote.created_at!)} includeTime={true} short={true} /> : 'Unknown time'}
                                       </span>
                                     </div>
                                     <div className="prose prose-sm max-w-none dark:prose-invert">
@@ -2477,10 +2515,10 @@ const MeetingDetail = () => {
                         </div>
                         <div className="flex justify-between items-center text-sm text-gray-600 dark:text-gray-400">
                           <div className="flex items-center gap-4">
-                            <span>Created: {createdDate ? createdDate.toLocaleDateString() : 'Unknown'}</span>
+                            <span>Created: {createdDate ? <FormattedDateTime date={createdDate} short={true} /> : 'Unknown'}</span>
                             <span>by: {creatorDisplayName}</span>
                           </div>
-                          <span>Due: {dueDate ? dueDate.toLocaleDateString() : 'No due date'}</span>
+                          <span>Due: {dueDate ? <FormattedDateTime date={dueDate} short={true} /> : 'No due date'}</span>
                         </div>
                       </div>
                     );

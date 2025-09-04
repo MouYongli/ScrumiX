@@ -2,28 +2,24 @@
 
 import React, { useState, useEffect } from 'react';
 import { 
-  Bell, User, Shield, Palette, Globe, 
-  Save, Moon, Sun, Monitor, Check, Settings,
-  Mail, MessageSquare, Calendar, Smartphone, 
-  Lock, Eye, Database, Download, Trash2
+  User, Moon, Sun, Monitor, Check, Settings,
+  Database, Trash2
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
 import { useTheme } from '@/contexts/ThemeContext';
+import { clearPreferencesCache } from '@/utils/dateFormat';
+import { authenticatedFetch } from '@/utils/auth';
 
-interface NotificationSettings {
-  meeting_reminders: boolean;
-  documentation_reminders: boolean;
-  project_updates: boolean;
-  deadline_reminders: boolean;
+
+
+interface UserProfile {
+  language: string;
+  timezone: string;
+  date_format: string;
 }
 
 interface SettingsData {
-  profile: {
-    language: string;
-    timezone: string;
-    dateFormat: string;
-  };
-  notifications: NotificationSettings;
+  profile: UserProfile;
 }
 
 const SettingsPage = () => {
@@ -32,114 +28,112 @@ const SettingsPage = () => {
   const [settings, setSettings] = useState<SettingsData>({
     profile: {
       language: 'en-US',
-      timezone: 'America/New_York',
-      dateFormat: 'MM/DD/YYYY',
-    },
-    notifications: {
-      meeting_reminders: true,
-      documentation_reminders: true,
-      project_updates: true,
-      deadline_reminders: true,
+      timezone: 'Europe/Berlin',
+      date_format: 'YYYY-MM-DD',
     },
   });
   const [isLoading, setIsLoading] = useState(false);
-  const [isSaved, setIsSaved] = useState(false);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
-  // Load settings
+  // Load settings from backend
   useEffect(() => {
     const loadSettings = async () => {
       try {
-        // Try to load notification preferences from backend first
-        let backendNotifications = null;
+        setIsLoading(true);
+        
+        // Load user profile from backend
+        let backendProfile = null;
         try {
-          const response = await fetch('/api/v1/user-notification-preferences/?delivery_channel=in_app', {
-            credentials: 'include',
-          });
+          const response = await authenticatedFetch('/api/v1/users/me/profile');
           if (response.ok) {
-            const data = await response.json();
-            backendNotifications = data.preferences;
+            const userData = await response.json();
+            backendProfile = {
+              language: userData.language || 'en-US',
+              timezone: userData.timezone || 'Europe/Berlin',
+              date_format: userData.date_format || 'YYYY-MM-DD',
+            };
           }
         } catch (error) {
-          console.warn('Failed to load notification preferences from backend:', error);
+          console.warn('Failed to load user profile from backend:', error);
         }
 
-        // Load local settings
+
+
+        // Load local settings as fallback
         const savedSettings = localStorage.getItem('userSettings');
         const parsedSettings = savedSettings ? JSON.parse(savedSettings) : {};
         
         // Merge settings with priority: backend > localStorage > defaults
         setSettings({
-          profile: {
+          profile: backendProfile || parsedSettings.profile || {
             language: 'en-US',
-            timezone: 'America/New_York',
-            dateFormat: 'MM/DD/YYYY',
-            ...parsedSettings.profile,
-          },
-          notifications: {
-            meeting_reminders: true,
-            documentation_reminders: true,
-            project_updates: true,
-            deadline_reminders: true,
-            ...parsedSettings.notifications,
-            ...(backendNotifications || {}),
+            timezone: 'Europe/Berlin',
+            date_format: 'YYYY-MM-DD',
           },
         });
       } catch (error) {
         console.error('Failed to load settings:', error);
+      } finally {
+        setIsLoading(false);
       }
     };
 
     loadSettings();
   }, []);
 
-  // Save settings
-  const handleSaveSettings = async () => {
-    setIsLoading(true);
+  // Auto-save settings to backend
+  const autoSaveSettings = async (updatedSettings: SettingsData) => {
+    setAutoSaveStatus('saving');
     try {
-      // Save notification preferences to backend
-      if (settings.notifications) {
-        const response = await fetch('/api/v1/user-notification-preferences/', {
+      // Save profile preferences to backend
+      if (updatedSettings.profile) {
+        const response = await authenticatedFetch('/api/v1/users/me/profile', {
           method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-            // Add auth header if needed
-          },
-          credentials: 'include',
-          body: JSON.stringify({
-            preferences: settings.notifications,
-            delivery_channel: 'in_app'
-          }),
+          body: JSON.stringify(updatedSettings.profile),
         });
 
         if (!response.ok) {
-          console.warn('Failed to save notification preferences to backend, saving locally');
+          console.warn('Failed to save profile preferences to backend');
+          setAutoSaveStatus('error');
+          return;
         }
       }
+
+
       
-      // Always save to localStorage as backup
-      localStorage.setItem('userSettings', JSON.stringify(settings));
-      setIsSaved(true);
-      setTimeout(() => setIsSaved(false), 2000);
+      // Save to localStorage as backup
+      localStorage.setItem('userSettings', JSON.stringify(updatedSettings));
+      
+      // Clear preferences cache so new preferences take effect immediately
+      clearPreferencesCache();
+      
+      setAutoSaveStatus('saved');
+      
+      // Reset status after 2 seconds
+      setTimeout(() => setAutoSaveStatus('idle'), 2000);
     } catch (error) {
-      console.error('Failed to save settings:', error);
+      console.error('Failed to auto-save settings:', error);
       // Still save locally even if backend fails
-      localStorage.setItem('userSettings', JSON.stringify(settings));
-      setIsSaved(true);
-      setTimeout(() => setIsSaved(false), 2000);
-    } finally {
-      setIsLoading(false);
+      localStorage.setItem('userSettings', JSON.stringify(updatedSettings));
+      setAutoSaveStatus('error');
+      setTimeout(() => setAutoSaveStatus('idle'), 2000);
     }
   };
 
-  // Update settings
+  // Update settings with auto-save
   const updateSetting = (section: keyof SettingsData, key: string, value: any) => {
-    setSettings(prev => ({
-      ...prev,
+    const updatedSettings = {
+      ...settings,
       [section]: {
-        ...(prev[section] || {}),
+        ...settings[section],
         [key]: value,
       },
-    }));
+    };
+    
+    setSettings(updatedSettings);
+    
+    // Trigger auto-save after a short delay to avoid too many API calls
+    setTimeout(() => autoSaveSettings(updatedSettings), 500);
   };
 
   // Update nested settings
@@ -190,7 +184,6 @@ const SettingsPage = () => {
 
   const tabs = [
     { id: 'profile', label: 'Preferences', icon: User },
-    { id: 'notifications', label: 'Notifications', icon: Bell },
     { id: 'data', label: 'Data Management', icon: Database },
   ];
 
@@ -219,21 +212,6 @@ const SettingsPage = () => {
             Manage your account settings and preferences
           </p>
         </div>
-        
-        <button
-          onClick={handleSaveSettings}
-          disabled={isLoading}
-          className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-        >
-          {isLoading ? (
-            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-          ) : isSaved ? (
-            <Check className="w-4 h-4" />
-          ) : (
-            <Save className="w-4 h-4" />
-          )}
-          {isSaved ? 'Saved' : 'Save Settings'}
-        </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
@@ -269,7 +247,34 @@ const SettingsPage = () => {
             {/* Preferences */}
             {activeTab === 'profile' && (
               <div className="space-y-6">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Preferences</h2>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Preferences</h2>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      Customize your experience. Changes are automatically saved.
+                    </p>
+                  </div>
+                  {/* Auto-save indicator for profile */}
+                  <div className="flex items-center gap-2">
+                    {autoSaveStatus === 'saving' && (
+                      <div className="flex items-center gap-2 text-blue-600">
+                        <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                        <span className="text-sm">Saving...</span>
+                      </div>
+                    )}
+                    {autoSaveStatus === 'saved' && (
+                      <div className="flex items-center gap-2 text-green-600">
+                        <Check className="w-4 h-4" />
+                        <span className="text-sm">Saved</span>
+                      </div>
+                    )}
+                    {autoSaveStatus === 'error' && (
+                      <div className="flex items-center gap-2 text-red-600">
+                        <span className="text-sm">Save failed</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
                 
                 {/* Theme Settings */}
                 <div>
@@ -308,8 +313,6 @@ const SettingsPage = () => {
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
                   >
                     <option value="en-US">English (US)</option>
-                    <option value="zh-CN">简体中文</option>
-                    <option value="ja-JP">日本語</option>
                   </select>
                 </div>
 
@@ -319,14 +322,11 @@ const SettingsPage = () => {
                     Timezone
                   </label>
                   <select
-                    value={settings.profile?.timezone || 'America/New_York'}
+                    value={settings.profile?.timezone || 'Europe/Berlin'}
                     onChange={(e) => updateSetting('profile', 'timezone', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
                   >
-                    <option value="America/New_York">New York (UTC-5)</option>
-                    <option value="Europe/London">London (UTC+0)</option>
-                    <option value="Asia/Shanghai">Shanghai (UTC+8)</option>
-                    <option value="Asia/Tokyo">Tokyo (UTC+9)</option>
+                    <option value="Europe/Berlin">Berlin (UTC+1/+2)</option>
                   </select>
                 </div>
 
@@ -336,129 +336,66 @@ const SettingsPage = () => {
                     Date Format
                   </label>
                   <select
-                    value={settings.profile?.dateFormat || 'MM/DD/YYYY'}
-                    onChange={(e) => updateSetting('profile', 'dateFormat', e.target.value)}
+                    value={settings.profile?.date_format || 'YYYY-MM-DD'}
+                    onChange={(e) => updateSetting('profile', 'date_format', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
                   >
-                    <option value="MM/DD/YYYY">03/15/2024</option>
-                    <option value="DD/MM/YYYY">15/03/2024</option>
-                    <option value="YYYY-MM-DD">2024-03-15</option>
+                    <option value="MM/DD/YYYY">03/15/2024 (US Format)</option>
+                    <option value="DD/MM/YYYY">15/03/2024 (European Format)</option>
+                    <option value="YYYY-MM-DD">2024-03-15 (ISO Format)</option>
                   </select>
-                </div>
-              </div>
-            )}
-
-            {/* Notifications */}
-            {activeTab === 'notifications' && (
-              <div className="space-y-6">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Notification Preferences</h2>
-                <p className="text-sm text-gray-600 dark:text-gray-400">
-                  Choose which notifications you want to receive. These settings apply to in-app notifications.
-                </p>
-                
-                <div className="space-y-4">
-                  {/* Meeting Reminders */}
-                  <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <Calendar className="w-5 h-5 text-blue-600 dark:text-blue-400" />
-                      <div>
-                        <h3 className="font-medium text-gray-900 dark:text-white">Meeting Reminders</h3>
-                        <p className="text-sm text-gray-600 dark:text-gray-400">
-                          Get notified about upcoming meetings and meeting updates
-                        </p>
-                      </div>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={settings.notifications?.meeting_reminders || false}
-                        onChange={(e) => updateSetting('notifications', 'meeting_reminders', e.target.checked)}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-                    </label>
-                  </div>
-
-                  {/* Documentation Reminders */}
-                  <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <MessageSquare className="w-5 h-5 text-green-600 dark:text-green-400" />
-                      <div>
-                        <h3 className="font-medium text-gray-900 dark:text-white">Documentation Updates</h3>
-                        <p className="text-sm text-gray-600 dark:text-gray-400">
-                          Get notified when new documentation is added or updated
-                        </p>
-                      </div>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={settings.notifications?.documentation_reminders || false}
-                        onChange={(e) => updateSetting('notifications', 'documentation_reminders', e.target.checked)}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-                    </label>
-                  </div>
-
-                  {/* Project Updates */}
-                  <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <Settings className="w-5 h-5 text-purple-600 dark:text-purple-400" />
-                      <div>
-                        <h3 className="font-medium text-gray-900 dark:text-white">Project Updates</h3>
-                        <p className="text-sm text-gray-600 dark:text-gray-400">
-                          Get notified about project changes, member additions, and status updates
-                        </p>
-                      </div>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={settings.notifications?.project_updates || false}
-                        onChange={(e) => updateSetting('notifications', 'project_updates', e.target.checked)}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-                    </label>
-                  </div>
-
-                  {/* Deadline Reminders */}
-                  <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                    <div className="flex items-center gap-3">
-                      <Bell className="w-5 h-5 text-red-600 dark:text-red-400" />
-                      <div>
-                        <h3 className="font-medium text-gray-900 dark:text-white">Deadline Reminders</h3>
-                        <p className="text-sm text-gray-600 dark:text-gray-400">
-                          Get notified about approaching deadlines for tasks and sprints
-                        </p>
-                      </div>
-                    </div>
-                    <label className="relative inline-flex items-center cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={settings.notifications?.deadline_reminders || false}
-                        onChange={(e) => updateSetting('notifications', 'deadline_reminders', e.target.checked)}
-                        className="sr-only peer"
-                      />
-                      <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 dark:peer-focus:ring-blue-800 rounded-full peer dark:bg-gray-600 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all dark:border-gray-600 peer-checked:bg-blue-600"></div>
-                    </label>
-                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Changes are automatically saved
+                  </p>
                 </div>
 
-                <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
-                  <div className="flex items-start gap-3">
-                    <Mail className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5" />
-                    <div>
-                      <h3 className="font-medium text-blue-900 dark:text-blue-100">Email Notifications</h3>
-                      <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
-                        Email notifications are currently being developed. For now, you'll receive notifications within the app.
-                      </p>
+                {/* Date Format Preview */}
+                <div className="mt-6 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                  <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-3">
+                    Date Format Preview
+                  </h3>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-600 dark:text-gray-400">Sample date:</span>
+                      <span className="font-mono">
+                        {(() => {
+                          const locale = settings.profile?.date_format === 'MM/DD/YYYY' ? 'en-US' : 
+                                       settings.profile?.date_format === 'DD/MM/YYYY' ? 'en-GB' : 'sv-SE';
+                          return new Date().toLocaleDateString(locale, { 
+                            timeZone: 'Europe/Berlin',
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit'
+                          });
+                        })()}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-600 dark:text-gray-400">With time:</span>
+                      <span className="font-mono">
+                        {(() => {
+                          const locale = settings.profile?.date_format === 'MM/DD/YYYY' ? 'en-US' : 
+                                       settings.profile?.date_format === 'DD/MM/YYYY' ? 'en-GB' : 'sv-SE';
+                          return new Date().toLocaleString(locale, { 
+                            timeZone: 'Europe/Berlin',
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          });
+                        })()}
+                      </span>
+                    </div>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      Timezone: Europe/Berlin (automatically adjusts for daylight saving time)
                     </div>
                   </div>
                 </div>
               </div>
             )}
+
+
 
             {/* Data Management */}
             {activeTab === 'data' && (

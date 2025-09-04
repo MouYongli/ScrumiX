@@ -49,6 +49,7 @@ const BacklogItemModal: React.FC<BacklogItemModalProps> = ({
     if (editingItem) {
       setFormData(editingItem);
     } else {
+      // Reset form to default values when opening for new item creation
       setFormData({
         title: '',
         description: '',
@@ -60,7 +61,7 @@ const BacklogItemModal: React.FC<BacklogItemModalProps> = ({
         item_type: BacklogType.STORY
       });
     }
-  }, [editingItem]);
+  }, [editingItem, isOpen]); // Added isOpen to dependency array to reset form when modal opens
 
   // Fetch epics for parent selection
   useEffect(() => {
@@ -98,6 +99,7 @@ const BacklogItemModal: React.FC<BacklogItemModalProps> = ({
       parent_id: formData.item_type === BacklogType.EPIC ? undefined : formData.parent_id
     };
     
+
     onSubmit(filteredData);
   };
 
