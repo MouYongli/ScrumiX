@@ -424,13 +424,11 @@ def get_available_backlog_items(
                 )
         
         # Log the request parameters for debugging
-        print(f"[DEBUG] get_available_backlog_items called with: project_id={project_id}, item_type={item_type}, skip={skip}, limit={limit}")
         
         available_items = sprint_backlog_crud.get_available_backlog_items(
             db, project_id, None, item_type, skip=skip, limit=limit
         )
         
-        print(f"[DEBUG] Retrieved {len(available_items)} available backlog items")
         
         # Convert to response format
         result = []

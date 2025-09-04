@@ -87,14 +87,6 @@ class CRUDMeetingActionItem(CRUDBase[MeetingActionItem, MeetingActionItemCreate,
             .all()
         )
         
-        # Debug: Check if user relationships are loaded
-        for item in action_items:
-            print(f"DEBUG: Action item {item.id} - User ID: {item.user_id}")
-            if hasattr(item, 'user') and item.user:
-                print(f"DEBUG: User loaded - ID: {item.user.id}, Username: {item.user.username}, Full Name: {item.user.full_name}, Email: {item.user.email}")
-            else:
-                print(f"DEBUG: User relationship not loaded for action item {item.id}")
-        
         return action_items
     
     def count_by_meeting_id(self, db: Session, *, meeting_id: int) -> int:

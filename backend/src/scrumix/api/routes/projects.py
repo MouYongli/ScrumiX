@@ -213,7 +213,6 @@ async def update_project(
             )
         
         # Send notifications for important project changes
-        print(f"🚀 DEBUG: Processing project update for project {project_id}")
         print(f"    Current user: {current_user.id}")
         print(f"    Update data: {project_update.dict(exclude_unset=True)}")
         

@@ -29,8 +29,8 @@ class MeetingParticipant(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relationships
-    user = relationship("User", back_populates="meeting_participants")
-    meeting = relationship("Meeting", back_populates="meeting_participants")
+    user = relationship("User", back_populates="meeting_participants", overlaps="meetings,users")
+    meeting = relationship("Meeting", back_populates="meeting_participants", overlaps="meetings,users")
 
     def __repr__(self):
         return f"<MeetingParticipant(user_id={self.user_id}, meeting_id={self.meeting_id}, role='{self.role.value}')>"

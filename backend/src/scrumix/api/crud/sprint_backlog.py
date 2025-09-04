@@ -53,10 +53,8 @@ class SprintBacklogCRUD:
         # Add item_type filtering if provided
         if item_type:
             query = query.filter(Backlog.item_type == item_type)
-            print(f"[DEBUG] Filtering by item_type: {item_type}")
         
         result = query.order_by(Backlog.created_at.desc()).offset(skip).limit(limit).all()
-        print(f"[DEBUG] CRUD method returning {len(result)} items for project {project_id}")
         
         # Additional debugging: check for duplicate IDs
         ids = [item.id for item in result]

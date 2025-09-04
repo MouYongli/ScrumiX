@@ -33,6 +33,7 @@ class Sprint(Base):
     
     # Relationships
     project = relationship("Project", back_populates="sprints")
+    backlogs = relationship("Backlog", back_populates="sprint", cascade="all, delete-orphan")
     tasks = relationship("Task", back_populates="sprint", cascade="all, delete-orphan")
     meetings = relationship("Meeting", back_populates="sprint", cascade="all, delete-orphan")
     

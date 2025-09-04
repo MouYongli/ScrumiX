@@ -72,10 +72,10 @@ class Backlog(Base):
     sprint_id = Column(Integer, ForeignKey("sprints.id"), nullable=True, index=True)
 
     # Relationships
-    creator = relationship("User", foreign_keys=[created_by_id], backref="created_backlog_items")
-    assignee = relationship("User", foreign_keys=[assigned_to_id], backref="assigned_backlog_items")
-    project = relationship("Project", backref="backlog_items")
-    sprint = relationship("Sprint", backref="backlog_items")
+    creator = relationship("User", foreign_keys=[created_by_id])
+    assignee = relationship("User", foreign_keys=[assigned_to_id])
+    project = relationship("Project", back_populates="backlogs")
+    sprint = relationship("Sprint", back_populates="backlogs")
     tasks = relationship("Task", back_populates="backlog", cascade="all, delete-orphan")
     
     # Composite indexes for common query patterns

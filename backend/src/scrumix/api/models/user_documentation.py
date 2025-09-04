@@ -26,8 +26,8 @@ class UserDocumentation(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relationships
-    user = relationship("User", back_populates="user_documentations")
-    documentation = relationship("Documentation", back_populates="user_documentations")
+    user = relationship("User", back_populates="user_documentations", overlaps="documentations,users")
+    documentation = relationship("Documentation", back_populates="user_documentations", overlaps="documentations,users")
 
     def __repr__(self):
         return f"<UserDocumentation(user_id={self.user_id}, documentation_id={self.documentation_id}, role='{self.role.value}')>"

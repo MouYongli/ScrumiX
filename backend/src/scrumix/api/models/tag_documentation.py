@@ -17,8 +17,8 @@ class TagDocumentation(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships
-    tag = relationship("Tag", back_populates="tag_documentations")
-    documentation = relationship("Documentation", back_populates="tag_documentations")
+    tag = relationship("Tag", back_populates="tag_documentations", overlaps="documentations,tags")
+    documentation = relationship("Documentation", back_populates="tag_documentations", overlaps="documentations,tags")
 
     def __repr__(self):
         return f"<TagDocumentation(tag_id={self.tag_id}, documentation_id={self.documentation_id})>"

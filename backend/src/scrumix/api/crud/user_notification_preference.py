@@ -110,10 +110,8 @@ class UserNotificationPreferenceCRUD(CRUDBase[UserNotificationPreference, UserNo
     ) -> bool:
         """Check if a notification type is enabled for a user"""
         preference = self.get_user_preference(db, user_id, category, delivery_channel)
-        print(f"          🔍 PREF DEBUG: User {user_id}, category {category.value}: preference = {preference}")
         
         if preference is None:
-            print(f"          🔍 PREF DEBUG: No preference found, creating default preferences and returning enabled")
             # Initialize default preferences for this user if they don't exist
             try:
                 self.initialize_default_preferences(db, user_id, delivery_channel)
@@ -122,12 +120,9 @@ class UserNotificationPreferenceCRUD(CRUDBase[UserNotificationPreference, UserNo
                 if preference:
                     return preference.is_enabled
             except Exception as e:
-                print(f"          🔍 PREF DEBUG: Error initializing defaults: {e}")
-            
-            # Default to enabled if no preference is set and initialization failed
-            return True
+                # Default to enabled if no preference is set and initialization failed
+                return True
         
-        print(f"          🔍 PREF DEBUG: Preference found, is_enabled = {preference.is_enabled}")
         return preference.is_enabled
     
     def should_send_notification(
@@ -139,7 +134,6 @@ class UserNotificationPreferenceCRUD(CRUDBase[UserNotificationPreference, UserNo
     ) -> bool:
         """Check if a notification should be sent to a user based on their preferences"""
         try:
-            print(f"        🔍 CRUD DEBUG: Checking user {user_id} for notification '{notification_type}'")
             
             # Map notification types to categories
             type_mapping = {
@@ -159,20 +153,16 @@ class UserNotificationPreferenceCRUD(CRUDBase[UserNotificationPreference, UserNo
             }
             
             category = type_mapping.get(notification_type)
-            print(f"        🔍 CRUD DEBUG: Notification type '{notification_type}' maps to category: {category.value if category else 'NONE'}")
             
             if not category:
-                print(f"        🔍 CRUD DEBUG: Unknown notification type, defaulting to enabled")
                 # Default to enabled for unknown types
                 return True
             
             channel = DeliveryChannel(delivery_channel)
             is_enabled = self.is_notification_enabled(db, user_id, category, channel)
-            print(f"        🔍 CRUD DEBUG: User {user_id} category {category.value} enabled: {is_enabled}")
             return is_enabled
             
         except (ValueError, KeyError) as e:
-            print(f"        🔍 CRUD DEBUG: Error checking preferences: {e}, defaulting to enabled")
             # Default to enabled if there's any error
             return True
     

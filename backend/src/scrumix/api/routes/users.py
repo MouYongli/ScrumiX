@@ -29,12 +29,9 @@ async def update_current_user_profile(
 ):
     """Update current user profile"""
     try:
-        print(f"[DEBUG] Profile update request for user {current_user.id}")
-        print(f"[DEBUG] Update data: {profile_update.model_dump(exclude_unset=True)}")
         
         # Check if this is a virtual user (Keycloak user)
         if hasattr(current_user, '__class__') and current_user.__class__.__name__ == 'VirtualUser':
-            print(f"[DEBUG] Virtual user detected")
             # For Keycloak users, we can't update the database
             # Return the current user with updated fields for immediate UI feedback
             # Note: In a real implementation, you might want to store Keycloak user profiles separately
@@ -51,31 +48,24 @@ async def update_current_user_profile(
             
             return current_user
         else:
-            print(f"[DEBUG] Local user detected, updating database")
             # For local users, update in database as usual
             # Convert ProfileUpdate to UserUpdate for compatibility
             user_update_data = profile_update.model_dump(exclude_unset=True)
-            print(f"[DEBUG] Creating UserUpdate with data: {user_update_data}")
             user_update = UserUpdate(**user_update_data)
             
-            print(f"[DEBUG] Calling user_crud.update_user")
             updated_user = user_crud.update_user(db, current_user.id, user_update)
             if not updated_user:
-                print(f"[DEBUG] update_user returned None")
                 raise HTTPException(
                     status_code=status.HTTP_404_NOT_FOUND,
                     detail="User not found"
                 )
-            print(f"[DEBUG] User updated successfully: {updated_user.id}")
             return updated_user
     except ValueError as e:
-        print(f"[DEBUG] ValueError: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e)
         )
     except Exception as e:
-        print(f"[DEBUG] Unexpected error: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Internal server error: {str(e)}"
