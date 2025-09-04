@@ -204,72 +204,10 @@ const ProjectDocumentation: React.FC<ProjectDocumentationProps> = ({ params }) =
     setIsDeleting(false);
   };
 
-  // Helper function to render markdown content
-  const renderMarkdown = (text: string) => {
-    return text
-      .replace(/^# (.*$)/gim, '<h1 style="font-size: 1.5rem; font-weight: bold; margin-bottom: 1rem; color: #1f2937;">$1</h1>')
-      .replace(/^## (.*$)/gim, '<h2 style="font-size: 1.25rem; font-weight: 600; margin-bottom: 0.75rem; color: #1f2937;">$1</h2>')
-      .replace(/^### (.*$)/gim, '<h3 style="font-size: 1.125rem; font-weight: 500; margin-bottom: 0.5rem; color: #1f2937;">$1</h3>')
-      .replace(/\*\*(.*?)\*\*/g, '<strong style="font-weight: 600;">$1</strong>')
-      .replace(/\*(.*?)\*/g, '<em style="font-style: italic;">$1</em>')
-      .replace(/`(.*?)`/g, '<code style="background: #f3f4f6; padding: 0.2rem 0.4rem; border-radius: 0.25rem; font-family: monospace; font-size: 0.875rem;">$1</code>')
-      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color: #2563eb; text-decoration: underline;">$1</a>')
-      .replace(/^> (.*$)/gim, '<blockquote style="border-left: 4px solid #e5e7eb; padding-left: 1rem; margin: 1rem 0; font-style: italic; color: #6b7280;">$1</blockquote>')
-      .replace(/^- (.*$)/gim, '<li style="margin-left: 1rem; list-style-type: disc;">$1</li>')
-      .replace(/^\d+\. (.*$)/gim, '<li style="margin-left: 1rem; list-style-type: decimal;">$1</li>')
-      .replace(/\n/g, '<br>');
-  };
 
   const handleViewDocument = (doc: Documentation) => {
-    if (doc.file_url) {
-      // If document has a file URL, open it in a new tab
-      window.open(doc.file_url, '_blank');
-    } else if (doc.content) {
-      // If document has content, show it in a new window with proper markdown rendering
-      const contentWindow = window.open('', '_blank');
-      if (contentWindow) {
-        const renderedContent = renderMarkdown(doc.content);
-        contentWindow.document.write(`
-          <html>
-            <head>
-              <title>${doc.title}</title>
-              <meta charset="UTF-8">
-              <meta name="viewport" content="width=device-width, initial-scale=1.0">
-              <style>
-                body { 
-                  font-family: system-ui, -apple-system, sans-serif; 
-                  max-width: 800px; 
-                  margin: 0 auto; 
-                  padding: 2rem; 
-                  line-height: 1.6; 
-                  color: #1f2937;
-                }
-                h1, h2, h3 { color: #1f2937; margin-top: 1.5rem; }
-                h1:first-child { margin-top: 0; }
-                code { background: #f3f4f6; padding: 0.2rem 0.4rem; border-radius: 0.25rem; font-family: 'Courier New', monospace; }
-                pre { background: #f3f4f6; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; }
-                blockquote { border-left: 4px solid #e5e7eb; padding-left: 1rem; margin: 1rem 0; font-style: italic; color: #6b7280; }
-                a { color: #2563eb; text-decoration: underline; }
-                a:hover { color: #1d4ed8; }
-                ul, ol { margin: 0.5rem 0; padding-left: 1.5rem; }
-                li { margin: 0.25rem 0; }
-              </style>
-            </head>
-            <body>
-              <h1>${doc.title}</h1>
-              <div>${renderedContent}</div>
-            </body>
-          </html>
-        `);
-        contentWindow.document.close();
-      }
-    } else if (doc.description) {
-      // If document has description but no file or content, show description
-      alert(`Document Description:\n\n${doc.description}`);
-    } else {
-      // If no file or content, show message
-      alert('No content or file available to view.');
-    }
+    // Navigate to the dedicated view page
+    router.push(`/project/${projectId}/documentation/${doc.id}`);
   };
 
   const handleDownloadDocument = (doc: Documentation) => {
