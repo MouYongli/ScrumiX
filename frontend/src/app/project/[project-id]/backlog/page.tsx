@@ -226,11 +226,11 @@ const ProjectBacklog: React.FC<ProjectBacklogProps> = ({ params }) => {
               <div className="flex items-center gap-6 text-xs text-gray-500 dark:text-gray-400">
                 <div className="flex items-center gap-1">
                   <Calendar className="w-3 h-3" />
-                  Created: {new Date(item.created_at).toLocaleDateString()}
+                  Created: {new Date(item.created_at).toLocaleDateString('en-US', { timeZone: 'Europe/Berlin' })}
                 </div>
                 <div className="flex items-center gap-1">
                   <Clock className="w-3 h-3" />
-                  Updated: {new Date(item.updated_at).toLocaleDateString()}
+                  Updated: {new Date(item.updated_at).toLocaleDateString('en-US', { timeZone: 'Europe/Berlin' })}
                 </div>
               </div>
             </div>

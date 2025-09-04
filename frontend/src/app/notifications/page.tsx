@@ -318,12 +318,14 @@ const NotificationsPage: React.FC = () => {
     // Check if date is valid
     if (isNaN(date.getTime())) return 'Invalid date';
     
+    // Use Berlin timezone and user-friendly format
     return date.toLocaleString('en-US', {
       year: 'numeric',
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
-      minute: '2-digit'
+      minute: '2-digit',
+      timeZone: 'Europe/Berlin'
     });
   };
 
