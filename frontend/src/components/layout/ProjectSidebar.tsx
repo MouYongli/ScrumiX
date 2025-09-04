@@ -28,7 +28,8 @@ import { usePathname } from 'next/navigation';
 import { 
   LayoutDashboard, FileText, Zap, Kanban, Calendar, MessageSquare, 
   TrendingUp, BarChart3, Settings, Menu, ArrowLeft, Users, Target,
-  Clock, GitBranch, CheckSquare, ListTodo, TrendingDown, BarChart
+  Clock, GitBranch, CheckSquare, ListTodo, TrendingDown, BarChart,
+  BookOpen
 } from 'lucide-react';
 import { api } from '@/utils/api';
 import { ApiProject } from '@/types/api';
@@ -236,7 +237,7 @@ const ProjectSidebar = forwardRef<ProjectSidebarRef, ProjectSidebarProps>(({
     {
       name: 'Wiki',
       href: `/project/${projectId}/documentation`,
-      icon: FileText,
+      icon: BookOpen,
     },
   ];
 

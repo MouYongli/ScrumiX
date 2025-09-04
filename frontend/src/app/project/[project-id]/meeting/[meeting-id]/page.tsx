@@ -6,8 +6,8 @@ import { useParams } from 'next/navigation';
 import { 
   ArrowLeft, Calendar, Clock, Users, Video, Edit,
   MessageSquare, Target, BarChart3, UserCheck, 
-  CheckCircle, Plus, Save, Play, Pause, 
-  FileText, ListChecks, Mic, MicOff, Eye, 
+  CheckCircle, Plus, Save, 
+  FileText, ListChecks, Eye, 
   PenTool, Bold, Italic, Code, List,
   Quote, Image, Link as LinkIcon, Hash, FolderOpen,
   Trash2, X, Check, GripVertical
@@ -774,8 +774,6 @@ const MeetingDetail = () => {
   const [error, setError] = useState<string | null>(null);
   
   const [activeTab, setActiveTab] = useState('overview');
-  const [isRecording, setIsRecording] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
   const [currentNote, setCurrentNote] = useState('');
   const [hasUnsavedNotes, setHasUnsavedNotes] = useState(false);
   const [replyingTo, setReplyingTo] = useState<string | null>(null);
@@ -1480,11 +1478,11 @@ const MeetingDetail = () => {
           throw new Error(`Agenda item at index ${index} is null or undefined`);
         }
         
-        // Check for both possible field names
-        const id = item.agendaId || item.id;
+        // Use the correct field name from ApiMeetingAgenda interface
+        const id = item.agendaId;
         if (typeof id !== 'number') {
           console.error('Invalid agenda item:', item);
-          throw new Error(`Invalid agenda item at index ${index}: missing or invalid agendaId/id (got ${typeof id})`);
+          throw new Error(`Invalid agenda item at index ${index}: missing or invalid agendaId (got ${typeof id})`);
         }
         return id;
       });
@@ -1720,34 +1718,6 @@ const MeetingDetail = () => {
             <span className={`px-3 py-1 text-sm font-medium rounded-full ${statusStyle.className}`}>
               {statusStyle.text}
             </span>
-
-            {statusStyle.text === 'In Progress' && (
-              <div className="flex gap-2">
-                <button 
-                  onClick={() => setIsMuted(!isMuted)}
-                  className={`p-2 rounded-lg transition-colors ${
-                    isMuted 
-                      ? 'bg-red-600 hover:bg-red-700 text-white' 
-                      : 'bg-gray-600 hover:bg-gray-700 text-white'
-                  }`}
-                >
-                  {isMuted ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
-                </button>
-                <button 
-                  onClick={() => setIsRecording(!isRecording)}
-                  className={`px-3 py-2 rounded-lg transition-colors ${
-                    isRecording 
-                      ? 'bg-red-600 hover:bg-red-700 text-white' 
-                      : 'bg-blue-600 hover:bg-blue-700 text-white'
-                  }`}
-                >
-                  {isRecording ? 'Stop Recording' : 'Start Recording'}
-                </button>
-                <button className="bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg">
-                  End Meeting
-                </button>
-              </div>
-            )}
           </div>
         </div>
 

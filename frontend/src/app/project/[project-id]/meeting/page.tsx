@@ -333,11 +333,24 @@ const ProjectMeetings = () => {
       return { isValid: true }; // Don't validate incomplete input
     }
 
-    const inputDateTime = new Date(`${date}T${time}`);
-    const now = new Date();
+    // Parse the datetime consistently with how we save it
+    const [year, month, day] = date.split('-').map(Number);
+    const [hours, minutes] = time.split(':').map(Number);
+    const inputDateTime = new Date(Date.UTC(year, month - 1, day, hours, minutes, 0));
     
-    if (inputDateTime <= now) {
-      const diffMinutes = Math.floor((now.getTime() - inputDateTime.getTime()) / (1000 * 60));
+    // Compare with current time in the same format (UTC with local time values)
+    const now = new Date();
+    const nowAsLocal = new Date(Date.UTC(
+      now.getFullYear(), 
+      now.getMonth(), 
+      now.getDate(), 
+      now.getHours(), 
+      now.getMinutes(), 
+      now.getSeconds()
+    ));
+    
+    if (inputDateTime <= nowAsLocal) {
+      const diffMinutes = Math.floor((nowAsLocal.getTime() - inputDateTime.getTime()) / (1000 * 60));
       if (diffMinutes < 1) {
         return { isValid: false, error: 'Meeting time must be at least 1 minute in the future' };
       } else if (diffMinutes < 60) {
@@ -428,9 +441,6 @@ const ProjectMeetings = () => {
     
     try {
       // Create meeting data for API - handle timezone properly
-      // Parse the date and time as local time
-      const localDateTime = new Date(`${formData.date}T${formData.time}`);
-      
       // Check for validation errors before submitting
       const dateTimeValidation = validateDateTime(formData.date, formData.time);
       if (!dateTimeValidation.isValid) {
@@ -438,9 +448,14 @@ const ProjectMeetings = () => {
         return;
       }
       
-      // Send the local datetime as ISO string - the backend should handle timezone conversion
-      // This preserves the exact time the user entered
-      const datetimeToSend = localDateTime;
+      // Create the datetime preserving the user's intended local time
+      // We construct the datetime in a way that preserves the exact time the user entered
+      // By treating the user's input as if it were in UTC, we avoid timezone conversion
+      const [year, month, day] = formData.date.split('-').map(Number);
+      const [hours, minutes] = formData.time.split(':').map(Number);
+      
+      // Create a Date object in UTC with the exact values the user entered
+      const datetimeToSend = new Date(Date.UTC(year, month - 1, day, hours, minutes, 0));
       
       // Get the first available sprint or create a default one if none exist
       let sprintId = 1; // Default fallback
@@ -532,14 +547,16 @@ const ProjectMeetings = () => {
 
     try {
       // Update meeting data for API - handle timezone properly
-      // Parse the date and time as local time
-      const localDateTime = new Date(`${formData.date}T${formData.time}`);
       // For editing, allow any date (including past dates for completed meetings)
       // No validation needed here - users should be able to edit historical meetings
       
-      // Send the local datetime as ISO string - the backend should handle timezone conversion
-      // This preserves the exact time the user entered
-      const datetimeToSend = localDateTime;
+      // Create the datetime preserving the user's intended local time
+      // We construct the datetime in a way that preserves the exact time the user entered
+      const [year, month, day] = formData.date.split('-').map(Number);
+      const [hours, minutes] = formData.time.split(':').map(Number);
+      
+      // Create a Date object in UTC with the exact values the user entered
+      const datetimeToSend = new Date(Date.UTC(year, month - 1, day, hours, minutes, 0));
       
       // Get the first available sprint or use a default (same logic as create)
       const sprintId = sprints.length > 0 ? sprints[0].id : 1;
@@ -743,10 +760,11 @@ const ProjectMeetings = () => {
     const startDate = parseDatetimeSafely(datetimeValue);
     
     if (startDate) {
-      // The startDate should already be in the correct timezone from the backend
-      // Just format it for the date and time inputs
-      dateStr = startDate.toISOString().split('T')[0];
-      timeStr = startDate.toISOString().split('T')[1].substring(0, 5);
+      // Since we're now storing the datetime as the user intended (without timezone conversion),
+      // we can extract the date and time directly from the ISO string
+      const isoString = startDate.toISOString();
+      dateStr = isoString.split('T')[0];
+      timeStr = isoString.split('T')[1].substring(0, 5);
 
     } else {
       console.warn('Could not parse startDatetime for meeting:', meeting.id, 'Value:', datetimeValue);
