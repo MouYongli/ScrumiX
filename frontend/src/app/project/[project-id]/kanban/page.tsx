@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Plus, User, Calendar, Flag, MoreHorizontal, Filter, Search, FolderOpen, Kanban, X, ChevronDown, Clock, CalendarDays, LayoutGrid, RotateCcw } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
 import { useDateFormat } from '@/hooks/useDateFormat';
-import { api } from '@/utils/api';
+import { api, personalNotesApi, PersonalNote } from '@/utils/api';
 import { mapApiUserToDomain } from '@/utils/mappers';
 import { ApiBacklog, ApiUser } from '@/types/api';
 import { TaskStatus } from '@/types/enums';
@@ -1072,22 +1072,32 @@ const CalendarView: React.FC<{
     fetchMeetings();
   }, [currentSprint?.projectId, currentDate]);
   
-  // Load personal dates from localStorage
+  // Load personal dates from backend API
   useEffect(() => {
-    const stored = localStorage.getItem(`personal-calendar-${currentSprint?.projectId || 'global'}`);
-    if (stored) {
+    const loadPersonalDates = async () => {
+      if (!currentSprint?.projectId) return;
+      
       try {
-        setPersonalDates(JSON.parse(stored));
+        const response = await personalNotesApi.getByProject(currentSprint.projectId);
+        if (!response.error && response.data) {
+          const notesMap: {[key: string]: string} = {};
+          response.data.forEach((note: PersonalNote) => {
+            notesMap[note.note_date] = note.content;
+          });
+          setPersonalDates(notesMap);
+        }
       } catch (error) {
         console.warn('Failed to load personal dates:', error);
       }
-    }
+    };
+    
+    loadPersonalDates();
   }, [currentSprint?.projectId]);
   
-  // Save personal dates to localStorage
-  const savePersonalDates = (dates: {[key: string]: string}) => {
+  // Save personal dates to backend API
+  const savePersonalDates = async (dates: {[key: string]: string}) => {
     setPersonalDates(dates);
-    localStorage.setItem(`personal-calendar-${currentSprint?.projectId || 'global'}`, JSON.stringify(dates));
+    // Note: Individual save/update/delete operations are handled in the respective functions
   };
   
   // Personal calendar handlers
@@ -1096,19 +1106,48 @@ const CalendarView: React.FC<{
     setPersonalDateNote('');
   };
   
-  const handleSavePersonalDate = () => {
-    if (isAddingPersonalDate && personalDateNote.trim()) {
-      const newDates = { ...personalDates, [isAddingPersonalDate]: personalDateNote.trim() };
-      savePersonalDates(newDates);
-      setIsAddingPersonalDate(null);
-      setPersonalDateNote('');
+  const handleSavePersonalDate = async () => {
+    if (isAddingPersonalDate && personalDateNote.trim() && currentSprint?.projectId) {
+      try {
+        const response = await personalNotesApi.create(currentSprint.projectId, {
+          note_date: isAddingPersonalDate,
+          content: personalDateNote.trim()
+        });
+        
+        if (!response.error && response.data) {
+          const newDates = { ...personalDates, [isAddingPersonalDate]: personalDateNote.trim() };
+          setPersonalDates(newDates);
+          setIsAddingPersonalDate(null);
+          setPersonalDateNote('');
+        } else {
+          console.error('Failed to save personal note:', response.error);
+          alert('Failed to save personal note. Please try again.');
+        }
+      } catch (error) {
+        console.error('Error saving personal note:', error);
+        alert('Failed to save personal note. Please try again.');
+      }
     }
   };
   
-  const handleRemovePersonalDate = (dateStr: string) => {
-    const newDates = { ...personalDates };
-    delete newDates[dateStr];
-    savePersonalDates(newDates);
+  const handleRemovePersonalDate = async (dateStr: string) => {
+    if (!currentSprint?.projectId) return;
+    
+    try {
+      const response = await personalNotesApi.delete(currentSprint.projectId, dateStr);
+      
+      if (!response.error) {
+        const newDates = { ...personalDates };
+        delete newDates[dateStr];
+        setPersonalDates(newDates);
+      } else {
+        console.error('Failed to delete personal note:', response.error);
+        alert('Failed to delete personal note. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error deleting personal note:', error);
+      alert('Failed to delete personal note. Please try again.');
+    }
   };
   
   const filteredTasks = tasks.filter((task) => {
@@ -1127,6 +1166,11 @@ const CalendarView: React.FC<{
     return matchesSearch && matchesAssignee && matchesPriority && matchesStatus;
   });
   
+  // Helper function to format date consistently (same as dashboard calendar)
+  const formatDate = (date: Date) => {
+    return date.toISOString().split('T')[0];
+  };
+  
   // Group items by date - include meetings, personal dates, and tasks (removed user stories)
   const itemsByDate = new Map<string, Array<{
     type: 'meeting' | 'task' | 'personal';
@@ -1139,25 +1183,28 @@ const CalendarView: React.FC<{
     note?: string;
   }>>();
   
-  // Add meetings - show only on the specific meeting day
+  // Add meetings - show only on the specific meeting day (same logic as dashboard preview)
   meetings.forEach((meeting) => {
-    const meetingDate = new Date(meeting.startDatetime).toISOString().split('T')[0];
-    const meetingTime = new Date(meeting.startDatetime).toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit'
-    }); // Note: This will be replaced with FormattedDateTime component in the render
+    const meetingDateObj = new Date(meeting.startDatetime);
     
-    if (!itemsByDate.has(meetingDate)) {
-      itemsByDate.set(meetingDate, []);
-    }
-    
-    itemsByDate.get(meetingDate)!.push({
-      type: 'meeting',
-      item: meeting,
-      displayTitle: meeting.title,
-      startDatetime: meeting.startDatetime // Store raw datetime for FormattedDateTime component
-          });
+    // Find the calendar day that matches this meeting date using the same comparison as dashboard
+    calendarDays.forEach((calendarDate) => {
+      if (meetingDateObj.toDateString() === calendarDate.toDateString()) {
+        const dateStr = formatDate(calendarDate);
+        
+        if (!itemsByDate.has(dateStr)) {
+          itemsByDate.set(dateStr, []);
+        }
+        
+        itemsByDate.get(dateStr)!.push({
+          type: 'meeting',
+          item: meeting,
+          displayTitle: meeting.title,
+          startDatetime: meeting.startDatetime // Store raw datetime for FormattedDateTime component
         });
+      }
+    });
+  });
   
   // Add personal dates
   Object.entries(personalDates).forEach(([dateStr, note]) => {
@@ -1194,10 +1241,6 @@ const CalendarView: React.FC<{
       });
     }
   });
-  
-  const formatDate = (date: Date) => {
-    return date.toISOString().split('T')[0];
-  };
   
   const isToday = (date: Date) => {
     const today = new Date();

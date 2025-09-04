@@ -36,6 +36,7 @@ class Project(Base):
     sprints = relationship("Sprint", back_populates="project", cascade="all, delete-orphan")
     documentations = relationship("Documentation", back_populates="project", cascade="all, delete-orphan")
     meetings = relationship("Meeting", back_populates="project", cascade="all, delete-orphan")
+    personal_notes = relationship("PersonalNote", back_populates="project", cascade="all, delete-orphan")
     
     user_projects = relationship("UserProject", back_populates="project", cascade="all, delete-orphan")
     users = relationship("User", secondary="user_project", back_populates="projects", overlaps="user_projects")

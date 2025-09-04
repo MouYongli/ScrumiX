@@ -13,7 +13,7 @@ import { useDateFormat } from '@/hooks/useDateFormat';
 import { Timeline } from 'vis-timeline/standalone';
 import { DataSet } from 'vis-data/standalone';
 import 'vis-timeline/styles/vis-timeline-graph2d.css';
-import { api } from '@/utils/api';
+import { api, personalNotesApi, PersonalNote } from '@/utils/api';
 import { ApiProject, ApiTask, ApiMeeting, ApiSprint, ScrumRole } from '@/types/api';
 import { ProjectStatus, TaskStatus } from '@/types/enums';
 
@@ -177,6 +177,31 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
   });
   const [draggedItem, setDraggedItem] = useState<any>(null);
   const [dragOverColumn, setDragOverColumn] = useState<string | null>(null);
+  
+  // Personal notes for calendar preview
+  const [personalDates, setPersonalDates] = useState<{[key: string]: string}>({});
+  
+  // Load personal dates from backend API for calendar preview
+  useEffect(() => {
+    const loadPersonalDates = async () => {
+      if (!projectId) return;
+      
+      try {
+        const response = await personalNotesApi.getByProject(parseInt(projectId));
+        if (!response.error && response.data) {
+          const notesMap: {[key: string]: string} = {};
+          response.data.forEach((note: PersonalNote) => {
+            notesMap[note.note_date] = note.content;
+          });
+          setPersonalDates(notesMap);
+        }
+      } catch (error) {
+        console.warn('Failed to load personal dates for calendar preview:', error);
+      }
+    };
+    
+    loadPersonalDates();
+  }, [projectId]);
   const [isUpdatingTask, setIsUpdatingTask] = useState<number | null>(null); // Track which task is being updated
   const [updateMessage, setUpdateMessage] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [tempDragState, setTempDragState] = useState<{
@@ -2146,35 +2171,48 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                         {/* Calendar Grid - Show current sprint duration */}
                   <div className="grid grid-cols-7 gap-1">
                           {(() => {
-                            const startDate = new Date(dashboardData.currentSprint.startDate);
-                            const endDate = new Date(dashboardData.currentSprint.endDate);
+                            const sprintStartDate = new Date(dashboardData.currentSprint.startDate);
+                            const sprintEndDate = new Date(dashboardData.currentSprint.endDate);
                             const today = new Date();
                             
-                            // Create array of dates for the sprint period
+                            // Use the same date generation logic as the kanban calendar
+                            // Get the month that contains the sprint start date
+                            const year = sprintStartDate.getFullYear();
+                            const month = sprintStartDate.getMonth();
+                            const firstDay = new Date(year, month, 1);
+                            const startDate = new Date(firstDay);
+                            startDate.setDate(startDate.getDate() - firstDay.getDay());
+                            
+                            // Generate calendar days (same as kanban calendar)
                             const sprintDates: Date[] = [];
                             const currentDate = new Date(startDate);
                             
-                            // Start from the beginning of the week containing sprint start
-                            currentDate.setDate(currentDate.getDate() - currentDate.getDay());
-                            
-                            // Generate dates for 2-3 weeks (14-21 days) to cover most sprint durations
+                            // Generate 3 weeks to cover sprint duration
                             for (let i = 0; i < 21; i++) {
                               sprintDates.push(new Date(currentDate));
                               currentDate.setDate(currentDate.getDate() + 1);
-                              
-                              // Stop if we've gone well past the sprint end date
-                              if (currentDate > endDate && i >= 13) break;
                             }
+                            
+                            // Helper function to format date consistently (same as kanban calendar)
+                            const formatDate = (date: Date) => {
+                              return date.toISOString().split('T')[0];
+                            };
+                            
+                            // Helper function to check if date is in current month (same as kanban calendar)
+                            const isCurrentMonth = (date: Date) => {
+                              return date.getMonth() === month;
+                            };
 
                             return sprintDates.map((date, index) => {
-                              const dateStr = date.toISOString().split('T')[0];
-                              const isInSprint = date >= startDate && date <= endDate;
+                              const dateStr = formatDate(date);
+                              const isInSprint = date >= sprintStartDate && date <= sprintEndDate;
                               const isToday = date.toDateString() === today.toDateString();
                               const isPastDate = date < today;
+                              const isCurrentMonthDay = isCurrentMonth(date);
                               
-                              // Distribute meetings across sprint dates (mock distribution)
-                              const meetingsForDay = dashboardData.upcomingMeetings.filter((_, meetingIndex) => {
-                                const meetingDate = new Date(dashboardData.upcomingMeetings[meetingIndex]?.startDatetime);
+                              // Filter meetings for this specific date
+                              const meetingsForDay = dashboardData.upcomingMeetings.filter((meeting) => {
+                                const meetingDate = new Date(meeting.startDatetime);
                                 return meetingDate.toDateString() === date.toDateString();
                               });
                               
@@ -2219,14 +2257,31 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                                       </div>
                                     ))}
 
-                                    {/* Tasks removed from calendar preview */}
-
-                                    {/* Show count if there are more items */}
-                                    {meetingsForDay.length > 1 && (
-                                      <div className="text-[10px] text-gray-500 dark:text-gray-400 px-1 font-medium">
-                                        +{meetingsForDay.length - 1} more meeting{meetingsForDay.length - 1 !== 1 ? 's' : ''}
+                                    {/* Personal Notes */}
+                                    {personalDates[dateStr] && (
+                                      <div
+                                        className="text-[10px] px-1 py-0.5 rounded bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 border-l-2 border-green-400"
+                                        title={`Personal Note: ${personalDates[dateStr]}`}
+                                      >
+                                        <div className="flex items-center gap-1">
+                                          <span>📝</span>
+                                          <span className="truncate font-medium">{personalDates[dateStr]}</span>
+                                        </div>
                                       </div>
                                     )}
+
+                                    {/* Show count if there are more items */}
+                                    {(() => {
+                                      const totalItems = meetingsForDay.length + (personalDates[dateStr] ? 1 : 0);
+                                      const visibleItems = (meetingsForDay.length > 0 ? 1 : 0) + (personalDates[dateStr] ? 1 : 0);
+                                      const moreItems = totalItems - visibleItems;
+                                      
+                                      return moreItems > 0 && (
+                                        <div className="text-[10px] text-gray-500 dark:text-gray-400 px-1 font-medium">
+                                          +{moreItems} more item{moreItems !== 1 ? 's' : ''}
+                                        </div>
+                                      );
+                                    })()}
                           </div>
                         </div>
                       );
@@ -2242,8 +2297,8 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
                               <span className="text-gray-600 dark:text-gray-400">Meetings</span>
                             </div>
                             <div className="flex items-center gap-1">
-                              <div className="w-2 h-2 bg-blue-400 rounded border-l-2 border-blue-500"></div>
-                              <span className="text-gray-600 dark:text-gray-400">Sprint Period</span>
+                              <div className="w-2 h-2 bg-green-400 rounded border-l-2 border-green-500"></div>
+                              <span className="text-gray-600 dark:text-gray-400">Personal Notes</span>
                             </div>
                             <div className="flex items-center gap-1">
                               <div className="w-4 h-4 bg-blue-600 rounded-full"></div>
