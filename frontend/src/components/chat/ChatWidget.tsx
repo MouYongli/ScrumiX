@@ -12,9 +12,12 @@ import {
   Users,
   Code2,
   Sparkles,
-  ArrowUp
+  ArrowUp,
+  ExternalLink
 } from 'lucide-react';
 import { Agent, AgentType, ChatMessage, ChatState } from '@/types/chat';
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 
 // Agent definitions with Scrum-specific roles
 const AGENTS: Record<AgentType, Agent> = {
@@ -72,6 +75,10 @@ const ChatWidget: React.FC = () => {
   const [isMinimized, setIsMinimized] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const pathname = usePathname();
+  
+  // Get project ID from current path
+  const projectId = pathname?.startsWith('/project/') ? pathname.split('/')[2] : null;
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -215,6 +222,16 @@ const ChatWidget: React.FC = () => {
                 </div>
                 
                 <div className="flex items-center space-x-2">
+                  {/* Full Page Link Button */}
+                  {projectId && (
+                    <Link
+                      href={`/project/${projectId}/ai-chat`}
+                      className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors group"
+                      title="Open full-page AI chat"
+                    >
+                      <ExternalLink className="w-4 h-4 text-gray-500 dark:text-gray-400 group-hover:text-blue-600 dark:group-hover:text-blue-400" />
+                    </Link>
+                  )}
                   <button
                     onClick={minimizeChat}
                     className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
