@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from ..core.security import get_current_user
 from ..db.database import get_db
 from ..crud.backlog import backlog_crud
+from ..crud.documentation import semantic_search_documentation_by_field, semantic_search_documentation_multi_field
 from ..schemas.backlog import BacklogResponse
 from ..schemas.documentation import DocumentationResponse
 from ..models.user import User
@@ -240,4 +241,126 @@ async def update_single_backlog_embedding(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Embedding update failed: {str(e)}"
+        )
+
+
+# New field-specific search endpoints for documentation
+class DocumentationFieldSearchRequest(BaseModel):
+    """Request model for field-specific documentation search"""
+    query: str = Field(..., min_length=1, max_length=500, description="Search query")
+    field: str = Field(..., description="Field to search in: 'title', 'description', or 'content'")
+    project_id: Optional[int] = Field(None, description="Filter by project ID")
+    limit: int = Field(10, ge=1, le=50, description="Maximum number of results")
+    similarity_threshold: float = Field(0.7, ge=0.0, le=1.0, description="Minimum similarity score")
+
+
+class DocumentationMultiFieldSearchRequest(BaseModel):
+    """Request model for multi-field documentation search"""
+    query: str = Field(..., min_length=1, max_length=500, description="Search query")
+    fields: List[str] = Field(default=["title", "description", "content"], description="Fields to search in")
+    project_id: Optional[int] = Field(None, description="Filter by project ID")
+    limit: int = Field(10, ge=1, le=50, description="Maximum number of results")
+    similarity_threshold: float = Field(0.7, ge=0.0, le=1.0, description="Minimum similarity score")
+
+
+class DocumentationFieldSearchResult(BaseModel):
+    """Result model for field-specific documentation search"""
+    documentation: DocumentationResponse
+    similarity_score: float = Field(..., description="Similarity score between 0 and 1")
+
+
+class DocumentationMultiFieldSearchResult(BaseModel):
+    """Result model for multi-field documentation search"""
+    documentation: DocumentationResponse
+    similarity_scores: Dict[str, float] = Field(..., description="Similarity scores for each field")
+
+
+@router.post("/documentation/field-search", response_model=List[DocumentationFieldSearchResult])
+async def search_documentation_by_field(
+    request: DocumentationFieldSearchRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Search documentation in a specific field (title, description, or content).
+    Perfect for AI agents that need targeted search capabilities.
+    """
+    try:
+        # Validate field parameter
+        valid_fields = ['title', 'description', 'content']
+        if request.field not in valid_fields:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid field '{request.field}'. Must be one of: {valid_fields}"
+            )
+        
+        results = await semantic_search_documentation_by_field(
+            db=db,
+            query=request.query,
+            field=request.field,
+            project_id=request.project_id,
+            limit=request.limit,
+            similarity_threshold=request.similarity_threshold
+        )
+
+        return [
+            DocumentationFieldSearchResult(
+                documentation=DocumentationResponse.model_validate(doc),
+                similarity_score=score
+            )
+            for doc, score in results
+        ]
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Field-specific search failed: {str(e)}"
+        )
+
+
+@router.post("/documentation/multi-field-search", response_model=List[DocumentationMultiFieldSearchResult])
+async def search_documentation_multi_field(
+    request: DocumentationMultiFieldSearchRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Search documentation across multiple fields with individual similarity scores.
+    Ideal for comprehensive AI agent searches that need field-level relevance.
+    """
+    try:
+        # Validate fields parameter
+        valid_fields = ['title', 'description', 'content']
+        invalid_fields = [f for f in request.fields if f not in valid_fields]
+        if invalid_fields:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid fields {invalid_fields}. Must be from: {valid_fields}"
+            )
+        
+        results = await semantic_search_documentation_multi_field(
+            db=db,
+            query=request.query,
+            fields=request.fields,
+            project_id=request.project_id,
+            limit=request.limit,
+            similarity_threshold=request.similarity_threshold
+        )
+
+        return [
+            DocumentationMultiFieldSearchResult(
+                documentation=DocumentationResponse.model_validate(doc),
+                similarity_scores=scores
+            )
+            for doc, scores in results
+        ]
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Multi-field search failed: {str(e)}"
         )
