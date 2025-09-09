@@ -233,6 +233,122 @@ class EmbeddingService:
             logger.error(f"Error in batch acceptance criteria embedding update: {str(e)}")
             db.rollback()
             return {"updated": 0, "failed": 0, "skipped": 0}
+    
+    async def update_project_embedding(self, db: Session, project_id: int) -> bool:
+        """
+        Update embedding for a specific project
+        
+        Args:
+            db: Database session
+            project_id: ID of the project to update
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        from ..models.project import Project
+        
+        try:
+            # Get project
+            project = db.query(Project).filter(Project.id == project_id).first()
+            if not project:
+                logger.error(f"Project {project_id} not found")
+                return False
+            
+            # Check if embedding update is needed
+            if not project.needs_embedding_update():
+                logger.info(f"Project {project_id} embedding is up to date")
+                return True
+            
+            # Generate embedding for searchable content
+            searchable_content = project.get_searchable_content()
+            embedding = await self.generate_embedding(searchable_content)
+            
+            if embedding:
+                project.embedding = embedding
+                project.embedding_updated_at = func.now()
+                db.commit()
+                logger.info(f"Updated embedding for project {project_id}")
+                return True
+            else:
+                logger.error(f"Failed to generate embedding for project {project_id}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error updating project embedding {project_id}: {str(e)}")
+            db.rollback()
+            return False
+    
+    async def update_all_project_embeddings(
+        self, 
+        db: Session, 
+        user_id: Optional[int] = None,
+        force: bool = False
+    ) -> Dict[str, int]:
+        """
+        Update embeddings for all projects (optionally filtered by user membership)
+        
+        Args:
+            db: Database session
+            user_id: Optional user ID to filter projects by membership
+            force: If True, update all embeddings regardless of update status
+            
+        Returns:
+            Dictionary with counts of updated, failed, and skipped items
+        """
+        from ..models.project import Project
+        from ..models.user_project import UserProject
+        
+        try:
+            # Build query
+            query = db.query(Project)
+            
+            # Apply user membership filter
+            if user_id:
+                query = query.join(UserProject).filter(UserProject.user_id == user_id)
+            
+            projects = query.all()
+            
+            updated_count = 0
+            failed_count = 0
+            skipped_count = 0
+            
+            for project in projects:
+                try:
+                    # Check if update is needed (unless forced)
+                    if not force and not project.needs_embedding_update():
+                        skipped_count += 1
+                        continue
+                    
+                    # Generate embedding for searchable content
+                    searchable_content = project.get_searchable_content()
+                    embedding = await self.generate_embedding(searchable_content)
+                    
+                    if embedding:
+                        project.embedding = embedding
+                        project.embedding_updated_at = func.now()
+                        updated_count += 1
+                    else:
+                        failed_count += 1
+                        
+                except Exception as e:
+                    logger.error(f"Error updating embedding for project {project.id}: {str(e)}")
+                    failed_count += 1
+            
+            # Commit all changes
+            if updated_count > 0:
+                db.commit()
+                logger.info(f"Updated embeddings for {updated_count} projects")
+            
+            return {
+                "updated": updated_count,
+                "failed": failed_count,
+                "skipped": skipped_count
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in batch project embedding update: {str(e)}")
+            db.rollback()
+            return {"updated": 0, "failed": 0, "skipped": 0}
 
 
 # Global instance

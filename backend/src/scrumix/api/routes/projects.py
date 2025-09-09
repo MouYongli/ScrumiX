@@ -2,7 +2,7 @@
 Project management API routes
 """
 from typing import List, Optional, Dict
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from fastapi import status as fastapi_status
 from sqlalchemy.orm import Session
 
@@ -16,8 +16,22 @@ from scrumix.api.models.user_project import ScrumRole
 from scrumix.api.schemas.project import ProjectCreate, ProjectUpdate, ProjectResponse
 from scrumix.api.schemas.user_project import ProjectMemberResponse, UserProjectCreate, UserProjectUpdate
 from scrumix.api.schemas.meeting import MeetingResponse
+from scrumix.api.core.embedding_service import embedding_service
 
 router = APIRouter(tags=["projects"])
+
+
+async def update_project_embeddings_background(project_id: int, db: Session):
+    """Background task to update embeddings for project"""
+    try:
+        await embedding_service.update_project_embedding(db, project_id)
+    except Exception as e:
+        print(f"Failed to update embeddings for project {project_id}: {e}")
+
+
+def schedule_embedding_update(background_tasks: BackgroundTasks, project_id: int, db: Session):
+    """Schedule embedding update as background task"""
+    background_tasks.add_task(update_project_embeddings_background, project_id, db)
 
 @router.get("/me", response_model=List[ProjectResponse])
 async def get_my_projects(
@@ -114,6 +128,7 @@ async def get_projects(
 @router.post("/", response_model=ProjectResponse, status_code=fastapi_status.HTTP_201_CREATED)
 async def create_project(
     project_create: ProjectCreate,
+    background_tasks: BackgroundTasks,
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -129,6 +144,9 @@ async def create_project(
         
         # Create project with current user as owner
         project = project_crud.create_project(db, project_create, creator_id=current_user.id)
+        
+        # Schedule embedding generation in background
+        schedule_embedding_update(background_tasks, project.id, db)
         
         # Get project statistics
         project_stats = project_crud.get_project_with_user_role(db, project.id, current_user.id)
@@ -191,6 +209,7 @@ async def get_project(
 async def update_project(
     project_id: int,
     project_update: ProjectUpdate,
+    background_tasks: BackgroundTasks,
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
@@ -211,6 +230,16 @@ async def update_project(
                 status_code=fastapi_status.HTTP_404_NOT_FOUND,
                 detail="Project not found"
             )
+        
+        # Check if name or description changed and schedule embedding update
+        content_changed = False
+        if project_update.name and project_update.name != current_project.name:
+            content_changed = True
+        if project_update.description is not None and project_update.description != current_project.description:
+            content_changed = True
+        
+        if content_changed:
+            schedule_embedding_update(background_tasks, project_id, db)
         
         # Send notifications for important project changes
         print(f"    Current user: {current_user.id}")
@@ -734,4 +763,206 @@ async def get_project_meetings(
         raise HTTPException(
             status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=str(e)
+        )
+
+
+# Semantic search endpoints
+@router.get("/semantic-search")
+async def semantic_search_projects(
+    query: str = Query(..., description="Search query text"),
+    limit: int = Query(10, ge=1, le=50, description="Maximum number of results"),
+    similarity_threshold: float = Query(0.7, ge=0.0, le=1.0, description="Minimum similarity score"),
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Perform semantic search on projects using embeddings.
+    Only searches projects where the current user is a member.
+    """
+    try:
+        results = await project_crud.semantic_search(
+            db=db,
+            query=query,
+            user_id=current_user.id,
+            limit=limit,
+            similarity_threshold=similarity_threshold
+        )
+        
+        search_results = []
+        for project, similarity in results:
+            # Get project statistics
+            project_stats = project_crud.get_project_with_user_role(db, project.id, current_user.id)
+            
+            project_response = ProjectResponse.from_db_model(
+                project=project,
+                progress=project_stats["progress"],
+                members=project_stats["members_count"],
+                tasks_completed=project_stats["backlog_completed"],
+                tasks_total=project_stats["backlog_total"],
+                user_role=project_stats["user_role"]
+            )
+            
+            search_results.append({
+                "project": project_response,
+                "similarity_score": similarity
+            })
+        
+        return {
+            "results": search_results,
+            "total": len(search_results),
+            "query": query,
+            "similarity_threshold": similarity_threshold
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Semantic search failed: {str(e)}"
+        )
+
+
+@router.get("/{project_id}/similar")
+async def find_similar_projects(
+    project_id: int,
+    limit: int = Query(5, ge=1, le=20, description="Maximum number of similar projects"),
+    similarity_threshold: float = Query(0.6, ge=0.0, le=1.0, description="Minimum similarity score"),
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Find projects similar to the given project based on embeddings.
+    Only returns projects where the current user is a member.
+    """
+    try:
+        # Verify user has access to the reference project
+        user_role = user_project_crud.get_user_role(db, current_user.id, project_id)
+        if not user_role:
+            raise HTTPException(
+                status_code=fastapi_status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this project"
+            )
+        
+        results = await project_crud.find_similar_projects(
+            db=db,
+            project_id=project_id,
+            user_id=current_user.id,
+            limit=limit,
+            similarity_threshold=similarity_threshold
+        )
+        
+        similar_projects = []
+        for project, similarity in results:
+            # Get project statistics
+            project_stats = project_crud.get_project_with_user_role(db, project.id, current_user.id)
+            
+            project_response = ProjectResponse.from_db_model(
+                project=project,
+                progress=project_stats["progress"],
+                members=project_stats["members_count"],
+                tasks_completed=project_stats["backlog_completed"],
+                tasks_total=project_stats["backlog_total"],
+                user_role=project_stats["user_role"]
+            )
+            
+            similar_projects.append({
+                "project": project_response,
+                "similarity_score": similarity
+            })
+        
+        return {
+            "similar_projects": similar_projects,
+            "total": len(similar_projects),
+            "reference_project_id": project_id,
+            "similarity_threshold": similarity_threshold
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Similar projects search failed: {str(e)}"
+        )
+
+
+@router.post("/{project_id}/update-embeddings")
+async def update_project_embeddings(
+    project_id: int,
+    force: bool = Query(False, description="Force update even if up to date"),
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Manually trigger embedding update for a specific project.
+    """
+    try:
+        # Check if user has access to the project
+        user_role = user_project_crud.get_user_role(db, current_user.id, project_id)
+        if not user_role:
+            raise HTTPException(
+                status_code=fastapi_status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this project"
+            )
+        
+        success = await project_crud.update_embedding(db=db, project_id=project_id, force=force)
+        
+        if success:
+            return {
+                "message": f"Embeddings updated successfully for project {project_id}",
+                "project_id": project_id
+            }
+        else:
+            raise HTTPException(
+                status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to update embeddings for project {project_id}"
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Embedding update failed: {str(e)}"
+        )
+
+
+@router.post("/update-all-embeddings")
+async def update_all_project_embeddings(
+    force: bool = Query(False, description="Force update all embeddings"),
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update embeddings for all projects where the current user is a member.
+    Admin-only endpoint for batch embedding updates.
+    """
+    # Check if user has admin privileges
+    if not hasattr(current_user, 'is_superuser') or not current_user.is_superuser:
+        raise HTTPException(
+            status_code=fastapi_status.HTTP_403_FORBIDDEN,
+            detail="Only administrators can update all embeddings"
+        )
+    
+    try:
+        stats = await project_crud.update_all_embeddings(
+            db=db,
+            user_id=None,  # Admin can update all projects
+            force=force
+        )
+        
+        total_processed = stats["updated"] + stats["failed"] + stats["skipped"]
+        message = f"Processed {total_processed} projects: {stats['updated']} updated, {stats['skipped']} skipped, {stats['failed']} failed"
+        
+        return {
+            "updated": stats["updated"],
+            "failed": stats["failed"],
+            "skipped": stats["skipped"],
+            "total_processed": total_processed,
+            "message": message
+        }
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Batch embedding update failed: {str(e)}"
         )
