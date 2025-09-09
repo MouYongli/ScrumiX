@@ -178,8 +178,7 @@ class Backlog(Base):
             criteria_texts = []
             for criteria in self.acceptance_criteria:
                 criteria_text = criteria.title
-                if criteria.description:
-                    criteria_text += f" - {criteria.description}"
+                # Note: AcceptanceCriteria only has title, not description
                 criteria_texts.append(criteria_text)
             
             if criteria_texts:

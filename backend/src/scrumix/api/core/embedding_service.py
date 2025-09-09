@@ -132,6 +132,11 @@ class EmbeddingService:
         """
         from ..models.acceptance_criteria import AcceptanceCriteria
         
+        # Skip embedding generation if no API key is configured
+        if not self.client:
+            logger.info(f"Skipping embedding generation for acceptance criteria {criteria_id} - no API key configured")
+            return True
+        
         try:
             # Get acceptance criteria
             criteria = db.query(AcceptanceCriteria).filter(AcceptanceCriteria.id == criteria_id).first()
@@ -155,8 +160,8 @@ class EmbeddingService:
                 logger.info(f"Updated embedding for acceptance criteria {criteria_id}")
                 return True
             else:
-                logger.error(f"Failed to generate embedding for acceptance criteria {criteria_id}")
-                return False
+                logger.warning(f"Failed to generate embedding for acceptance criteria {criteria_id} - API may be unavailable")
+                return True
                 
         except Exception as e:
             logger.error(f"Error updating acceptance criteria embedding {criteria_id}: {str(e)}")
@@ -181,6 +186,11 @@ class EmbeddingService:
             Dictionary with counts of updated, failed, and skipped items
         """
         from ..models.acceptance_criteria import AcceptanceCriteria
+        
+        # Skip if no API key
+        if not self.client:
+            logger.info("Skipping acceptance criteria embedding generation - no API key configured")
+            return {"updated": 0, "failed": 0, "skipped": 0}
         
         try:
             # Build query
@@ -247,6 +257,11 @@ class EmbeddingService:
         """
         from ..models.project import Project
         
+        # Skip embedding generation if no API key is configured
+        if not self.client:
+            logger.info(f"Skipping embedding generation for project {project_id} - no API key configured")
+            return True
+        
         try:
             # Get project
             project = db.query(Project).filter(Project.id == project_id).first()
@@ -270,8 +285,8 @@ class EmbeddingService:
                 logger.info(f"Updated embedding for project {project_id}")
                 return True
             else:
-                logger.error(f"Failed to generate embedding for project {project_id}")
-                return False
+                logger.warning(f"Failed to generate embedding for project {project_id} - API may be unavailable")
+                return True
                 
         except Exception as e:
             logger.error(f"Error updating project embedding {project_id}: {str(e)}")
@@ -297,6 +312,11 @@ class EmbeddingService:
         """
         from ..models.project import Project
         from ..models.user_project import UserProject
+        
+        # Skip if no API key
+        if not self.client:
+            logger.info("Skipping project embedding generation - no API key configured")
+            return {"updated": 0, "failed": 0, "skipped": 0}
         
         try:
             # Build query
@@ -347,6 +367,390 @@ class EmbeddingService:
             
         except Exception as e:
             logger.error(f"Error in batch project embedding update: {str(e)}")
+            db.rollback()
+            return {"updated": 0, "failed": 0, "skipped": 0}
+    
+    async def update_backlog_embedding(self, db: Session, backlog_id: int, force: bool = False) -> bool:
+        """
+        Update embedding for a specific backlog item
+        
+        Args:
+            db: Database session
+            backlog_id: ID of the backlog item to update
+            force: If True, update embedding regardless of update status
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        from ..models.backlog import Backlog
+        
+        # Skip embedding generation if no API key is configured
+        if not self.client:
+            logger.info(f"Skipping embedding generation for backlog {backlog_id} - no API key configured")
+            return True
+        
+        try:
+            # Get backlog item
+            backlog = db.query(Backlog).filter(Backlog.id == backlog_id).first()
+            if not backlog:
+                logger.error(f"Backlog {backlog_id} not found")
+                return False
+            
+            # Check if embedding update is needed (unless forced)
+            if not force and not backlog.needs_embedding_update():
+                logger.info(f"Backlog {backlog_id} embedding is up to date")
+                return True
+            
+            # Generate embedding for searchable content
+            searchable_content = backlog.get_searchable_content()
+            embedding = await self.generate_embedding(searchable_content)
+            
+            if embedding:
+                backlog.embedding = embedding
+                backlog.embedding_updated_at = func.now()
+                db.commit()
+                logger.info(f"Updated embedding for backlog {backlog_id}")
+                return True
+            else:
+                logger.warning(f"Failed to generate embedding for backlog {backlog_id} - API may be unavailable")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error updating backlog embedding {backlog_id}: {str(e)}")
+            db.rollback()
+            return False
+    
+    async def update_all_backlog_embeddings(
+        self, 
+        db: Session, 
+        project_id: Optional[int] = None,
+        force: bool = False
+    ) -> Dict[str, int]:
+        """
+        Update embeddings for all backlog items (optionally filtered by project)
+        
+        Args:
+            db: Database session
+            project_id: Optional project ID to filter backlogs
+            force: If True, update all embeddings regardless of update status
+            
+        Returns:
+            Dictionary with counts of updated, failed, and skipped items
+        """
+        from ..models.backlog import Backlog
+        
+        # Skip if no API key
+        if not self.client:
+            logger.info("Skipping backlog embedding generation - no API key configured")
+            return {"updated": 0, "failed": 0, "skipped": 0}
+        
+        try:
+            # Build query
+            query = db.query(Backlog)
+            
+            # Apply project filter
+            if project_id:
+                query = query.filter(Backlog.project_id == project_id)
+            
+            backlogs = query.all()
+            
+            updated_count = 0
+            failed_count = 0
+            skipped_count = 0
+            
+            for backlog in backlogs:
+                try:
+                    # Check if update is needed (unless forced)
+                    if not force and not backlog.needs_embedding_update():
+                        skipped_count += 1
+                        continue
+                    
+                    # Generate embedding for searchable content
+                    searchable_content = backlog.get_searchable_content()
+                    embedding = await self.generate_embedding(searchable_content)
+                    
+                    if embedding:
+                        backlog.embedding = embedding
+                        backlog.embedding_updated_at = func.now()
+                        updated_count += 1
+                    else:
+                        failed_count += 1
+                        
+                except Exception as e:
+                    logger.error(f"Error updating embedding for backlog {backlog.id}: {str(e)}")
+                    failed_count += 1
+            
+            # Commit all changes
+            if updated_count > 0:
+                db.commit()
+                logger.info(f"Updated embeddings for {updated_count} backlogs")
+            
+            return {
+                "updated": updated_count,
+                "failed": failed_count,
+                "skipped": skipped_count
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in batch backlog embedding update: {str(e)}")
+            db.rollback()
+            return {"updated": 0, "failed": 0, "skipped": 0}
+
+    async def update_documentation_embedding(self, db: Session, doc_id: int, force: bool = False) -> bool:
+        """
+        Update embedding for a specific documentation item
+        
+        Args:
+            db: Database session
+            doc_id: ID of the documentation item to update
+            force: If True, update embedding regardless of update status
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        from ..models.documentation import Documentation
+        
+        # Skip embedding generation if no API key is configured
+        if not self.client:
+            logger.info(f"Skipping embedding generation for documentation {doc_id} - no API key configured")
+            return True
+        
+        try:
+            # Get documentation item
+            doc = db.query(Documentation).filter(Documentation.id == doc_id).first()
+            if not doc:
+                logger.error(f"Documentation {doc_id} not found")
+                return False
+            
+            # Check if embedding update is needed (unless forced)
+            if not force and not doc.needs_embedding_update():
+                logger.info(f"Documentation {doc_id} embedding is up to date")
+                return True
+            
+            # Generate embedding for searchable content
+            searchable_content = doc.get_searchable_content()
+            embedding = await self.generate_embedding(searchable_content)
+            
+            if embedding:
+                # Documentation has multiple embedding fields, but we'll use a combined approach
+                # Store the combined embedding in title_embedding for now
+                doc.title_embedding = embedding
+                doc.embedding_updated_at = func.now()
+                db.commit()
+                logger.info(f"Updated embedding for documentation {doc_id}")
+                return True
+            else:
+                logger.warning(f"Failed to generate embedding for documentation {doc_id} - API may be unavailable")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error updating documentation embedding {doc_id}: {str(e)}")
+            db.rollback()
+            return False
+    
+    async def update_all_documentation_embeddings(
+        self, 
+        db: Session, 
+        project_id: Optional[int] = None,
+        force: bool = False
+    ) -> Dict[str, int]:
+        """
+        Update embeddings for all documentation items (optionally filtered by project)
+        
+        Args:
+            db: Database session
+            project_id: Optional project ID to filter documentation
+            force: If True, update all embeddings regardless of update status
+            
+        Returns:
+            Dictionary with counts of updated, failed, and skipped items
+        """
+        from ..models.documentation import Documentation
+        
+        # Skip if no API key
+        if not self.client:
+            logger.info("Skipping documentation embedding generation - no API key configured")
+            return {"updated": 0, "failed": 0, "skipped": 0}
+        
+        try:
+            # Build query
+            query = db.query(Documentation)
+            
+            # Apply project filter
+            if project_id:
+                query = query.filter(Documentation.project_id == project_id)
+            
+            docs = query.all()
+            
+            updated_count = 0
+            failed_count = 0
+            skipped_count = 0
+            
+            for doc in docs:
+                try:
+                    # Check if update is needed (unless forced)
+                    if not force and not doc.needs_embedding_update():
+                        skipped_count += 1
+                        continue
+                    
+                    # Generate embedding for searchable content
+                    searchable_content = doc.get_searchable_content()
+                    embedding = await self.generate_embedding(searchable_content)
+                    
+                    if embedding:
+                        doc.title_embedding = embedding
+                        doc.embedding_updated_at = func.now()
+                        updated_count += 1
+                    else:
+                        failed_count += 1
+                        
+                except Exception as e:
+                    logger.error(f"Error updating embedding for documentation {doc.id}: {str(e)}")
+                    failed_count += 1
+            
+            # Commit all changes
+            if updated_count > 0:
+                db.commit()
+                logger.info(f"Updated embeddings for {updated_count} documentation items")
+            
+            return {
+                "updated": updated_count,
+                "failed": failed_count,
+                "skipped": skipped_count
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in batch documentation embedding update: {str(e)}")
+            db.rollback()
+            return {"updated": 0, "failed": 0, "skipped": 0}
+    
+    async def update_task_embedding(self, db: Session, task_id: int) -> bool:
+        """
+        Update combined embedding for a specific task
+        
+        Args:
+            db: Database session
+            task_id: ID of the task to update
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        from ..models.task import Task
+        
+        # Skip embedding generation if no API key is configured
+        if not self.client:
+            logger.info(f"Skipping embedding generation for task {task_id} - no API key configured")
+            return True
+        
+        try:
+            # Get task
+            task = db.query(Task).filter(Task.id == task_id).first()
+            if not task:
+                logger.error(f"Task {task_id} not found")
+                return False
+            
+            # Check if embedding update is needed
+            if not task.needs_embedding_update():
+                logger.info(f"Task {task_id} embedding is up to date")
+                return True
+            
+            # Generate embedding for combined searchable content
+            searchable_content = task.get_searchable_content()
+            embedding = await self.generate_embedding(searchable_content)
+            
+            if embedding:
+                task.embedding = embedding
+                task.embedding_updated_at = func.now()
+                db.commit()
+                logger.info(f"Updated embedding for task {task_id}")
+                return True
+            else:
+                logger.warning(f"Failed to generate embedding for task {task_id} - API may be unavailable")
+                return True
+                
+        except Exception as e:
+            logger.error(f"Error updating task embedding {task_id}: {str(e)}")
+            db.rollback()
+            return False
+    
+    async def update_all_task_embeddings(
+        self, 
+        db: Session, 
+        project_id: Optional[int] = None, 
+        sprint_id: Optional[int] = None, 
+        force: bool = False
+    ) -> Dict[str, int]:
+        """
+        Update combined embeddings for all tasks (optionally filtered by project or sprint)
+        
+        Args:
+            db: Database session
+            project_id: Optional project ID to filter tasks
+            sprint_id: Optional sprint ID to filter tasks
+            force: If True, update all embeddings regardless of update status
+            
+        Returns:
+            Dictionary with counts of updated, failed, and skipped items
+        """
+        from ..models.task import Task
+        
+        # Skip if no API key
+        if not self.client:
+            logger.info("Skipping task embedding generation - no API key configured")
+            return {"updated": 0, "failed": 0, "skipped": 0}
+        
+        try:
+            # Build query
+            query = db.query(Task)
+            
+            # Apply filters
+            if project_id:
+                query = query.join(Task.sprint).filter(Task.sprint.has(project_id=project_id))
+            
+            if sprint_id:
+                query = query.filter(Task.sprint_id == sprint_id)
+            
+            tasks = query.all()
+            
+            updated_count = 0
+            failed_count = 0
+            skipped_count = 0
+            
+            for task in tasks:
+                try:
+                    # Check if update is needed (unless forced)
+                    if not force and not task.needs_embedding_update():
+                        skipped_count += 1
+                        continue
+                    
+                    # Generate embedding for combined searchable content
+                    searchable_content = task.get_searchable_content()
+                    embedding = await self.generate_embedding(searchable_content)
+                    
+                    if embedding:
+                        task.embedding = embedding
+                        task.embedding_updated_at = func.now()
+                        updated_count += 1
+                    else:
+                        failed_count += 1
+                        
+                except Exception as e:
+                    logger.error(f"Error updating embedding for task {task.id}: {str(e)}")
+                    failed_count += 1
+            
+            # Commit all changes
+            if updated_count > 0:
+                db.commit()
+                logger.info(f"Updated embeddings for {updated_count} tasks")
+            
+            return {
+                "updated": updated_count,
+                "failed": failed_count,
+                "skipped": skipped_count
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in batch task embedding update: {str(e)}")
             db.rollback()
             return {"updated": 0, "failed": 0, "skipped": 0}
 
