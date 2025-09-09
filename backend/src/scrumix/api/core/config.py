@@ -55,6 +55,13 @@ class Settings(BaseSettings):
     # URLs
     BACKEND_URL: str = os.environ.get("BACKEND_URL", "http://localhost:8000")
     FRONTEND_URL: str = os.environ.get("FRONTEND_URL", "http://localhost:3000")
+    
+    # OpenAI/Azure OpenAI Configuration for Embeddings
+    OPENAI_API_KEY: str = os.environ.get("OPENAI_API_KEY", "")
+    AZURE_OPENAI_API_KEY: str = os.environ.get("AZURE_OPENAI_API_KEY", "")
+    AZURE_OPENAI_ENDPOINT: str = os.environ.get("AZURE_OPENAI_ENDPOINT", "")
+    AZURE_OPENAI_DEPLOYMENT_NAME: str = os.environ.get("AZURE_OPENAI_DEPLOYMENT_NAME", "text-embedding-ada-002")
+    EMBEDDING_MODEL: str = os.environ.get("EMBEDDING_MODEL", "text-embedding-ada-002")
 
     # Postgres Configuration
     POSTGRES_SERVER: str = os.environ.get("POSTGRES_SERVER", "localhost")  # Default to localhost for local dev
