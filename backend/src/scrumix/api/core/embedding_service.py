@@ -226,6 +226,164 @@ class EmbeddingService:
             logger.error(f"Error in batch embedding update: {str(e)}")
             db.rollback()
             return {"updated": 0, "failed": 0, "skipped": 0}
+    
+    async def update_documentation_embedding(self, db: Session, documentation_id: int) -> bool:
+        """
+        Update separate embeddings for a specific documentation item (title, description, content)
+        
+        Args:
+            db: Database session
+            documentation_id: ID of the documentation item to update
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        from ..models.documentation import Documentation
+        
+        try:
+            # Get documentation item
+            documentation = db.query(Documentation).filter(Documentation.id == documentation_id).first()
+            if not documentation:
+                logger.error(f"Documentation item {documentation_id} not found")
+                return False
+            
+            # Check if embedding update is needed
+            if not documentation.needs_embedding_update():
+                logger.info(f"Documentation item {documentation_id} embeddings are up to date")
+                return True
+            
+            # Prepare texts for embedding generation
+            texts_to_embed = []
+            field_mapping = []
+            
+            # Always embed title (with type context)
+            title_content = documentation.get_title_content()
+            texts_to_embed.append(title_content)
+            field_mapping.append('title')
+            
+            # Embed description if present
+            description_content = documentation.get_description_content()
+            if description_content:
+                texts_to_embed.append(description_content)
+                field_mapping.append('description')
+            else:
+                field_mapping.append(None)
+            
+            # Embed content if present
+            content_text = documentation.get_content_text()
+            if content_text:
+                texts_to_embed.append(content_text)
+                field_mapping.append('content')
+            else:
+                field_mapping.append(None)
+            
+            # Generate embeddings in batch
+            embeddings = await self.generate_embeddings_batch(texts_to_embed)
+            
+            if not embeddings or len(embeddings) == 0:
+                logger.error(f"Failed to generate embeddings for documentation item {documentation_id}")
+                return False
+            
+            # Map embeddings back to fields
+            embedding_index = 0
+            success = False
+            
+            # Title embedding (always present)
+            if embedding_index < len(embeddings) and embeddings[embedding_index]:
+                documentation.title_embedding = embeddings[embedding_index]
+                success = True
+                embedding_index += 1
+            
+            # Description embedding (if description exists)
+            if description_content and embedding_index < len(embeddings):
+                if embeddings[embedding_index]:
+                    documentation.description_embedding = embeddings[embedding_index]
+                embedding_index += 1
+            else:
+                documentation.description_embedding = None
+            
+            # Content embedding (if content exists)
+            if content_text and embedding_index < len(embeddings):
+                if embeddings[embedding_index]:
+                    documentation.content_embedding = embeddings[embedding_index]
+                embedding_index += 1
+            else:
+                documentation.content_embedding = None
+            
+            if success:
+                documentation.embedding_updated_at = func.now()
+                db.commit()
+                logger.info(f"Updated separate embeddings for documentation item {documentation_id}")
+                return True
+            else:
+                logger.error(f"Failed to generate any valid embeddings for documentation item {documentation_id}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error updating documentation embeddings {documentation_id}: {str(e)}")
+            db.rollback()
+            return False
+    
+    async def update_all_documentation_embeddings(self, db: Session, project_id: Optional[int] = None, force: bool = False) -> Dict[str, int]:
+        """
+        Update embeddings for all documentation items (optionally filtered by project)
+        
+        Args:
+            db: Database session
+            project_id: Optional project ID to filter documentations
+            force: If True, update all embeddings regardless of update status
+            
+        Returns:
+            Dictionary with counts of updated, failed, and skipped items
+        """
+        from ..models.documentation import Documentation
+        
+        try:
+            # Build query
+            query = db.query(Documentation)
+            if project_id:
+                query = query.filter(Documentation.project_id == project_id)
+            
+            documentations = query.all()
+            
+            updated_count = 0
+            failed_count = 0
+            skipped_count = 0
+            
+            for documentation in documentations:
+                try:
+                    # Check if update is needed (unless forced)
+                    if not force and not documentation.needs_embedding_update():
+                        skipped_count += 1
+                        continue
+                    
+                    # Update separate embeddings for this documentation
+                    success = await self.update_documentation_embedding(db, documentation.id)
+                    
+                    if success:
+                        updated_count += 1
+                    else:
+                        failed_count += 1
+                        
+                except Exception as e:
+                    logger.error(f"Error updating embeddings for documentation {documentation.id}: {str(e)}")
+                    failed_count += 1
+            
+            # Commit all changes
+            if updated_count > 0:
+                db.commit()
+                logger.info(f"Updated embeddings for {updated_count} documentation items")
+            
+            return {
+                "updated": updated_count,
+                "failed": failed_count,
+                "skipped": skipped_count
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in batch documentation embedding update: {str(e)}")
+            db.rollback()
+            return {"updated": 0, "failed": 0, "skipped": 0}
 
 
 # Global instance

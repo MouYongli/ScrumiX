@@ -1,7 +1,7 @@
 """
 Documentation-related CRUD operations
 """
-from typing import Optional, List
+from typing import Optional, List, Tuple
 from datetime import datetime, timedelta
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_, func
@@ -10,6 +10,7 @@ from scrumix.api.models.documentation import Documentation, DocumentationType
 from scrumix.api.schemas.documentation import DocumentationCreate, DocumentationUpdate
 from scrumix.api.crud.base import CRUDBase
 from scrumix.api.crud.user_documentation import user_documentation_crud
+from ..core.embedding_service import embedding_service
 
 class DocumentationCRUD(CRUDBase[Documentation, DocumentationCreate, DocumentationUpdate]):
     def create_documentation(self, db: Session, documentation_create: DocumentationCreate) -> Documentation:
@@ -216,4 +217,146 @@ def update_documentation(db: Session, doc_id: int, documentation_update: Documen
 
 def delete_documentation(db: Session, doc_id: int) -> bool:
     """Delete documentation"""
-    return documentation_crud.delete_documentation(db, doc_id) 
+    return documentation_crud.delete_documentation(db, doc_id)
+
+# Add semantic search methods to the CRUD class
+async def semantic_search_documentation_by_field(
+    db: Session,
+    query: str,
+    field: str,  # 'title', 'description', or 'content'
+    project_id: Optional[int] = None,
+    limit: int = 10,
+    similarity_threshold: float = 0.7
+) -> List[Tuple[Documentation, float]]:
+    """
+    Perform semantic search on specific documentation field
+    
+    Args:
+        db: Database session
+        query: Search query text
+        field: Which field to search ('title', 'description', 'content')
+        project_id: Optional project ID to filter results
+        limit: Maximum number of results
+        similarity_threshold: Minimum similarity score
+        
+    Returns:
+        List of tuples containing (Documentation, similarity_score)
+    """
+    # Generate embedding for the search query
+    query_embedding = await embedding_service.generate_embedding(query)
+    if not query_embedding:
+        return []
+    
+    # Map field name to column
+    field_mapping = {
+        'title': Documentation.title_embedding,
+        'description': Documentation.description_embedding,
+        'content': Documentation.content_embedding
+    }
+    
+    if field not in field_mapping:
+        raise ValueError(f"Invalid field: {field}. Must be one of: {list(field_mapping.keys())}")
+    
+    embedding_column = field_mapping[field]
+    
+    # Build base query
+    base_query = db.query(Documentation).filter(embedding_column.isnot(None))
+    
+    if project_id:
+        base_query = base_query.filter(Documentation.project_id == project_id)
+    
+    # Calculate similarity and filter by threshold
+    similarity_query = base_query.add_columns(
+        (1 - embedding_column.cosine_distance(query_embedding)).label('similarity')
+    ).filter(
+        (1 - embedding_column.cosine_distance(query_embedding)) >= similarity_threshold
+    ).order_by(
+        embedding_column.cosine_distance(query_embedding).asc()
+    ).limit(limit)
+    
+    results = []
+    for documentation, similarity in similarity_query.all():
+        results.append((documentation, float(similarity)))
+    
+    return results
+
+async def semantic_search_documentation_multi_field(
+    db: Session,
+    query: str,
+    fields: List[str] = ['title', 'description', 'content'],
+    project_id: Optional[int] = None,
+    limit: int = 10,
+    similarity_threshold: float = 0.7
+) -> List[Tuple[Documentation, Dict[str, float]]]:
+    """
+    Perform semantic search across multiple documentation fields
+    
+    Args:
+        db: Database session
+        query: Search query text
+        fields: Which fields to search
+        project_id: Optional project ID to filter results
+        limit: Maximum number of results
+        similarity_threshold: Minimum similarity score for any field
+        
+    Returns:
+        List of tuples containing (Documentation, {field: similarity_score})
+    """
+    # Generate embedding for the search query
+    query_embedding = await embedding_service.generate_embedding(query)
+    if not query_embedding:
+        return []
+    
+    # Map field names to columns
+    field_mapping = {
+        'title': Documentation.title_embedding,
+        'description': Documentation.description_embedding,
+        'content': Documentation.content_embedding
+    }
+    
+    # Validate fields
+    for field in fields:
+        if field not in field_mapping:
+            raise ValueError(f"Invalid field: {field}. Must be one of: {list(field_mapping.keys())}")
+    
+    # Build base query
+    base_query = db.query(Documentation)
+    
+    if project_id:
+        base_query = base_query.filter(Documentation.project_id == project_id)
+    
+    # Add similarity calculations for each field
+    similarity_expressions = []
+    similarity_labels = []
+    
+    for field in fields:
+        embedding_column = field_mapping[field]
+        similarity_expr = (1 - embedding_column.cosine_distance(query_embedding))
+        similarity_expressions.append(similarity_expr)
+        similarity_labels.append(f'{field}_similarity')
+    
+    # Add all similarity columns to the query
+    query_with_similarities = base_query.add_columns(*similarity_expressions)
+    
+    # Filter: at least one field must meet the threshold
+    threshold_conditions = []
+    for expr in similarity_expressions:
+        threshold_conditions.append(expr >= similarity_threshold)
+    
+    filtered_query = query_with_similarities.filter(or_(*threshold_conditions))
+    
+    # Order by the highest similarity across all fields
+    max_similarity = func.greatest(*similarity_expressions)
+    ordered_query = filtered_query.order_by(max_similarity.desc()).limit(limit)
+    
+    results = []
+    for row in ordered_query.all():
+        documentation = row[0]
+        similarities = {}
+        
+        for i, field in enumerate(fields):
+            similarities[field] = float(row[i + 1]) if row[i + 1] is not None else 0.0
+        
+        results.append((documentation, similarities))
+    
+    return results 

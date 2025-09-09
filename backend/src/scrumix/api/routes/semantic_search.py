@@ -10,7 +10,9 @@ from ..core.security import get_current_user
 from ..db.database import get_db
 from ..crud.backlog import backlog_crud
 from ..schemas.backlog import BacklogResponse
+from ..schemas.documentation import DocumentationResponse
 from ..models.user import User
+from ..core.embedding_service import embedding_service
 
 router = APIRouter()
 
