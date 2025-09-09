@@ -2,6 +2,8 @@ from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Enum
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from enum import Enum
+from pgvector.sqlalchemy import Vector
+from typing import Optional
 
 from ..db.base import Base
 
@@ -34,6 +36,10 @@ class Task(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
     
+    # Vector embedding for semantic search - combined embedding for title and description
+    embedding = Column(Vector(1536), nullable=True, comment="Combined embedding for title, description, status, and priority")
+    embedding_updated_at = Column(DateTime(timezone=True), nullable=True, comment="Last time embedding was generated")
+    
     # Foreign keys to sprint and backlog
     sprint_id = Column(Integer, ForeignKey("sprints.id"), nullable=False, index=True)
     backlog_id = Column(Integer, ForeignKey("backlogs.id"), nullable=False, index=True)
@@ -52,4 +58,36 @@ class Task(Base):
         return self.id
 
     def __repr__(self):
-        return f"<Task(id={self.id}, title='{self.title}', status='{self.status.value}')>" 
+        return f"<Task(id={self.id}, title='{self.title}', status='{self.status.value}')>"
+    
+    def get_combined_content(self) -> str:
+        """Get combined content for single embedding (similar to backlog pattern)"""
+        return self.get_searchable_content()
+    
+    def get_searchable_content(self) -> str:
+        """Generate combined text for backward compatibility and general search"""
+        content_parts = []
+        
+        # Add title (always present)
+        content_parts.append(self.title)
+        
+        # Add status and priority for context
+        content_parts.append(f"Status: {self.status.value}")
+        content_parts.append(f"Priority: {self.priority.value}")
+        
+        # Add description if present
+        if self.description:
+            content_parts.append(self.description)
+        
+        return "\n".join(content_parts)
+    
+    def needs_embedding_update(self) -> bool:
+        """Check if embeddings need to be updated based on content changes"""
+        if not self.embedding_updated_at:
+            return True
+        
+        # Check if content was updated after last embedding update
+        if self.updated_at > self.embedding_updated_at:
+            return True
+        
+        return False 

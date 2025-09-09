@@ -386,5 +386,126 @@ class EmbeddingService:
             return {"updated": 0, "failed": 0, "skipped": 0}
 
 
+    async def update_task_embedding(self, db: Session, task_id: int) -> bool:
+        """
+        Update combined embedding for a specific task
+        
+        Args:
+            db: Database session
+            task_id: ID of the task to update
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        from ..models.task import Task
+        
+        try:
+            # Get task
+            task = db.query(Task).filter(Task.id == task_id).first()
+            if not task:
+                logger.error(f"Task {task_id} not found")
+                return False
+            
+            # Check if embedding update is needed
+            if not task.needs_embedding_update():
+                logger.info(f"Task {task_id} embedding is up to date")
+                return True
+            
+            # Generate embedding for combined searchable content
+            searchable_content = task.get_searchable_content()
+            embedding = await self.generate_embedding(searchable_content)
+            
+            if embedding:
+                task.embedding = embedding
+                task.embedding_updated_at = func.now()
+                db.commit()
+                logger.info(f"Updated embedding for task {task_id}")
+                return True
+            else:
+                logger.error(f"Failed to generate embedding for task {task_id}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Error updating task embedding {task_id}: {str(e)}")
+            db.rollback()
+            return False
+    
+    async def update_all_task_embeddings(
+        self, 
+        db: Session, 
+        project_id: Optional[int] = None, 
+        sprint_id: Optional[int] = None, 
+        force: bool = False
+    ) -> Dict[str, int]:
+        """
+        Update combined embeddings for all tasks (optionally filtered by project or sprint)
+        
+        Args:
+            db: Database session
+            project_id: Optional project ID to filter tasks
+            sprint_id: Optional sprint ID to filter tasks
+            force: If True, update all embeddings regardless of update status
+            
+        Returns:
+            Dictionary with counts of updated, failed, and skipped items
+        """
+        from ..models.task import Task
+        
+        try:
+            # Build query
+            query = db.query(Task)
+            
+            # Apply filters
+            if project_id:
+                query = query.join(Task.sprint).filter(Task.sprint.has(project_id=project_id))
+            
+            if sprint_id:
+                query = query.filter(Task.sprint_id == sprint_id)
+            
+            tasks = query.all()
+            
+            updated_count = 0
+            failed_count = 0
+            skipped_count = 0
+            
+            for task in tasks:
+                try:
+                    # Check if update is needed (unless forced)
+                    if not force and not task.needs_embedding_update():
+                        skipped_count += 1
+                        continue
+                    
+                    # Generate embedding for combined searchable content
+                    searchable_content = task.get_searchable_content()
+                    embedding = await self.generate_embedding(searchable_content)
+                    
+                    if embedding:
+                        task.embedding = embedding
+                        task.embedding_updated_at = func.now()
+                        updated_count += 1
+                    else:
+                        failed_count += 1
+                        
+                except Exception as e:
+                    logger.error(f"Error updating embedding for task {task.id}: {str(e)}")
+                    failed_count += 1
+            
+            # Commit all changes
+            if updated_count > 0:
+                db.commit()
+                logger.info(f"Updated embeddings for {updated_count} tasks")
+            
+            return {
+                "updated": updated_count,
+                "failed": failed_count,
+                "skipped": skipped_count
+            }
+            
+        except Exception as e:
+            logger.error(f"Error in batch task embedding update: {str(e)}")
+            db.rollback()
+            return {"updated": 0, "failed": 0, "skipped": 0}
+
+
 # Global instance
 embedding_service = EmbeddingService()
