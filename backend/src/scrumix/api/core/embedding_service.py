@@ -119,381 +119,109 @@ class EmbeddingService:
             logger.error(f"Failed to generate batch embeddings: {str(e)}")
             return [None] * len(texts)
     
-    async def update_backlog_embedding(self, db: Session, backlog_id: int) -> bool:
+    async def update_acceptance_criteria_embedding(self, db: Session, criteria_id: int) -> bool:
         """
-        Update embedding for a specific backlog item
+        Update embedding for a specific acceptance criteria
         
         Args:
             db: Database session
-            backlog_id: ID of the backlog item to update
+            criteria_id: ID of the criteria to update
             
         Returns:
             True if successful, False otherwise
         """
-        from ..models.backlog import Backlog
+        from ..models.acceptance_criteria import AcceptanceCriteria
         
         try:
-            # Get backlog item with acceptance criteria
-            backlog = db.query(Backlog).filter(Backlog.id == backlog_id).first()
-            if not backlog:
-                logger.error(f"Backlog item {backlog_id} not found")
+            # Get acceptance criteria
+            criteria = db.query(AcceptanceCriteria).filter(AcceptanceCriteria.id == criteria_id).first()
+            if not criteria:
+                logger.error(f"Acceptance criteria {criteria_id} not found")
                 return False
             
             # Check if embedding update is needed
-            if not backlog.needs_embedding_update():
-                logger.info(f"Backlog item {backlog_id} embedding is up to date")
+            if not criteria.needs_embedding_update():
+                logger.info(f"Acceptance criteria {criteria_id} embedding is up to date")
                 return True
             
             # Generate embedding for searchable content
-            searchable_content = backlog.get_searchable_content()
+            searchable_content = criteria.get_searchable_content()
             embedding = await self.generate_embedding(searchable_content)
             
             if embedding:
-                backlog.embedding = embedding
-                backlog.embedding_updated_at = func.now()
+                criteria.embedding = embedding
+                criteria.embedding_updated_at = func.now()
                 db.commit()
-                logger.info(f"Updated embedding for backlog item {backlog_id}")
+                logger.info(f"Updated embedding for acceptance criteria {criteria_id}")
                 return True
             else:
-                logger.error(f"Failed to generate embedding for backlog item {backlog_id}")
+                logger.error(f"Failed to generate embedding for acceptance criteria {criteria_id}")
                 return False
                 
         except Exception as e:
-            logger.error(f"Error updating backlog embedding {backlog_id}: {str(e)}")
+            logger.error(f"Error updating acceptance criteria embedding {criteria_id}: {str(e)}")
             db.rollback()
             return False
     
-    async def update_all_backlog_embeddings(self, db: Session, project_id: Optional[int] = None, force: bool = False) -> Dict[str, int]:
-        """
-        Update embeddings for all backlog items (optionally filtered by project)
-        
-        Args:
-            db: Database session
-            project_id: Optional project ID to filter backlogs
-            force: If True, update all embeddings regardless of update status
-            
-        Returns:
-            Dictionary with counts of updated, failed, and skipped items
-        """
-        from ..models.backlog import Backlog
-        
-        try:
-            # Build query
-            query = db.query(Backlog)
-            if project_id:
-                query = query.filter(Backlog.project_id == project_id)
-            
-            backlogs = query.all()
-            
-            updated_count = 0
-            failed_count = 0
-            skipped_count = 0
-            
-            for backlog in backlogs:
-                try:
-                    # Check if update is needed (unless forced)
-                    if not force and not backlog.needs_embedding_update():
-                        skipped_count += 1
-                        continue
-                    
-                    # Generate embedding
-                    searchable_content = backlog.get_searchable_content()
-                    embedding = await self.generate_embedding(searchable_content)
-                    
-                    if embedding:
-                        backlog.embedding = embedding
-                        backlog.embedding_updated_at = func.now()
-                        updated_count += 1
-                    else:
-                        failed_count += 1
-                        
-                except Exception as e:
-                    logger.error(f"Error updating embedding for backlog {backlog.id}: {str(e)}")
-                    failed_count += 1
-            
-            # Commit all changes
-            if updated_count > 0:
-                db.commit()
-                logger.info(f"Updated embeddings for {updated_count} backlog items")
-            
-            return {
-                "updated": updated_count,
-                "failed": failed_count,
-                "skipped": skipped_count
-            }
-            
-        except Exception as e:
-            logger.error(f"Error in batch embedding update: {str(e)}")
-            db.rollback()
-            return {"updated": 0, "failed": 0, "skipped": 0}
-    
-    async def update_documentation_embedding(self, db: Session, documentation_id: int) -> bool:
-        """
-        Update separate embeddings for a specific documentation item (title, description, content)
-        
-        Args:
-            db: Database session
-            documentation_id: ID of the documentation item to update
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        from ..models.documentation import Documentation
-        
-        try:
-            # Get documentation item
-            documentation = db.query(Documentation).filter(Documentation.id == documentation_id).first()
-            if not documentation:
-                logger.error(f"Documentation item {documentation_id} not found")
-                return False
-            
-            # Check if embedding update is needed
-            if not documentation.needs_embedding_update():
-                logger.info(f"Documentation item {documentation_id} embeddings are up to date")
-                return True
-            
-            # Prepare texts for embedding generation
-            texts_to_embed = []
-            field_mapping = []
-            
-            # Always embed title (with type context)
-            title_content = documentation.get_title_content()
-            texts_to_embed.append(title_content)
-            field_mapping.append('title')
-            
-            # Embed description if present
-            description_content = documentation.get_description_content()
-            if description_content:
-                texts_to_embed.append(description_content)
-                field_mapping.append('description')
-            else:
-                field_mapping.append(None)
-            
-            # Embed content if present
-            content_text = documentation.get_content_text()
-            if content_text:
-                texts_to_embed.append(content_text)
-                field_mapping.append('content')
-            else:
-                field_mapping.append(None)
-            
-            # Generate embeddings in batch
-            embeddings = await self.generate_embeddings_batch(texts_to_embed)
-            
-            if not embeddings or len(embeddings) == 0:
-                logger.error(f"Failed to generate embeddings for documentation item {documentation_id}")
-                return False
-            
-            # Map embeddings back to fields
-            embedding_index = 0
-            success = False
-            
-            # Title embedding (always present)
-            if embedding_index < len(embeddings) and embeddings[embedding_index]:
-                documentation.title_embedding = embeddings[embedding_index]
-                success = True
-                embedding_index += 1
-            
-            # Description embedding (if description exists)
-            if description_content and embedding_index < len(embeddings):
-                if embeddings[embedding_index]:
-                    documentation.description_embedding = embeddings[embedding_index]
-                embedding_index += 1
-            else:
-                documentation.description_embedding = None
-            
-            # Content embedding (if content exists)
-            if content_text and embedding_index < len(embeddings):
-                if embeddings[embedding_index]:
-                    documentation.content_embedding = embeddings[embedding_index]
-                embedding_index += 1
-            else:
-                documentation.content_embedding = None
-            
-            if success:
-                documentation.embedding_updated_at = func.now()
-                db.commit()
-                logger.info(f"Updated separate embeddings for documentation item {documentation_id}")
-                return True
-            else:
-                logger.error(f"Failed to generate any valid embeddings for documentation item {documentation_id}")
-                return False
-                
-        except Exception as e:
-            logger.error(f"Error updating documentation embeddings {documentation_id}: {str(e)}")
-            db.rollback()
-            return False
-    
-    async def update_all_documentation_embeddings(self, db: Session, project_id: Optional[int] = None, force: bool = False) -> Dict[str, int]:
-        """
-        Update embeddings for all documentation items (optionally filtered by project)
-        
-        Args:
-            db: Database session
-            project_id: Optional project ID to filter documentations
-            force: If True, update all embeddings regardless of update status
-            
-        Returns:
-            Dictionary with counts of updated, failed, and skipped items
-        """
-        from ..models.documentation import Documentation
-        
-        try:
-            # Build query
-            query = db.query(Documentation)
-            if project_id:
-                query = query.filter(Documentation.project_id == project_id)
-            
-            documentations = query.all()
-            
-            updated_count = 0
-            failed_count = 0
-            skipped_count = 0
-            
-            for documentation in documentations:
-                try:
-                    # Check if update is needed (unless forced)
-                    if not force and not documentation.needs_embedding_update():
-                        skipped_count += 1
-                        continue
-                    
-                    # Update separate embeddings for this documentation
-                    success = await self.update_documentation_embedding(db, documentation.id)
-                    
-                    if success:
-                        updated_count += 1
-                    else:
-                        failed_count += 1
-                        
-                except Exception as e:
-                    logger.error(f"Error updating embeddings for documentation {documentation.id}: {str(e)}")
-                    failed_count += 1
-            
-            # Commit all changes
-            if updated_count > 0:
-                db.commit()
-                logger.info(f"Updated embeddings for {updated_count} documentation items")
-            
-            return {
-                "updated": updated_count,
-                "failed": failed_count,
-                "skipped": skipped_count
-            }
-            
-        except Exception as e:
-            logger.error(f"Error in batch documentation embedding update: {str(e)}")
-            db.rollback()
-            return {"updated": 0, "failed": 0, "skipped": 0}
-
-
-    async def update_task_embedding(self, db: Session, task_id: int) -> bool:
-        """
-        Update combined embedding for a specific task
-        
-        Args:
-            db: Database session
-            task_id: ID of the task to update
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        from ..models.task import Task
-        
-        try:
-            # Get task
-            task = db.query(Task).filter(Task.id == task_id).first()
-            if not task:
-                logger.error(f"Task {task_id} not found")
-                return False
-            
-            # Check if embedding update is needed
-            if not task.needs_embedding_update():
-                logger.info(f"Task {task_id} embedding is up to date")
-                return True
-            
-            # Generate embedding for combined searchable content
-            searchable_content = task.get_searchable_content()
-            embedding = await self.generate_embedding(searchable_content)
-            
-            if embedding:
-                task.embedding = embedding
-                task.embedding_updated_at = func.now()
-                db.commit()
-                logger.info(f"Updated embedding for task {task_id}")
-                return True
-            else:
-                logger.error(f"Failed to generate embedding for task {task_id}")
-                return False
-                
-        except Exception as e:
-            logger.error(f"Error updating task embedding {task_id}: {str(e)}")
-            db.rollback()
-            return False
-    
-    async def update_all_task_embeddings(
+    async def update_all_acceptance_criteria_embeddings(
         self, 
         db: Session, 
-        project_id: Optional[int] = None, 
-        sprint_id: Optional[int] = None, 
+        backlog_id: Optional[int] = None,
         force: bool = False
     ) -> Dict[str, int]:
         """
-        Update combined embeddings for all tasks (optionally filtered by project or sprint)
+        Update embeddings for all acceptance criteria (optionally filtered by backlog)
         
         Args:
             db: Database session
-            project_id: Optional project ID to filter tasks
-            sprint_id: Optional sprint ID to filter tasks
+            backlog_id: Optional backlog ID to filter criteria
             force: If True, update all embeddings regardless of update status
             
         Returns:
             Dictionary with counts of updated, failed, and skipped items
         """
-        from ..models.task import Task
+        from ..models.acceptance_criteria import AcceptanceCriteria
         
         try:
             # Build query
-            query = db.query(Task)
+            query = db.query(AcceptanceCriteria)
             
-            # Apply filters
-            if project_id:
-                query = query.join(Task.sprint).filter(Task.sprint.has(project_id=project_id))
+            # Apply backlog filter
+            if backlog_id:
+                query = query.filter(AcceptanceCriteria.backlog_id == backlog_id)
             
-            if sprint_id:
-                query = query.filter(Task.sprint_id == sprint_id)
-            
-            tasks = query.all()
+            criteria_list = query.all()
             
             updated_count = 0
             failed_count = 0
             skipped_count = 0
             
-            for task in tasks:
+            for criteria in criteria_list:
                 try:
                     # Check if update is needed (unless forced)
-                    if not force and not task.needs_embedding_update():
+                    if not force and not criteria.needs_embedding_update():
                         skipped_count += 1
                         continue
                     
-                    # Generate embedding for combined searchable content
-                    searchable_content = task.get_searchable_content()
+                    # Generate embedding for searchable content
+                    searchable_content = criteria.get_searchable_content()
                     embedding = await self.generate_embedding(searchable_content)
                     
                     if embedding:
-                        task.embedding = embedding
-                        task.embedding_updated_at = func.now()
+                        criteria.embedding = embedding
+                        criteria.embedding_updated_at = func.now()
                         updated_count += 1
                     else:
                         failed_count += 1
                         
                 except Exception as e:
-                    logger.error(f"Error updating embedding for task {task.id}: {str(e)}")
+                    logger.error(f"Error updating embedding for acceptance criteria {criteria.id}: {str(e)}")
                     failed_count += 1
             
             # Commit all changes
             if updated_count > 0:
                 db.commit()
-                logger.info(f"Updated embeddings for {updated_count} tasks")
+                logger.info(f"Updated embeddings for {updated_count} acceptance criteria")
             
             return {
                 "updated": updated_count,
@@ -502,7 +230,7 @@ class EmbeddingService:
             }
             
         except Exception as e:
-            logger.error(f"Error in batch task embedding update: {str(e)}")
+            logger.error(f"Error in batch acceptance criteria embedding update: {str(e)}")
             db.rollback()
             return {"updated": 0, "failed": 0, "skipped": 0}
 
