@@ -5,6 +5,8 @@ from sqlalchemy import Column, Integer, String, DateTime, Enum as SQLEnum, Text,
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from enum import Enum
+from pgvector.sqlalchemy import Vector
+from typing import Optional
 from scrumix.api.db.base import Base
 
 class BacklogStatus(str, Enum):
@@ -51,6 +53,10 @@ class Backlog(Base):
     root_id = Column(Integer, ForeignKey("backlogs.id"), nullable=True, index=True)  # Direct reference to root
     level = Column(Integer, default=0, nullable=False, index=True)  # Hierarchy level (0 = root)
     path = Column(String(500), nullable=True, index=True)  # Materialized path for efficient queries
+    
+    # Vector embedding for semantic search
+    embedding = Column(Vector(1536), nullable=True, comment="Combined embedding for title, description, and acceptance criteria")
+    embedding_updated_at = Column(DateTime(timezone=True), nullable=True, comment="Last time embedding was generated")
     
     # System timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
@@ -110,6 +116,9 @@ class Backlog(Base):
         
         # Index for sprint + priority queries
         Index('idx_backlog_sprint_priority', 'sprint_id', 'priority'),
+        
+        # Vector similarity search index (HNSW for high-dimensional vectors)
+        # Note: This will be created in migration as it requires special syntax
     )
     
     @property
@@ -143,4 +152,54 @@ class Backlog(Base):
         total = self.story_point or 0
         for child in self.children:
             total += child.get_estimated_total_points()
-        return total 
+        return total
+    
+    def get_searchable_content(self) -> str:
+        """Generate combined text for embedding generation"""
+        content_parts = []
+        
+        # Add title (always present)
+        content_parts.append(self.title)
+        
+        # Add description if present
+        if self.description:
+            content_parts.append(self.description)
+        
+        # Add label if present
+        if self.label:
+            content_parts.append(f"Label: {self.label}")
+        
+        # Add type and priority for context
+        content_parts.append(f"Type: {self.item_type.value}")
+        content_parts.append(f"Priority: {self.priority.value}")
+        
+        # Add acceptance criteria if available
+        if hasattr(self, 'acceptance_criteria') and self.acceptance_criteria:
+            criteria_texts = []
+            for criteria in self.acceptance_criteria:
+                criteria_text = criteria.title
+                # Note: AcceptanceCriteria only has title, not description
+                criteria_texts.append(criteria_text)
+            
+            if criteria_texts:
+                content_parts.append("Acceptance Criteria:")
+                content_parts.extend(criteria_texts)
+        
+        return "\n".join(content_parts)
+    
+    def needs_embedding_update(self) -> bool:
+        """Check if embedding needs to be updated based on content changes"""
+        if not self.embedding_updated_at:
+            return True
+        
+        # Check if content was updated after last embedding update
+        if self.updated_at > self.embedding_updated_at:
+            return True
+        
+        # Check if any acceptance criteria were updated after last embedding update
+        if hasattr(self, 'acceptance_criteria') and self.acceptance_criteria:
+            for criteria in self.acceptance_criteria:
+                if criteria.updated_at > self.embedding_updated_at:
+                    return True
+        
+        return False

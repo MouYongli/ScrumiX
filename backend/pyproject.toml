@@ -24,7 +24,9 @@ dependencies = [
     "python-multipart",
     "httpx",
     "authlib",
-    "itsdangerous"
+    "itsdangerous",
+    "pgvector",
+    "openai"
 ]
 requires-python = ">=3.8"
 

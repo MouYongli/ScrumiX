@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from .base import CRUDBase
 from ..models.backlog import Backlog, BacklogStatus, BacklogPriority, BacklogType
 from ..schemas.backlog import BacklogCreate, BacklogUpdate
+from ..core.embedding_service import embedding_service
 
 class BacklogCRUD(CRUDBase[Backlog, BacklogCreate, BacklogUpdate]):
     """Optimized CRUD operations for Backlog."""
@@ -440,6 +441,204 @@ class BacklogCRUD(CRUDBase[Backlog, BacklogCreate, BacklogUpdate]):
             return node
         
         return build_node(root)
+    
+    async def semantic_search(
+        self,
+        db: Session,
+        query: str,
+        project_id: Optional[int] = None,
+        limit: int = 10,
+        similarity_threshold: float = 0.7
+    ) -> List[Tuple[Backlog, float]]:
+        """
+        Perform semantic search on backlog items using vector embeddings
+        
+        Args:
+            db: Database session
+            query: Search query text
+            project_id: Optional project ID to filter results
+            limit: Maximum number of results to return
+            similarity_threshold: Minimum similarity score (0-1)
+            
+        Returns:
+            List of tuples containing (Backlog, similarity_score)
+        """
+        # Generate embedding for the search query
+        query_embedding = await embedding_service.generate_embedding(query)
+        if not query_embedding:
+            return []
+        
+        # Build base query
+        base_query = db.query(Backlog).filter(Backlog.embedding.isnot(None))
+        
+        if project_id:
+            base_query = base_query.filter(Backlog.project_id == project_id)
+        
+        # Calculate cosine similarity and order by similarity
+        # Using cosine distance (1 - cosine similarity) for ordering
+        similarity_query = base_query.add_columns(
+            (1 - Backlog.embedding.cosine_distance(query_embedding)).label('similarity')
+        ).filter(
+            (1 - Backlog.embedding.cosine_distance(query_embedding)) >= similarity_threshold
+        ).order_by(
+            Backlog.embedding.cosine_distance(query_embedding).asc()
+        ).limit(limit)
+        
+        results = []
+        for backlog, similarity in similarity_query.all():
+            results.append((backlog, float(similarity)))
+        
+        return results
+    
+    async def hybrid_search(
+        self,
+        db: Session,
+        query: str,
+        project_id: Optional[int] = None,
+        limit: int = 10,
+        semantic_weight: float = 0.7,
+        keyword_weight: float = 0.3,
+        similarity_threshold: float = 0.5
+    ) -> List[Tuple[Backlog, float]]:
+        """
+        Perform hybrid search combining semantic and keyword search
+        
+        Args:
+            db: Database session
+            query: Search query text
+            project_id: Optional project ID to filter results
+            limit: Maximum number of results to return
+            semantic_weight: Weight for semantic search results (0-1)
+            keyword_weight: Weight for keyword search results (0-1)
+            similarity_threshold: Minimum similarity score for semantic results
+            
+        Returns:
+            List of tuples containing (Backlog, combined_score)
+        """
+        # Get semantic search results
+        semantic_results = await self.semantic_search(
+            db, query, project_id, limit * 2, similarity_threshold
+        )
+        
+        # Get keyword search results
+        keyword_results = self.search_backlogs_by_project(
+            db, project_id, query, 0, limit * 2
+        ) if project_id else self.search_backlogs(db, query, 0, limit * 2)
+        
+        # Combine and score results
+        combined_scores = {}
+        
+        # Add semantic scores
+        for backlog, semantic_score in semantic_results:
+            combined_scores[backlog.id] = {
+                'backlog': backlog,
+                'semantic_score': semantic_score,
+                'keyword_score': 0.0
+            }
+        
+        # Add keyword scores (simple relevance based on position)
+        for i, backlog in enumerate(keyword_results):
+            keyword_score = 1.0 - (i / len(keyword_results))  # Higher score for earlier results
+            
+            if backlog.id in combined_scores:
+                combined_scores[backlog.id]['keyword_score'] = keyword_score
+            else:
+                combined_scores[backlog.id] = {
+                    'backlog': backlog,
+                    'semantic_score': 0.0,
+                    'keyword_score': keyword_score
+                }
+        
+        # Calculate combined scores and sort
+        final_results = []
+        for item_id, scores in combined_scores.items():
+            combined_score = (
+                scores['semantic_score'] * semantic_weight +
+                scores['keyword_score'] * keyword_weight
+            )
+            final_results.append((scores['backlog'], combined_score))
+        
+        # Sort by combined score and limit results
+        final_results.sort(key=lambda x: x[1], reverse=True)
+        return final_results[:limit]
+    
+    async def find_similar_backlogs(
+        self,
+        db: Session,
+        backlog_id: int,
+        limit: int = 5,
+        similarity_threshold: float = 0.6
+    ) -> List[Tuple[Backlog, float]]:
+        """
+        Find similar backlog items to a given backlog
+        
+        Args:
+            db: Database session
+            backlog_id: ID of the reference backlog item
+            limit: Maximum number of similar items to return
+            similarity_threshold: Minimum similarity score
+            
+        Returns:
+            List of tuples containing (Backlog, similarity_score)
+        """
+        # Get the reference backlog with its embedding
+        reference_backlog = db.query(Backlog).filter(Backlog.id == backlog_id).first()
+        if not reference_backlog or not reference_backlog.embedding:
+            return []
+        
+        # Find similar items
+        similar_query = db.query(Backlog).filter(
+            and_(
+                Backlog.id != backlog_id,  # Exclude the reference item
+                Backlog.embedding.isnot(None),
+                Backlog.project_id == reference_backlog.project_id  # Same project
+            )
+        ).add_columns(
+            (1 - Backlog.embedding.cosine_distance(reference_backlog.embedding)).label('similarity')
+        ).filter(
+            (1 - Backlog.embedding.cosine_distance(reference_backlog.embedding)) >= similarity_threshold
+        ).order_by(
+            Backlog.embedding.cosine_distance(reference_backlog.embedding).asc()
+        ).limit(limit)
+        
+        results = []
+        for backlog, similarity in similar_query.all():
+            results.append((backlog, float(similarity)))
+        
+        return results
+    
+    async def update_embedding(self, db: Session, backlog_id: int, force: bool = False) -> bool:
+        """
+        Update embedding for a specific backlog item
+        
+        Args:
+            db: Database session
+            backlog_id: ID of the backlog item to update
+            force: Force update even if embedding is up to date
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        return await embedding_service.update_backlog_embedding(db, backlog_id)
+    
+    async def update_all_embeddings(
+        self, 
+        db: Session, 
+        project_id: Optional[int] = None, 
+        force: bool = False
+    ) -> Dict[str, int]:
+        """
+        Update embeddings for all backlog items
+        
+        Args:
+            db: Database session
+            project_id: Optional project ID to filter backlogs
+            force: Force update all embeddings
+            
+        Returns:
+            Dictionary with update statistics
+        """
+        return await embedding_service.update_all_backlog_embeddings(db, project_id, force)
 
 # Create CRUD instance
 backlog_crud = BacklogCRUD(Backlog)

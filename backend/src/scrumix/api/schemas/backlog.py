@@ -92,7 +92,6 @@ class BacklogResponse(BaseModel):
                     id=criteria.id,
                     backlog_id=criteria.backlog_id,
                     title=criteria.title,
-                    description=criteria.description,
                     is_met=criteria.is_met,
                     created_at=criteria.created_at,
                     updated_at=criteria.updated_at

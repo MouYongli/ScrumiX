@@ -7,7 +7,6 @@ class AcceptanceCriteriaBase(BaseModel):
     """Base acceptance criteria schema with common fields."""
     backlog_id: int = Field(..., gt=0, description="ID of the backlog item this criteria belongs to")
     title: str = Field(..., min_length=1, max_length=500, description="Acceptance criteria description")
-    description: Optional[str] = Field(None, description="Detailed description of acceptance criteria")
     is_met: bool = Field(False, description="Whether the criteria is met")
     
     @field_validator('title')
@@ -27,7 +26,6 @@ class AcceptanceCriteriaCreate(AcceptanceCriteriaBase):
 class AcceptanceCriteriaUpdate(BaseModel):
     """Schema for updating an existing acceptance criteria."""
     title: Optional[str] = Field(None, min_length=1, max_length=500, description="Acceptance criteria description")
-    description: Optional[str] = Field(None, description="Detailed description of acceptance criteria")
     is_met: Optional[bool] = Field(None, description="Whether the criteria is met")
     
     @field_validator('title')
@@ -55,7 +53,6 @@ class AcceptanceCriteriaResponse(BaseModel):
     id: int
     backlog_id: int
     title: str
-    description: Optional[str]
     is_met: bool
     created_at: datetime
     updated_at: datetime

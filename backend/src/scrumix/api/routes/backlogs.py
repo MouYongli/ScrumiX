@@ -2,7 +2,7 @@
 Backlog-related API routes
 """
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status as fastapi_status
+from fastapi import APIRouter, Depends, HTTPException, Query, status as fastapi_status, BackgroundTasks
 from sqlalchemy.orm import Session
 from scrumix.api.db.database import get_db
 from scrumix.api.core.security import get_current_user_hybrid
@@ -15,8 +15,43 @@ from scrumix.api.schemas.backlog import (
     BacklogUpdate
 )
 from scrumix.api.utils.notification_helpers import notification_helper
+from scrumix.api.core.embedding_service import embedding_service
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["backlogs"])
+
+
+async def generate_backlog_embedding_task(backlog_id: int, db_session_factory):
+    """
+    Background task to generate embeddings for a backlog item
+    
+    Args:
+        backlog_id: ID of the backlog item
+        db_session_factory: Database session factory function
+    """
+    try:
+        # Create a new database session for the background task
+        db = next(db_session_factory())
+        
+        # Generate embeddings for the backlog item
+        success = await embedding_service.update_backlog_embedding(
+            db=db, 
+            backlog_id=backlog_id, 
+            force=True  # Force generation for new/updated items
+        )
+        
+        if success:
+            logger.info(f"Successfully generated embedding for backlog {backlog_id}")
+        else:
+            logger.warning(f"Failed to generate embedding for backlog {backlog_id}")
+            
+    except Exception as e:
+        logger.error(f"Error generating embedding for backlog {backlog_id}: {str(e)}")
+    finally:
+        if 'db' in locals():
+            db.close()
 
 
 @router.get("/", response_model=List[BacklogResponse])
@@ -85,14 +120,22 @@ def get_backlog(
 @router.post("/", response_model=BacklogResponse, status_code=fastapi_status.HTTP_201_CREATED)
 def create_backlog(
     backlog: BacklogCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_hybrid)
 ) -> BacklogResponse:
-    """Create a new backlog item"""
+    """Create a new backlog item with automatic embedding generation"""
     try:
         created_backlog = backlog_crud.create(db=db, obj_in=backlog)
         
-
+        # Schedule background task to generate embeddings
+        background_tasks.add_task(
+            generate_backlog_embedding_task,
+            created_backlog.id,
+            lambda: get_db()
+        )
+        
+        logger.info(f"Created backlog {created_backlog.id}, embedding generation scheduled")
         return BacklogResponse.from_db_model(created_backlog)
     except Exception as e:
         raise HTTPException(
@@ -105,10 +148,11 @@ def create_backlog(
 def update_backlog(
     backlog_id: int,
     backlog: BacklogUpdate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_hybrid)
 ) -> BacklogResponse:
-    """Update a backlog item"""
+    """Update a backlog item with automatic embedding regeneration"""
     existing_backlog = backlog_crud.get(db=db, id=backlog_id)
     if not existing_backlog:
         raise HTTPException(
@@ -123,6 +167,15 @@ def update_backlog(
                 status_code=fastapi_status.HTTP_404_NOT_FOUND,
                 detail="Backlog item not found or update failed"
             )
+        
+        # Schedule background task to regenerate embeddings after update
+        background_tasks.add_task(
+            generate_backlog_embedding_task,
+            backlog_id,
+            lambda: get_db()
+        )
+        
+        logger.info(f"Updated backlog {backlog_id}, embedding regeneration scheduled")
         return BacklogResponse.from_db_model(updated_backlog)
     except ValueError as e:
         raise HTTPException(
@@ -164,6 +217,7 @@ def delete_backlog(
 def update_backlog_status(
     backlog_id: int,
     status: BacklogStatus,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user_hybrid)
 ) -> BacklogResponse:
@@ -179,6 +233,15 @@ def update_backlog_status(
                 status_code=fastapi_status.HTTP_404_NOT_FOUND,
                 detail="Backlog item not found or update failed"
             )
+        
+        # Schedule background task to regenerate embeddings after status update
+        background_tasks.add_task(
+            generate_backlog_embedding_task,
+            backlog_id,
+            lambda: get_db()
+        )
+        
+        logger.info(f"Updated backlog {backlog_id} status, embedding regeneration scheduled")
         return BacklogResponse.from_db_model(updated_backlog)
     except ValueError as e:
         raise HTTPException(

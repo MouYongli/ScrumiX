@@ -1,7 +1,7 @@
 """
 Project-related CRUD operations
 """
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, or_
@@ -12,6 +12,7 @@ from scrumix.api.models.user_project import ScrumRole, UserProject
 from scrumix.api.schemas.project import ProjectCreate, ProjectUpdate
 from scrumix.api.crud.base import CRUDBase
 from scrumix.api.crud.user_project import user_project_crud
+from scrumix.api.core.embedding_service import embedding_service
 
 class ProjectCRUD(CRUDBase[Project, ProjectCreate, ProjectUpdate]):
     def get_by_id(self, db: Session, project_id: int) -> Optional[Project]:
@@ -268,6 +269,145 @@ class ProjectCRUD(CRUDBase[Project, ProjectCreate, ProjectUpdate]):
             })
         
         return projects_with_details
+    
+    async def semantic_search(
+        self,
+        db: Session,
+        query: str,
+        user_id: int,
+        limit: int = 10,
+        similarity_threshold: float = 0.7
+    ) -> List[Tuple[Project, float]]:
+        """
+        Perform semantic search on projects using embeddings.
+        Only returns projects where the user is a member.
+        
+        Args:
+            db: Database session
+            query: Search query text
+            user_id: User ID to filter projects by membership
+            limit: Maximum number of results
+            similarity_threshold: Minimum similarity score (0.0 to 1.0)
+            
+        Returns:
+            List of tuples containing (Project, similarity_score)
+        """
+        # Generate embedding for the query
+        query_embedding = await embedding_service.generate_embedding(query)
+        if not query_embedding:
+            return []
+        
+        # Build the base query - only projects where user is a member
+        base_query = db.query(self.model).join(UserProject).filter(
+            UserProject.user_id == user_id
+        )
+        
+        # Only include projects that have embeddings
+        base_query = base_query.filter(self.model.embedding.isnot(None))
+        
+        # Calculate cosine similarity and filter by threshold
+        similarity_expr = 1 - self.model.embedding.cosine_distance(query_embedding)
+        
+        query_with_similarity = base_query.add_columns(similarity_expr.label('similarity')).filter(
+            similarity_expr >= similarity_threshold
+        ).order_by(similarity_expr.desc()).limit(limit)
+        
+        # Execute query and format results
+        results = []
+        for project, similarity in query_with_similarity.all():
+            results.append((project, float(similarity)))
+        
+        return results
+    
+    async def find_similar_projects(
+        self,
+        db: Session,
+        project_id: int,
+        user_id: int,
+        limit: int = 5,
+        similarity_threshold: float = 0.6
+    ) -> List[Tuple[Project, float]]:
+        """
+        Find projects similar to the given project based on embeddings.
+        Only returns projects where the user is a member.
+        
+        Args:
+            db: Database session
+            project_id: ID of the reference project
+            user_id: User ID to filter projects by membership
+            limit: Maximum number of similar projects to return
+            similarity_threshold: Minimum similarity score
+            
+        Returns:
+            List of tuples containing (Project, similarity_score)
+        """
+        # Get the reference project
+        reference_project = self.get(db, id=project_id)
+        if not reference_project:
+            return []
+        
+        # Check if reference project has embedding
+        if not reference_project.embedding:
+            return []
+        
+        # Query for similar projects where user is a member
+        query = db.query(self.model).join(UserProject).filter(
+            and_(
+                UserProject.user_id == user_id,
+                self.model.id != project_id,  # Exclude the reference project
+                self.model.embedding.isnot(None)  # Only projects with embeddings
+            )
+        )
+        
+        # Calculate cosine similarity
+        similarity_expr = 1 - self.model.embedding.cosine_distance(reference_project.embedding)
+        
+        # Filter by similarity threshold and order by similarity
+        results_query = query.add_columns(
+            similarity_expr.label('similarity')
+        ).filter(
+            similarity_expr >= similarity_threshold
+        ).order_by(similarity_expr.desc()).limit(limit)
+        
+        # Execute query and format results
+        results = []
+        for project, similarity in results_query.all():
+            results.append((project, float(similarity)))
+        
+        return results
+    
+    async def update_embedding(self, db: Session, project_id: int, force: bool = False) -> bool:
+        """
+        Update embedding for a specific project.
+        
+        Args:
+            db: Database session
+            project_id: ID of the project to update
+            force: Force update even if embedding is up to date
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        return await embedding_service.update_project_embedding(db, project_id)
+    
+    async def update_all_embeddings(
+        self, 
+        db: Session, 
+        user_id: Optional[int] = None,
+        force: bool = False
+    ) -> Dict[str, int]:
+        """
+        Update embeddings for all projects (optionally filtered by user membership).
+        
+        Args:
+            db: Database session
+            user_id: Optional user ID to filter projects by membership
+            force: Force update all embeddings
+            
+        Returns:
+            Dictionary with update statistics
+        """
+        return await embedding_service.update_all_project_embeddings(db, user_id, force)
 
 # Create CRUD instance
 project_crud = ProjectCRUD(Project)

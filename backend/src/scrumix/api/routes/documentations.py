@@ -2,7 +2,7 @@
 Documentation-related API routes
 """
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status as fastapi_status
+from fastapi import APIRouter, Depends, HTTPException, Query, status as fastapi_status, BackgroundTasks
 from sqlalchemy.orm import Session
 
 from scrumix.api.db.session import get_db
@@ -16,8 +16,42 @@ from scrumix.api.schemas.documentation import (
 from scrumix.api.models.documentation import DocumentationType
 from scrumix.api.crud.documentation import documentation_crud
 from scrumix.api.utils.notification_helpers import notification_helper
+from scrumix.api.core.embedding_service import embedding_service
+import logging
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
+
+
+async def generate_documentation_embedding_task(documentation_id: int, db_session_factory):
+    """
+    Background task to generate separate embeddings for a documentation item
+    
+    Args:
+        documentation_id: ID of the documentation item
+        db_session_factory: Database session factory function
+    """
+    try:
+        # Create a new database session for the background task
+        db = next(db_session_factory())
+        
+        # Generate separate embeddings for the documentation item
+        success = await embedding_service.update_documentation_embedding(
+            db=db, 
+            documentation_id=documentation_id
+        )
+        
+        if success:
+            logger.info(f"Successfully generated embeddings for documentation {documentation_id}")
+        else:
+            logger.warning(f"Failed to generate embeddings for documentation {documentation_id}")
+            
+    except Exception as e:
+        logger.error(f"Error generating embeddings for documentation {documentation_id}: {str(e)}")
+    finally:
+        if 'db' in locals():
+            db.close()
 
 @router.get("/", response_model=List[DocumentationResponse])
 def get_documentations(
@@ -48,14 +82,22 @@ def get_documentations(
 @router.post("/", response_model=DocumentationResponse, status_code=fastapi_status.HTTP_201_CREATED)
 def create_documentation(
     documentation_create: DocumentationCreate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: UserInDB = Depends(get_current_user)
 ):
     """
-    Create new documentation item
+    Create new documentation item with automatic embedding generation
     """
     try:
         documentation = documentation_crud.create_documentation(db, documentation_create)
+        
+        # Schedule background task to generate separate embeddings
+        background_tasks.add_task(
+            generate_documentation_embedding_task,
+            documentation.id,
+            lambda: get_db()
+        )
         
         # Send notification to project members
         try:
@@ -69,8 +111,9 @@ def create_documentation(
             )
         except Exception as e:
             # Log the error but don't fail the documentation creation
-            print(f"Failed to create documentation notification: {e}")
+            logger.warning(f"Failed to create documentation notification: {e}")
         
+        logger.info(f"Created documentation {documentation.id}, separate embedding generation scheduled")
         return DocumentationResponse.from_db_model(documentation)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
@@ -96,17 +139,26 @@ def get_documentation_by_id(
 def update_documentation(
     doc_id: int,
     documentation_update: DocumentationUpdate,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     current_user: UserInDB = Depends(get_current_user)
 ):
     """
-    Update documentation item
+    Update documentation item with automatic embedding regeneration
     """
     try:
         documentation = documentation_crud.update_documentation(db, doc_id, documentation_update)
         if documentation is None:
             raise HTTPException(status_code=404, detail="Documentation not found")
         
+        # Schedule background task to regenerate separate embeddings after update
+        background_tasks.add_task(
+            generate_documentation_embedding_task,
+            doc_id,
+            lambda: get_db()
+        )
+        
+        logger.info(f"Updated documentation {doc_id}, separate embedding regeneration scheduled")
         return DocumentationResponse.from_db_model(documentation)
     except HTTPException:
         raise  # Re-raise HTTPExceptions (like 404) without catching them
