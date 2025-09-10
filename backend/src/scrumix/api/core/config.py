@@ -60,8 +60,8 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = os.environ.get("OPENAI_API_KEY", "")
     AZURE_OPENAI_API_KEY: str = os.environ.get("AZURE_OPENAI_API_KEY", "")
     AZURE_OPENAI_ENDPOINT: str = os.environ.get("AZURE_OPENAI_ENDPOINT", "")
-    AZURE_OPENAI_DEPLOYMENT_NAME: str = os.environ.get("AZURE_OPENAI_DEPLOYMENT_NAME", "text-embedding-ada-002")
-    EMBEDDING_MODEL: str = os.environ.get("EMBEDDING_MODEL", "text-embedding-ada-002")
+    AZURE_OPENAI_DEPLOYMENT_NAME: str = os.environ.get("AZURE_OPENAI_DEPLOYMENT_NAME", "text-embedding-3-small")
+    EMBEDDING_MODEL: str = os.environ.get("EMBEDDING_MODEL", "text-embedding-3-small")
 
     # Postgres Configuration
     POSTGRES_SERVER: str = os.environ.get("POSTGRES_SERVER", "localhost")  # Default to localhost for local dev

@@ -19,11 +19,11 @@ class EmbeddingService:
     
     def __init__(self):
         """Initialize the embedding service with OpenAI client"""
-        # Support both Azure OpenAI and standard OpenAI
-        self.api_key = os.environ.get("OPENAI_API_KEY") or os.environ.get("AZURE_OPENAI_API_KEY")
-        self.api_base = os.environ.get("AZURE_OPENAI_ENDPOINT")
-        self.deployment_name = os.environ.get("AZURE_OPENAI_DEPLOYMENT_NAME", "text-embedding-ada-002")
-        self.model = "text-embedding-ada-002"
+        # Support both Azure OpenAI and standard OpenAI - use settings instead of os.environ
+        self.api_key = settings.OPENAI_API_KEY or settings.AZURE_OPENAI_API_KEY
+        self.api_base = settings.AZURE_OPENAI_ENDPOINT
+        self.deployment_name = settings.AZURE_OPENAI_DEPLOYMENT_NAME
+        self.model = settings.EMBEDDING_MODEL
         
         if not self.api_key:
             logger.warning("No OpenAI API key found. Embedding generation will be disabled.")
