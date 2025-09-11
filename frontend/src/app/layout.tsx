@@ -6,6 +6,8 @@ import "./globals.css";
 import Header from "@/components/layout/Header";
 import Footer from "@/components/layout/Footer";
 import ConditionalSidebar from "@/components/layout/ConditionalSidebar";
+import ChatWidget from "@/components/chat/ChatWidget";
+import GuideAgent from "@/components/chat/GuideAgent";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 
 // Script to apply theme before React hydrates to prevent flash
@@ -69,6 +71,12 @@ export default function RootLayout({
   const isAuthPage = pathname?.startsWith('/auth');
   const isHomePage = pathname === '/';
   const isPublicPage = isAuthPage || isHomePage;
+  
+  // Check if it's a project-specific page (under /project/[project-id]/)
+  const isProjectPage = pathname?.startsWith('/project/') && pathname?.split('/').length >= 3;
+  
+  // Check if it's a global page that should show the Guide Agent
+  const isGlobalPage = !isAuthPage && !isHomePage && !isProjectPage;
 
   const toggleSidebar = () => {
     setIsSidebarCollapsed(!isSidebarCollapsed);
@@ -161,6 +169,12 @@ export default function RootLayout({
               <Footer />
             </div>
           )}
+          
+          {/* Chat Widget - Only available on project-specific pages */}
+          {isProjectPage && <ChatWidget />}
+          
+          {/* Guide Agent - Only available on global pages */}
+          {isGlobalPage && <GuideAgent />}
         </ThemeProvider>
       </body>
     </html>

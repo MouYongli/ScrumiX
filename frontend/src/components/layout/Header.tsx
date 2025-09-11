@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
-import { Search, Bell, ChevronDown, User, Settings, HelpCircle, LogOut, Menu, Sun, Moon, Monitor } from 'lucide-react';
+import { Search, Bell, ChevronDown, User, Settings, HelpCircle, LogOut, Menu, Sun, Moon, Monitor, Bot } from 'lucide-react';
 import NotificationCenter from '../common/NotificationCenter';
 import SearchBar from '../common/SearchBar';
 import LogoutModal from '../common/LogoutModal';
@@ -65,6 +65,10 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
   };
 
   const searchContext = getSearchContext();
+  
+  // Check if we're on a project page to show AI chat button
+  const isProjectPage = pathname?.startsWith('/project/') && pathname?.split('/').length >= 3;
+  const projectId = isProjectPage ? pathname?.split('/')[2] : null;
 
   const toggleUserMenu = () => {
     setIsUserMenuOpen(!isUserMenuOpen);
@@ -212,8 +216,19 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
             />
           </div>
 
-          {/* Right: Theme toggle, notifications and user menu */}
+          {/* Right: AI Chat (project pages only), Theme toggle, notifications and user menu */}
           <div className="flex items-center space-x-3">
+            {/* AI Chat Button - Only on project pages */}
+            {isProjectPage && projectId && (
+              <Link
+                href={`/project/${projectId}/ai-chat`}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors group"
+                title="AI Assistants - Chat with Product Owner, Scrum Master & Developer agents"
+              >
+                <Bot className="w-5 h-5 text-gray-600 dark:text-gray-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors" />
+              </Link>
+            )}
+            
             {/* Theme Toggle */}
             <button
               onClick={cycleTheme}
