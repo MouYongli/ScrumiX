@@ -128,10 +128,12 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       inputValue: ''
     });
 
-    if (agentType === 'product-owner') {
-      // Use real AI for Product Owner
+    if (agentType === 'product-owner' || agentType === 'scrum-master') {
+      // Use real AI for Product Owner and Scrum Master
+      const apiEndpoint = agentType === 'product-owner' ? '/api/chat/product-owner' : '/api/chat/scrum-master';
+      
       try {
-        const response = await fetch('/api/chat/product-owner', {
+        const response = await fetch(apiEndpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
