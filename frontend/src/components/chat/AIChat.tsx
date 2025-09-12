@@ -128,9 +128,17 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       inputValue: ''
     });
 
-    if (agentType === 'product-owner' || agentType === 'scrum-master') {
-      // Use real AI for Product Owner and Scrum Master
-      const apiEndpoint = agentType === 'product-owner' ? '/api/chat/product-owner' : '/api/chat/scrum-master';
+    if (agentType === 'product-owner' || agentType === 'scrum-master' || agentType === 'developer') {
+      // Use real AI for Product Owner, Scrum Master, and Developer
+      const getApiEndpoint = (type: AgentType) => {
+        switch (type) {
+          case 'product-owner': return '/api/chat/product-owner';
+          case 'scrum-master': return '/api/chat/scrum-master';
+          case 'developer': return '/api/chat/developer';
+          default: return '/api/chat/product-owner'; // fallback
+        }
+      };
+      const apiEndpoint = getApiEndpoint(agentType);
       
       try {
         const response = await fetch(apiEndpoint, {
@@ -197,22 +205,6 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
           isTyping: false
         });
       }
-    } else {
-      // Use mock responses for other agents
-      setTimeout(() => {
-        const agentMessage: ChatMessage = {
-          id: `agent-${Date.now()}`,
-          content: `As your ${AGENTS[agentType].name}, I understand you're asking about "${userMessage.content}". Let me help you with that based on my expertise in ${AGENTS[agentType].expertise.join(', ')}.`,
-          timestamp: new Date().toISOString(),
-          sender: 'agent',
-          agentType: agentType
-        };
-
-        updateAgentState(agentType, {
-          messages: [...currentState.messages, userMessage, agentMessage],
-          isTyping: false
-        });
-      }, 1500);
     }
   };
 
