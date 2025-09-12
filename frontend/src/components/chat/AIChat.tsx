@@ -128,21 +128,90 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       inputValue: ''
     });
 
-    // Simulate AI response
-    setTimeout(() => {
-      const agentMessage: ChatMessage = {
-        id: `agent-${Date.now()}`,
-        content: `As your ${AGENTS[agentType].name}, I understand you're asking about "${userMessage.content}". Let me help you with that based on my expertise in ${AGENTS[agentType].expertise.join(', ')}.`,
-        timestamp: new Date().toISOString(),
-        sender: 'agent',
-        agentType: agentType
-      };
+    if (agentType === 'product-owner') {
+      // Use real AI for Product Owner
+      try {
+        const response = await fetch('/api/chat/product-owner', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            messages: [...currentState.messages, userMessage].map(msg => ({
+              role: msg.sender === 'user' ? 'user' : 'assistant',
+              content: msg.content
+            }))
+          }),
+        });
 
-      updateAgentState(agentType, {
-        messages: [...currentState.messages, userMessage, agentMessage],
-        isTyping: false
-      });
-    }, 1500);
+        if (!response.ok) {
+          const errorText = await response.text();
+          console.error('API Error Response:', errorText);
+          throw new Error(`API Error: ${response.status} - ${errorText}`);
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) {
+          throw new Error('No response stream available');
+        }
+
+        let aiResponse = '';
+        const decoder = new TextDecoder();
+        let messageId = `agent-${Date.now()}`;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          aiResponse += chunk;
+          
+          // Update the agent message in real-time
+          const agentMessage: ChatMessage = {
+            id: messageId,
+            content: aiResponse,
+            timestamp: new Date().toISOString(),
+            sender: 'agent',
+            agentType: agentType
+          };
+
+          updateAgentState(agentType, {
+            messages: [...currentState.messages, userMessage, agentMessage],
+            isTyping: false
+          });
+        }
+      } catch (error) {
+        console.error('AI Chat Error:', error);
+        const errorMessage: ChatMessage = {
+          id: `agent-${Date.now()}`,
+          content: `I apologize, but I encountered an error while processing your request. Please check the console for more details and ensure your OpenAI API key is configured correctly.`,
+          timestamp: new Date().toISOString(),
+          sender: 'agent',
+          agentType: agentType
+        };
+
+        updateAgentState(agentType, {
+          messages: [...currentState.messages, userMessage, errorMessage],
+          isTyping: false
+        });
+      }
+    } else {
+      // Use mock responses for other agents
+      setTimeout(() => {
+        const agentMessage: ChatMessage = {
+          id: `agent-${Date.now()}`,
+          content: `As your ${AGENTS[agentType].name}, I understand you're asking about "${userMessage.content}". Let me help you with that based on my expertise in ${AGENTS[agentType].expertise.join(', ')}.`,
+          timestamp: new Date().toISOString(),
+          sender: 'agent',
+          agentType: agentType
+        };
+
+        updateAgentState(agentType, {
+          messages: [...currentState.messages, userMessage, agentMessage],
+          isTyping: false
+        });
+      }, 1500);
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent, agentType: AgentType) => {
@@ -150,6 +219,10 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       e.preventDefault();
       sendMessage(agentType);
     }
+  };
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>, agentType: AgentType) => {
+    updateAgentState(agentType, { inputValue: e.target.value });
   };
 
   const clearChatHistory = (agentType: AgentType) => {
@@ -160,7 +233,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     const messages = agentStates[agentType].messages;
     const chatData = {
       projectId,
-      agentType,
+      agentType: agentType,
       agentName: AGENTS[agentType].name,
       exportDate: new Date().toISOString(),
       messages: messages.map(msg => ({
@@ -449,13 +522,16 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
           <div className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 p-4">
             <div className="flex space-x-3">
               <input
-                ref={(el) => (inputRefs.current[activeAgent] = el)}
+                ref={(el) => {
+                  inputRefs.current[activeAgent] = el;
+                }}
                 type="text"
                 value={currentState.inputValue}
-                onChange={(e) => updateAgentState(activeAgent, { inputValue: e.target.value })}
+                onChange={(e) => handleInputChange(e, activeAgent)}
                 onKeyPress={(e) => handleKeyPress(e, activeAgent)}
                 placeholder={`Ask ${currentAgent.name} anything about your project...`}
                 className="flex-1 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                disabled={currentState.isTyping}
               />
               <button
                 onClick={() => sendMessage(activeAgent)}
