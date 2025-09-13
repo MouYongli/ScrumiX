@@ -1321,7 +1321,7 @@ const MeetingDetail = () => {
         const agendaItem = agendaItems[editingAgendaIndex];
         if (!agendaItem) return;
         
-        const response = await api.meetingAgenda.update(agendaItem.agendaId, {
+        const response = await api.meetingAgenda.update(agendaItem.agendaId || (agendaItem as any).id, {
           title: item
         });
         
@@ -1353,7 +1353,7 @@ const MeetingDetail = () => {
       const agendaItem = agendaItems[index];
       if (!agendaItem) return;
       
-      const response = await api.meetingAgenda.delete(agendaItem.agendaId);
+      const response = await api.meetingAgenda.delete(agendaItem.agendaId || (agendaItem as any).id);
       
       if (response.error) {
         throw new Error(response.error);
@@ -1364,7 +1364,7 @@ const MeetingDetail = () => {
     setConfirmModalOpen(false);
     setDeleteTarget(null);
       
-      console.log('Deleted agenda item:', agendaItem.agendaId);
+      console.log('Deleted agenda item:', agendaItem.agendaId || (agendaItem as any).id);
       // TODO: Show success notification
     } catch (error) {
       console.error('Error deleting agenda item:', error);
@@ -1478,11 +1478,12 @@ const MeetingDetail = () => {
           throw new Error(`Agenda item at index ${index} is null or undefined`);
         }
         
-        // Use the correct field name from ApiMeetingAgenda interface
-        const id = item.agendaId;
+        // Handle both agendaId (expected) and id (fallback) field names
+        const id = item.agendaId || (item as any).id;
         if (typeof id !== 'number') {
           console.error('Invalid agenda item:', item);
-          throw new Error(`Invalid agenda item at index ${index}: missing or invalid agendaId (got ${typeof id})`);
+          console.error('Available keys:', Object.keys(item));
+          throw new Error(`Invalid agenda item at index ${index}: missing or invalid agendaId/id (got ${typeof id})`);
         }
         return id;
       });
@@ -2154,7 +2155,7 @@ const MeetingDetail = () => {
                  )}
                  {agendaItems.length > 0 ? agendaItems.map((item, index) => (
                   <div 
-                    key={`agenda-${item.agendaId || index}`} 
+                    key={`agenda-${item.agendaId || (item as any).id || index}`} 
                      draggable={statusStyle.text !== 'Completed' && !agendaLoading}
                     onDragStart={(e) => handleDragStart(e, index)}
                     onDragOver={(e) => handleDragOver(e, index)}

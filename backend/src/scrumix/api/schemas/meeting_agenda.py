@@ -48,7 +48,7 @@ class MeetingAgendaInDB(MeetingAgendaBase):
 
 class MeetingAgendaResponse(BaseModel):
     """Schema for meeting agenda API responses with frontend field aliasing."""
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
     
     agendaId: int = Field(alias="id")
     meetingId: int = Field(alias="meeting_id")

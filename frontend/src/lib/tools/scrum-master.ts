@@ -19,7 +19,16 @@ async function makeAuthenticatedRequest(endpoint: string, options: RequestInit, 
 
   try {
     const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
-    const response = await fetch(`${baseUrl}${endpoint}`, {
+    const fullUrl = `${baseUrl}${endpoint}`;
+    
+    console.log('Making API request:', {
+      url: fullUrl,
+      method: options.method,
+      hasBody: !!options.body,
+      hasCookies: !!cookies
+    });
+
+    const response = await fetch(fullUrl, {
       ...options,
       headers: {
         'Content-Type': 'application/json',
@@ -28,12 +37,34 @@ async function makeAuthenticatedRequest(endpoint: string, options: RequestInit, 
       },
     });
 
+    console.log('API response status:', response.status, response.statusText);
+
     if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Request failed' }));
-      return { error: error.detail || `HTTP ${response.status}: ${response.statusText}` };
+      const errorText = await response.text();
+      console.error('API error response:', errorText);
+      
+      let errorDetail;
+      try {
+        const errorJson = JSON.parse(errorText);
+        errorDetail = errorJson.detail || errorText;
+      } catch {
+        errorDetail = errorText || 'Request failed';
+      }
+      
+      return { error: `HTTP ${response.status}: ${errorDetail}` };
     }
 
-    const data = await response.json();
+    const responseText = await response.text();
+    console.log('API success response:', responseText);
+    
+    let data;
+    try {
+      data = JSON.parse(responseText);
+    } catch {
+      console.error('Failed to parse response as JSON:', responseText);
+      return { error: 'Invalid JSON response from server' };
+    }
+    
     return { data };
   } catch (error) {
     console.error('Error in makeAuthenticatedRequest:', error);
@@ -227,16 +258,6 @@ const scheduleEventSchema = z.object({
   event_type: z.enum(['sprint_planning', 'daily_standup', 'sprint_review', 'sprint_retrospective'])
     .describe('Type of Scrum event to schedule'),
   
-  project_id: z.number()
-    .int('Project ID must be a whole number')
-    .positive('Project ID must be a positive integer')
-    .describe('The ID of the project for the event'),
-  
-  sprint_id: z.number()
-    .int('Sprint ID must be a whole number')
-    .positive('Sprint ID must be a positive integer')
-    .describe('The ID of the sprint for the event'),
-  
   start_datetime: z.string()
     .describe('Start date and time in ISO format (e.g., 2024-01-15T10:00:00Z)'),
   
@@ -244,8 +265,8 @@ const scheduleEventSchema = z.object({
     .int('Duration must be a whole number')
     .min(15, 'Duration must be at least 15 minutes')
     .max(480, 'Duration cannot exceed 8 hours')
-    .default(60)
-    .describe('Duration of the meeting in minutes'),
+    .optional()
+    .describe('Duration of the meeting in minutes (uses defaults if not specified)'),
   
   location: z.string()
     .max(500, 'Location must be 500 characters or less')
@@ -255,78 +276,697 @@ const scheduleEventSchema = z.object({
   description: z.string()
     .max(2000, 'Description must be 2000 characters or less')
     .optional()
-    .describe('Additional meeting description or agenda notes')
+    .describe('Additional meeting description or agenda notes'),
+  
+  participants: z.array(z.string())
+    .optional()
+    .describe('List of participant names to invite to the meeting'),
+  
+  project_id: z.number()
+    .int('Project ID must be a whole number')
+    .positive('Project ID must be a positive integer')
+    .optional()
+    .describe('The ID of the project (will be auto-detected if not provided)'),
+  
+  sprint_id: z.number()
+    .int('Sprint ID must be a whole number')
+    .positive('Sprint ID must be a positive integer')
+    .optional()
+    .describe('The ID of the sprint (will be auto-detected if not provided)'),
+  
+  sprint_title: z.string()
+    .optional()
+    .describe('The title of the sprint to schedule the meeting for (alternative to sprint_id)'),
+  
+  recurring: z.boolean()
+    .default(false)
+    .describe('Whether this should be a recurring meeting (daily standups are automatically recurring)')
 });
+
+/**
+ * Schema for meeting agenda management
+ */
+const agendaManagementSchema = z.object({
+  operation: z.enum(['create', 'read', 'update', 'delete', 'reorder'])
+    .describe('The CRUD operation to perform on meeting agenda'),
+  
+  meeting_id: z.number()
+    .int('Meeting ID must be a whole number')
+    .positive('Meeting ID must be a positive integer')
+    .optional()
+    .describe('The ID of the meeting (will be searched if not provided)'),
+  
+  meeting_search: z.string()
+    .optional()
+    .describe('Search term to find the meeting (title, type, or date)'),
+  
+  agenda_id: z.number()
+    .int('Agenda ID must be a whole number')
+    .positive('Agenda ID must be a positive integer')
+    .optional()
+    .describe('The ID of the agenda item (required for update/delete)'),
+  
+  title: z.string()
+    .max(500, 'Title must be 500 characters or less')
+    .optional()
+    .describe('The title/description of the agenda item'),
+  
+  agenda_items: z.array(z.string())
+    .optional()
+    .describe('Array of agenda item titles for bulk creation'),
+  
+  order_index: z.number()
+    .int('Order index must be a whole number')
+    .min(0, 'Order index must be non-negative')
+    .optional()
+    .describe('The order position of the agenda item'),
+  
+  agenda_ids: z.array(z.number())
+    .optional()
+    .describe('Array of agenda IDs for reordering')
+});
+
+/**
+ * Schema for meeting action item management
+ */
+const actionItemManagementSchema = z.object({
+  operation: z.enum(['create', 'read', 'update', 'delete'])
+    .describe('The CRUD operation to perform on meeting action items'),
+  
+  meeting_id: z.number()
+    .int('Meeting ID must be a whole number')
+    .positive('Meeting ID must be a positive integer')
+    .optional()
+    .describe('The ID of the meeting (will be searched if not provided)'),
+  
+  meeting_search: z.string()
+    .optional()
+    .describe('Search term to find the meeting (title, type, or date)'),
+  
+  action_item_id: z.number()
+    .int('Action item ID must be a whole number')
+    .positive('Action item ID must be a positive integer')
+    .optional()
+    .describe('The ID of the action item (required for update/delete)'),
+  
+  title: z.string()
+    .max(500, 'Title must be 500 characters or less')
+    .optional()
+    .describe('The title/description of the action item'),
+  
+  due_date: z.string()
+    .optional()
+    .describe('Due date for the action item (ISO format)')
+});
+
+/**
+ * Helper function to search for meetings
+ */
+async function searchMeetings(searchTerm: string, context: any): Promise<any[]> {
+  try {
+    // Get current project context for filtering
+    const projectContext = await getCurrentProjectContext(context);
+    const projectId = projectContext?.project_id;
+
+    // Search meetings with various filters
+    const searchResponse = await makeAuthenticatedRequest(
+      `/meetings/?search=${encodeURIComponent(searchTerm)}&limit=20`,
+      { method: 'GET' },
+      context
+    );
+
+    if (searchResponse.error || !searchResponse.data) {
+      console.warn('Failed to search meetings:', searchResponse.error);
+      return [];
+    }
+
+    let meetings = searchResponse.data.meetings || searchResponse.data || [];
+    
+    // Filter by current project if available
+    if (projectId) {
+      meetings = meetings.filter((meeting: any) => meeting.project_id === projectId);
+    }
+
+    // Additional filtering by search term
+    const lowerSearchTerm = searchTerm.toLowerCase();
+    meetings = meetings.filter((meeting: any) => 
+      meeting.title?.toLowerCase().includes(lowerSearchTerm) ||
+      meeting.meeting_type?.toLowerCase().includes(lowerSearchTerm) ||
+      meeting.start_datetime?.includes(searchTerm) ||
+      meeting.description?.toLowerCase().includes(lowerSearchTerm)
+    );
+
+    return meetings;
+  } catch (error) {
+    console.warn('Failed to search meetings:', error);
+    return [];
+  }
+}
+
+/**
+ * Helper function to get current project context
+ */
+async function getCurrentProjectContext(context: any): Promise<{ project_id: number; project_name: string } | null> {
+  try {
+    // Get user's current projects
+    const projectsResponse = await makeAuthenticatedRequest(
+      '/projects/me',
+      { method: 'GET' },
+      context
+    );
+
+    if (projectsResponse.error || !projectsResponse.data || projectsResponse.data.length === 0) {
+      return null;
+    }
+
+    // For now, use the first project as the current context
+    // In a real implementation, this would be based on the current page/context
+    const currentProject = projectsResponse.data[0];
+    return {
+      project_id: currentProject.id,
+      project_name: currentProject.name
+    };
+  } catch (error) {
+    console.warn('Failed to get current project context:', error);
+    return null;
+  }
+}
+
+/**
+ * Helper function to get active sprint or available sprints
+ */
+async function getSprintContext(projectId: number, sprintTitle: string | undefined, context: any): Promise<{
+  sprint_id: number;
+  sprint_name: string;
+  sprint_end_date?: string;
+} | { available_sprints: Array<{ id: number; name: string; status: string }> }> {
+  try {
+    // Get sprints for the project
+    const sprintsResponse = await makeAuthenticatedRequest(
+      `/sprints/?project_id=${projectId}`,
+      { method: 'GET' },
+      context
+    );
+
+    if (sprintsResponse.error || !sprintsResponse.data) {
+      throw new Error('Failed to fetch sprints');
+    }
+
+    const sprints = sprintsResponse.data;
+
+    // If sprint title is provided, find by title
+    if (sprintTitle) {
+      const matchingSprint = sprints.find((sprint: any) => 
+        sprint.sprintName?.toLowerCase().includes(sprintTitle.toLowerCase()) ||
+        sprint.sprint_name?.toLowerCase().includes(sprintTitle.toLowerCase())
+      );
+      
+      if (matchingSprint) {
+        return {
+          sprint_id: matchingSprint.id,
+          sprint_name: matchingSprint.sprintName || matchingSprint.sprint_name,
+          sprint_end_date: matchingSprint.endDate || matchingSprint.end_date
+        };
+      }
+    }
+
+    // Look for active sprint first
+    const activeSprint = sprints.find((sprint: any) => 
+      sprint.status === 'active' || sprint.status === 'in_progress'
+    );
+
+    if (activeSprint) {
+      return {
+        sprint_id: activeSprint.id,
+        sprint_name: activeSprint.sprintName || activeSprint.sprint_name,
+        sprint_end_date: activeSprint.endDate || activeSprint.end_date
+      };
+    }
+
+    // No active sprint, return available sprints for user to choose
+    const availableSprints = sprints
+      .filter((sprint: any) => sprint.status !== 'completed' && sprint.status !== 'closed')
+      .map((sprint: any) => ({
+        id: sprint.id,
+        name: sprint.sprintName || sprint.sprint_name,
+        status: sprint.status
+      }));
+
+    return { available_sprints: availableSprints };
+  } catch (error) {
+    console.warn('Failed to get sprint context:', error);
+    return { available_sprints: [] };
+  }
+}
+
+/**
+ * Helper function to find best matching project member using fuzzy matching
+ */
+function findBestMatch(inputName: string, projectMembers: any[]): any | null {
+  const input = inputName.toLowerCase().trim();
+  
+  // Exact matches first
+  let exactMatch = projectMembers.find((member: any) => 
+    member.full_name?.toLowerCase() === input ||
+    member.username?.toLowerCase() === input ||
+    member.email?.toLowerCase() === input
+  );
+  if (exactMatch) return exactMatch;
+
+  // Partial matches with scoring
+  const matches = projectMembers.map((member: any) => {
+    let score = 0;
+    const fullName = member.full_name?.toLowerCase() || '';
+    const username = member.username?.toLowerCase() || '';
+    const email = member.email?.toLowerCase() || '';
+
+    // Check if input is contained in any field
+    if (fullName.includes(input) || input.includes(fullName)) score += 10;
+    if (username.includes(input) || input.includes(username)) score += 8;
+    if (email.includes(input) || input.includes(email)) score += 6;
+
+    // Check for word matches (first name, last name)
+    const inputWords = input.split(' ');
+    const nameWords = fullName.split(' ');
+    
+    for (const inputWord of inputWords) {
+      for (const nameWord of nameWords) {
+        if (inputWord === nameWord) score += 5;
+        else if (inputWord.includes(nameWord) || nameWord.includes(inputWord)) score += 3;
+      }
+    }
+
+    return { member, score };
+  }).filter(item => item.score > 0)
+    .sort((a, b) => b.score - a.score);
+
+  return matches.length > 0 ? matches[0].member : null;
+}
+
+/**
+ * Helper function to find and add participants to a meeting using user_project relationships
+ */
+async function addMeetingParticipants(meetingId: number, participantNames: string[], projectId: number, context: any): Promise<string[]> {
+  try {
+    const addedParticipants: string[] = [];
+
+    // Get project members with their roles from user_project relationship
+    const membersResponse = await makeAuthenticatedRequest(
+      `/projects/${projectId}/members`,
+      { method: 'GET' },
+      context
+    );
+
+    if (membersResponse.error || !membersResponse.data) {
+      console.warn('Failed to get project members for participant matching');
+      return [];
+    }
+
+    const projectMembers = membersResponse.data;
+
+    for (const participantName of participantNames) {
+      // Use improved matching algorithm
+      const matchingMember = findBestMatch(participantName, projectMembers);
+
+      if (matchingMember) {
+        // Use the member's Scrum role from user_project relationship
+        const scrumRole = matchingMember.role || 'developer'; // From user_project.role
+        
+        // Add as internal participant with proper role
+        const participantResponse = await makeAuthenticatedRequest(
+          `/meeting-participants/meeting/${meetingId}/participants`,
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              user_id: matchingMember.user_id || matchingMember.id,
+              role: scrumRole // Use actual Scrum role from project membership
+            })
+          },
+          context
+        );
+
+        if (!participantResponse.error) {
+          addedParticipants.push(matchingMember.full_name || matchingMember.username || participantName);
+        } else {
+          console.warn(`Failed to add participant ${participantName}:`, participantResponse.error);
+        }
+      } else {
+        // Add as external participant
+        const participantResponse = await makeAuthenticatedRequest(
+          `/meeting-participants/meeting/${meetingId}/participants`,
+          {
+            method: 'POST',
+            body: JSON.stringify({
+              external_name: participantName,
+              role: 'guest'
+            })
+          },
+          context
+        );
+
+        if (!participantResponse.error) {
+          addedParticipants.push(participantName);
+        } else {
+          console.warn(`Failed to add external participant ${participantName}:`, participantResponse.error);
+        }
+      }
+    }
+
+    return addedParticipants;
+  } catch (error) {
+    console.warn('Failed to add meeting participants:', error);
+    return [];
+  }
+}
+
+/**
+ * Helper function to create recurring meetings with participants (optimized)
+ */
+async function createRecurringMeetings(
+  baseStartDate: Date,
+  sprintEndDate: string | undefined,
+  meetingData: any,
+  participants: string[] | undefined,
+  projectId: number,
+  context: any
+): Promise<number[]> {
+  const createdMeetingIds: number[] = [];
+  
+  try {
+    const endDate = sprintEndDate ? new Date(sprintEndDate) : new Date(baseStartDate.getTime() + (14 * 24 * 60 * 60 * 1000)); // Default 2 weeks
+    let currentDate = new Date(baseStartDate);
+    
+    // Collect all meeting dates first
+    const meetingDates: Date[] = [];
+    while (currentDate < endDate) {
+      // Skip weekends for daily standups
+      if (currentDate.getDay() !== 0 && currentDate.getDay() !== 6) {
+        meetingDates.push(new Date(currentDate));
+      }
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+
+    console.log(`Creating ${meetingDates.length} recurring meetings...`);
+
+    // Create meetings in smaller batches to avoid long loading times
+    const batchSize = 3; // Process 3 meetings at a time
+    for (let i = 0; i < meetingDates.length; i += batchSize) {
+      const batch = meetingDates.slice(i, i + batchSize);
+      
+      // Process batch in parallel
+      const batchPromises = batch.map(async (date) => {
+        const meetingDataWithDate = {
+          ...meetingData,
+          start_datetime: date.toISOString()
+        };
+
+        const response = await makeAuthenticatedRequest(
+          '/meetings/',
+          {
+            method: 'POST',
+            body: JSON.stringify(meetingDataWithDate)
+          },
+          context
+        );
+
+        if (!response.error && response.data?.id) {
+          const meetingId = response.data.id;
+          
+          // Add participants if specified
+          if (participants && participants.length > 0) {
+            await addMeetingParticipants(meetingId, participants, projectId, context);
+          }
+          
+          return meetingId;
+        }
+        return null;
+      });
+
+      // Wait for batch to complete
+      const batchResults = await Promise.all(batchPromises);
+      createdMeetingIds.push(...batchResults.filter(id => id !== null));
+      
+      // Short delay between batches to prevent overwhelming the server
+      if (i + batchSize < meetingDates.length) {
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+    }
+
+    console.log(`Successfully created ${createdMeetingIds.length} recurring meetings`);
+  } catch (error) {
+    console.warn('Failed to create some recurring meetings:', error);
+  }
+
+  return createdMeetingIds;
+}
+
+/**
+ * Helper function to get user's timezone and format datetime accordingly
+ */
+async function getUserTimezoneAndFormatDatetime(datetimeStr: string, context: any): Promise<{
+  userTimezone: string;
+  formattedDatetime: string;
+  displayDateTime: string;
+}> {
+  try {
+    // Get user profile to retrieve timezone setting
+    const profileResponse = await makeAuthenticatedRequest(
+      '/users/me/profile',
+      { method: 'GET' },
+      context
+    );
+
+    let userTimezone = 'UTC'; // Default fallback
+    if (profileResponse.data && profileResponse.data.timezone) {
+      userTimezone = profileResponse.data.timezone;
+    }
+
+    // Parse the input datetime and ensure it's in UTC for storage
+    const inputDate = new Date(datetimeStr);
+    let utcDatetime: string;
+    
+    // If the input appears to be in user's timezone, convert to UTC
+    if (!datetimeStr.includes('Z') && !datetimeStr.includes('+') && !datetimeStr.includes('-')) {
+      // Assume input is in user's local timezone, convert to UTC
+      const localDate = new Date(datetimeStr);
+      // Create a date assuming the input is in user's timezone
+      const tempDate = new Date(localDate.toLocaleString('en-US', { timeZone: userTimezone }));
+      const offset = tempDate.getTime() - localDate.getTime();
+      const utcDate = new Date(localDate.getTime() - offset);
+      utcDatetime = utcDate.toISOString();
+    } else {
+      // Input already has timezone info, use as-is
+      utcDatetime = inputDate.toISOString();
+    }
+
+    // Format for display in user's timezone
+    const displayDate = new Date(utcDatetime);
+    const displayDateTime = displayDate.toLocaleString('en-US', {
+      timeZone: userTimezone,
+      weekday: 'long',
+      year: 'numeric',
+      month: 'long',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZoneName: 'short'
+    });
+
+    return {
+      userTimezone,
+      formattedDatetime: utcDatetime,
+      displayDateTime
+    };
+  } catch (error) {
+    console.warn('Failed to get user timezone, using UTC:', error);
+    return {
+      userTimezone: 'UTC',
+      formattedDatetime: new Date(datetimeStr).toISOString(),
+      displayDateTime: new Date(datetimeStr).toLocaleString()
+    };
+  }
+}
 
 /**
  * Tool for scheduling Scrum events
  */
 export const scheduleEventTool = tool({
   description: `Schedule Scrum events including Sprint Planning, Daily Scrum, Sprint Review, and Sprint Retrospective. 
-    This tool creates properly structured meetings with appropriate defaults for each event type and ensures 
-    proper Scrum ceremony scheduling.`,
+    This tool automatically detects the current project and active sprint context, handles participant invitations, 
+    supports recurring meetings (especially for daily standups), and manages timezone settings. No calendar invites 
+    are sent - meetings are managed within the ScrumiX system only.`,
   inputSchema: scheduleEventSchema,
   execute: async (input, { experimental_context }) => {
     try {
       const validated = scheduleEventSchema.parse(input);
-      console.log('Scheduling Scrum event:', validated.event_type);
+      console.log('Scheduling Scrum event:', validated.event_type, 'with input:', validated);
 
-      // Define event-specific defaults and recommendations
+      // 1. Get or detect project context
+      let projectId = validated.project_id;
+      let projectName = '';
+      
+      if (!projectId) {
+        const projectContext = await getCurrentProjectContext(experimental_context);
+        if (!projectContext) {
+          return `Unable to determine the current project context. Please provide a project_id or ensure you're working within a project.`;
+        }
+        projectId = projectContext.project_id;
+        projectName = projectContext.project_name;
+      }
+
+      // 2. Get or detect sprint context
+      let sprintId = validated.sprint_id;
+      let sprintName = '';
+      let sprintEndDate: string | undefined;
+
+      if (!sprintId) {
+        const sprintContext = await getSprintContext(projectId!, validated.sprint_title, experimental_context);
+        
+        if ('available_sprints' in sprintContext) {
+          if (sprintContext.available_sprints.length === 0) {
+            return `No active or available sprints found for the project. Please create a sprint first or provide a specific sprint_id.`;
+          }
+          
+          // Ask user to choose from available sprints
+          const sprintOptions = sprintContext.available_sprints
+            .map(sprint => `- **${sprint.name}** (Status: ${sprint.status})`)
+            .join('\n');
+            
+          return `No active sprint found. Please specify which sprint to schedule the meeting for:
+
+${sprintOptions}
+
+You can specify the sprint by adding the sprint title to your request, like: "Schedule a ${validated.event_type.replace('_', ' ')} for Sprint 1"`;
+        }
+        
+        sprintId = sprintContext.sprint_id;
+        sprintName = sprintContext.sprint_name;
+        sprintEndDate = sprintContext.sprint_end_date;
+      }
+
+      // 3. Get user timezone and format datetime
+      const timezoneInfo = await getUserTimezoneAndFormatDatetime(
+        validated.start_datetime, 
+        experimental_context
+      );
+
+      // 4. Define event-specific defaults
       const eventDefaults = {
         sprint_planning: {
           title: 'Sprint Planning',
           defaultDuration: 120,
-          description: 'Sprint Planning meeting to define the Sprint Goal and select Product Backlog items for the Sprint.'
+          description: 'Sprint Planning meeting to define the Sprint Goal and select Product Backlog items for the Sprint.',
+          autoRecurring: false
         },
         daily_standup: {
           title: 'Daily Scrum',
           defaultDuration: 15,
-          description: 'Daily Scrum to inspect progress toward the Sprint Goal and adapt the Sprint Backlog as necessary.'
+          description: 'Daily Scrum to inspect progress toward the Sprint Goal and adapt the Sprint Backlog as necessary.',
+          autoRecurring: true
         },
         sprint_review: {
           title: 'Sprint Review',
           defaultDuration: 90,
-          description: 'Sprint Review to inspect the Increment and adapt the Product Backlog if needed.'
+          description: 'Sprint Review to inspect the Increment and adapt the Product Backlog if needed.',
+          autoRecurring: false
         },
         sprint_retrospective: {
           title: 'Sprint Retrospective',
           defaultDuration: 90,
-          description: 'Sprint Retrospective to plan ways to increase quality and effectiveness.'
+          description: 'Sprint Retrospective to plan ways to increase quality and effectiveness.',
+          autoRecurring: false
         }
       };
 
       const eventConfig = eventDefaults[validated.event_type];
+      const shouldRecur = validated.recurring || eventConfig.autoRecurring;
       
-      // Prepare meeting data
-      const meetingData = {
+      // 5. Prepare base meeting data
+      const baseMeetingData = {
         title: eventConfig.title,
         meeting_type: validated.event_type,
-        start_datetime: validated.start_datetime,
+        start_datetime: timezoneInfo.formattedDatetime,
         duration: validated.duration || eventConfig.defaultDuration,
         location: validated.location || '',
         description: validated.description || eventConfig.description,
-        project_id: validated.project_id,
-        sprint_id: validated.sprint_id
+        project_id: projectId,
+        sprint_id: sprintId
       };
 
-      // Create the meeting
+      console.log('Creating meeting with data:', baseMeetingData);
+
+      let createdMeetings: any[] = [];
+      let meetingIds: number[] = [];
+
+      // 6. Create meeting(s)
+      if (shouldRecur && validated.event_type === 'daily_standup') {
+        // Create recurring daily standups with participants
+        const baseStartDate = new Date(timezoneInfo.formattedDatetime);
+        const recurringMeetingIds = await createRecurringMeetings(
+          baseStartDate,
+          sprintEndDate,
+          baseMeetingData,
+          validated.participants,
+          projectId!,
+          experimental_context
+        );
+        meetingIds = recurringMeetingIds;
+        
+        // Get details of the first meeting for display
+        if (recurringMeetingIds.length > 0) {
+          const firstMeetingResponse = await makeAuthenticatedRequest(
+            `/meetings/${recurringMeetingIds[0]}`,
+            { method: 'GET' },
+            experimental_context
+          );
+          if (firstMeetingResponse.data) {
+            createdMeetings.push(firstMeetingResponse.data);
+          }
+        }
+      } else {
+        // Create single meeting
       const response = await makeAuthenticatedRequest(
         '/meetings/',
         {
           method: 'POST',
-          body: JSON.stringify(meetingData)
+            body: JSON.stringify(baseMeetingData)
         },
         experimental_context
       );
 
       if (response.error) {
-        return `Failed to schedule ${eventConfig.title}: ${response.error}`;
+          console.error('Meeting creation failed:', response.error);
+          return `Failed to schedule ${eventConfig.title}: ${response.error}
+
+**Debug Information:**
+- Project: ${projectName} (ID: ${projectId})
+- Sprint: ${sprintName} (ID: ${sprintId})
+- Authentication: ${(experimental_context as any)?.cookies ? 'Available' : 'Missing'}
+
+Please ensure you have permission to create meetings in this project.`;
+        }
+
+        if (!response.data || !response.data.id) {
+          return `Failed to schedule ${eventConfig.title}: Meeting was not properly created in the system.`;
+        }
+
+        createdMeetings.push(response.data);
+        meetingIds.push(response.data.id);
+
+        // Add participants to single meeting if specified
+        if (validated.participants && validated.participants.length > 0) {
+          await addMeetingParticipants(response.data.id, validated.participants, projectId!, experimental_context);
+        }
       }
 
-      const meeting = response.data;
-      const startDate = new Date(meeting.start_datetime);
+      // 7. Prepare participant info for display
+      let participantInfo = '';
+      if (validated.participants && validated.participants.length > 0) {
+        participantInfo = `\n- **Participants:** ${validated.participants.join(', ')}`;
+      }
 
-      // Generate event-specific guidance
+      // 8. Generate success message
+      const mainMeeting = createdMeetings[0];
       const eventGuidance = {
         sprint_planning: `
 ### Sprint Planning Preparation Checklist:
@@ -357,17 +997,24 @@ export const scheduleEventTool = tool({
 - [ ] Focus on actionable improvements`
       };
 
-      const successMessage = `Successfully scheduled **${eventConfig.title}** for ${startDate.toLocaleDateString()} at ${startDate.toLocaleTimeString()}.
+      const recurringInfo = shouldRecur && validated.event_type === 'daily_standup' 
+        ? `\n- **Recurring:** ${meetingIds.length} meetings created (daily until sprint ends)`
+        : '';
+
+      const successMessage = `Successfully scheduled **${eventConfig.title}**!
 
 **Event Details:**
-- **Type:** ${eventConfig.title}
-- **Duration:** ${meeting.duration} minutes
-- **Location:** ${meeting.location || 'Not specified'}
-- **Meeting ID:** #${meeting.id}
+- **Project:** ${projectName || 'Current Project'}
+- **Sprint:** ${sprintName || 'Current Sprint'}
+- **Date & Time:** ${timezoneInfo.displayDateTime}
+- **Duration:** ${mainMeeting.duration} minutes
+- **Location:** ${mainMeeting.location || 'Not specified'}
+- **Meeting ID:** #${mainMeeting.id}${participantInfo}${recurringInfo}
+- **Your Timezone:** ${timezoneInfo.userTimezone}
 
 ${eventGuidance[validated.event_type]}
 
-The meeting has been added to the project calendar and participants will be notified. You can view and manage this meeting in the [Project Meetings](/project/${validated.project_id}/meetings) section.`;
+The meeting${meetingIds.length > 1 ? 's have' : ' has'} been added to the project calendar. Team members can view and manage ${meetingIds.length > 1 ? 'these meetings' : 'this meeting'} in the project meetings section.`;
 
       return successMessage;
 
@@ -379,13 +1026,313 @@ The meeting has been added to the project calendar and participants will be noti
 });
 
 /**
+ * Tool for managing meeting agenda items
+ */
+export const manageMeetingAgendaTool = tool({
+  description: `Manage meeting agenda items with CRUD operations. Create, read, update, delete, and reorder agenda items for meetings. 
+    Can search for meetings by title, type, or date if meeting_id is not provided. Just execute the requested operation without excessive questioning.`,
+  inputSchema: agendaManagementSchema,
+  execute: async (input, { experimental_context }) => {
+    try {
+      const validated = agendaManagementSchema.parse(input);
+      
+      // Find meeting ID if not provided
+      let meetingId = validated.meeting_id;
+      if (!meetingId && validated.meeting_search) {
+        const meetings = await searchMeetings(validated.meeting_search, experimental_context);
+        if (meetings.length === 0) {
+          return `No meetings found matching "${validated.meeting_search}". Please check the meeting title, type, or date.`;
+        }
+        if (meetings.length > 1) {
+          const meetingList = meetings.slice(0, 5).map((m: any) => 
+            `- Meeting #${m.id}: ${m.title} (${new Date(m.start_datetime).toLocaleDateString()})`
+          ).join('\n');
+          return `Multiple meetings found matching "${validated.meeting_search}". Please specify which one:\n${meetingList}`;
+        }
+        meetingId = meetings[0].id;
+      }
+
+      if (!meetingId) {
+        return `Please provide either 'meeting_id' or 'meeting_search' to identify the meeting.`;
+      }
+
+      console.log('Managing meeting agenda:', validated.operation, 'for meeting:', meetingId);
+
+      switch (validated.operation) {
+        case 'create':
+          if (validated.agenda_items && validated.agenda_items.length > 0) {
+            // Bulk create
+            const response = await makeAuthenticatedRequest(
+              `/meeting-agendas/meeting/${meetingId}/bulk`,
+              {
+                method: 'POST',
+                body: JSON.stringify(validated.agenda_items)
+              },
+              experimental_context
+            );
+
+            if (response.error) {
+              return `Failed to create agenda items: ${response.error}`;
+            }
+
+            return `Successfully created ${validated.agenda_items.length} agenda items:
+${validated.agenda_items.map((item, index) => `${index + 1}. ${item}`).join('\n')}`;
+          } else if (validated.title) {
+            // Single create
+            const response = await makeAuthenticatedRequest(
+              '/meeting-agendas/',
+              {
+                method: 'POST',
+                body: JSON.stringify({
+                  meeting_id: meetingId,
+                  title: validated.title,
+                  order_index: validated.order_index
+                })
+              },
+              experimental_context
+            );
+
+            if (response.error) {
+              return `Failed to create agenda item: ${response.error}`;
+            }
+
+            return `Successfully created agenda item: "${validated.title}"`;
+          } else {
+            return `Please provide either 'title' for a single agenda item or 'agenda_items' for multiple items.`;
+          }
+
+        case 'read':
+          const readResponse = await makeAuthenticatedRequest(
+            `/meeting-agendas/meeting/${meetingId}`,
+            { method: 'GET' },
+            experimental_context
+          );
+
+          if (readResponse.error) {
+            return `Failed to retrieve agenda items: ${readResponse.error}`;
+          }
+
+          const agendaItems = readResponse.data || [];
+          if (agendaItems.length === 0) {
+            return `No agenda items found for meeting #${meetingId}.`;
+          }
+
+          return `Meeting #${meetingId} Agenda (${agendaItems.length} items):
+${agendaItems.map((item: any, index: number) => `${index + 1}. ${item.title}`).join('\n')}`;
+
+        case 'update':
+          if (!validated.agenda_id || !validated.title) {
+            return `Please provide both 'agenda_id' and 'title' for updating an agenda item.`;
+          }
+
+          const updateResponse = await makeAuthenticatedRequest(
+            `/meeting-agendas/${validated.agenda_id}`,
+            {
+              method: 'PUT',
+              body: JSON.stringify({
+                title: validated.title,
+                order_index: validated.order_index
+              })
+            },
+            experimental_context
+          );
+
+          if (updateResponse.error) {
+            return `Failed to update agenda item: ${updateResponse.error}`;
+          }
+
+          return `Successfully updated agenda item #${validated.agenda_id} to: "${validated.title}"`;
+
+        case 'delete':
+          if (!validated.agenda_id) {
+            return `Please provide 'agenda_id' for deleting an agenda item.`;
+          }
+
+          const deleteResponse = await makeAuthenticatedRequest(
+            `/meeting-agendas/${validated.agenda_id}`,
+            { method: 'DELETE' },
+            experimental_context
+          );
+
+          if (deleteResponse.error) {
+            return `Failed to delete agenda item: ${deleteResponse.error}`;
+          }
+
+          return `Successfully deleted agenda item #${validated.agenda_id}.`;
+
+        case 'reorder':
+          if (!validated.agenda_ids || validated.agenda_ids.length === 0) {
+            return `Please provide 'agenda_ids' array for reordering agenda items.`;
+          }
+
+          const reorderResponse = await makeAuthenticatedRequest(
+            '/meeting-agendas/reorder',
+            {
+              method: 'POST',
+              body: JSON.stringify({ agenda_ids: validated.agenda_ids })
+            },
+            experimental_context
+          );
+
+          if (reorderResponse.error) {
+            return `Failed to reorder agenda items: ${reorderResponse.error}`;
+          }
+
+          return `Successfully reordered ${validated.agenda_ids.length} agenda items.`;
+
+        default:
+          return `Unknown operation: ${validated.operation}`;
+      }
+
+    } catch (error) {
+      console.error('Error in manageMeetingAgendaTool:', error);
+      return `Failed to manage meeting agenda: ${error instanceof Error ? error.message : 'Unknown error occurred'}`;
+    }
+  }
+});
+
+/**
+ * Tool for managing meeting action items
+ */
+export const manageMeetingActionItemsTool = tool({
+  description: `Manage meeting action items with CRUD operations. Create, read, update, and delete action items for meetings. 
+    Can search for meetings by title, type, or date if meeting_id is not provided. Just execute the requested operation without excessive questioning.`,
+  inputSchema: actionItemManagementSchema,
+  execute: async (input, { experimental_context }) => {
+    try {
+      const validated = actionItemManagementSchema.parse(input);
+      
+      // Find meeting ID if not provided
+      let meetingId = validated.meeting_id;
+      if (!meetingId && validated.meeting_search) {
+        const meetings = await searchMeetings(validated.meeting_search, experimental_context);
+        if (meetings.length === 0) {
+          return `No meetings found matching "${validated.meeting_search}". Please check the meeting title, type, or date.`;
+        }
+        if (meetings.length > 1) {
+          const meetingList = meetings.slice(0, 5).map((m: any) => 
+            `- Meeting #${m.id}: ${m.title} (${new Date(m.start_datetime).toLocaleDateString()})`
+          ).join('\n');
+          return `Multiple meetings found matching "${validated.meeting_search}". Please specify which one:\n${meetingList}`;
+        }
+        meetingId = meetings[0].id;
+      }
+
+      if (!meetingId) {
+        return `Please provide either 'meeting_id' or 'meeting_search' to identify the meeting.`;
+      }
+
+      console.log('Managing meeting action items:', validated.operation, 'for meeting:', meetingId);
+
+      switch (validated.operation) {
+        case 'create':
+          if (!validated.title) {
+            return `Please provide 'title' for creating an action item.`;
+          }
+
+          const createResponse = await makeAuthenticatedRequest(
+            '/meeting-action-items/',
+            {
+              method: 'POST',
+              body: JSON.stringify({
+                meeting_id: meetingId,
+                title: validated.title,
+                due_date: validated.due_date
+              })
+            },
+            experimental_context
+          );
+
+          if (createResponse.error) {
+            return `Failed to create action item: ${createResponse.error}`;
+          }
+
+          const dueDateInfo = validated.due_date ? ` (Due: ${new Date(validated.due_date).toLocaleDateString()})` : '';
+          return `Successfully created action item: "${validated.title}"${dueDateInfo}`;
+
+        case 'read':
+          const readResponse = await makeAuthenticatedRequest(
+            `/meeting-action-items/meeting/${meetingId}`,
+            { method: 'GET' },
+            experimental_context
+          );
+
+          if (readResponse.error) {
+            return `Failed to retrieve action items: ${readResponse.error}`;
+          }
+
+          const actionItems = readResponse.data || [];
+          if (actionItems.length === 0) {
+            return `No action items found for meeting #${meetingId}.`;
+          }
+
+          return `Meeting #${meetingId} Action Items (${actionItems.length} items):
+${actionItems.map((item: any, index: number) => {
+  const dueDate = item.due_date ? ` (Due: ${new Date(item.due_date).toLocaleDateString()})` : '';
+  return `${index + 1}. ${item.title}${dueDate}`;
+}).join('\n')}`;
+
+        case 'update':
+          if (!validated.action_item_id || !validated.title) {
+            return `Please provide both 'action_item_id' and 'title' for updating an action item.`;
+          }
+
+          const updateResponse = await makeAuthenticatedRequest(
+            `/meeting-action-items/${validated.action_item_id}`,
+            {
+              method: 'PUT',
+              body: JSON.stringify({
+                title: validated.title,
+                due_date: validated.due_date
+              })
+            },
+            experimental_context
+          );
+
+          if (updateResponse.error) {
+            return `Failed to update action item: ${updateResponse.error}`;
+          }
+
+          const updateDueDateInfo = validated.due_date ? ` (Due: ${new Date(validated.due_date).toLocaleDateString()})` : '';
+          return `Successfully updated action item #${validated.action_item_id} to: "${validated.title}"${updateDueDateInfo}`;
+
+        case 'delete':
+          if (!validated.action_item_id) {
+            return `Please provide 'action_item_id' for deleting an action item.`;
+          }
+
+          const deleteResponse = await makeAuthenticatedRequest(
+            `/meeting-action-items/${validated.action_item_id}`,
+            { method: 'DELETE' },
+            experimental_context
+          );
+
+          if (deleteResponse.error) {
+            return `Failed to delete action item: ${deleteResponse.error}`;
+          }
+
+          return `Successfully deleted action item #${validated.action_item_id}.`;
+
+        default:
+          return `Unknown operation: ${validated.operation}`;
+      }
+
+    } catch (error) {
+      console.error('Error in manageMeetingActionItemsTool:', error);
+      return `Failed to manage meeting action items: ${error instanceof Error ? error.message : 'Unknown error occurred'}`;
+    }
+  }
+});
+
+/**
  * Schema for velocity analysis
  */
 const velocityAnalysisSchema = z.object({
   project_id: z.number()
     .int('Project ID must be a whole number')
     .positive('Project ID must be a positive integer')
-    .describe('The ID of the project to analyze velocity for'),
+    .optional()
+    .describe('The ID of the project to analyze velocity for (auto-detected if not provided)'),
   
   sprint_count: z.number()
     .int('Sprint count must be a whole number')
@@ -410,11 +1357,25 @@ export const analyzeVelocityTool = tool({
   execute: async (input, { experimental_context }) => {
     try {
       const validated = velocityAnalysisSchema.parse(input);
-      console.log('Analyzing velocity for project:', validated.project_id);
+      
+      // Auto-detect project if not provided
+      let projectId = validated.project_id;
+      let projectName = '';
+      
+      if (!projectId) {
+        const projectContext = await getCurrentProjectContext(experimental_context);
+        if (!projectContext) {
+          return `Unable to determine the current project context. Please provide a project_id or ensure you're working within a project.`;
+        }
+        projectId = projectContext.project_id;
+        projectName = projectContext.project_name;
+      }
+
+      console.log('Analyzing velocity for project:', projectId);
 
       // Get recent completed sprints for the project
       const sprintsResponse = await makeAuthenticatedRequest(
-        `/sprints/?project_id=${validated.project_id}&status=completed&limit=${validated.sprint_count}`,
+        `/sprints/?project_id=${projectId}&status=completed&limit=${validated.sprint_count}`,
         { method: 'GET' },
         experimental_context
       );
@@ -426,7 +1387,7 @@ export const analyzeVelocityTool = tool({
       const sprints = sprintsResponse.data || [];
       
       if (sprints.length === 0) {
-        return `No completed sprints found for project ${validated.project_id}. Velocity analysis requires at least one completed sprint.`;
+        return `No completed sprints found for ${projectName || `project ${projectId}`}. Velocity analysis requires at least one completed sprint.`;
       }
 
       // Get detailed statistics for each sprint
@@ -1043,7 +2004,9 @@ export const scrumMasterTools = {
   scheduleEvent: scheduleEventTool,
   analyzeVelocity: analyzeVelocityTool,
   analyzeRetrospectives: analyzeRetrospectivesTool,
-  checkScrumCompliance: checkScrumComplianceTool
+  checkScrumCompliance: checkScrumComplianceTool,
+  manageMeetingAgenda: manageMeetingAgendaTool,
+  manageMeetingActionItems: manageMeetingActionItemsTool
 };
 
 /**
