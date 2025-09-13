@@ -150,7 +150,8 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
             messages: [...currentState.messages, userMessage].map(msg => ({
               role: msg.sender === 'user' ? 'user' : 'assistant',
               content: msg.content
-            }))
+            })),
+            projectId: projectId ? parseInt(projectId, 10) : null
           }),
         });
 
@@ -472,7 +473,125 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                             : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
                         }`}
                       >
-                        <p className="text-sm">{message.content}</p>
+                        <div className="text-sm prose prose-sm max-w-none prose-slate dark:prose-invert">
+                          {message.content.split('\n').map((line, index) => {
+                            if (line.trim() === '') return <br key={index} />;
+                            
+                            // Handle markdown links [text](url) first - convert to React elements
+                            const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
+                            const parts: (string | React.ReactElement)[] = [];
+                            let lastIndex = 0;
+                            let match: RegExpExecArray | null;
+                            
+                            while ((match = linkRegex.exec(line)) !== null) {
+                              // Add text before the link
+                              if (match.index > lastIndex) {
+                                parts.push(line.slice(lastIndex, match.index));
+                              }
+                              
+                              const linkText = match[1];
+                              const linkUrl = match[2];
+                              
+                              // Add the link as a React element
+                              parts.push(
+                                <a
+                                  key={`link-${index}-${match.index}`}
+                                  href={linkUrl}
+                                  className="text-blue-600 dark:text-blue-400 hover:underline cursor-pointer underline font-medium"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    window.location.href = linkUrl;
+                                  }}
+                                >
+                                  {linkText}
+                                </a>
+                              );
+                              
+                              lastIndex = match.index + match[0].length;
+                            }
+                            
+                            // Add remaining text
+                            if (lastIndex < line.length) {
+                              parts.push(line.slice(lastIndex));
+                            }
+                            
+                            // If no links found, process normally
+                            if (parts.length === 0) {
+                              parts.push(line);
+                            }
+                            
+                            // Process the parts for other markdown
+                            const processedParts = parts.map((part, partIndex) => {
+                              if (typeof part === 'string') {
+                                // Handle bold text **text**
+                                const boldRegex = /\*\*(.*?)\*\*/g;
+                                return part.replace(boldRegex, '<strong>$1</strong>');
+                              }
+                              return part;
+                            });
+                            
+                            // Handle list items starting with -
+                            if (line.trim().startsWith('- ')) {
+                              return (
+                                <li key={index} className="ml-4">
+                                  {processedParts.map((part, partIndex) => 
+                                    typeof part === 'string' ? 
+                                      <span key={partIndex} dangerouslySetInnerHTML={{ __html: part.replace(/^- /, '') }} /> : 
+                                      part
+                                  )}
+                                </li>
+                              );
+                            }
+                            
+                            // Handle numbered lists
+                            const numberedListMatch = line.match(/^(\d+)\.\s+(.+)/);
+                            if (numberedListMatch) {
+                              return (
+                                <li key={index} className="ml-4">
+                                  {processedParts.map((part, partIndex) => 
+                                    typeof part === 'string' ? 
+                                      <span key={partIndex} dangerouslySetInnerHTML={{ __html: part.replace(/^\d+\.\s+/, '') }} /> : 
+                                      part
+                                  )}
+                                </li>
+                              );
+                            }
+                            
+                            // Handle headings
+                            if (line.startsWith('### ')) {
+                              return (
+                                <h3 key={index} className="text-base font-semibold mt-2 mb-1">
+                                  {processedParts.map((part, partIndex) => 
+                                    typeof part === 'string' ? 
+                                      <span key={partIndex} dangerouslySetInnerHTML={{ __html: part.replace('### ', '') }} /> : 
+                                      part
+                                  )}
+                                </h3>
+                              );
+                            }
+                            if (line.startsWith('## ')) {
+                              return (
+                                <h2 key={index} className="text-lg font-semibold mt-2 mb-1">
+                                  {processedParts.map((part, partIndex) => 
+                                    typeof part === 'string' ? 
+                                      <span key={partIndex} dangerouslySetInnerHTML={{ __html: part.replace('## ', '') }} /> : 
+                                      part
+                                  )}
+                                </h2>
+                              );
+                            }
+                            
+                            return (
+                              <p key={index} className="mb-1">
+                                {processedParts.map((part, partIndex) => 
+                                  typeof part === 'string' ? 
+                                    <span key={partIndex} dangerouslySetInnerHTML={{ __html: part }} /> : 
+                                    part
+                                )}
+                              </p>
+                            );
+                          })}
+                        </div>
                         <p className={`text-xs mt-2 ${
                           message.sender === 'user' 
                             ? 'text-blue-100' 
