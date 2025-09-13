@@ -90,7 +90,6 @@ interface AcceptanceCriteria {
   id: number;
   backlog_id: number;
   title: string;
-  description?: string;
   is_met: boolean;
   created_at: string;
   updated_at: string;

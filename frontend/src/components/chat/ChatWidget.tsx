@@ -15,9 +15,12 @@ import {
   ArrowUp,
   ExternalLink
 } from 'lucide-react';
-import { Agent, AgentType, ChatMessage, ChatState } from '@/types/chat';
+import { Agent, AgentType, ChatMessage, ChatState, AgentChatState } from '@/types/chat';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { getAgentModelConfig, AI_MODELS } from '@/lib/ai-gateway';
+import { getPreferredModel, setPreferredModel } from '@/lib/model-preferences';
+import ModelSelector from './ModelSelector';
 
 // Agent definitions with Scrum-specific roles
 const AGENTS: Record<AgentType, Agent> = {
@@ -28,7 +31,8 @@ const AGENTS: Record<AgentType, Agent> = {
     icon: 'User',
     color: 'bg-emerald-500',
     accentColor: 'text-emerald-600 dark:text-emerald-400',
-    expertise: ['User Stories', 'Backlog Prioritization', 'Acceptance Criteria', 'Stakeholder Management']
+    expertise: ['User Stories', 'Backlog Prioritization', 'Acceptance Criteria', 'Stakeholder Management'],
+    defaultModel: getAgentModelConfig('product-owner').model
   },
   'scrum-master': {
     id: 'scrum-master',
@@ -37,7 +41,8 @@ const AGENTS: Record<AgentType, Agent> = {
     icon: 'Settings',
     color: 'bg-blue-500',
     accentColor: 'text-blue-600 dark:text-blue-400',
-    expertise: ['Sprint Planning', 'Daily Standups', 'Retrospectives', 'Impediment Resolution']
+    expertise: ['Sprint Planning', 'Daily Standups', 'Retrospectives', 'Impediment Resolution'],
+    defaultModel: getAgentModelConfig('scrum-master').model
   },
   'developer': {
     id: 'developer',
@@ -46,7 +51,8 @@ const AGENTS: Record<AgentType, Agent> = {
     icon: 'Code2',
     color: 'bg-purple-500',
     accentColor: 'text-purple-600 dark:text-purple-400',
-    expertise: ['Code Review', 'Technical Debt', 'Architecture', 'Best Practices']
+    expertise: ['Code Review', 'Technical Debt', 'Architecture', 'Best Practices'],
+    defaultModel: getAgentModelConfig('developer').model
   }
 };
 
@@ -63,15 +69,31 @@ const getAgentIcon = (agentType: AgentType) => {
   }
 };
 
+
 const ChatWidget: React.FC = () => {
-  const [chatState, setChatState] = useState<ChatState>({
-    isOpen: false,
-    activeAgent: 'product-owner',
-    messages: [],
-    isTyping: false
+  const [isOpen, setIsOpen] = useState(false);
+  const [activeAgent, setActiveAgent] = useState<AgentType>('product-owner');
+  const [agentStates, setAgentStates] = useState<Record<AgentType, AgentChatState>>({
+    'product-owner': { 
+      messages: [], 
+      isTyping: false, 
+      inputValue: '', 
+      selectedModel: getPreferredModel('product-owner')
+    },
+    'scrum-master': { 
+      messages: [], 
+      isTyping: false, 
+      inputValue: '', 
+      selectedModel: getPreferredModel('scrum-master')
+    },
+    'developer': { 
+      messages: [], 
+      isTyping: false, 
+      inputValue: '', 
+      selectedModel: getPreferredModel('developer')
+    }
   });
   
-  const [inputValue, setInputValue] = useState('');
   const [isMinimized, setIsMinimized] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -84,25 +106,32 @@ const ChatWidget: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  const updateAgentState = (agentType: AgentType, updates: Partial<AgentChatState>) => {
+    setAgentStates(prev => ({
+      ...prev,
+      [agentType]: { ...prev[agentType], ...updates }
+    }));
+  };
+
   useEffect(() => {
-    if (chatState.isOpen) {
+    if (isOpen) {
       scrollToBottom();
     }
-  }, [chatState.messages, chatState.isOpen]);
+  }, [agentStates[activeAgent].messages, isOpen]);
 
   useEffect(() => {
-    if (chatState.isOpen && !isMinimized) {
+    if (isOpen && !isMinimized) {
       inputRef.current?.focus();
     }
-  }, [chatState.isOpen, isMinimized, chatState.activeAgent]);
+  }, [isOpen, isMinimized, activeAgent]);
 
   const toggleChat = () => {
-    setChatState(prev => ({ ...prev, isOpen: !prev.isOpen }));
+    setIsOpen(!isOpen);
     setIsMinimized(false);
   };
 
   const closeChat = () => {
-    setChatState(prev => ({ ...prev, isOpen: false }));
+    setIsOpen(false);
     setIsMinimized(false);
   };
 
@@ -111,43 +140,105 @@ const ChatWidget: React.FC = () => {
   };
 
   const switchAgent = (agentType: AgentType) => {
-    setChatState(prev => ({ ...prev, activeAgent: agentType }));
+    setActiveAgent(agentType);
   };
 
   const sendMessage = async () => {
-    if (!inputValue.trim()) return;
+    const currentState = agentStates[activeAgent];
+    if (!currentState.inputValue.trim()) return;
 
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
-      content: inputValue,
+      content: currentState.inputValue,
       timestamp: new Date().toISOString(),
       sender: 'user'
     };
 
-    setChatState(prev => ({
-      ...prev,
-      messages: [...prev.messages, userMessage],
-      isTyping: true
-    }));
+    updateAgentState(activeAgent, {
+      messages: [...currentState.messages, userMessage],
+      isTyping: true,
+      inputValue: ''
+    });
 
-    setInputValue('');
+    // Use real AI for all agents
+    const getApiEndpoint = (type: AgentType) => {
+      switch (type) {
+        case 'product-owner': return '/api/chat/product-owner';
+        case 'scrum-master': return '/api/chat/scrum-master';
+        case 'developer': return '/api/chat/developer';
+        default: return '/api/chat/product-owner'; // fallback
+      }
+    };
+    
+    const apiEndpoint = getApiEndpoint(activeAgent);
+    
+    try {
+      const response = await fetch(apiEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: [...currentState.messages, userMessage].map(msg => ({
+            role: msg.sender === 'user' ? 'user' : 'assistant',
+            content: msg.content
+          })),
+          projectId: projectId ? parseInt(projectId, 10) : null,
+          selectedModel: currentState.selectedModel
+        }),
+      });
 
-    // Simulate AI response (replace with actual API call)
-    setTimeout(() => {
-      const agentMessage: ChatMessage = {
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('API Error Response:', errorText);
+        throw new Error(`API Error: ${response.status} - ${errorText}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('No response stream available');
+      }
+
+        let aiResponse = '';
+        const decoder = new TextDecoder();
+        let messageId = `agent-${Date.now()}`;
+
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          const chunk = decoder.decode(value, { stream: true });
+          aiResponse += chunk;
+          
+          // Update the agent message in real-time
+          const agentMessage: ChatMessage = {
+            id: messageId,
+            content: aiResponse,
+            timestamp: new Date().toISOString(),
+            sender: 'agent',
+            agentType: activeAgent
+          };
+
+          updateAgentState(activeAgent, {
+            messages: [...currentState.messages, userMessage, agentMessage],
+            isTyping: false
+          });
+        }
+    } catch (error) {
+      console.error('AI Chat Error:', error);
+      const errorMessage: ChatMessage = {
         id: `agent-${Date.now()}`,
-        content: `As your ${AGENTS[chatState.activeAgent].name}, I understand you're asking about "${userMessage.content}". Let me help you with that based on my expertise in ${AGENTS[chatState.activeAgent].expertise.join(', ')}.`,
+        content: `I apologize, but I encountered an error while processing your request. Please check the console for more details and ensure your OpenAI API key is configured correctly.`,
         timestamp: new Date().toISOString(),
         sender: 'agent',
-        agentType: chatState.activeAgent
+        agentType: activeAgent
       };
 
-      setChatState(prev => ({
-        ...prev,
-        messages: [...prev.messages, agentMessage],
+      updateAgentState(activeAgent, {
+        messages: [...currentState.messages, userMessage, errorMessage],
         isTyping: false
-      }));
-    }, 1500);
+      });
+    }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -157,14 +248,15 @@ const ChatWidget: React.FC = () => {
     }
   };
 
-  const currentAgent = AGENTS[chatState.activeAgent];
-  const AgentIcon = getAgentIcon(chatState.activeAgent);
+  const currentAgent = AGENTS[activeAgent];
+  const AgentIcon = getAgentIcon(activeAgent);
+  const currentInputValue = agentStates[activeAgent].inputValue;
 
   return (
     <>
       {/* Chat Button */}
       <AnimatePresence>
-        {!chatState.isOpen && (
+        {!isOpen && (
           <motion.button
             initial={{ scale: 0, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
@@ -188,7 +280,7 @@ const ChatWidget: React.FC = () => {
 
       {/* Chat Window */}
       <AnimatePresence>
-        {chatState.isOpen && (
+        {isOpen && (
           <motion.div
             initial={{ opacity: 0, scale: 0.8, y: 20 }}
             animate={{ 
@@ -252,7 +344,7 @@ const ChatWidget: React.FC = () => {
                 <div className="flex space-x-1 mt-3">
                   {Object.values(AGENTS).map((agent) => {
                     const IconComponent = getAgentIcon(agent.id);
-                    const isActive = chatState.activeAgent === agent.id;
+                    const isActive = activeAgent === agent.id;
                     
                     return (
                       <button
@@ -272,13 +364,31 @@ const ChatWidget: React.FC = () => {
                   })}
                 </div>
               )}
+              
+              {/* Model Selector */}
+              {!isMinimized && (
+                <div className="mt-3 px-1">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs text-gray-500 dark:text-gray-400">AI Model</span>
+                  </div>
+                  <ModelSelector
+                    selectedModel={agentStates[activeAgent].selectedModel || currentAgent.defaultModel || AI_MODELS.CHAT}
+                    onModelChange={(modelId) => {
+                      updateAgentState(activeAgent, { selectedModel: modelId });
+                      setPreferredModel(activeAgent, modelId);
+                    }}
+                    agentType={activeAgent}
+                    className="w-full"
+                  />
+                </div>
+              )}
             </div>
 
             {/* Chat Messages */}
             {!isMinimized && (
               <>
                 <div className="h-96 overflow-y-auto p-4 space-y-4">
-                  {chatState.messages.length === 0 && (
+                  {agentStates[activeAgent].messages.length === 0 && (
                     <div className="text-center py-8">
                       <div className={`w-12 h-12 ${currentAgent.color} rounded-full mx-auto mb-3 flex items-center justify-center`}>
                         <AgentIcon className="w-6 h-6 text-white" />
@@ -302,7 +412,7 @@ const ChatWidget: React.FC = () => {
                     </div>
                   )}
 
-                  {chatState.messages.map((message) => (
+                  {agentStates[activeAgent].messages.map((message) => (
                     <div
                       key={message.id}
                       className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
@@ -314,12 +424,130 @@ const ChatWidget: React.FC = () => {
                             : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
                         }`}
                       >
-                        {message.content}
+                        <div className="prose prose-sm max-w-none prose-slate dark:prose-invert">
+                          {message.content.split('\n').map((line, index) => {
+                            if (line.trim() === '') return <br key={index} />;
+                            
+                            // Handle markdown links [text](url) first - convert to React elements
+                            const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
+                            const parts: (string | React.ReactElement)[] = [];
+                            let lastIndex = 0;
+                            let match: RegExpExecArray | null;
+                            
+                            while ((match = linkRegex.exec(line)) !== null) {
+                              // Add text before the link
+                              if (match.index > lastIndex) {
+                                parts.push(line.slice(lastIndex, match.index));
+                              }
+                              
+                              const linkText = match[1];
+                              const linkUrl = match[2];
+                              
+                              // Add the link as a React element
+                              parts.push(
+                                <a
+                                  key={`link-${index}-${match.index}`}
+                                  href={linkUrl}
+                                  className="text-blue-600 dark:text-blue-400 hover:underline cursor-pointer underline font-medium"
+                                  onClick={(e) => {
+                                    e.preventDefault();
+                                    window.location.href = linkUrl;
+                                  }}
+                                >
+                                  {linkText}
+                                </a>
+                              );
+                              
+                              lastIndex = match.index + match[0].length;
+                            }
+                            
+                            // Add remaining text
+                            if (lastIndex < line.length) {
+                              parts.push(line.slice(lastIndex));
+                            }
+                            
+                            // If no links found, process normally
+                            if (parts.length === 0) {
+                              parts.push(line);
+                            }
+                            
+                            // Process the parts for other markdown
+                            const processedParts = parts.map((part) => {
+                              if (typeof part === 'string') {
+                                // Handle bold text **text**
+                                const boldRegex = /\*\*(.*?)\*\*/g;
+                                return part.replace(boldRegex, '<strong>$1</strong>');
+                              }
+                              return part;
+                            });
+                            
+                            // Handle list items starting with -
+                            if (line.trim().startsWith('- ')) {
+                              return (
+                                <li key={index} className="ml-4">
+                                  {processedParts.map((part, partIndex) => 
+                                    typeof part === 'string' ? 
+                                      <span key={partIndex} dangerouslySetInnerHTML={{ __html: part.replace(/^- /, '') }} /> : 
+                                      part
+                                  )}
+                                </li>
+                              );
+                            }
+                            
+                            // Handle numbered lists
+                            const numberedListMatch = line.match(/^(\d+)\.\s+(.+)/);
+                            if (numberedListMatch) {
+                              return (
+                                <li key={index} className="ml-4">
+                                  {processedParts.map((part, partIndex) => 
+                                    typeof part === 'string' ? 
+                                      <span key={partIndex} dangerouslySetInnerHTML={{ __html: part.replace(/^\d+\.\s+/, '') }} /> : 
+                                      part
+                                  )}
+                                </li>
+                              );
+                            }
+                            
+                            // Handle headings
+                            if (line.startsWith('### ')) {
+                              return (
+                                <h3 key={index} className="text-base font-semibold mt-2 mb-1">
+                                  {processedParts.map((part, partIndex) => 
+                                    typeof part === 'string' ? 
+                                      <span key={partIndex} dangerouslySetInnerHTML={{ __html: part.replace('### ', '') }} /> : 
+                                      part
+                                  )}
+                                </h3>
+                              );
+                            }
+                            if (line.startsWith('## ')) {
+                              return (
+                                <h2 key={index} className="text-lg font-semibold mt-2 mb-1">
+                                  {processedParts.map((part, partIndex) => 
+                                    typeof part === 'string' ? 
+                                      <span key={partIndex} dangerouslySetInnerHTML={{ __html: part.replace('## ', '') }} /> : 
+                                      part
+                                  )}
+                                </h2>
+                              );
+                            }
+                            
+                            return (
+                              <p key={index} className="mb-1">
+                                {processedParts.map((part, partIndex) => 
+                                  typeof part === 'string' ? 
+                                    <span key={partIndex} dangerouslySetInnerHTML={{ __html: part }} /> : 
+                                    part
+                                )}
+                              </p>
+                            );
+                          })}
+                        </div>
                       </div>
                     </div>
                   ))}
 
-                  {chatState.isTyping && (
+                  {agentStates[activeAgent].isTyping && (
                     <div className="flex justify-start">
                       <div className="bg-gray-100 dark:bg-gray-700 px-3 py-2 rounded-lg">
                         <div className="flex space-x-1">
@@ -339,15 +567,15 @@ const ChatWidget: React.FC = () => {
                     <input
                       ref={inputRef}
                       type="text"
-                      value={inputValue}
-                      onChange={(e) => setInputValue(e.target.value)}
+                      value={currentInputValue}
+                      onChange={(e) => updateAgentState(activeAgent, { inputValue: e.target.value })}
                       onKeyPress={handleKeyPress}
                       placeholder={`Ask ${currentAgent.name} anything...`}
                       className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                     />
                     <button
                       onClick={sendMessage}
-                      disabled={!inputValue.trim()}
+                      disabled={!currentInputValue.trim()}
                       className="px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white rounded-lg transition-colors disabled:cursor-not-allowed"
                     >
                       <Send className="w-4 h-4" />

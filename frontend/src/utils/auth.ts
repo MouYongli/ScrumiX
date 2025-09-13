@@ -489,9 +489,11 @@ export const authenticatedFetch = async (
       // Retry the original request
       return fetch(fullUrl, config);
     } else {
-      // Refresh failed, redirect to login
+      // Refresh failed, redirect to login (only on client side)
       logout();
-      window.location.href = '/auth/login';
+      if (typeof window !== 'undefined') {
+        window.location.href = '/auth/login';
+      }
       throw new Error('Authentication failed');
     }
   }

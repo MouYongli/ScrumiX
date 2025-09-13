@@ -1,6 +1,6 @@
 from typing import Optional, List
 from sqlalchemy.orm import Session
-from sqlalchemy import and_, or_
+from sqlalchemy import and_, or_, func
 
 from .base import CRUDBase
 from ..models.meeting_agenda import MeetingAgenda
@@ -16,7 +16,7 @@ class CRUDMeetingAgenda(CRUDBase[MeetingAgenda, MeetingAgendaCreate, MeetingAgen
         
         # If order_index is not provided or is 0, assign the next available order
         if obj_in_data.get('order_index', 0) == 0:
-            max_order = db.query(db.func.max(self.model.order_index)).filter(
+            max_order = db.query(func.max(self.model.order_index)).filter(
                 self.model.meeting_id == obj_in_data['meeting_id']
             ).scalar() or 0
             obj_in_data['order_index'] = max_order + 1
@@ -132,7 +132,7 @@ class CRUDMeetingAgenda(CRUDBase[MeetingAgenda, MeetingAgendaCreate, MeetingAgen
         agenda_objects = []
         
         # Get the current maximum order for this meeting
-        max_order = db.query(db.func.max(self.model.order_index)).filter(
+        max_order = db.query(func.max(self.model.order_index)).filter(
             self.model.meeting_id == meeting_id
         ).scalar() or 0
         
@@ -234,7 +234,7 @@ class CRUDMeetingAgenda(CRUDBase[MeetingAgenda, MeetingAgendaCreate, MeetingAgen
     
     def get_next_order_for_meeting(self, db: Session, *, meeting_id: int) -> int:
         """Get the next available order number for a meeting."""
-        max_order = db.query(db.func.max(self.model.order_index)).filter(
+        max_order = db.query(func.max(self.model.order_index)).filter(
             self.model.meeting_id == meeting_id
         ).scalar() or 0
         return max_order + 1

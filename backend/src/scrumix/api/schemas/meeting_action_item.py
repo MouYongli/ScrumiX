@@ -58,7 +58,7 @@ class MeetingActionItemInDB(MeetingActionItemBase):
 
 class MeetingActionItemResponse(BaseModel):
     """Schema for meeting action item API responses with frontend field aliasing."""
-    model_config = ConfigDict(from_attributes=True)
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
     
     actionId: int = Field(alias="id")
     meetingId: int = Field(alias="meeting_id")
