@@ -246,11 +246,194 @@ You can view this ${createdBacklog.item_type} in the [Project Backlog](/project/
 });
 
 /**
+ * Helper function to retrieve backlog items with authentication context
+ */
+async function getBacklogItemsWithAuth(filters: any, context: any) {
+  const cookies = context?.cookies;
+  
+  if (!cookies) {
+    console.warn('No authentication context provided for backlog retrieval');
+    return { error: 'Authentication context missing' };
+  }
+
+  try {
+    // Build query parameters
+    const params = new URLSearchParams();
+    if (filters.project_id) params.append('project_id', filters.project_id.toString());
+    if (filters.status) params.append('status', filters.status);
+    if (filters.priority) params.append('priority', filters.priority);
+    if (filters.item_type) params.append('item_type', filters.item_type);
+    if (filters.search) params.append('search', filters.search);
+    if (filters.assigned_to_id) params.append('assigned_to_id', filters.assigned_to_id.toString());
+    if (filters.include_children !== undefined) params.append('include_children', filters.include_children.toString());
+    if (filters.include_acceptance_criteria !== undefined) params.append('include_acceptance_criteria', filters.include_acceptance_criteria.toString());
+    if (filters.limit) params.append('limit', filters.limit.toString());
+    if (filters.skip) params.append('skip', filters.skip.toString());
+
+    // Make direct API call to backend with cookies
+    const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
+    const response = await fetch(`${baseUrl}/backlogs/?${params.toString()}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'Cookie': cookies, // Forward the cookies for authentication
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Request failed' }));
+      return { error: error.detail || `HTTP ${response.status}: ${response.statusText}` };
+    }
+
+    const data = await response.json();
+    return { data };
+  } catch (error) {
+    console.error('Error in getBacklogItemsWithAuth:', error);
+    return { error: error instanceof Error ? error.message : 'Unknown error occurred' };
+  }
+}
+
+/**
+ * Zod schema for backlog retrieval filters
+ */
+const backlogRetrievalSchema = z.object({
+  project_id: z.number()
+    .int('Project ID must be a whole number')
+    .positive('Project ID must be a positive integer')
+    .describe('The ID of the project to retrieve backlog items from'),
+  
+  status: z.enum(['todo', 'in_progress', 'in_review', 'done', 'cancelled'])
+    .optional()
+    .describe('Filter by status: todo, in_progress, in_review, done, or cancelled'),
+  
+  priority: z.enum(['critical', 'high', 'medium', 'low'])
+    .optional()
+    .describe('Filter by priority: critical, high, medium, or low'),
+  
+  item_type: z.enum(['epic', 'story', 'bug'])
+    .optional()
+    .describe('Filter by item type: epic, story, or bug'),
+  
+  search: z.string()
+    .optional()
+    .describe('Search term to find items by title, description, or acceptance criteria'),
+  
+  assigned_to_id: z.number()
+    .int('Assigned user ID must be a whole number')
+    .positive('Assigned user ID must be a positive integer')
+    .optional()
+    .describe('Filter by assigned user ID'),
+  
+  include_children: z.boolean()
+    .default(true)
+    .describe('Whether to include child items in hierarchical structures'),
+  
+  include_acceptance_criteria: z.boolean()
+    .default(true)
+    .describe('Whether to include acceptance criteria for each item'),
+  
+  limit: z.number()
+    .int('Limit must be a whole number')
+    .min(1, 'Limit must be at least 1')
+    .max(100, 'Limit cannot exceed 100')
+    .default(50)
+    .describe('Maximum number of items to return (default: 50, max: 100)'),
+  
+  skip: z.number()
+    .int('Skip must be a whole number')
+    .min(0, 'Skip must be non-negative')
+    .default(0)
+    .describe('Number of items to skip for pagination (default: 0)')
+});
+
+/**
+ * Tool for retrieving and reviewing current backlog items
+ */
+export const getBacklogItemsTool = tool({
+  description: `Retrieve and review current backlog items from the project. 
+    Use this tool to analyze the current backlog state, review existing items, 
+    check priorities and statuses, or search for specific items.
+    This is essential for providing context-aware recommendations and backlog management.`,
+  inputSchema: backlogRetrievalSchema,
+  execute: async (input, { experimental_context }) => {
+    try {
+      // Parse/validate input with Zod
+      const validated = backlogRetrievalSchema.parse(input);
+
+      console.log('Retrieving backlog items with filters:', validated);
+
+      // Call the backend API to get backlog items
+      const response = await getBacklogItemsWithAuth(validated, experimental_context);
+
+      if (response.error) {
+        console.error('Failed to retrieve backlog items:', response.error);
+        return `Failed to retrieve backlog items: ${response.error}`;
+      }
+
+      const backlogItems = response.data || [];
+      
+      if (backlogItems.length === 0) {
+        return `No backlog items found matching the specified criteria for project ${validated.project_id}.`;
+      }
+
+      console.log(`Successfully retrieved ${backlogItems.length} backlog items`);
+
+      // Format the response with comprehensive item information
+      const summary = `Found ${backlogItems.length} backlog item${backlogItems.length === 1 ? '' : 's'} in project ${validated.project_id}:
+
+${backlogItems.map((item: any, index: number) => {
+  const itemTypeDisplay = item.item_type.charAt(0).toUpperCase() + item.item_type.slice(1);
+  const statusDisplay = item.status.replace('_', ' ').split(' ').map((word: string) => 
+    word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+  ).join(' ');
+  const priorityDisplay = item.priority.charAt(0).toUpperCase() + item.priority.slice(1).toLowerCase();
+  
+  let itemInfo = `${index + 1}. **${itemTypeDisplay} #${item.id}**: "${item.title}"
+   - **Priority**: ${priorityDisplay}
+   - **Status**: ${statusDisplay}
+   - **Story Points**: ${item.story_point || 'Not estimated'}`;
+  
+  if (item.description) {
+    itemInfo += `\n   - **Description**: ${item.description.length > 100 ? item.description.substring(0, 100) + '...' : item.description}`;
+  }
+  
+  if (item.acceptance_criteria && item.acceptance_criteria.length > 0) {
+    itemInfo += `\n   - **Acceptance Criteria**: ${item.acceptance_criteria.length} criteria defined`;
+  }
+  
+  if (item.assigned_to_id) {
+    itemInfo += `\n   - **Assigned**: User ID ${item.assigned_to_id}`;
+  }
+  
+  return itemInfo;
+}).join('\n\n')}
+
+**Summary Statistics**:
+- **Total Items**: ${backlogItems.length}
+- **Epics**: ${backlogItems.filter((item: any) => item.item_type === 'epic').length}
+- **Stories**: ${backlogItems.filter((item: any) => item.item_type === 'story').length}
+- **Bugs**: ${backlogItems.filter((item: any) => item.item_type === 'bug').length}
+- **High Priority**: ${backlogItems.filter((item: any) => item.priority === 'high').length}
+- **In Progress**: ${backlogItems.filter((item: any) => item.status === 'in_progress').length}
+- **Done**: ${backlogItems.filter((item: any) => item.status === 'done').length}
+- **Total Story Points**: ${backlogItems.reduce((sum: number, item: any) => sum + (item.story_point || 0), 0)}`;
+
+      return summary;
+
+    } catch (error) {
+      console.error('Error in getBacklogItemsTool:', error);
+      return `Failed to retrieve backlog items: ${error instanceof Error ? error.message : 'Unknown error occurred'}`;
+    }
+  }
+});
+
+/**
  * Collection of all backlog management tools
  * Export this to use in the Product Owner Agent
  */
 export const backlogManagementTools = {
-  createBacklogItem: createBacklogItemTool
+  createBacklogItem: createBacklogItemTool,
+  getBacklogItems: getBacklogItemsTool
 };
 
 /**
