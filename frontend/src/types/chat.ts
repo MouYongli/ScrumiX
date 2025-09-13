@@ -8,6 +8,7 @@ export interface Agent {
   color: string;
   accentColor: string;
   expertise: string[];
+  defaultModel?: string;
 }
 
 export interface ChatMessage {
@@ -16,6 +17,7 @@ export interface ChatMessage {
   timestamp: string;
   sender: 'user' | 'agent';
   agentType?: AgentType;
+  model?: string;
   isTyping?: boolean;
 }
 
@@ -24,4 +26,12 @@ export interface ChatState {
   activeAgent: AgentType;
   messages: ChatMessage[];
   isTyping: boolean;
+  selectedModel?: string;
+}
+
+export interface AgentChatState {
+  messages: ChatMessage[];
+  isTyping: boolean;
+  inputValue: string;
+  selectedModel?: string;
 }

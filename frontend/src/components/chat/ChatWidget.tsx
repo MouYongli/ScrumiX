@@ -15,9 +15,12 @@ import {
   ArrowUp,
   ExternalLink
 } from 'lucide-react';
-import { Agent, AgentType, ChatMessage, ChatState } from '@/types/chat';
+import { Agent, AgentType, ChatMessage, ChatState, AgentChatState } from '@/types/chat';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { getAgentModelConfig, AI_MODELS } from '@/lib/ai-gateway';
+import { getPreferredModel, setPreferredModel } from '@/lib/model-preferences';
+import ModelSelector from './ModelSelector';
 
 // Agent definitions with Scrum-specific roles
 const AGENTS: Record<AgentType, Agent> = {
@@ -28,7 +31,8 @@ const AGENTS: Record<AgentType, Agent> = {
     icon: 'User',
     color: 'bg-emerald-500',
     accentColor: 'text-emerald-600 dark:text-emerald-400',
-    expertise: ['User Stories', 'Backlog Prioritization', 'Acceptance Criteria', 'Stakeholder Management']
+    expertise: ['User Stories', 'Backlog Prioritization', 'Acceptance Criteria', 'Stakeholder Management'],
+    defaultModel: getAgentModelConfig('product-owner').model
   },
   'scrum-master': {
     id: 'scrum-master',
@@ -37,7 +41,8 @@ const AGENTS: Record<AgentType, Agent> = {
     icon: 'Settings',
     color: 'bg-blue-500',
     accentColor: 'text-blue-600 dark:text-blue-400',
-    expertise: ['Sprint Planning', 'Daily Standups', 'Retrospectives', 'Impediment Resolution']
+    expertise: ['Sprint Planning', 'Daily Standups', 'Retrospectives', 'Impediment Resolution'],
+    defaultModel: getAgentModelConfig('scrum-master').model
   },
   'developer': {
     id: 'developer',
@@ -46,7 +51,8 @@ const AGENTS: Record<AgentType, Agent> = {
     icon: 'Code2',
     color: 'bg-purple-500',
     accentColor: 'text-purple-600 dark:text-purple-400',
-    expertise: ['Code Review', 'Technical Debt', 'Architecture', 'Best Practices']
+    expertise: ['Code Review', 'Technical Debt', 'Architecture', 'Best Practices'],
+    defaultModel: getAgentModelConfig('developer').model
   }
 };
 
@@ -63,19 +69,29 @@ const getAgentIcon = (agentType: AgentType) => {
   }
 };
 
-interface AgentChatState {
-  messages: ChatMessage[];
-  isTyping: boolean;
-  inputValue: string;
-}
 
 const ChatWidget: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [activeAgent, setActiveAgent] = useState<AgentType>('product-owner');
   const [agentStates, setAgentStates] = useState<Record<AgentType, AgentChatState>>({
-    'product-owner': { messages: [], isTyping: false, inputValue: '' },
-    'scrum-master': { messages: [], isTyping: false, inputValue: '' },
-    'developer': { messages: [], isTyping: false, inputValue: '' }
+    'product-owner': { 
+      messages: [], 
+      isTyping: false, 
+      inputValue: '', 
+      selectedModel: getPreferredModel('product-owner')
+    },
+    'scrum-master': { 
+      messages: [], 
+      isTyping: false, 
+      inputValue: '', 
+      selectedModel: getPreferredModel('scrum-master')
+    },
+    'developer': { 
+      messages: [], 
+      isTyping: false, 
+      inputValue: '', 
+      selectedModel: getPreferredModel('developer')
+    }
   });
   
   const [isMinimized, setIsMinimized] = useState(false);
@@ -167,7 +183,8 @@ const ChatWidget: React.FC = () => {
             role: msg.sender === 'user' ? 'user' : 'assistant',
             content: msg.content
           })),
-          projectId: projectId ? parseInt(projectId, 10) : null
+          projectId: projectId ? parseInt(projectId, 10) : null,
+          selectedModel: currentState.selectedModel
         }),
       });
 
@@ -345,6 +362,24 @@ const ChatWidget: React.FC = () => {
                       </button>
                     );
                   })}
+                </div>
+              )}
+              
+              {/* Model Selector */}
+              {!isMinimized && (
+                <div className="mt-3 px-1">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs text-gray-500 dark:text-gray-400">AI Model</span>
+                  </div>
+                  <ModelSelector
+                    selectedModel={agentStates[activeAgent].selectedModel || currentAgent.defaultModel || AI_MODELS.CHAT}
+                    onModelChange={(modelId) => {
+                      updateAgentState(activeAgent, { selectedModel: modelId });
+                      setPreferredModel(activeAgent, modelId);
+                    }}
+                    agentType={activeAgent}
+                    className="w-full"
+                  />
                 </div>
               )}
             </div>

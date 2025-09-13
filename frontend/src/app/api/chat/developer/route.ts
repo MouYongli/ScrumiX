@@ -1,5 +1,6 @@
-import { createOpenAI } from '@ai-sdk/openai';
 import { streamText } from 'ai';
+import { gateway, getAgentModelConfig } from '@/lib/ai-gateway';
+import { selectModel } from '@/lib/adaptive-models';
 
 // Developer AI Agent System Prompt
 const DEVELOPER_SYSTEM_PROMPT = `You are the Developer AI Agent for ScrumiX, acting as a professional digital assistant to the human Developers.
@@ -56,7 +57,7 @@ Communication Style
 
 export async function POST(req: Request) {
   try {
-    const { messages } = await req.json();
+    const { messages, selectedModel } = await req.json();
 
     // Validate request
     if (!messages || !Array.isArray(messages)) {
@@ -66,27 +67,18 @@ export async function POST(req: Request) {
       });
     }
 
-    // Check for OpenAI API key
-    if (!process.env.OPENAI_API_KEY) {
-      console.error('OpenAI API key not configured');
-      return new Response('OpenAI API key not configured', { 
-        status: 500 
-      });
-    }
+    // Get model configuration for Developer agent
+    const modelConfig = getAgentModelConfig('developer');
+    
+    // Use adaptive model selection with fallback
+    const modelToUse = await selectModel(selectedModel || modelConfig.model, 'chat');
 
-    const apiKey = process.env.OPENAI_API_KEY;
-
-    // Create OpenAI client with the API key
-    const openai = createOpenAI({
-      apiKey: apiKey,
-    });
-
-    // Generate streaming response
+    // Generate streaming response using AI Gateway
     const result = streamText({
-      model: openai('gpt-4o-mini'), // Using gpt-4o-mini for cost efficiency
+      model: modelToUse, // Using selected model or default
       system: DEVELOPER_SYSTEM_PROMPT,
       messages: messages,
-      temperature: 0.7, // Balanced creativity and consistency
+      temperature: modelConfig.temperature, // Agent-specific temperature setting
     });
 
     return result.toTextStreamResponse();

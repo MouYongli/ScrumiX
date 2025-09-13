@@ -1,6 +1,7 @@
-import { createOpenAI } from '@ai-sdk/openai';
 import { streamText, stepCountIs } from 'ai';
 import { backlogManagementTools } from '@/lib/tools/backlog-management';
+import { gateway, getAgentModelConfig } from '@/lib/ai-gateway';
+import { selectModel } from '@/lib/adaptive-models';
 
 // Product Owner AI Agent System Prompt
 const PRODUCT_OWNER_SYSTEM_PROMPT = `You are the Product Owner AI Agent for ScrumiX, acting as a professional digital assistant to the human Product Owner. You combine Scrum expertise with AI capabilities to support backlog management, prioritization, stakeholder alignment, and proactive requirements exploration.
@@ -95,7 +96,7 @@ RESPONSE STYLE
 
 export async function POST(req: Request) {
   try {
-    const { messages, projectId } = await req.json();
+    const { messages, projectId, selectedModel } = await req.json();
 
     // Validate request
     if (!messages || !Array.isArray(messages)) {
@@ -105,20 +106,11 @@ export async function POST(req: Request) {
       });
     }
 
-    // Check for OpenAI API key
-    if (!process.env.OPENAI_API_KEY) {
-      console.error('OpenAI API key not configured');
-      return new Response('OpenAI API key not configured', { 
-        status: 500 
-      });
-    }
-
-    const apiKey = process.env.OPENAI_API_KEY;
-
-    // Create OpenAI client with the API key
-    const openai = createOpenAI({
-      apiKey: apiKey,
-    });
+    // Get model configuration for Product Owner agent
+    const modelConfig = getAgentModelConfig('product-owner');
+    
+    // Use adaptive model selection with fallback
+    const modelToUse = await selectModel(selectedModel || modelConfig.model, 'chat');
 
     // Add project context to system prompt if available
     const contextualSystemPrompt = projectId 
@@ -129,13 +121,13 @@ export async function POST(req: Request) {
     const cookies = req.headers.get('cookie') || '';
     console.log('Forwarding cookies for authentication:', cookies ? 'present' : 'missing');
 
-    // Generate streaming response with tool integration
+    // Generate streaming response with tool integration using AI Gateway
     const result = streamText({
-      model: openai('gpt-4o-mini'), // Using gpt-4o-mini for cost efficiency
+      model: modelToUse, // Using selected model or default
       system: contextualSystemPrompt,
       messages: messages,
       tools: backlogManagementTools,
-      temperature: 0.7, // Balanced creativity and consistency
+      temperature: modelConfig.temperature, // Agent-specific temperature setting
       toolChoice: 'auto', // Allow the model to choose when to use tools
       stopWhen: stepCountIs(5), // Enable multi-step calls to ensure AI responds after tool execution
       experimental_context: {
