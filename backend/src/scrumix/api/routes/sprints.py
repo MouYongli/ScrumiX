@@ -365,7 +365,6 @@ def get_sprint_backlog(
                     {
                         "id": ac.id,
                         "title": ac.title,
-                        "description": ac.description,
                         "is_met": ac.is_met,
                         "created_at": ac.created_at,
                         "updated_at": ac.updated_at
@@ -449,7 +448,6 @@ def get_available_backlog_items(
                     {
                         "id": ac.id,
                         "title": ac.title,
-                        "description": ac.description,
                         "is_met": ac.is_met,
                         "created_at": ac.created_at,
                         "updated_at": ac.updated_at

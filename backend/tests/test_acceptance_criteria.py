@@ -85,7 +85,6 @@ class TestAcceptanceCriteriaEndpoints:
         
         criteria_data = {
             "title": "Test Acceptance Criteria",
-            "description": "A test acceptance criteria",
             "backlog_id": backlog.id,
             "is_met": False
         }
@@ -104,7 +103,6 @@ class TestAcceptanceCriteriaEndpoints:
         """Test acceptance criteria creation with invalid data"""
         criteria_data = {
             "title": "",  # Empty title
-            "description": "A test acceptance criteria",
             "backlog_id": 1,
             "is_met": False
         }
@@ -116,7 +114,6 @@ class TestAcceptanceCriteriaEndpoints:
         """Test acceptance criteria creation with non-existent backlog"""
         criteria_data = {
             "title": "Test Acceptance Criteria",
-            "description": "A test acceptance criteria",
             "backlog_id": 999,  # Non-existent backlog
             "is_met": False
         }
@@ -129,7 +126,6 @@ class TestAcceptanceCriteriaEndpoints:
         """Test acceptance criteria creation without authentication"""
         criteria_data = {
             "title": "Test Acceptance Criteria",
-            "description": "A test acceptance criteria",
             "backlog_id": 1,
             "is_met": False
         }
@@ -164,7 +160,6 @@ class TestAcceptanceCriteriaEndpoints:
         # Create acceptance criteria
         criteria_data = {
             "title": "Test Acceptance Criteria for Get",
-            "description": "A test acceptance criteria for getting",
             "backlog_id": backlog.id,
             "is_met": False
         }
@@ -220,7 +215,6 @@ class TestAcceptanceCriteriaEndpoints:
         # Create acceptance criteria
         criteria_data = {
             "title": "Test Acceptance Criteria for Update",
-            "description": "A test acceptance criteria for updating",
             "backlog_id": backlog.id,
             "is_met": False
         }
@@ -292,7 +286,6 @@ class TestAcceptanceCriteriaEndpoints:
         # Create acceptance criteria
         criteria_data = {
             "title": "Test Acceptance Criteria for Delete",
-            "description": "A test acceptance criteria for deletion",
             "backlog_id": backlog.id,
             "is_met": False
         }
@@ -520,7 +513,6 @@ class TestAcceptanceCriteriaEndpoints:
         # Create some acceptance criteria first
         criteria_data = {
             "title": "Test Acceptance Criteria",
-            "description": "A test acceptance criteria",
             "backlog_id": backlog.id,
             "is_met": False
         }
@@ -594,7 +586,6 @@ class TestAcceptanceCriteriaCRUD:
         
         criteria_data = AcceptanceCriteriaCreate(
             title="Test Acceptance Criteria",
-            description="A test acceptance criteria",
             backlog_id=backlog.id,
             is_met=False
         )
@@ -633,7 +624,6 @@ class TestAcceptanceCriteriaCRUD:
         
         criteria_data = AcceptanceCriteriaCreate(
             title="Test Acceptance Criteria",
-            description="A test acceptance criteria",
             backlog_id=backlog.id,
             is_met=False
         )
@@ -643,7 +633,6 @@ class TestAcceptanceCriteriaCRUD:
         retrieved_criteria = acceptance_criteria.get(db=db_session, id=created_criteria.id)
         assert retrieved_criteria is not None
         assert retrieved_criteria.title == criteria_data.title
-        assert retrieved_criteria.description == criteria_data.description
 
     def test_get_acceptance_criteria_with_pagination(self, db_session):
         """Test getting acceptance criteria with pagination"""
@@ -675,7 +664,6 @@ class TestAcceptanceCriteriaCRUD:
         for i in range(5):
             criteria_data = AcceptanceCriteriaCreate(
                 title=f"Test Acceptance Criteria {i}",
-                description=f"A test acceptance criteria {i}",
                 backlog_id=backlog.id,
                 is_met=False
             )
@@ -714,7 +702,6 @@ class TestAcceptanceCriteriaCRUD:
         # Create acceptance criteria
         criteria_data = AcceptanceCriteriaCreate(
             title="Test Acceptance Criteria",
-            description="A test acceptance criteria",
             backlog_id=backlog.id,
             is_met=False
         )
@@ -755,7 +742,6 @@ class TestAcceptanceCriteriaCRUD:
         for i in range(3):
             criteria_data = AcceptanceCriteriaCreate(
                 title=f"Test Acceptance Criteria {i}",
-                description=f"A test acceptance criteria {i}",
                 backlog_id=backlog.id,
                 is_met=False
             )
@@ -830,7 +816,6 @@ class TestAcceptanceCriteriaCRUD:
         for title in criteria_titles:
             criteria_data = AcceptanceCriteriaCreate(
                 title=title,
-                description="A test acceptance criteria",
                 backlog_id=backlog.id,
                 is_met=False
             )
@@ -868,7 +853,6 @@ class TestAcceptanceCriteriaCRUD:
         
         criteria_data = AcceptanceCriteriaCreate(
             title="Test Acceptance Criteria",
-            description="A test acceptance criteria",
             backlog_id=backlog.id,
             is_met=False
         )
@@ -877,13 +861,11 @@ class TestAcceptanceCriteriaCRUD:
         
         update_data = AcceptanceCriteriaUpdate(
             title="Updated Acceptance Criteria",
-            description="Updated description",
             is_met=True
         )
         
         updated_criteria = acceptance_criteria.update(db=db_session, db_obj=created_criteria, obj_in=update_data)
         assert updated_criteria.title == update_data.title
-        assert updated_criteria.description == update_data.description
         assert updated_criteria.is_met == update_data.is_met
 
     def test_delete_acceptance_criteria(self, db_session):
@@ -914,7 +896,6 @@ class TestAcceptanceCriteriaCRUD:
         
         criteria_data = AcceptanceCriteriaCreate(
             title="Test Acceptance Criteria",
-            description="A test acceptance criteria",
             backlog_id=backlog.id,
             is_met=False
         )
@@ -958,7 +939,6 @@ class TestAcceptanceCriteriaCRUD:
         for i in range(3):
             criteria_data = AcceptanceCriteriaCreate(
                 title=f"Test Acceptance Criteria {i}",
-                description=f"A test acceptance criteria {i}",
                 backlog_id=backlog.id,
                 is_met=False
             )
