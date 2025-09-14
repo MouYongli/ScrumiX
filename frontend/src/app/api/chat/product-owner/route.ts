@@ -99,12 +99,6 @@ BOUNDARIES
 - Provide recommendations, structured outputs, and reasoning, not mandates
 - Always use tools when appropriate to take concrete actions
 
-RESPONSE STYLE
-- **Keep responses SHORT** - 2-3 sentences max unless user asks for more detail
-- **Show results simply** - use format: "Type #ID — Title (Status)"
-- **No technical terms** - avoid jargon, use plain language  
-- **Ask if they want more detail** - offer to elaborate but don't dump information
-- **One main point per response** - don't combine multiple analyses
 
 BACKLOG REFINEMENT
 When asked about refinement or item maturity, review these attributes:
@@ -155,18 +149,22 @@ export async function POST(req: Request) {
       tools: backlogManagementTools,
       temperature: modelConfig.temperature, // Agent-specific temperature setting
       toolChoice: 'auto', // Allow the model to choose when to use tools
-      stopWhen: stepCountIs(5), // Enable multi-step calls to ensure AI responds after tool execution
-      experimental_context: {
-        cookies: cookies, // Pass cookies to tool execution context
-      },
+      stopWhen: stepCountIs(20), // Increased limit for complex workflows 
       onStepFinish: (step) => {
-        console.log('Step finished:', typeof step, step.text ? 'with text' : 'without text');
+        // Monitor step usage to optimize workflow
+        console.log(`Product Owner Agent Step finished`);
         if ('toolCalls' in step && step.toolCalls) {
-          console.log('Tool calls:', step.toolCalls.length);
+          console.log(`Tool calls: ${step.toolCalls.map(tc => tc.toolName).join(', ')}`);
         }
         if ('toolResults' in step && step.toolResults) {
-          console.log('Tool results:', step.toolResults.length);
+          console.log(`Tool results: ${step.toolResults.length} results`);
         }
+        if ('text' in step && step.text) {
+          console.log(`Generated text length: ${step.text.length}`);
+        }
+      },
+      experimental_context: {
+        cookies: cookies, // Pass cookies to tool execution context
       },
       onFinish: (result) => {
         console.log('Streaming finished. Total steps:', result.steps.length);
