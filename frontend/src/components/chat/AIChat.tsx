@@ -25,7 +25,9 @@ import {
   Check,
   Edit3,
   CheckCircle,
-  XCircle
+  XCircle,
+  ChevronDown,
+  History
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -104,6 +106,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingContent, setEditingContent] = useState<string>('');
+  const [showAgentDropdown, setShowAgentDropdown] = useState(false);
   const [agentStates, setAgentStates] = useState<Record<AgentType, AgentChatStateWithFiles>>({
     'product-owner': { 
       messages: [], 
@@ -170,6 +173,23 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       inputRef.style.height = '48px'; // Reset to min-height
     }
   }, [activeAgent, agentStates]);
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (showAgentDropdown) {
+        const target = event.target as Element;
+        if (!target.closest('.agent-dropdown')) {
+          setShowAgentDropdown(false);
+        }
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showAgentDropdown]);
 
   const updateAgentState = (agentType: AgentType, updates: Partial<AgentChatStateWithFiles>) => {
     setAgentStates(prev => ({
@@ -595,27 +615,79 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   };
 
   const isConfirmationRequest = (content: string): boolean => {
-    const confirmationPatterns = [
-      /would you like me to/i,
-      /should I/i,
-      /do you want me to/i,
-      /shall I/i,
-      /can I/i,
-      /may I/i,
-      /confirm/i,
-      /proceed/i,
-      /continue/i,
-      /approve/i,
-      /accept/i,
-      /agree/i,
-      /\?.*(?:yes|no)/i,
-      /please confirm/i,
-      /is this correct/i,
-      /does this look good/i,
-      /ready to/i
+    // Only detect true binary yes/no questions, not suggestions or multiple choices
+    const binaryQuestionPatterns = [
+      // Direct action requests
+      /would you like me to (?:create|add|update|delete|remove|generate|implement|build|set up|configure)\b/i,
+      /should I (?:create|add|update|delete|remove|generate|implement|build|set up|configure|proceed with)\b/i,
+      /do you want me to (?:create|add|update|delete|remove|generate|implement|build|set up|configure)\b/i,
+      /shall I (?:create|add|update|delete|remove|generate|implement|build|set up|configure|proceed with)\b/i,
+      /(?:can|may) I (?:create|add|update|delete|remove|generate|implement|build|set up|configure|proceed)\b/i,
+      
+      // Confirmation requests for specific actions
+      /please confirm.*(?:create|add|update|delete|remove|generate|implement|build|set up|configure)/i,
+      /is this correct.*(?:create|add|update|delete|remove|generate|implement|build|set up|configure)/i,
+      /does this look (?:good|correct|right).*(?:create|add|update|delete|remove|generate|implement|build)/i,
+      /ready to (?:create|add|update|delete|remove|generate|implement|build|set up|configure|proceed)/i,
+      
+      // Story/item creation specific
+      /shall I create (?:this|the) (?:story|item|task|epic|feature)/i,
+      /would you like me to create (?:this|the) (?:story|item|task|epic|feature)/i,
+      /do you want me to create (?:this|the) (?:story|item|task|epic|feature)/i,
+      
+      // Proceed with specific action
+      /shall I proceed with (?:creating|adding|updating|implementing)/i,
+      /ready to proceed with (?:creating|adding|updating|implementing)/i
     ];
     
-    return confirmationPatterns.some(pattern => pattern.test(content));
+    // Exclude patterns that suggest multiple options or open-ended questions
+    const exclusionPatterns = [
+      // Open-ended questions
+      /how would you like/i,
+      /what would you like/i,
+      /which (?:one|option|approach|way)/i,
+      /where would you like/i,
+      /when would you like/i,
+      
+      // Multiple choice indicators
+      /(?:or|,)\s*(?:add|create|update|delete|remove|you could|alternatively)/i,
+      /multiple (?:options|ways|approaches|choices)/i,
+      /several (?:ways|options|approaches|alternatives)/i,
+      /different (?:approaches|ways|options)/i,
+      /various (?:options|ways|approaches)/i,
+      /(?:another|other) (?:option|way|approach)/i,
+      
+      // Suggestion language
+      /you could (?:also )?(?:add|create|update|delete|remove)/i,
+      /(?:options|choices) include/i,
+      /alternatives/i,
+      /suggestions/i,
+      /recommendations/i,
+      /here are (?:some|a few)/i,
+      /(?:some|a few) (?:options|suggestions|ideas)/i,
+      
+      // Non-committal language
+      /might want to/i,
+      /consider (?:adding|creating|updating)/i,
+      /perhaps/i,
+      /maybe/i,
+      /possibly/i,
+      
+      // Lists or enumeration
+      /\d+\./,  // Numbered lists like "1.", "2."
+      /^\s*[-•*]/m,  // Bullet points
+      /first.*second/i,
+      /next.*then/i
+    ];
+    
+    // Check if it's a binary question
+    const isBinaryQuestion = binaryQuestionPatterns.some(pattern => pattern.test(content));
+    
+    // Check if it contains exclusion patterns (suggestions/multiple choices)
+    const hasExclusions = exclusionPatterns.some(pattern => pattern.test(content));
+    
+    // Only return true for binary questions without exclusion patterns
+    return isBinaryQuestion && !hasExclusions;
   };
 
   const handleConfirmation = async (agentType: AgentType, messageId: string, accepted: boolean) => {
@@ -992,100 +1064,111 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Agent Sidebar */}
+        {/* Chat History Sidebar */}
         <div className="w-80 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col">
           <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-              Select Agent
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-2 flex items-center">
+              <History className="w-5 h-5 mr-2" />
+              Chat History
             </h2>
             <p className="text-sm text-gray-600 dark:text-gray-400">
-              Choose an AI assistant to help with your project needs
+              Your recent conversations with AI agents
             </p>
           </div>
           
-          <div className="flex-1 p-4 space-y-3">
-            {Object.values(AGENTS).map((agent) => {
-              const IconComponent = getAgentIcon(agent.id);
-              const isActive = activeAgent === agent.id;
-              const agentState = agentStates[agent.id];
-              const messageCount = agentState.messages.length;
-              const lastMessage = agentState.messages[agentState.messages.length - 1];
-              
-              return (
-                <motion.button
-                  key={agent.id}
-                  onClick={() => setActiveAgent(agent.id)}
-                  className={`w-full p-4 rounded-xl text-left transition-all duration-200 border-2 ${
-                    isActive
-                      ? `bg-white dark:bg-white border-current shadow-lg ${agent.accentColor}`
-                      : 'bg-gray-50 dark:bg-gray-700 border-transparent hover:bg-gray-100 dark:hover:bg-gray-600'
-                  }`}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                >
+          <div className="flex-1 p-4 space-y-3 overflow-y-auto">
+            {/* Sample Chat History Items - Frontend only for now */}
+            <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors">
                   <div className="flex items-start space-x-3">
-                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${agent.color}`}>
-                      <IconComponent className="w-5 h-5 text-white" />
+                <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <User className="w-4 h-4 text-white" />
                     </div>
-                    
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between">
-                        <h3 className={`font-semibold text-sm ${
-                          isActive ? agent.accentColor : 'text-gray-900 dark:text-white'
-                        }`}>
-                          {agent.name}
-                        </h3>
-                        {messageCount > 0 && (
-                          <span className={`text-xs px-2 py-1 rounded-full ${
-                            isActive 
-                              ? `${agent.color} text-white` 
-                              : 'bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300'
-                          }`}>
-                            {messageCount}
-                          </span>
-                        )}
+                  <h4 className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                    User Story Creation
+                  </h4>
+                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
+                    Created user story for chatbot functionality with acceptance criteria...
+                  </p>
+                  <div className="flex items-center justify-between mt-2">
+                    <span className="text-xs text-gray-500">Product Owner</span>
+                    <span className="text-xs text-gray-500">2 hours ago</span>
+                  </div>
+                </div>
+              </div>
                       </div>
                       
-                      <p className={`text-xs mt-1 ${
-                        isActive ? 'text-gray-700 dark:text-gray-700' : 'text-gray-600 dark:text-gray-400'
-                      }`}>
-                        {agent.description}
-                      </p>
-                      
-                      {lastMessage && (
-                        <p className={`text-xs mt-2 truncate ${
-                          isActive ? 'text-gray-600 dark:text-gray-600' : 'text-gray-500 dark:text-gray-500'
-                        }`}>
-                          <Clock className="w-3 h-3 inline mr-1" />
-                          {formatTimestamp(lastMessage.timestamp)}
-                        </p>
-                      )}
-                      
-                      <div className="flex flex-wrap gap-1 mt-2">
-                        {agent.expertise.slice(0, 2).map((skill, index) => (
-                          <span
-                            key={index}
-                            className={`text-xs px-2 py-1 rounded-full ${
-                              isActive
-                                ? 'bg-gray-100 dark:bg-gray-100 text-gray-700 dark:text-gray-700'
-                                : 'bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300'
-                            }`}
-                          >
-                            {skill}
-                          </span>
-                        ))}
+            <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors">
+              <div className="flex items-start space-x-3">
+                <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <Settings className="w-4 h-4 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                    Sprint Planning Session
+                  </h4>
+                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
+                    Discussed sprint goals and capacity planning for the upcoming iteration...
+                  </p>
+                  <div className="flex items-center justify-between mt-2">
+                    <span className="text-xs text-gray-500">Scrum Master</span>
+                    <span className="text-xs text-gray-500">1 day ago</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors">
+              <div className="flex items-start space-x-3">
+                <div className="w-8 h-8 bg-purple-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <Code2 className="w-4 h-4 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                    Code Review Guidelines
+                  </h4>
+                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
+                    Reviewed best practices for code reviews and established team standards...
+                  </p>
+                  <div className="flex items-center justify-between mt-2">
+                    <span className="text-xs text-gray-500">Developer</span>
+                    <span className="text-xs text-gray-500">2 days ago</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors">
+              <div className="flex items-start space-x-3">
+                <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <User className="w-4 h-4 text-white" />
                       </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                    Backlog Refinement
+                  </h4>
+                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
+                    Refined backlog items and updated priorities based on stakeholder feedback...
+                  </p>
+                  <div className="flex items-center justify-between mt-2">
+                    <span className="text-xs text-gray-500">Product Owner</span>
+                    <span className="text-xs text-gray-500">3 days ago</span>
                     </div>
                   </div>
-                </motion.button>
-              );
-            })}
+              </div>
+            </div>
+
+            {/* Empty State */}
+            <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+              <History className="w-12 h-12 mx-auto mb-3 opacity-50" />
+              <p className="text-sm">No more chat history</p>
+            </div>
           </div>
         </div>
 
         {/* Chat Area */}
         <div 
-          className={`flex-1 flex flex-col relative ${
+          className={`flex-1 flex flex-col relative min-w-0 ${
             currentState.isDragOver 
               ? 'bg-blue-50 dark:bg-blue-900/20 border-2 border-dashed border-blue-400' 
               : ''
@@ -1113,16 +1196,71 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
           <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-4">
             <div className="flex items-center justify-between">
               <div className="flex items-center space-x-3">
-                <div className={`w-10 h-10 ${currentAgent.color} rounded-lg flex items-center justify-center`}>
-                  <AgentIcon className="w-5 h-5 text-white" />
+                 {/* Agent Dropdown */}
+                 <div className="relative agent-dropdown">
+                   <button
+                     onClick={() => setShowAgentDropdown(!showAgentDropdown)}
+                     className="flex items-center space-x-3 px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
+                   >
+                     <div className={`w-8 h-8 ${currentAgent.color} rounded-lg flex items-center justify-center`}>
+                       <AgentIcon className="w-4 h-4 text-white" />
                 </div>
-                <div>
-                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                     <div className="text-left">
+                       <div className="text-sm font-semibold text-gray-900 dark:text-white">
                     {currentAgent.name}
-                  </h2>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                       </div>
+                       <div className="text-xs text-gray-600 dark:text-gray-400">
                     {currentAgent.description}
-                  </p>
+                       </div>
+                     </div>
+                     <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${showAgentDropdown ? 'rotate-180' : ''}`} />
+                   </button>
+                   
+                   {/* Dropdown Menu */}
+                   {showAgentDropdown && (
+                     <div className="absolute top-full left-0 mt-1 w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50">
+                       {Object.values(AGENTS).map((agent) => {
+                         const IconComponent = getAgentIcon(agent.id);
+                         const isActive = activeAgent === agent.id;
+                         const agentState = agentStates[agent.id];
+                         const messageCount = agentState.messages.length;
+                         
+                         return (
+                           <button
+                             key={agent.id}
+                             onClick={() => {
+                               setActiveAgent(agent.id);
+                               setShowAgentDropdown(false);
+                             }}
+                             className={`w-full p-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors first:rounded-t-lg last:rounded-b-lg ${
+                               isActive ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                             }`}
+                           >
+                             <div className="flex items-center space-x-3">
+                               <div className={`w-8 h-8 ${agent.color} rounded-lg flex items-center justify-center`}>
+                                 <IconComponent className="w-4 h-4 text-white" />
+                               </div>
+                               <div className="flex-1">
+                                 <div className="flex items-center justify-between">
+                                   <span className="text-sm font-semibold text-gray-900 dark:text-white">
+                                     {agent.name}
+                                   </span>
+                                   {messageCount > 0 && (
+                                     <span className="text-xs px-2 py-1 bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 rounded-full">
+                                       {messageCount}
+                                     </span>
+                                   )}
+                                 </div>
+                                 <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                                   {agent.description}
+                                 </p>
+                               </div>
+                             </div>
+                           </button>
+                         );
+                       })}
+                     </div>
+                   )}
                 </div>
               </div>
               
@@ -1145,7 +1283,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
           </div>
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-2">
+          <div className="flex-1 overflow-y-auto px-4 py-6 space-y-2 max-w-full">
             {currentState.messages.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center">
                 <div className={`w-20 h-20 ${currentAgent.color} rounded-full flex items-center justify-center mb-4`}>
@@ -1402,7 +1540,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                             : 'text-gray-500 dark:text-gray-400'
                         }`}>
                           {formatTimestamp(message.timestamp)}
-                             </p>
+                        </p>
                            </div>
                            
                            {/* Confirmation Buttons - Show for agent messages that need confirmation */}
