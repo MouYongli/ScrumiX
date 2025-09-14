@@ -32,13 +32,13 @@ export async function convertFilesToDataURLs(files: FileList): Promise<MessagePa
  */
 export function isSupportedFileType(fileType: string): boolean {
   const supportedTypes = [
-    // Images
+    // Images - Widely supported by major vision models (GPT-4o, Claude Sonnet, Gemini)
     'image/jpeg',
     'image/jpg', 
     'image/png',
     'image/gif',
     'image/webp',
-    // PDFs
+    // Documents - PDF analysis supported by vision models
     'application/pdf',
   ];
   
@@ -66,7 +66,7 @@ export function validateFile(file: File): { isValid: boolean; error?: string } {
   if (!isSupportedFileType(file.type)) {
     return {
       isValid: false,
-      error: `File type ${file.type} is not supported. Please use images (JPEG, PNG, GIF, WebP) or PDF files.`
+      error: `File type ${file.type} is not supported. Please use images (JPEG, PNG, GIF, WebP) or PDF files only.`
     };
   }
   
@@ -89,4 +89,44 @@ export function getFileCategory(mediaType: string): 'image' | 'pdf' | 'other' {
   if (mediaType.startsWith('image/')) return 'image';
   if (mediaType === 'application/pdf') return 'pdf';
   return 'other';
+}
+
+/**
+ * Handle drag and drop events
+ */
+export function handleDragOver(e: React.DragEvent) {
+  e.preventDefault();
+  e.stopPropagation();
+}
+
+export function handleDragEnter(e: React.DragEvent) {
+  e.preventDefault();
+  e.stopPropagation();
+}
+
+export function handleDragLeave(e: React.DragEvent) {
+  e.preventDefault();
+  e.stopPropagation();
+}
+
+export function handleDrop(e: React.DragEvent): FileList | null {
+  e.preventDefault();
+  e.stopPropagation();
+  
+  const files = e.dataTransfer.files;
+  return files.length > 0 ? files : null;
+}
+
+/**
+ * Get supported file formats as human-readable string
+ */
+export function getSupportedFormatsString(): string {
+  return 'Images: JPEG, PNG, GIF, WebP • Documents: PDF';
+}
+
+/**
+ * Get file extension from filename
+ */
+export function getFileExtension(filename: string): string {
+  return filename.split('.').pop()?.toLowerCase() || '';
 }

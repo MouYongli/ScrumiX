@@ -17,14 +17,16 @@ import {
   Paperclip,
   X,
   FileText,
-  Image as ImageIcon
+  Image as ImageIcon,
+  File,
+  Upload
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Agent, AgentType, ChatMessage, AgentChatState, UIMessage, MessagePart } from '@/types/chat';
 import { getAgentModelConfig, AI_MODELS } from '@/lib/ai-gateway';
 import { getPreferredModel, setPreferredModel } from '@/lib/model-preferences';
-import { convertFilesToDataURLs, validateFile, formatFileSize, getFileCategory } from '@/utils/multimodal';
+import { convertFilesToDataURLs, validateFile, formatFileSize, getFileCategory, handleDragOver, handleDragEnter, handleDragLeave, handleDrop, getSupportedFormatsString } from '@/utils/multimodal';
 import ModelSelector from './ModelSelector';
 
 // Agent definitions with Scrum-specific roles
@@ -80,6 +82,7 @@ interface AIChatProps {
 
 interface AgentChatStateWithFiles extends AgentChatState {
   files?: FileList;
+  isDragOver?: boolean;
 }
 
 
@@ -168,6 +171,60 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     const fileInput = fileInputRefs.current[agentType];
     if (fileInput) {
       fileInput.value = '';
+    }
+  };
+
+  const handleDragOverChat = (e: React.DragEvent, agentType: AgentType) => {
+    handleDragOver(e);
+    if (!agentStates[agentType].isDragOver) {
+      updateAgentState(agentType, { isDragOver: true });
+    }
+  };
+
+  const handleDragEnterChat = (e: React.DragEvent, agentType: AgentType) => {
+    handleDragEnter(e);
+    updateAgentState(agentType, { isDragOver: true });
+  };
+
+  const handleDragLeaveChat = (e: React.DragEvent, agentType: AgentType) => {
+    handleDragLeave(e);
+    // Only set isDragOver to false if we're leaving the chat area completely
+    if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+      updateAgentState(agentType, { isDragOver: false });
+    }
+  };
+
+  const handleDropChat = (e: React.DragEvent, agentType: AgentType) => {
+    const droppedFiles = handleDrop(e);
+    updateAgentState(agentType, { isDragOver: false });
+    
+    if (droppedFiles) {
+      // Validate each file
+      const validationErrors: string[] = [];
+      Array.from(droppedFiles).forEach((file, index) => {
+        const validation = validateFile(file);
+        if (!validation.isValid && validation.error) {
+          validationErrors.push(`File ${index + 1}: ${validation.error}`);
+        }
+      });
+
+      if (validationErrors.length > 0) {
+        alert(`File validation errors:\n${validationErrors.join('\n')}`);
+        return;
+      }
+
+      // Merge with existing files if any
+      const currentFiles = agentStates[agentType].files;
+      if (currentFiles && currentFiles.length > 0) {
+        const dt = new DataTransfer();
+        // Add existing files
+        Array.from(currentFiles).forEach(file => dt.items.add(file));
+        // Add new files
+        Array.from(droppedFiles).forEach(file => dt.items.add(file));
+        updateAgentState(agentType, { files: dt.files });
+      } else {
+        updateAgentState(agentType, { files: droppedFiles });
+      }
     }
   };
 
@@ -501,7 +558,31 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
         </div>
 
         {/* Chat Area */}
-        <div className="flex-1 flex flex-col">
+        <div 
+          className={`flex-1 flex flex-col relative ${
+            currentState.isDragOver 
+              ? 'bg-blue-50 dark:bg-blue-900/20 border-2 border-dashed border-blue-400' 
+              : ''
+          }`}
+          onDragOver={(e) => handleDragOverChat(e, activeAgent)}
+          onDragEnter={(e) => handleDragEnterChat(e, activeAgent)}
+          onDragLeave={(e) => handleDragLeaveChat(e, activeAgent)}
+          onDrop={(e) => handleDropChat(e, activeAgent)}
+        >
+          {/* Drag overlay */}
+          {currentState.isDragOver && (
+            <div className="absolute inset-0 bg-blue-50/90 dark:bg-blue-900/40 z-10 flex items-center justify-center">
+              <div className="text-center">
+                <Upload className="w-16 h-16 text-blue-500 mx-auto mb-4" />
+                <h3 className="text-xl font-semibold text-blue-700 dark:text-blue-300 mb-2">
+                  Drop files to attach
+                </h3>
+                <p className="text-sm text-blue-600 dark:text-blue-400 max-w-md">
+                  {getSupportedFormatsString()}
+                </p>
+              </div>
+            </div>
+          )}
           {/* Chat Header */}
           <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-4">
             <div className="flex items-center justify-between">
@@ -803,13 +884,17 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                 <div className="space-y-2">
                   {Array.from(currentState.files).map((file, index) => {
                     const fileCategory = getFileCategory(file.type);
+                    const getFileIcon = () => {
+                      switch (fileCategory) {
+                        case 'image': return <ImageIcon className="w-4 h-4 text-green-500" />;
+                        case 'pdf': return <FileText className="w-4 h-4 text-red-500" />;
+                        default: return <File className="w-4 h-4 text-gray-500" />;
+                      }
+                    };
+                    
                     return (
                       <div key={index} className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400">
-                        {fileCategory === 'image' ? (
-                          <ImageIcon className="w-4 h-4 text-green-500" />
-                        ) : (
-                          <FileText className="w-4 h-4 text-red-500" />
-                        )}
+                        {getFileIcon()}
                         <span className="truncate">{file.name}</span>
                         <span className="text-xs text-gray-500">({formatFileSize(file.size)})</span>
                       </div>
@@ -826,7 +911,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                   fileInputRefs.current[activeAgent] = el;
                 }}
                 type="file"
-                accept="image/*,application/pdf"
+                accept="image/jpeg,image/png,image/gif,image/webp,application/pdf"
                 multiple
                 onChange={(e) => handleFileChange(e, activeAgent)}
                 className="hidden"
