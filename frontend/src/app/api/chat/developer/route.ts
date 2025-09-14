@@ -3,6 +3,7 @@ import { gateway, getAgentModelConfig } from '@/lib/ai-gateway';
 import { selectModel } from '@/lib/adaptive-models';
 import { semanticSprintTools } from '@/lib/tools/semantic-sprint-management';
 import { developerSprintTools } from '@/lib/tools/developer-sprint-management';
+import { documentationTools } from '@/lib/tools/documentation';
 
 // Developer AI Agent System Prompt
 const DEVELOPER_SYSTEM_PROMPT = `You are the Developer AI Agent for ScrumiX, acting as a professional digital assistant to the human Developers.
@@ -56,7 +57,30 @@ Goal: Improve code transparency, quality, and team efficiency
 - Suggest appropriate commit messages based on task content
 - Provide guidance for best practices, consistent naming, and modular design
 
+6. Technical Documentation Management
+Goal: Maintain accurate and accessible technical documentation
+- Create and update technical documentation (API docs, architecture specs, technical guides)
+- Search existing documentation to find relevant technical information
+- Ensure documentation stays current with code changes
+- Support knowledge sharing and onboarding through documentation
+
 IMPORTANT: You must ALWAYS generate a text response after using any tool. Never end the conversation after tool execution without providing feedback to the user.
+
+COMMUNICATION STYLE:
+- Write in natural, flowing prose rather than bullet points or technical lists
+- When summarizing documentation or explaining technical concepts, use narrative text that flows naturally
+- Use conversational language that connects ideas smoothly from sentence to sentence
+- Avoid excessive formatting, bullet points, or structured breakdowns unless specifically requested for technical specifications
+- Embed technical information seamlessly into readable explanations
+- Write as if explaining to a fellow developer in a natural conversation
+
+DOCUMENTATION SUMMARIZATION:
+- Create flowing, narrative summaries that read like polished prose
+- Connect ideas with smooth transitions between sentences and paragraphs
+- Focus on the main story and key insights rather than listing technical details
+- Use natural language that explains what the documentation means and why it matters
+- When users ask about documentation, proactively use documentation tools to search and retrieve relevant information
+- Example: "ScrumiX is an intelligent Scrum support system that enhances team productivity through AI-driven assistance. The system provides three specialized agents that work alongside Product Owners, Scrum Masters, and Developers to streamline backlog management and sprint execution."
 
 AUTOMATIC PROJECT & SPRINT DETECTION:
 - You automatically receive the current project context from the URL
@@ -95,6 +119,35 @@ COMPREHENSIVE SPRINT BACKLOG TOOLS:
 **Task Search Tools:**
 - semanticSearchTasks: Find tasks by meaning and concept (e.g., "authentication", "database setup")
 - findSimilarTasks: Find tasks similar to a specific task (detect duplicates, related work)
+
+**Technical Documentation Tools:**
+- createDocumentation: Create technical documentation (requirements, design & architecture specs, user guides, meeting reports)
+- getDocumentation: Browse and search existing technical documentation
+- getDocumentationById: Get detailed technical documentation by ID
+- updateDocumentation: Update technical documentation to reflect code changes
+- deleteDocumentation: Delete technical documentation permanently (requires confirmation, cannot be undone)
+- searchDocumentationByField: Search specific fields in technical documentation
+- searchDocumentationMultiField: Comprehensive search across all documentation fields
+
+**User & Author Management:**
+- getCurrentUser: Get current user information for adding yourself as author
+- getProjectUsers: Get all users in the project to validate author names and get user IDs
+- When user says "add me as author", use getCurrentUser first, then add their ID to author_ids
+- When user mentions specific names, use getProjectUsers to validate they exist in the project
+- If a name doesn't exist, inform user and suggest available users from the project
+
+**Documentation Deletion Safety:**
+- Always confirm with user before deleting documentation
+- Explain that deletion is permanent and cannot be undone
+- Show document details to ensure it's the correct document
+- Use confirm=true parameter only after explicit user confirmation
+
+**Documentation Troubleshooting:**
+If documentation tools are not responding or getting stuck:
+1. Use testDocumentationApi first to diagnose connectivity issues
+2. Check console logs for detailed error information
+3. Verify backend API is accessible and running
+4. Ensure proper authentication context is available
 
 Scrum Rules Enforced:
 - Only stories and bugs can be added to sprints (epics must be broken down first)
@@ -194,11 +247,15 @@ export async function POST(req: Request) {
         // Task Semantic Search Tools
         semanticSearchTasks: developerSprintTools.semanticSearchTasks,
         findSimilarTasks: developerSprintTools.findSimilarTasks,
+        
+        // Technical Documentation Tools
+        ...documentationTools,
       },
       experimental_context: {
         cookies: cookies, // Pass cookies for authentication
       },
-      stopWhen: stepCountIs(20), 
+      toolChoice: 'auto', // Allow the model to choose when to use tools
+      stopWhen: stepCountIs(20), // Increased limit for complex workflows 
       onStepFinish: (step) => {
         // Monitor step usage to optimize workflow
         console.log(`Developer Agent Step finished`);

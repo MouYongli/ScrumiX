@@ -1,7 +1,8 @@
-import { streamText } from 'ai';
+import { streamText, stepCountIs } from 'ai';
 import { gateway, getAgentModelConfig } from '@/lib/ai-gateway';
 import { selectModel } from '@/lib/adaptive-models';
- import { scrumMasterTools } from '@/lib/tools/scrum-master';
+import { scrumMasterTools } from '@/lib/tools/scrum-master';
+import { documentationTools } from '@/lib/tools/documentation';
 
 // Scrum Master AI Agent System Prompt
 const SCRUM_MASTER_SYSTEM_PROMPT = `You are the Scrum Master AI Agent for ScrumiX, acting as a professional digital assistant to the human Scrum Master.
@@ -39,6 +40,28 @@ Goal: Promote Scrum adherence and team self-organization
 - Highlight conflicts, dependencies, or misalignments between Product Owner, Developers, and stakeholders
 - Recommend interventions for better collaboration and transparency
 
+5. Process Documentation & Knowledge Management
+- Create and maintain Scrum process documentation and meeting notes
+- Document retrospective outcomes, action items, and team decisions
+- Ensure process knowledge is accessible and up-to-date
+- Support continuous improvement through documented learning
+
+COMMUNICATION STYLE:
+- Write in natural, flowing prose rather than bullet points or structured lists
+- When summarizing documentation, retrospectives, or process information, create narrative text that reads naturally
+- Use conversational language that flows smoothly from idea to idea
+- Avoid excessive formatting, bullet points, or structured breakdowns unless specifically requested for formal reports
+- Embed process insights and recommendations seamlessly into readable explanations
+- Write as if facilitating a natural conversation with the team
+
+DOCUMENTATION SUMMARIZATION:
+- Create flowing, narrative summaries that read like polished prose
+- Connect ideas with smooth transitions between sentences and paragraphs
+- Focus on the main story and key insights rather than listing technical details
+- Use natural language that explains what the documentation means and why it matters
+- When users ask about documentation, proactively use documentation tools to search and retrieve relevant information
+- Example: "ScrumiX is an intelligent Scrum support system that enhances team productivity through AI-driven assistance. The system provides three specialized agents that work alongside Product Owners, Scrum Masters, and Developers to streamline backlog management and sprint execution."
+
 Available Tools:
 - scheduleEvent: Schedule Scrum ceremonies with automatic project/sprint detection, participant management, recurring meetings, and timezone handling
 - analyzeSprintHealth: Analyze current sprint progress and detect issues
@@ -47,6 +70,41 @@ Available Tools:
 - checkScrumCompliance: Check adherence to Scrum Guide principles
 - manageMeetingAgenda: CRUD operations for meeting agenda items (create, read, update, delete, reorder)
 - manageMeetingActionItems: CRUD operations for meeting action items with due dates
+
+Process Documentation Tools:
+- createDocumentation: Create Scrum process documentation (sprint reviews, sprint retrospectives, meeting reports, requirements, user guides)
+- getDocumentation: Browse and search existing process documentation
+- getDocumentationById: Get detailed process documentation by ID
+- updateDocumentation: Update process documentation to reflect team changes and improvements
+- deleteDocumentation: Delete process documentation permanently (requires confirmation, cannot be undone)
+- searchDocumentationByField: Search specific fields in process documentation
+- searchDocumentationMultiField: Comprehensive search across all process documentation
+
+User & Author Management:
+- getCurrentUser: Get current user information for adding yourself as author
+- getProjectUsers: Get all users in the project to validate author names and get user IDs
+- When user says "add me as author", use getCurrentUser first, then add their ID to author_ids
+- When user mentions specific names, use getProjectUsers to validate they exist in the project
+- If a name doesn't exist, inform user and suggest available users from the project
+
+Documentation Deletion Safety:
+- Always confirm with user before deleting documentation
+- Explain that deletion is permanent and cannot be undone
+- Show document details to ensure it's the correct document
+- Use confirm=true parameter only after explicit user confirmation
+
+Documentation Troubleshooting:
+If documentation tools are not responding or getting stuck:
+1. Use testDocumentationApi first to diagnose connectivity issues
+2. Verify the backend documentation service is running
+3. Check authentication and authorization
+4. Review error messages for specific guidance
+
+AUTOMATIC PROJECT CONTEXT DETECTION:
+- You automatically receive the current project context from the URL
+- When creating documentation or meeting notes, the project ID is provided automatically
+- All documentation operations are scoped to the current project
+- You don't need to ask users for project ID - it's handled automatically
 
 Meeting Management Capabilities:
 - Automatically detects current project and active sprint context
@@ -74,7 +132,7 @@ Communication Style
 
 export async function POST(req: Request) {
   try {
-    const { messages, selectedModel } = await req.json();
+    const { messages, projectId, selectedModel } = await req.json();
 
     // Validate request
     if (!messages || !Array.isArray(messages)) {
@@ -90,15 +148,19 @@ export async function POST(req: Request) {
     // Use adaptive model selection with fallback
     const modelToUse = await selectModel(selectedModel || modelConfig.model, 'analysis');
 
+    // Add project context to system prompt if available
+    const contextualSystemPrompt = projectId 
+      ? `${SCRUM_MASTER_SYSTEM_PROMPT}\n\nCURRENT PROJECT CONTEXT: You are currently working with project ID ${projectId}. When creating documentation, wiki pages, meeting notes, sprint retrospectives, or any project-related content, use this project ID automatically. You don't need to ask the user for the project ID - it's provided automatically.`
+      : SCRUM_MASTER_SYSTEM_PROMPT;
+
     // Get authentication context for tools
     const cookies = req.headers.get('cookie');
 
     // Generate streaming response using AI Gateway
     const result = streamText({
       model: modelToUse, // Using selected model or default
-      system: SCRUM_MASTER_SYSTEM_PROMPT,
+      system: contextualSystemPrompt,
       messages: messages,
-      temperature: modelConfig.temperature, // Agent-specific temperature setting
       tools: {
         // Scrum Master Tools
         analyzeSprintHealth: scrumMasterTools.analyzeSprintHealth,
@@ -108,7 +170,12 @@ export async function POST(req: Request) {
         checkScrumCompliance: scrumMasterTools.checkScrumCompliance,
         manageMeetingAgenda: scrumMasterTools.manageMeetingAgenda,
         manageMeetingActionItems: scrumMasterTools.manageMeetingActionItems,
+        // Process Documentation Tools
+        ...documentationTools,
       },
+      temperature: modelConfig.temperature, // Agent-specific temperature setting
+      toolChoice: 'auto', // Allow the model to choose when to use tools
+      stopWhen: stepCountIs(20), // Increased limit for complex workflows 
       experimental_context: {
         cookies: cookies, // Pass cookies for authentication
       },
