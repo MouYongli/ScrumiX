@@ -37,9 +37,17 @@ class HybridSearchRequest(BaseModel):
     query: str = Field(..., min_length=1, max_length=500, description="Search query")
     project_id: Optional[int] = Field(None, description="Filter by project ID")
     limit: int = Field(10, ge=1, le=50, description="Maximum number of results")
-    semantic_weight: float = Field(0.7, ge=0.0, le=1.0, description="Weight for semantic search")
-    keyword_weight: float = Field(0.3, ge=0.0, le=1.0, description="Weight for keyword search")
-    similarity_threshold: float = Field(0.5, ge=0.0, le=1.0, description="Minimum similarity score")
+    semantic_weight: float = Field(0.7, ge=0.0, le=1.0, description="Weight for semantic search (used in weighted mode)")
+    keyword_weight: float = Field(0.3, ge=0.0, le=1.0, description="Weight for BM25 search (used in weighted mode)")
+    similarity_threshold: float = Field(0.5, ge=0.0, le=1.0, description="Minimum similarity score for semantic results")
+    use_rrf: bool = Field(True, description="Use Reciprocal Rank Fusion (recommended) vs weighted scoring")
+
+
+class BM25SearchRequest(BaseModel):
+    """Request model for BM25 keyword search"""
+    query: str = Field(..., min_length=1, max_length=500, description="Search query")
+    project_id: Optional[int] = Field(None, description="Filter by project ID")
+    limit: int = Field(10, ge=1, le=50, description="Maximum number of results")
 
 
 class EmbeddingUpdateRequest(BaseModel):
@@ -90,6 +98,40 @@ async def semantic_search_backlogs(
         )
 
 
+@router.post("/bm25-search", response_model=List[SemanticSearchResult])
+async def bm25_search_backlogs(
+    request: BM25SearchRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Perform BM25 keyword search on backlog items.
+    Uses industry-standard BM25 algorithm for precise keyword matching.
+    Perfect for finding items with specific terms like "login", "payment", "API".
+    """
+    try:
+        results = await backlog_crud.bm25_search(
+            db=db,
+            query=request.query,
+            project_id=request.project_id,
+            limit=request.limit
+        )
+        
+        return [
+            SemanticSearchResult(
+                backlog=BacklogResponse.model_validate(backlog),
+                similarity_score=score
+            )
+            for backlog, score in results
+        ]
+        
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"BM25 search failed: {str(e)}"
+        )
+
+
 @router.post("/hybrid-search", response_model=List[SemanticSearchResult])
 async def hybrid_search_backlogs(
     request: HybridSearchRequest,
@@ -97,15 +139,24 @@ async def hybrid_search_backlogs(
     db: Session = Depends(get_db)
 ):
     """
-    Perform hybrid search combining semantic and keyword search.
-    Best for comprehensive search that combines AI understanding with traditional text matching.
+    Perform hybrid search combining semantic embeddings with BM25 keyword search.
+    
+    Two modes available:
+    1. RRF (Reciprocal Rank Fusion) - Industry standard, recommended for production
+    2. Weighted scoring - Legacy mode with configurable weights
+    
+    RRF combines rankings from both semantic and BM25 search using the formula:
+    RRF Score = Σ(1 / (k + rank_i)) for all rankings where item appears
+    
+    This approach avoids the "authentication" vs "login" problem by combining
+    semantic understanding with precise keyword matching.
     """
     try:
-        # Validate weights sum to 1.0
-        if abs(request.semantic_weight + request.keyword_weight - 1.0) > 0.001:
+        # Validate weights sum to 1.0 only in weighted mode
+        if not request.use_rrf and abs(request.semantic_weight + request.keyword_weight - 1.0) > 0.001:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Semantic weight and keyword weight must sum to 1.0"
+                detail="Semantic weight and keyword weight must sum to 1.0 when use_rrf=False"
             )
         
         results = await backlog_crud.hybrid_search(
@@ -115,7 +166,8 @@ async def hybrid_search_backlogs(
             limit=request.limit,
             semantic_weight=request.semantic_weight,
             keyword_weight=request.keyword_weight,
-            similarity_threshold=request.similarity_threshold
+            similarity_threshold=request.similarity_threshold,
+            use_rrf=request.use_rrf
         )
         
         return [
