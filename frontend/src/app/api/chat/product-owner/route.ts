@@ -3,6 +3,7 @@ import { backlogManagementTools } from '@/lib/tools/backlog-management';
 import { documentationTools } from '@/lib/tools/documentation';
 import { gateway, getAgentModelConfig } from '@/lib/ai-gateway';
 import { selectModel } from '@/lib/adaptive-models';
+import { getWebSearchToolsForModel } from '@/lib/tools/web-search';
 
 // Product Owner AI Agent System Prompt
 const PRODUCT_OWNER_SYSTEM_PROMPT = `You are the Product Owner AI Agent for ScrumiX, acting as a professional digital assistant to the human Product Owner. You combine Scrum expertise with AI capabilities to support backlog management, prioritization, stakeholder alignment, and proactive requirements exploration.
@@ -163,7 +164,7 @@ Bad response: Long analysis with calculations, trade-offs, and detailed breakdow
 
 export async function POST(req: Request) {
   try {
-    const { messages, projectId, selectedModel } = await req.json();
+    const { messages, projectId, selectedModel, webSearchEnabled } = await req.json();
 
     // Validate request
     if (!messages || !Array.isArray(messages)) {
@@ -207,6 +208,8 @@ export async function POST(req: Request) {
         ...backlogManagementTools,
         // Documentation Management Tools
         ...documentationTools,
+        // Web Search Tools (native for OpenAI/Gemini)
+        ...getWebSearchToolsForModel(modelToUse, webSearchEnabled),
       },
       temperature: modelConfig.temperature, // Agent-specific temperature setting
       toolChoice: 'auto', // Allow the model to choose when to use tools

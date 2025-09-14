@@ -19,13 +19,15 @@ import {
   FileText,
   Image as ImageIcon,
   File,
-  Upload
+  Upload,
+  Globe
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
 import { Agent, AgentType, ChatMessage, AgentChatState, UIMessage, MessagePart } from '@/types/chat';
 import { getAgentModelConfig, AI_MODELS } from '@/lib/ai-gateway';
 import { getPreferredModel, setPreferredModel } from '@/lib/model-preferences';
+import { hasNativeWebSearch } from '@/lib/tools/web-search';
 import { convertFilesToDataURLs, validateFile, formatFileSize, getFileCategory, handleDragOver, handleDragEnter, handleDragLeave, handleDrop, getSupportedFormatsString } from '@/utils/multimodal';
 import ModelSelector from './ModelSelector';
 
@@ -88,6 +90,8 @@ interface AgentChatStateWithFiles extends AgentChatState {
 
 const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   const [activeAgent, setActiveAgent] = useState<AgentType>('product-owner');
+  const [isClient, setIsClient] = useState(false);
+  const [webSearchEnabled, setWebSearchEnabled] = useState(true);
   const [agentStates, setAgentStates] = useState<Record<AgentType, AgentChatStateWithFiles>>({
     'product-owner': { 
       messages: [], 
@@ -128,6 +132,10 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   useEffect(() => {
     scrollToBottom();
   }, [agentStates[activeAgent].messages]);
+
+  useEffect(() => {
+    setIsClient(true);
+  }, []);
 
   useEffect(() => {
     // Focus input when switching agents
@@ -298,7 +306,8 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
           body: JSON.stringify({
             messages: apiMessages,
             projectId: projectId ? parseInt(projectId, 10) : null,
-            selectedModel: currentState.selectedModel
+            selectedModel: currentState.selectedModel,
+            webSearchEnabled: webSearchEnabled
           }),
         });
 
@@ -924,6 +933,28 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
               >
                 <Paperclip className="w-4 h-4" />
               </button>
+
+              {/* Web Search Toggle Button */}
+              {isClient && hasNativeWebSearch(currentState.selectedModel || currentAgent.defaultModel || '') && (
+                <button
+                  onClick={() => {
+                    // Simple toggle - click to enable/disable
+                    setWebSearchEnabled(!webSearchEnabled);
+                  }}
+                  disabled={currentState.isTyping}
+                  className={`px-3 py-3 rounded-xl transition-colors disabled:cursor-not-allowed flex items-center ${
+                    webSearchEnabled
+                      ? 'bg-green-100 dark:bg-green-800 hover:bg-green-200 dark:hover:bg-green-700 text-green-600 dark:text-green-400'
+                      : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-400'
+                  } ${currentState.isTyping ? 'disabled:bg-gray-300 dark:disabled:bg-gray-600' : ''}`}
+                  title={webSearchEnabled 
+                    ? "Web search enabled - click to disable" 
+                    : "Web search disabled - click to enable"
+                  }
+                >
+                  <Globe className="w-4 h-4" />
+                </button>
+              )}
               
               {/* Text Input */}
               <input
