@@ -27,7 +27,9 @@ import {
   CheckCircle,
   XCircle,
   ChevronDown,
-  History
+  History,
+  Plus,
+  ArrowUp
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -107,6 +109,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingContent, setEditingContent] = useState<string>('');
   const [showAgentDropdown, setShowAgentDropdown] = useState(false);
+  const [showPlusDropdown, setShowPlusDropdown] = useState(false);
   const [agentStates, setAgentStates] = useState<Record<AgentType, AgentChatStateWithFiles>>({
     'product-owner': { 
       messages: [], 
@@ -174,14 +177,17 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     }
   }, [activeAgent, agentStates]);
 
-  // Close dropdown when clicking outside
+  // Close dropdowns when clicking outside
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
-      if (showAgentDropdown) {
-        const target = event.target as Element;
-        if (!target.closest('.agent-dropdown')) {
-          setShowAgentDropdown(false);
-        }
+      const target = event.target as Element;
+      
+      if (showAgentDropdown && !target.closest('.agent-dropdown')) {
+        setShowAgentDropdown(false);
+      }
+      
+      if (showPlusDropdown && !target.closest('.plus-dropdown')) {
+        setShowPlusDropdown(false);
       }
     };
 
@@ -189,7 +195,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [showAgentDropdown]);
+  }, [showAgentDropdown, showPlusDropdown]);
 
   const updateAgentState = (agentType: AgentType, updates: Partial<AgentChatStateWithFiles>) => {
     setAgentStates(prev => ({
@@ -1117,6 +1123,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                  </div>
 
                  {/* AI Model Selector */}
+
                  <div>
                    <ModelSelector
                      selectedModel={currentState.selectedModel || currentAgent.defaultModel || AI_MODELS.CHAT}
@@ -1666,47 +1673,106 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
               </div>
             )}
             
-            <div className="flex items-end space-x-3">
-              {/* File Upload Button */}
-              <input
-                ref={(el) => {
-                  fileInputRefs.current[activeAgent] = el;
-                }}
-                type="file"
-                accept="image/jpeg,image/png,image/gif,image/webp,application/pdf"
-                multiple
-                onChange={(e) => handleFileChange(e, activeAgent)}
-                className="hidden"
-              />
-              <button
-                onClick={() => fileInputRefs.current[activeAgent]?.click()}
-                disabled={currentState.isTyping}
-                className="px-3 py-3 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-gray-600 dark:text-gray-400 rounded-xl transition-colors disabled:cursor-not-allowed flex items-center flex-shrink-0"
-                title="Attach images or PDFs"
-              >
-                <Paperclip className="w-4 h-4" />
-              </button>
+            {/* Hidden File Input */}
+            <input
+              ref={(el) => {
+                fileInputRefs.current[activeAgent] = el;
+              }}
+              type="file"
+              accept="image/jpeg,image/png,image/gif,image/webp,application/pdf"
+              multiple
+              onChange={(e) => handleFileChange(e, activeAgent)}
+              className="hidden"
+            />
 
-              {/* Web Search Toggle Button */}
-              {isClient && hasNativeWebSearch(currentState.selectedModel || currentAgent.defaultModel || '') && (
+            {/* Integrated Input Field with Buttons */}
+            <div className="relative flex items-center bg-gray-100 dark:bg-gray-700 rounded-2xl border-0 focus-within:bg-gray-200 dark:focus-within:bg-gray-600 transition-colors">
+              {/* Plus Button with Dropdown */}
+              <div className="relative plus-dropdown">
                 <button
-                  onClick={() => {
-                    // Simple toggle - click to enable/disable
-                    setWebSearchEnabled(!webSearchEnabled);
-                  }}
+                  onClick={() => setShowPlusDropdown(!showPlusDropdown)}
                   disabled={currentState.isTyping}
-                  className={`px-3 py-3 rounded-xl transition-colors disabled:cursor-not-allowed flex items-center flex-shrink-0 ${
-                    webSearchEnabled
-                      ? 'bg-green-100 dark:bg-green-800 hover:bg-green-200 dark:hover:bg-green-700 text-green-600 dark:text-green-400'
-                      : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-400'
-                  } ${currentState.isTyping ? 'disabled:bg-gray-300 dark:disabled:bg-gray-600' : ''}`}
-                  title={webSearchEnabled 
-                    ? "Web search enabled - click to disable" 
-                    : "Web search disabled - click to enable"
-                  }
+                  className="p-3 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors disabled:cursor-not-allowed flex items-center"
+                  title="More options"
                 >
-                  <Globe className="w-4 h-4" />
+                  <Plus className="w-4 h-4" />
                 </button>
+
+                {/* Dropdown Menu (appears above button) */}
+                {showPlusDropdown && (
+                  <div className="absolute bottom-full left-0 mb-2 w-48 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50">
+                    {/* Upload File Option */}
+                    <button
+                      onClick={() => {
+                        fileInputRefs.current[activeAgent]?.click();
+                        setShowPlusDropdown(false);
+                      }}
+                      className="w-full p-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors first:rounded-t-lg flex items-center space-x-3"
+                    >
+                      <Upload className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+                      <span className="text-sm text-gray-900 dark:text-white">Upload file</span>
+                    </button>
+
+                    {/* Web Search Option */}
+                    {isClient && hasNativeWebSearch(currentState.selectedModel || currentAgent.defaultModel || '') && (
+                      <button
+                        onClick={() => {
+                          setWebSearchEnabled(!webSearchEnabled);
+                          setShowPlusDropdown(false);
+                        }}
+                        className="w-full p-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors last:rounded-b-lg flex items-center space-x-3"
+                      >
+                        <Globe className={`w-4 h-4 ${
+                          webSearchEnabled 
+                            ? 'text-green-600 dark:text-green-400' 
+                            : 'text-gray-600 dark:text-gray-400'
+                        }`} />
+                        <span className="text-sm text-gray-900 dark:text-white">
+                          {webSearchEnabled ? 'Disable web search' : 'Search online'}
+                        </span>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Active Functionality Indicators (next to plus button) */}
+              {(currentState.files?.length || webSearchEnabled) && (
+                <div className="flex items-center space-x-2 ml-1">
+                  {/* Web Search Indicator */}
+                  {isClient && webSearchEnabled && hasNativeWebSearch(currentState.selectedModel || currentAgent.defaultModel || '') && (
+                    <div className="group relative">
+                      <div className="flex items-center space-x-1 px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-md text-xs">
+                        <Globe className="w-3 h-3" />
+                        <span>Search</span>
+                      </div>
+                      {/* Hover X to disable */}
+                      <button
+                        onClick={() => setWebSearchEnabled(false)}
+                        className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 hover:bg-red-600 text-white rounded-full items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity hidden group-hover:flex"
+                      >
+                        <X className="w-2.5 h-2.5" />
+                      </button>
+                    </div>
+                  )}
+
+                  {/* File Upload Indicator */}
+                  {currentState.files && currentState.files.length > 0 && (
+                    <div className="group relative">
+                      <div className="flex items-center space-x-1 px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-md text-xs">
+                        <Upload className="w-3 h-3" />
+                        <span>{currentState.files.length}</span>
+                      </div>
+                      {/* Hover X to remove */}
+                      <button
+                        onClick={() => removeFiles(activeAgent)}
+                        className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 hover:bg-red-600 text-white rounded-full items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity hidden group-hover:flex"
+                      >
+                        <X className="w-2.5 h-2.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
               
               {/* Text Input */}
@@ -1718,7 +1784,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                 onChange={(e) => handleInputChange(e, activeAgent)}
                 onKeyPress={(e) => handleKeyPress(e, activeAgent)}
                 placeholder={`Ask ${currentAgent.name} anything about your project...`}
-                className="flex-1 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none min-h-[48px] max-h-32 overflow-y-auto"
+                className="flex-1 px-3 py-3 bg-transparent text-sm text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 border-0 focus:outline-none resize-none min-h-[48px] max-h-32 overflow-y-auto"
                 disabled={currentState.isTyping}
                 rows={1}
               />
@@ -1727,10 +1793,10 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
               <button
                 onClick={() => sendMessage(activeAgent)}
                 disabled={(!currentState.inputValue.trim() && !currentState.files?.length) || currentState.isTyping}
-                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white rounded-xl transition-colors disabled:cursor-not-allowed flex items-center space-x-2 flex-shrink-0"
+                className="p-2 m-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 dark:disabled:bg-gray-500 text-white rounded-lg transition-colors disabled:cursor-not-allowed flex items-center"
+                title="Send message"
               >
                 <Send className="w-4 h-4" />
-                <span>Send</span>
               </button>
             </div>
             </div>
