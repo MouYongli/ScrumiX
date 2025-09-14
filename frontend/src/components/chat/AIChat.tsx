@@ -85,6 +85,8 @@ interface AIChatProps {
 interface AgentChatStateWithFiles extends AgentChatState {
   files?: FileList;
   isDragOver?: boolean;
+  loadingState?: 'thinking' | 'searching' | 'tool-call' | 'generating';
+  currentTool?: string;
 }
 
 
@@ -261,7 +263,8 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       messages: [...currentState.messages, userMessage],
       isTyping: true,
       inputValue: '',
-      files: undefined
+      files: undefined,
+      loadingState: webSearchEnabled ? 'searching' : 'thinking'
     });
 
     // Clear file input
@@ -325,12 +328,72 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
         let aiResponse = '';
         const decoder = new TextDecoder();
         let messageId = `agent-${Date.now()}`;
+        let hasStartedGenerating = false;
+        
+        // Set initial thinking state after a short delay if web search is not enabled
+        if (!webSearchEnabled) {
+          setTimeout(() => {
+            updateAgentState(agentType, {
+              messages: [...currentState.messages, userMessage],
+              isTyping: true,
+              loadingState: 'thinking'
+            });
+          }, 500);
+        }
 
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
 
           const chunk = decoder.decode(value, { stream: true });
+          
+          // Try to parse chunk for tool usage information
+          try {
+            const lines = chunk.split('\n');
+            for (const line of lines) {
+              if (line.trim().startsWith('data: ')) {
+                const data = line.replace('data: ', '');
+                if (data && data !== '[DONE]') {
+                  const parsed = JSON.parse(data);
+                  
+                  // Check for tool calls
+                  if (parsed.type === 'tool-call' || parsed.toolName) {
+                    const toolName = parsed.toolName || parsed.tool?.name || 'tool';
+                    updateAgentState(agentType, {
+                      messages: [...currentState.messages, userMessage],
+                      isTyping: true,
+                      loadingState: 'tool-call',
+                      currentTool: toolName
+                    });
+                    continue;
+                  }
+                  
+                  // Check for text generation
+                  if (parsed.type === 'text-delta' || parsed.delta || parsed.content) {
+                    if (!hasStartedGenerating) {
+                      hasStartedGenerating = true;
+                      updateAgentState(agentType, {
+                        messages: [...currentState.messages, userMessage],
+                        isTyping: true,
+                        loadingState: 'generating'
+                      });
+                    }
+                  }
+                }
+              }
+            }
+          } catch (e) {
+            // If chunk is not JSON, it's likely text content
+            if (!hasStartedGenerating && chunk.trim()) {
+              hasStartedGenerating = true;
+              updateAgentState(agentType, {
+                messages: [...currentState.messages, userMessage],
+                isTyping: true,
+                loadingState: 'generating'
+              });
+            }
+          }
+          
           aiResponse += chunk;
           
           // Update the agent message in real-time
@@ -345,7 +408,9 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
 
           updateAgentState(agentType, {
             messages: [...currentState.messages, userMessage, agentMessage],
-            isTyping: false
+            isTyping: false,
+            loadingState: undefined,
+            currentTool: undefined
           });
         }
       } catch (error) {
@@ -360,7 +425,9 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
 
         updateAgentState(agentType, {
           messages: [...currentState.messages, userMessage, errorMessage],
-          isTyping: false
+          isTyping: false,
+          loadingState: undefined,
+          currentTool: undefined
         });
       }
     }
@@ -423,6 +490,39 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
         hour: '2-digit',
         minute: '2-digit'
       });
+    }
+  };
+
+  const getLoadingMessage = (state: AgentChatStateWithFiles, agentName: string) => {
+    switch (state.loadingState) {
+      case 'searching':
+        return 'Searching the web';
+      case 'thinking':
+        return 'Scrumming through ideas';
+      case 'tool-call':
+        if (state.currentTool) {
+          // Make tool names more user-friendly
+          const toolDisplayNames: Record<string, string> = {
+            'createBacklogItem': 'Creating backlog item',
+            'getBacklogItems': 'Reviewing backlog',
+            'semanticSearchBacklog': 'Searching backlog',
+            'hybridSearchBacklog': 'Searching backlog',
+            'bm25SearchBacklog': 'Searching backlog',
+            'findSimilarBacklog': 'Finding similar items',
+            'createDocumentation': 'Creating documentation',
+            'getDocumentation': 'Reviewing documentation',
+            'searchDocumentationByField': 'Searching documentation',
+            'web_search_preview': 'Searching the web',
+            'google_search': 'Searching the web'
+          };
+          const displayName = toolDisplayNames[state.currentTool] || `Using ${state.currentTool}`;
+          return `${displayName}...`;
+        }
+        return 'Processing...';
+      case 'generating':
+        return `${agentName} is responding...`;
+      default:
+        return 'Thinking...';
     }
   };
 
@@ -860,10 +960,15 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                         <AgentIcon className="w-4 h-4 text-white" />
                       </div>
                       <div className="bg-gray-100 dark:bg-gray-700 px-4 py-3 rounded-xl">
-                        <div className="flex space-x-1">
-                          <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                          <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                          <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                        <div className="flex items-center space-x-2">
+                          <div className="flex space-x-1">
+                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                          </div>
+                          <span className="text-sm text-gray-600 dark:text-gray-300 ml-2">
+                            {getLoadingMessage(currentState, currentAgent.name)}
+                          </span>
                         </div>
                       </div>
                     </div>
