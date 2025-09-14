@@ -1,4 +1,4 @@
-import { streamText, stepCountIs } from 'ai';
+import { streamText, stepCountIs, convertToModelMessages, type UIMessage } from 'ai';
 import { backlogManagementTools } from '@/lib/tools/backlog-management';
 import { documentationTools } from '@/lib/tools/documentation';
 import { gateway, getAgentModelConfig } from '@/lib/ai-gateway';
@@ -173,6 +173,10 @@ export async function POST(req: Request) {
       });
     }
 
+    // Check if we're dealing with multimodal UI messages or legacy text-only messages
+    const isUIMessages = Array.isArray(messages) && messages.length > 0 && messages[0]?.parts;
+    console.log('Product Owner Agent - Message format:', isUIMessages ? 'UIMessage (multimodal)' : 'Legacy (text-only)');
+
     // Get model configuration for Product Owner agent
     const modelConfig = getAgentModelConfig('product-owner');
     
@@ -188,11 +192,16 @@ export async function POST(req: Request) {
     const cookies = req.headers.get('cookie') || '';
     console.log('Forwarding cookies for authentication:', cookies ? 'present' : 'missing');
 
+    // Convert messages to the format expected by the model
+    const modelMessages = isUIMessages
+      ? convertToModelMessages(messages as UIMessage[])
+      : messages;
+
     // Generate streaming response with tool integration using AI Gateway
     const result = streamText({
       model: modelToUse, // Using selected model or default
       system: contextualSystemPrompt,
-      messages: messages,
+      messages: modelMessages,
       tools: {
         // Backlog Management Tools
         ...backlogManagementTools,

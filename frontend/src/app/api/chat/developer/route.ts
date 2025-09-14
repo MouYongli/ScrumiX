@@ -1,4 +1,4 @@
-import { streamText, stepCountIs } from 'ai';
+import { streamText, stepCountIs, convertToModelMessages, type UIMessage } from 'ai';
 import { gateway, getAgentModelConfig } from '@/lib/ai-gateway';
 import { selectModel } from '@/lib/adaptive-models';
 import { semanticSprintTools } from '@/lib/tools/semantic-sprint-management';
@@ -201,6 +201,10 @@ export async function POST(req: Request) {
       });
     }
 
+    // Check if we're dealing with multimodal UI messages or legacy text-only messages
+    const isUIMessages = Array.isArray(messages) && messages.length > 0 && messages[0]?.parts;
+    console.log('Developer Agent - Message format:', isUIMessages ? 'UIMessage (multimodal)' : 'Legacy (text-only)');
+
     // Get model configuration for Developer agent
     const modelConfig = getAgentModelConfig('developer');
     
@@ -215,11 +219,16 @@ export async function POST(req: Request) {
     // Get authentication context for tools
     const cookies = req.headers.get('cookie');
     
+    // Convert messages to the format expected by the model
+    const modelMessages = isUIMessages
+      ? convertToModelMessages(messages as UIMessage[])
+      : messages;
+
     // Generate streaming response using AI Gateway
     const result = streamText({
       model: modelToUse, // Using selected model or default
       system: contextualSystemPrompt,
-      messages: messages,
+      messages: modelMessages,
       temperature: modelConfig.temperature, // Agent-specific temperature setting
       tools: {
         // Core Developer Sprint Tools (CRUD Operations)

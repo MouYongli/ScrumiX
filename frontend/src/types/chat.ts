@@ -11,6 +11,13 @@ export interface Agent {
   defaultModel?: string;
 }
 
+export interface MessagePart {
+  type: 'text' | 'file';
+  text?: string;
+  mediaType?: string;
+  url?: string;
+}
+
 export interface ChatMessage {
   id: string;
   content: string;
@@ -19,6 +26,14 @@ export interface ChatMessage {
   agentType?: AgentType;
   model?: string;
   isTyping?: boolean;
+  // New multimodal support
+  parts?: MessagePart[];
+}
+
+export interface UIMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  parts: MessagePart[];
 }
 
 export interface ChatState {

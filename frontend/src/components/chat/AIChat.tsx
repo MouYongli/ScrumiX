@@ -13,12 +13,18 @@ import {
   Clock,
   Trash2,
   Download,
-  Filter
+  Filter,
+  Paperclip,
+  X,
+  FileText,
+  Image as ImageIcon
 } from 'lucide-react';
 import Link from 'next/link';
-import { Agent, AgentType, ChatMessage, AgentChatState } from '@/types/chat';
+import Image from 'next/image';
+import { Agent, AgentType, ChatMessage, AgentChatState, UIMessage, MessagePart } from '@/types/chat';
 import { getAgentModelConfig, AI_MODELS } from '@/lib/ai-gateway';
 import { getPreferredModel, setPreferredModel } from '@/lib/model-preferences';
+import { convertFilesToDataURLs, validateFile, formatFileSize, getFileCategory } from '@/utils/multimodal';
 import ModelSelector from './ModelSelector';
 
 // Agent definitions with Scrum-specific roles
@@ -72,10 +78,14 @@ interface AIChatProps {
   projectId: string;
 }
 
+interface AgentChatStateWithFiles extends AgentChatState {
+  files?: FileList;
+}
+
 
 const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   const [activeAgent, setActiveAgent] = useState<AgentType>('product-owner');
-  const [agentStates, setAgentStates] = useState<Record<AgentType, AgentChatState>>({
+  const [agentStates, setAgentStates] = useState<Record<AgentType, AgentChatStateWithFiles>>({
     'product-owner': { 
       messages: [], 
       isTyping: false, 
@@ -102,6 +112,11 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     'scrum-master': null,
     'developer': null
   });
+  const fileInputRefs = useRef<Record<AgentType, HTMLInputElement | null>>({
+    'product-owner': null,
+    'scrum-master': null,
+    'developer': null
+  });
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -119,30 +134,76 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     }
   }, [activeAgent]);
 
-  const updateAgentState = (agentType: AgentType, updates: Partial<AgentChatState>) => {
+  const updateAgentState = (agentType: AgentType, updates: Partial<AgentChatStateWithFiles>) => {
     setAgentStates(prev => ({
       ...prev,
       [agentType]: { ...prev[agentType], ...updates }
     }));
   };
 
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, agentType: AgentType) => {
+    const files = e.target.files;
+    if (!files) return;
+
+    // Validate each file
+    const validationErrors: string[] = [];
+    Array.from(files).forEach((file, index) => {
+      const validation = validateFile(file);
+      if (!validation.isValid && validation.error) {
+        validationErrors.push(`File ${index + 1}: ${validation.error}`);
+      }
+    });
+
+    if (validationErrors.length > 0) {
+      alert(`File validation errors:\n${validationErrors.join('\n')}`);
+      e.target.value = ''; // Clear the input
+      return;
+    }
+
+    updateAgentState(agentType, { files });
+  };
+
+  const removeFiles = (agentType: AgentType) => {
+    updateAgentState(agentType, { files: undefined });
+    const fileInput = fileInputRefs.current[agentType];
+    if (fileInput) {
+      fileInput.value = '';
+    }
+  };
+
   const sendMessage = async (agentType: AgentType) => {
     const currentState = agentStates[agentType];
-    if (!currentState.inputValue.trim()) return;
+    if (!currentState.inputValue.trim() && !currentState.files?.length) return;
+
+    // Convert files to data URLs if present
+    const fileParts: MessagePart[] = currentState.files && currentState.files.length > 0
+      ? await convertFilesToDataURLs(currentState.files)
+      : [];
 
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
       content: currentState.inputValue,
       timestamp: new Date().toISOString(),
-      sender: 'user'
+      sender: 'user',
+      parts: [
+        { type: 'text', text: currentState.inputValue },
+        ...fileParts
+      ]
     };
 
     // Add user message and clear input
     updateAgentState(agentType, {
       messages: [...currentState.messages, userMessage],
       isTyping: true,
-      inputValue: ''
+      inputValue: '',
+      files: undefined
     });
+
+    // Clear file input
+    const fileInput = fileInputRefs.current[agentType];
+    if (fileInput) {
+      fileInput.value = '';
+    }
 
     if (agentType === 'product-owner' || agentType === 'scrum-master' || agentType === 'developer') {
       // Use real AI for Product Owner, Scrum Master, and Developer
@@ -157,16 +218,28 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       const apiEndpoint = getApiEndpoint(agentType);
       
       try {
+        // Prepare messages for API - use multimodal format if files are present
+        const hasFiles = fileParts.length > 0;
+        const apiMessages = hasFiles
+          ? // Use UI message format for multimodal
+            [...currentState.messages, userMessage].map(msg => ({
+              id: msg.id,
+              role: msg.sender === 'user' ? 'user' : 'assistant',
+              parts: msg.parts || [{ type: 'text', text: msg.content }]
+            } as UIMessage))
+          : // Use legacy format for text-only
+            [...currentState.messages, userMessage].map(msg => ({
+              role: msg.sender === 'user' ? 'user' : 'assistant',
+              content: msg.content
+            }));
+
         const response = await fetch(apiEndpoint, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            messages: [...currentState.messages, userMessage].map(msg => ({
-              role: msg.sender === 'user' ? 'user' : 'assistant',
-              content: msg.content
-            })),
+            messages: apiMessages,
             projectId: projectId ? parseInt(projectId, 10) : null,
             selectedModel: currentState.selectedModel
           }),
@@ -510,6 +583,50 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                         }`}
                       >
                         <div className="text-sm prose prose-sm max-w-none prose-slate dark:prose-invert">
+                          {/* Display file attachments for multimodal messages */}
+                          {message.parts && message.parts.length > 0 && (
+                            <div className="mb-3">
+                              {message.parts.map((part, partIndex) => {
+                                if (part.type === 'file' && part.url) {
+                                  const fileCategory = getFileCategory(part.mediaType || '');
+                                  
+                                  if (fileCategory === 'image') {
+                                    return (
+                                      <div key={partIndex} className="mb-2">
+                                        <Image
+                                          src={part.url}
+                                          alt={`Attachment ${partIndex + 1}`}
+                                          width={300}
+                                          height={200}
+                                          className="rounded-lg border border-gray-200 dark:border-gray-600 max-w-full h-auto"
+                                          style={{ objectFit: 'contain' }}
+                                        />
+                                      </div>
+                                    );
+                                  } else if (fileCategory === 'pdf') {
+                                    return (
+                                      <div key={partIndex} className="mb-2 p-3 border border-gray-200 dark:border-gray-600 rounded-lg">
+                                        <div className="flex items-center space-x-2 mb-2">
+                                          <FileText className="w-4 h-4 text-red-500" />
+                                          <span className="text-sm font-medium">PDF Document</span>
+                                        </div>
+                                        <iframe
+                                          src={part.url}
+                                          width="100%"
+                                          height="400"
+                                          className="border border-gray-200 dark:border-gray-600 rounded"
+                                          title={`PDF attachment ${partIndex + 1}`}
+                                        />
+                                      </div>
+                                    );
+                                  }
+                                }
+                                return null;
+                              })}
+                            </div>
+                          )}
+                          
+                          {/* Display text content */}
                           {message.content.split('\n').map((line, index) => {
                             if (line.trim() === '') return <br key={index} />;
                             
@@ -669,7 +786,61 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
 
           {/* Input Area */}
           <div className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 p-4">
+            {/* File Preview */}
+            {currentState.files && currentState.files.length > 0 && (
+              <div className="mb-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                    {currentState.files.length} file{currentState.files.length > 1 ? 's' : ''} selected
+                  </span>
+                  <button
+                    onClick={() => removeFiles(activeAgent)}
+                    className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                  >
+                    <X className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {Array.from(currentState.files).map((file, index) => {
+                    const fileCategory = getFileCategory(file.type);
+                    return (
+                      <div key={index} className="flex items-center space-x-2 text-sm text-gray-600 dark:text-gray-400">
+                        {fileCategory === 'image' ? (
+                          <ImageIcon className="w-4 h-4 text-green-500" />
+                        ) : (
+                          <FileText className="w-4 h-4 text-red-500" />
+                        )}
+                        <span className="truncate">{file.name}</span>
+                        <span className="text-xs text-gray-500">({formatFileSize(file.size)})</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            
             <div className="flex space-x-3">
+              {/* File Upload Button */}
+              <input
+                ref={(el) => {
+                  fileInputRefs.current[activeAgent] = el;
+                }}
+                type="file"
+                accept="image/*,application/pdf"
+                multiple
+                onChange={(e) => handleFileChange(e, activeAgent)}
+                className="hidden"
+              />
+              <button
+                onClick={() => fileInputRefs.current[activeAgent]?.click()}
+                disabled={currentState.isTyping}
+                className="px-3 py-3 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-gray-600 dark:text-gray-400 rounded-xl transition-colors disabled:cursor-not-allowed flex items-center"
+                title="Attach images or PDFs"
+              >
+                <Paperclip className="w-4 h-4" />
+              </button>
+              
+              {/* Text Input */}
               <input
                 ref={(el) => {
                   inputRefs.current[activeAgent] = el;
@@ -682,9 +853,11 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                 className="flex-1 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 disabled={currentState.isTyping}
               />
+              
+              {/* Send Button */}
               <button
                 onClick={() => sendMessage(activeAgent)}
-                disabled={!currentState.inputValue.trim() || currentState.isTyping}
+                disabled={(!currentState.inputValue.trim() && !currentState.files?.length) || currentState.isTyping}
                 className="px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white rounded-xl transition-colors disabled:cursor-not-allowed flex items-center space-x-2"
               >
                 <Send className="w-4 h-4" />
