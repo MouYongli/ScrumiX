@@ -23,7 +23,9 @@ import {
   Globe,
   Copy,
   Check,
-  Edit3
+  Edit3,
+  CheckCircle,
+  XCircle
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -90,13 +92,15 @@ interface AgentChatStateWithFiles extends AgentChatState {
   isDragOver?: boolean;
   loadingState?: 'thinking' | 'searching' | 'tool-call' | 'generating';
   currentTool?: string;
+  pendingConfirmations?: Set<string>; // Message IDs that need confirmation
+  confirmedMessages?: Set<string>; // Message IDs that have been confirmed/declined
 }
 
 
 const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   const [activeAgent, setActiveAgent] = useState<AgentType>('product-owner');
   const [isClient, setIsClient] = useState(false);
-  const [webSearchEnabled, setWebSearchEnabled] = useState(true);
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingContent, setEditingContent] = useState<string>('');
@@ -105,19 +109,25 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       messages: [], 
       isTyping: false, 
       inputValue: '', 
-      selectedModel: getPreferredModel('product-owner')
+      selectedModel: getPreferredModel('product-owner'),
+      pendingConfirmations: new Set(),
+      confirmedMessages: new Set()
     },
     'scrum-master': { 
       messages: [], 
       isTyping: false, 
       inputValue: '', 
-      selectedModel: getPreferredModel('scrum-master')
+      selectedModel: getPreferredModel('scrum-master'),
+      pendingConfirmations: new Set(),
+      confirmedMessages: new Set()
     },
     'developer': { 
       messages: [], 
       isTyping: false, 
       inputValue: '', 
-      selectedModel: getPreferredModel('developer')
+      selectedModel: getPreferredModel('developer'),
+      pendingConfirmations: new Set(),
+      confirmedMessages: new Set()
     }
   });
 
@@ -420,11 +430,18 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
             model: currentState.selectedModel
           };
 
+          // Check if this agent message contains a confirmation request
+          const needsConfirmation = isConfirmationRequest(agentMessage.content);
+          const newPendingConfirmations = needsConfirmation 
+            ? new Set([...currentState.pendingConfirmations!, agentMessage.id])
+            : currentState.pendingConfirmations;
+
           updateAgentState(agentType, {
             messages: [...currentState.messages, userMessage, agentMessage],
             isTyping: false,
             loadingState: undefined,
-            currentTool: undefined
+            currentTool: undefined,
+            pendingConfirmations: newPendingConfirmations
           });
         }
       } catch (error) {
@@ -574,6 +591,153 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
         console.error('Fallback copy failed:', fallbackError);
       }
       document.body.removeChild(textArea);
+    }
+  };
+
+  const isConfirmationRequest = (content: string): boolean => {
+    const confirmationPatterns = [
+      /would you like me to/i,
+      /should I/i,
+      /do you want me to/i,
+      /shall I/i,
+      /can I/i,
+      /may I/i,
+      /confirm/i,
+      /proceed/i,
+      /continue/i,
+      /approve/i,
+      /accept/i,
+      /agree/i,
+      /\?.*(?:yes|no)/i,
+      /please confirm/i,
+      /is this correct/i,
+      /does this look good/i,
+      /ready to/i
+    ];
+    
+    return confirmationPatterns.some(pattern => pattern.test(content));
+  };
+
+  const handleConfirmation = async (agentType: AgentType, messageId: string, accepted: boolean) => {
+    const currentState = agentStates[agentType];
+    
+    // Mark this message as confirmed
+    const newConfirmedMessages = new Set(currentState.confirmedMessages);
+    newConfirmedMessages.add(messageId);
+    
+    const newPendingConfirmations = new Set(currentState.pendingConfirmations);
+    newPendingConfirmations.delete(messageId);
+    
+    updateAgentState(agentType, {
+      confirmedMessages: newConfirmedMessages,
+      pendingConfirmations: newPendingConfirmations
+    });
+
+    // Send the confirmation response as a user message
+    const confirmationMessage = accepted ? "Yes, please proceed." : "No, please don't proceed.";
+    
+    const userMessage: ChatMessage = {
+      id: `user-${Date.now()}`,
+      content: confirmationMessage,
+      timestamp: new Date().toISOString(),
+      sender: 'user',
+      parts: [{ type: 'text', text: confirmationMessage }]
+    };
+
+    // Add user message and trigger AI response
+    updateAgentState(agentType, {
+      messages: [...currentState.messages, userMessage],
+      isTyping: true,
+      loadingState: 'thinking'
+    });
+
+    // Send to AI for response (similar to regular sendMessage logic)
+    await sendConfirmationResponse(agentType, userMessage);
+  };
+
+  const sendConfirmationResponse = async (agentType: AgentType, userMessage: ChatMessage) => {
+    const currentState = agentStates[agentType];
+    const getApiEndpoint = (type: AgentType) => {
+      switch (type) {
+        case 'product-owner': return '/api/chat/product-owner';
+        case 'scrum-master': return '/api/chat/scrum-master';
+        case 'developer': return '/api/chat/developer';
+        default: return '/api/chat/product-owner';
+      }
+    };
+
+    try {
+      const apiEndpoint = getApiEndpoint(agentType);
+      const apiMessages = [...currentState.messages, userMessage].map(msg => ({
+        role: msg.sender === 'user' ? 'user' : 'assistant',
+        content: msg.content
+      }));
+
+      const response = await fetch(apiEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: apiMessages,
+          projectId: projectId ? parseInt(projectId, 10) : null,
+          selectedModel: currentState.selectedModel,
+          webSearchEnabled: webSearchEnabled
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`API Error: ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('No response stream available');
+      }
+
+      let aiResponse = '';
+      const decoder = new TextDecoder();
+      let messageId = `agent-${Date.now()}`;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        aiResponse += chunk;
+        
+        const agentMessage: ChatMessage = {
+          id: messageId,
+          content: aiResponse,
+          timestamp: new Date().toISOString(),
+          sender: 'agent',
+          agentType: agentType,
+          model: currentState.selectedModel
+        };
+
+        updateAgentState(agentType, {
+          messages: [...currentState.messages, userMessage, agentMessage],
+          isTyping: false,
+          loadingState: undefined,
+          currentTool: undefined
+        });
+      }
+    } catch (error) {
+      console.error('Confirmation response error:', error);
+      const errorMessage: ChatMessage = {
+        id: `agent-${Date.now()}`,
+        content: `I apologize, but I encountered an error processing your confirmation.`,
+        timestamp: new Date().toISOString(),
+        sender: 'agent',
+        agentType: agentType
+      };
+
+      updateAgentState(agentType, {
+        messages: [...currentState.messages, userMessage, errorMessage],
+        isTyping: false,
+        loadingState: undefined,
+        currentTool: undefined
+      });
     }
   };
 
@@ -1238,8 +1402,30 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                             : 'text-gray-500 dark:text-gray-400'
                         }`}>
                           {formatTimestamp(message.timestamp)}
-                        </p>
-                      </div>
+                             </p>
+                           </div>
+                           
+                           {/* Confirmation Buttons - Show for agent messages that need confirmation */}
+                           {message.sender === 'agent' && 
+                            currentState.pendingConfirmations?.has(message.id) && 
+                            !currentState.confirmedMessages?.has(message.id) && (
+                             <div className="flex space-x-3 mt-3 justify-center">
+                               <button
+                                 onClick={() => handleConfirmation(activeAgent, message.id, true)}
+                                 className="flex items-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+                               >
+                                 <CheckCircle className="w-4 h-4" />
+                                 <span>Accept</span>
+                               </button>
+                               <button
+                                 onClick={() => handleConfirmation(activeAgent, message.id, false)}
+                                 className="flex items-center space-x-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+                               >
+                                 <XCircle className="w-4 h-4" />
+                                 <span>Decline</span>
+                               </button>
+                             </div>
+                           )}
                            </>
                          )}
                          
