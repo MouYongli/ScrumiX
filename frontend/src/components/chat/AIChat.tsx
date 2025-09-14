@@ -116,7 +116,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   });
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRefs = useRef<Record<AgentType, HTMLInputElement | null>>({
+  const inputRefs = useRef<Record<AgentType, HTMLTextAreaElement | null>>({
     'product-owner': null,
     'scrum-master': null,
     'developer': null
@@ -146,6 +146,14 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       inputRef.focus();
     }
   }, [activeAgent]);
+
+  useEffect(() => {
+    // Reset textarea height when input is cleared
+    const inputRef = inputRefs.current[activeAgent];
+    if (inputRef && !agentStates[activeAgent].inputValue) {
+      inputRef.style.height = '48px'; // Reset to min-height
+    }
+  }, [activeAgent, agentStates]);
 
   const updateAgentState = (agentType: AgentType, updates: Partial<AgentChatStateWithFiles>) => {
     setAgentStates(prev => ({
@@ -434,14 +442,26 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   };
 
   const handleKeyPress = (e: React.KeyboardEvent, agentType: AgentType) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage(agentType);
+    if (e.key === 'Enter') {
+      if (e.shiftKey) {
+        // Allow line break with Shift + Enter
+        return;
+      } else {
+        // Send message with Enter
+        e.preventDefault();
+        sendMessage(agentType);
+      }
     }
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>, agentType: AgentType) => {
-    updateAgentState(agentType, { inputValue: e.target.value });
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>, agentType: AgentType) => {
+    const textarea = e.target;
+    
+    // Auto-resize textarea
+    textarea.style.height = 'auto';
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 128)}px`; // max-height: 128px (8rem)
+    
+    updateAgentState(agentType, { inputValue: textarea.value });
   };
 
   const clearChatHistory = (agentType: AgentType) => {
@@ -1018,7 +1038,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
               </div>
             )}
             
-            <div className="flex space-x-3">
+            <div className="flex items-end space-x-3">
               {/* File Upload Button */}
               <input
                 ref={(el) => {
@@ -1033,7 +1053,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
               <button
                 onClick={() => fileInputRefs.current[activeAgent]?.click()}
                 disabled={currentState.isTyping}
-                className="px-3 py-3 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-gray-600 dark:text-gray-400 rounded-xl transition-colors disabled:cursor-not-allowed flex items-center"
+                className="px-3 py-3 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-gray-600 dark:text-gray-400 rounded-xl transition-colors disabled:cursor-not-allowed flex items-center flex-shrink-0"
                 title="Attach images or PDFs"
               >
                 <Paperclip className="w-4 h-4" />
@@ -1047,7 +1067,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                     setWebSearchEnabled(!webSearchEnabled);
                   }}
                   disabled={currentState.isTyping}
-                  className={`px-3 py-3 rounded-xl transition-colors disabled:cursor-not-allowed flex items-center ${
+                  className={`px-3 py-3 rounded-xl transition-colors disabled:cursor-not-allowed flex items-center flex-shrink-0 ${
                     webSearchEnabled
                       ? 'bg-green-100 dark:bg-green-800 hover:bg-green-200 dark:hover:bg-green-700 text-green-600 dark:text-green-400'
                       : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-400'
@@ -1062,24 +1082,24 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
               )}
               
               {/* Text Input */}
-              <input
+              <textarea
                 ref={(el) => {
                   inputRefs.current[activeAgent] = el;
                 }}
-                type="text"
                 value={currentState.inputValue}
                 onChange={(e) => handleInputChange(e, activeAgent)}
                 onKeyPress={(e) => handleKeyPress(e, activeAgent)}
                 placeholder={`Ask ${currentAgent.name} anything about your project...`}
-                className="flex-1 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="flex-1 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none min-h-[48px] max-h-32 overflow-y-auto"
                 disabled={currentState.isTyping}
+                rows={1}
               />
               
               {/* Send Button */}
               <button
                 onClick={() => sendMessage(activeAgent)}
                 disabled={(!currentState.inputValue.trim() && !currentState.files?.length) || currentState.isTyping}
-                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white rounded-xl transition-colors disabled:cursor-not-allowed flex items-center space-x-2"
+                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white rounded-xl transition-colors disabled:cursor-not-allowed flex items-center space-x-2 flex-shrink-0"
               >
                 <Send className="w-4 h-4" />
                 <span>Send</span>
