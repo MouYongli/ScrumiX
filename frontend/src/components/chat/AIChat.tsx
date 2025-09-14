@@ -1269,13 +1269,13 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
         >
           {/* Drag overlay */}
           {currentState.isDragOver && (
-            <div className="absolute inset-0 bg-blue-50/90 dark:bg-blue-900/40 z-10 flex items-center justify-center">
-              <div className="text-center">
-                <Upload className="w-16 h-16 text-blue-500 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-blue-700 dark:text-blue-300 mb-2">
+            <div className="absolute inset-0 bg-blue-50/95 dark:bg-gray-800/95 border-2 border-dashed border-blue-400 dark:border-blue-300 z-10 flex items-center justify-center">
+              <div className="text-center p-8 bg-white/90 dark:bg-gray-700/90 rounded-xl border border-blue-200 dark:border-blue-400 shadow-lg">
+                <Upload className="w-16 h-16 text-blue-500 dark:text-blue-400 mx-auto mb-4" />
+                <h3 className="text-xl font-semibold text-blue-700 dark:text-white mb-2">
                   Drop files to attach
                 </h3>
-                <p className="text-sm text-blue-600 dark:text-blue-400 max-w-md">
+                <p className="text-sm text-blue-600 dark:text-gray-300 max-w-md">
                   {getSupportedFormatsString()}
                 </p>
               </div>
@@ -1674,29 +1674,29 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
             )}
             
             {/* Hidden File Input */}
-            <input
-              ref={(el) => {
-                fileInputRefs.current[activeAgent] = el;
-              }}
-              type="file"
-              accept="image/jpeg,image/png,image/gif,image/webp,application/pdf"
-              multiple
-              onChange={(e) => handleFileChange(e, activeAgent)}
-              className="hidden"
-            />
+              <input
+                ref={(el) => {
+                  fileInputRefs.current[activeAgent] = el;
+                }}
+                type="file"
+                accept="image/jpeg,image/png,image/gif,image/webp,application/pdf"
+                multiple
+                onChange={(e) => handleFileChange(e, activeAgent)}
+                className="hidden"
+              />
 
             {/* Integrated Input Field with Buttons */}
             <div className="relative flex items-center bg-gray-100 dark:bg-gray-700 rounded-2xl border-0 focus-within:bg-gray-200 dark:focus-within:bg-gray-600 transition-colors">
               {/* Plus Button with Dropdown */}
               <div className="relative plus-dropdown">
-                <button
+              <button
                   onClick={() => setShowPlusDropdown(!showPlusDropdown)}
-                  disabled={currentState.isTyping}
+                disabled={currentState.isTyping}
                   className="p-3 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors disabled:cursor-not-allowed flex items-center"
                   title="More options"
-                >
+              >
                   <Plus className="w-4 h-4" />
-                </button>
+              </button>
 
                 {/* Dropdown Menu (appears above button) */}
                 {showPlusDropdown && (
@@ -1714,16 +1714,16 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                     </button>
 
                     {/* Web Search Option */}
-                    {isClient && hasNativeWebSearch(currentState.selectedModel || currentAgent.defaultModel || '') && (
-                      <button
-                        onClick={() => {
-                          setWebSearchEnabled(!webSearchEnabled);
+              {isClient && hasNativeWebSearch(currentState.selectedModel || currentAgent.defaultModel || '') && (
+                <button
+                  onClick={() => {
+                    setWebSearchEnabled(!webSearchEnabled);
                           setShowPlusDropdown(false);
-                        }}
+                  }}
                         className="w-full p-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors last:rounded-b-lg flex items-center space-x-3"
                       >
                         <Globe className={`w-4 h-4 ${
-                          webSearchEnabled 
+                    webSearchEnabled
                             ? 'text-green-600 dark:text-green-400' 
                             : 'text-gray-600 dark:text-gray-400'
                         }`} />
@@ -1752,7 +1752,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                         className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 hover:bg-red-600 text-white rounded-full items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity hidden group-hover:flex"
                       >
                         <X className="w-2.5 h-2.5" />
-                      </button>
+                </button>
                     </div>
                   )}
 
