@@ -164,7 +164,7 @@ Bad response: Long analysis with calculations, trade-offs, and detailed breakdow
 
 export async function POST(req: Request) {
   try {
-    const { messages, projectId, selectedModel } = await req.json();
+    const { messages, projectId, selectedModel, webSearchEnabled } = await req.json();
 
     // Validate request
     if (!messages || !Array.isArray(messages)) {
@@ -209,7 +209,7 @@ export async function POST(req: Request) {
         // Documentation Management Tools
         ...documentationTools,
         // Web Search Tools (native for OpenAI/Gemini)
-        ...getWebSearchToolsForModel(modelToUse),
+        ...getWebSearchToolsForModel(modelToUse, webSearchEnabled),
       },
       temperature: modelConfig.temperature, // Agent-specific temperature setting
       toolChoice: 'auto', // Allow the model to choose when to use tools

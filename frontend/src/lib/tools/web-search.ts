@@ -8,10 +8,15 @@ import { openai } from '@ai-sdk/openai';
 import { google } from '@ai-sdk/google';
 
 /**
- * Get web search tools based on the model being used
- * Returns native search tools for supported models, empty object otherwise
+ * Get web search tools based on the model being used and if web search is enabled
+ * Returns native search tools for supported models when enabled, empty object otherwise
  */
-export function getWebSearchToolsForModel(modelId: string): Record<string, any> {
+export function getWebSearchToolsForModel(modelId: string, webSearchEnabled: boolean = true): Record<string, any> {
+  // If web search is disabled, return no tools
+  if (!webSearchEnabled) {
+    return {};
+  }
+
   // OpenAI models get native web search preview
   if (modelId?.startsWith('openai/')) {
     return {

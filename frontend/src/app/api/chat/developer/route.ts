@@ -192,7 +192,7 @@ SEARCH STRATEGY:
 
 export async function POST(req: Request) {
   try {
-    const { messages, projectId, selectedModel } = await req.json();
+    const { messages, projectId, selectedModel, webSearchEnabled } = await req.json();
 
     // Validate request
     if (!messages || !Array.isArray(messages)) {
@@ -261,7 +261,7 @@ export async function POST(req: Request) {
         // Technical Documentation Tools
         ...documentationTools,
         // Web Search Tools (native for OpenAI/Gemini)
-        ...getWebSearchToolsForModel(modelToUse),
+        ...getWebSearchToolsForModel(modelToUse, webSearchEnabled),
       },
       experimental_context: {
         cookies: cookies, // Pass cookies for authentication
