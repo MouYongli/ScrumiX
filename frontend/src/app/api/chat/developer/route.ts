@@ -4,6 +4,7 @@ import { selectModel } from '@/lib/adaptive-models';
 import { semanticSprintTools } from '@/lib/tools/semantic-sprint-management';
 import { developerSprintTools } from '@/lib/tools/developer-sprint-management';
 import { documentationTools } from '@/lib/tools/documentation';
+import { getWebSearchToolsForModel } from '@/lib/tools/web-search';
 
 // Developer AI Agent System Prompt
 const DEVELOPER_SYSTEM_PROMPT = `You are the Developer AI Agent for ScrumiX, acting as a professional digital assistant to the human Developers.
@@ -259,6 +260,8 @@ export async function POST(req: Request) {
         
         // Technical Documentation Tools
         ...documentationTools,
+        // Web Search Tools (native for OpenAI/Gemini)
+        ...getWebSearchToolsForModel(modelToUse),
       },
       experimental_context: {
         cookies: cookies, // Pass cookies for authentication

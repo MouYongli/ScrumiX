@@ -3,6 +3,7 @@ import { gateway, getAgentModelConfig } from '@/lib/ai-gateway';
 import { selectModel } from '@/lib/adaptive-models';
 import { scrumMasterTools } from '@/lib/tools/scrum-master';
 import { documentationTools } from '@/lib/tools/documentation';
+import { getWebSearchToolsForModel } from '@/lib/tools/web-search';
 
 // Scrum Master AI Agent System Prompt
 const SCRUM_MASTER_SYSTEM_PROMPT = `You are the Scrum Master AI Agent for ScrumiX, acting as a professional digital assistant to the human Scrum Master.
@@ -181,6 +182,8 @@ export async function POST(req: Request) {
         manageMeetingActionItems: scrumMasterTools.manageMeetingActionItems,
         // Process Documentation Tools
         ...documentationTools,
+        // Web Search Tools (native for OpenAI/Gemini)
+        ...getWebSearchToolsForModel(modelToUse),
       },
       temperature: modelConfig.temperature, // Agent-specific temperature setting
       toolChoice: 'auto', // Allow the model to choose when to use tools
