@@ -3,23 +3,24 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  MessageCircle, 
-  X, 
-  Send, 
-  Minimize2,
   User,
   Settings,
-  Users,
   Code2,
-  Sparkles,
-  ArrowUp,
-  ExternalLink
+  Send,
+  MessageSquare,
+  X,
+  Minimize2,
+  ExternalLink,
+  Plus,
+  Upload,
+  Globe
 } from 'lucide-react';
-import { Agent, AgentType, ChatMessage, ChatState, AgentChatState } from '@/types/chat';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { Agent, AgentType, ChatMessage, AgentChatState } from '@/types/chat';
 import { getAgentModelConfig, AI_MODELS } from '@/lib/ai-gateway';
 import { getPreferredModel, setPreferredModel } from '@/lib/model-preferences';
+import { hasNativeWebSearch } from '@/lib/tools/web-search';
 import ModelSelector from './ModelSelector';
 
 // Agent definitions with Scrum-specific roles
@@ -69,10 +70,11 @@ const getAgentIcon = (agentType: AgentType) => {
   }
 };
 
-
 const ChatWidget: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
   const [activeAgent, setActiveAgent] = useState<AgentType>('product-owner');
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+  const [showPlusDropdown, setShowPlusDropdown] = useState(false);
   const [agentStates, setAgentStates] = useState<Record<AgentType, AgentChatState>>({
     'product-owner': { 
       messages: [], 
@@ -96,7 +98,7 @@ const ChatWidget: React.FC = () => {
   
   const [isMinimized, setIsMinimized] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const pathname = usePathname();
   
   // Get project ID from current path
@@ -125,6 +127,22 @@ const ChatWidget: React.FC = () => {
     }
   }, [isOpen, isMinimized, activeAgent]);
 
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Element;
+      
+      if (showPlusDropdown && !target.closest('.plus-dropdown')) {
+        setShowPlusDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showPlusDropdown]);
+
   const toggleChat = () => {
     setIsOpen(!isOpen);
     setIsMinimized(false);
@@ -133,6 +151,23 @@ const ChatWidget: React.FC = () => {
   const closeChat = () => {
     setIsOpen(false);
     setIsMinimized(false);
+    
+    // Clear chat history for all agents
+    setAgentStates(prev => {
+      const clearedStates: Record<AgentType, AgentChatState> = {} as Record<AgentType, AgentChatState>;
+      
+      Object.keys(prev).forEach(agentType => {
+        const agent = agentType as AgentType;
+        clearedStates[agent] = {
+          ...prev[agent],
+          messages: [],
+          isTyping: false,
+          inputValue: ''
+        };
+      });
+      
+      return clearedStates;
+    });
   };
 
   const minimizeChat = () => {
@@ -160,85 +195,21 @@ const ChatWidget: React.FC = () => {
       inputValue: ''
     });
 
-    // Use real AI for all agents
-    const getApiEndpoint = (type: AgentType) => {
-      switch (type) {
-        case 'product-owner': return '/api/chat/product-owner';
-        case 'scrum-master': return '/api/chat/scrum-master';
-        case 'developer': return '/api/chat/developer';
-        default: return '/api/chat/product-owner'; // fallback
-      }
-    };
-    
-    const apiEndpoint = getApiEndpoint(activeAgent);
-    
-    try {
-      const response = await fetch(apiEndpoint, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          messages: [...currentState.messages, userMessage].map(msg => ({
-            role: msg.sender === 'user' ? 'user' : 'assistant',
-            content: msg.content
-          })),
-          projectId: projectId ? parseInt(projectId, 10) : null,
-          selectedModel: currentState.selectedModel
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        console.error('API Error Response:', errorText);
-        throw new Error(`API Error: ${response.status} - ${errorText}`);
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error('No response stream available');
-      }
-
-        let aiResponse = '';
-        const decoder = new TextDecoder();
-        let messageId = `agent-${Date.now()}`;
-
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-
-          const chunk = decoder.decode(value, { stream: true });
-          aiResponse += chunk;
-          
-          // Update the agent message in real-time
-          const agentMessage: ChatMessage = {
-            id: messageId,
-            content: aiResponse,
-            timestamp: new Date().toISOString(),
-            sender: 'agent',
-            agentType: activeAgent
-          };
-
-          updateAgentState(activeAgent, {
-            messages: [...currentState.messages, userMessage, agentMessage],
-            isTyping: false
-          });
-        }
-    } catch (error) {
-      console.error('AI Chat Error:', error);
-      const errorMessage: ChatMessage = {
+    // Simulate AI response (replace with actual API call)
+    setTimeout(() => {
+      const aiMessage: ChatMessage = {
         id: `agent-${Date.now()}`,
-        content: `I apologize, but I encountered an error while processing your request. Please check the console for more details and ensure your OpenAI API key is configured correctly.`,
+        content: `Hello! I'm the ${AGENTS[activeAgent].name}. How can I help you today?`,
         timestamp: new Date().toISOString(),
         sender: 'agent',
         agentType: activeAgent
       };
 
       updateAgentState(activeAgent, {
-        messages: [...currentState.messages, userMessage, errorMessage],
+        messages: [...currentState.messages, userMessage, aiMessage],
         isTyping: false
       });
-    }
+    }, 1000);
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -248,9 +219,19 @@ const ChatWidget: React.FC = () => {
     }
   };
 
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const textarea = e.target;
+    
+    // Auto-resize textarea
+    textarea.style.height = 'auto';
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 128)}px`;
+    
+    updateAgentState(activeAgent, { inputValue: textarea.value });
+  };
+
   const currentAgent = AGENTS[activeAgent];
+  const currentState = agentStates[activeAgent];
   const AgentIcon = getAgentIcon(activeAgent);
-  const currentInputValue = agentStates[activeAgent].inputValue;
 
   return (
     <>
@@ -264,16 +245,9 @@ const ChatWidget: React.FC = () => {
             whileHover={{ scale: 1.1 }}
             whileTap={{ scale: 0.95 }}
             onClick={toggleChat}
-            className="fixed bottom-6 right-6 z-50 w-14 h-14 bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700 text-white rounded-full shadow-lg hover:shadow-xl transition-all duration-300 flex items-center justify-center group"
+            className="fixed bottom-6 right-6 z-50 w-14 h-14 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-lg hover:shadow-xl transition-all duration-300 flex items-center justify-center"
           >
-            <MessageCircle className="w-6 h-6" />
-            <motion.div
-              className="absolute -top-1 -right-1 w-4 h-4 bg-emerald-500 rounded-full flex items-center justify-center"
-              animate={{ scale: [1, 1.2, 1] }}
-              transition={{ duration: 2, repeat: Infinity }}
-            >
-              <Sparkles className="w-2 h-2 text-white" />
-            </motion.div>
+            <MessageSquare className="w-6 h-6" />
           </motion.button>
         )}
       </AnimatePresence>
@@ -286,59 +260,109 @@ const ChatWidget: React.FC = () => {
             animate={{ 
               opacity: 1, 
               scale: 1, 
-              y: 0,
-              height: isMinimized ? 'auto' : '600px'
+              y: 0
             }}
             exit={{ opacity: 0, scale: 0.8, y: 20 }}
             transition={{ type: 'spring', stiffness: 300, damping: 30 }}
-            className="fixed bottom-6 right-6 z-50 w-96 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden"
+            className={`fixed bottom-6 right-6 z-50 w-96 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 overflow-hidden flex flex-col ${
+              isMinimized ? 'h-16' : 'h-[600px]'
+            }`}
           >
-            {/* Chat Header */}
-            <div className="bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-700 dark:to-gray-800 px-4 py-3 border-b border-gray-200 dark:border-gray-600">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-3">
-                  <div className={`w-8 h-8 ${currentAgent.color} rounded-lg flex items-center justify-center`}>
-                    <AgentIcon className="w-4 h-4 text-white" />
+            {/* Header */}
+            <div className={`${!isMinimized ? 'border-b border-gray-200 dark:border-gray-700' : ''} p-4 flex-shrink-0`}>
+              {isMinimized ? (
+                /* Minimized State - Clickable to expand */
+                <div 
+                  onClick={minimizeChat}
+                  className="flex items-center justify-between cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700 -m-4 p-4 rounded-xl transition-colors"
+                >
+                  <div className="flex items-center space-x-3 flex-1">
+                    <div className={`w-8 h-8 ${currentAgent.color} rounded-lg flex items-center justify-center`}>
+                      <AgentIcon className="w-4 h-4 text-white" />
+                    </div>
+                    <div className="text-left flex-1">
+                      <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                        {currentAgent.name}
+                      </div>
+                      <div className="text-xs text-gray-600 dark:text-gray-400">
+                        AI Assistant
+                      </div>
+                    </div>
                   </div>
-                  <div>
-                    <h3 className="font-semibold text-gray-900 dark:text-white text-sm">
-                      {currentAgent.name}
-                    </h3>
-                    <p className="text-xs text-gray-500 dark:text-gray-400">
-                      AI Assistant
-                    </p>
-                    <p className="text-xs text-gray-600 dark:text-gray-300 mt-1 max-w-xs">
-                      {currentAgent.description}
-                    </p>
-                  </div>
-                </div>
-                
-                <div className="flex items-center space-x-2">
-                  {/* Full Page Link Button */}
-                  {projectId && (
-                    <Link
-                      href={`/project/${projectId}/ai-chat`}
-                      onClick={closeChat}
-                      className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors group"
-                      title="Open full-page AI chat"
+                  
+                  <div className="flex items-center space-x-2">
+                    {/* Full Page Link Button */}
+                    {projectId && (
+                      <Link
+                        href={`/project/${projectId}/ai-chat`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          closeChat();
+                        }}
+                        className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors group"
+                        title="Open full-page AI chat"
+                      >
+                        <ExternalLink className="w-4 h-4 text-gray-500 dark:text-gray-400 group-hover:text-blue-600 dark:group-hover:text-blue-400" />
+                      </Link>
+                    )}
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        closeChat();
+                      }}
+                      className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
                     >
-                      <ExternalLink className="w-4 h-4 text-gray-500 dark:text-gray-400 group-hover:text-blue-600 dark:group-hover:text-blue-400" />
-                    </Link>
-                  )}
-                  <button
-                    onClick={minimizeChat}
-                    className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
-                  >
-                    <Minimize2 className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-                  </button>
-                  <button
-                    onClick={closeChat}
-                    className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
-                  >
-                    <X className="w-4 h-4 text-gray-500 dark:text-gray-400" />
-                  </button>
+                      <X className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                    </button>
+                  </div>
                 </div>
-              </div>
+              ) : (
+                /* Expanded State */
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-3">
+                    {/* Agent Display */}
+                    <div className="flex items-center space-x-3 px-3 py-2 bg-gray-100 dark:bg-gray-700 rounded-lg">
+                      <div className={`w-6 h-6 ${currentAgent.color} rounded-lg flex items-center justify-center`}>
+                        <AgentIcon className="w-3 h-3 text-white" />
+                      </div>
+                      <div className="text-left">
+                        <div className="text-xs font-semibold text-gray-900 dark:text-white">
+                          {currentAgent.name}
+                        </div>
+                        <div className="text-xs text-gray-600 dark:text-gray-400">
+                          AI Assistant
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex items-center space-x-2">
+                    {/* Full Page Link Button */}
+                    {projectId && (
+                      <Link
+                        href={`/project/${projectId}/ai-chat`}
+                        onClick={closeChat}
+                        className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors group"
+                        title="Open full-page AI chat"
+                      >
+                        <ExternalLink className="w-4 h-4 text-gray-500 dark:text-gray-400 group-hover:text-blue-600 dark:group-hover:text-blue-400" />
+                      </Link>
+                    )}
+                    <button
+                      onClick={minimizeChat}
+                      className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
+                    >
+                      <Minimize2 className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                    </button>
+                    <button
+                      onClick={closeChat}
+                      className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors"
+                    >
+                      <X className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Agent Selection Tabs */}
               {!isMinimized && (
@@ -359,48 +383,30 @@ const ChatWidget: React.FC = () => {
                         title={agent.description}
                       >
                         <IconComponent className="w-3 h-3" />
-                        <span className="hidden sm:inline">{agent.name.split(' ')[0]}</span>
+                        <span className="text-xs">{agent.name.split(' ')[0]}</span>
                       </button>
                     );
                   })}
                 </div>
               )}
-              
-              {/* Model Selector */}
-              {!isMinimized && (
-                <div className="mt-3 px-1">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs text-gray-500 dark:text-gray-400">AI Model</span>
-                  </div>
-                  <ModelSelector
-                    selectedModel={agentStates[activeAgent].selectedModel || currentAgent.defaultModel || AI_MODELS.CHAT}
-                    onModelChange={(modelId) => {
-                      updateAgentState(activeAgent, { selectedModel: modelId });
-                      setPreferredModel(activeAgent, modelId);
-                    }}
-                    agentType={activeAgent}
-                    className="w-full"
-                  />
-                </div>
-              )}
             </div>
 
-            {/* Chat Messages */}
+            {/* Messages */}
             {!isMinimized && (
               <>
-                <div className="h-96 overflow-y-auto p-4 space-y-4">
-                  {agentStates[activeAgent].messages.length === 0 && (
-                    <div className="text-center py-8">
-                      <div className={`w-12 h-12 ${currentAgent.color} rounded-full mx-auto mb-3 flex items-center justify-center`}>
+                <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50 dark:bg-gray-900">
+                  {currentState.messages.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center h-full text-center">
+                      <div className={`w-12 h-12 ${currentAgent.color} rounded-full flex items-center justify-center mb-3`}>
                         <AgentIcon className="w-6 h-6 text-white" />
                       </div>
                       <h4 className="font-medium text-gray-900 dark:text-white mb-2">
                         Chat with {currentAgent.name}
                       </h4>
-                      <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
+                      <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">
                         {currentAgent.description}
                       </p>
-                      <div className="flex flex-wrap gap-1 justify-center">
+                      <div className="flex flex-wrap gap-2 justify-center">
                         {currentAgent.expertise.map((skill, index) => (
                           <span
                             key={index}
@@ -411,146 +417,46 @@ const ChatWidget: React.FC = () => {
                         ))}
                       </div>
                     </div>
-                  )}
-
-                  {agentStates[activeAgent].messages.map((message) => (
+                  ) : (
+                    <>
+                      {currentState.messages.map((message) => (
                     <div
                       key={message.id}
                       className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
                     >
-                      <div
-                        className={`max-w-xs px-3 py-2 rounded-lg text-sm ${
+                          <div className="flex items-start space-x-2 max-w-xs">
+                            {message.sender === 'agent' && (
+                              <div className={`w-6 h-6 ${currentAgent.color} rounded-lg flex items-center justify-center flex-shrink-0`}>
+                                <AgentIcon className="w-3 h-3 text-white" />
+                              </div>
+                            )}
+                            
+                            <div
+                              className={`px-3 py-2 rounded-lg text-sm ${
                           message.sender === 'user'
                             ? 'bg-blue-600 text-white'
-                            : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
-                        }`}
-                      >
-                        <div className="prose prose-sm max-w-none prose-slate dark:prose-invert">
-                          {message.content.split('\n').map((line, index) => {
-                            if (line.trim() === '') return <br key={index} />;
+                                  : 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white border border-gray-200 dark:border-gray-600'
+                              }`}
+                            >
+                              {message.content}
+                            </div>
                             
-                            // Handle markdown links [text](url) first - convert to React elements
-                            const linkRegex = /\[([^\]]+)\]\(([^)]+)\)/g;
-                            const parts: (string | React.ReactElement)[] = [];
-                            let lastIndex = 0;
-                            let match: RegExpExecArray | null;
-                            
-                            while ((match = linkRegex.exec(line)) !== null) {
-                              // Add text before the link
-                              if (match.index > lastIndex) {
-                                parts.push(line.slice(lastIndex, match.index));
-                              }
-                              
-                              const linkText = match[1];
-                              const linkUrl = match[2];
-                              
-                              // Add the link as a React element
-                              parts.push(
-                                <a
-                                  key={`link-${index}-${match.index}`}
-                                  href={linkUrl}
-                                  className="text-blue-600 dark:text-blue-400 hover:underline cursor-pointer underline font-medium"
-                                  onClick={(e) => {
-                                    e.preventDefault();
-                                    window.location.href = linkUrl;
-                                  }}
-                                >
-                                  {linkText}
-                                </a>
-                              );
-                              
-                              lastIndex = match.index + match[0].length;
-                            }
-                            
-                            // Add remaining text
-                            if (lastIndex < line.length) {
-                              parts.push(line.slice(lastIndex));
-                            }
-                            
-                            // If no links found, process normally
-                            if (parts.length === 0) {
-                              parts.push(line);
-                            }
-                            
-                            // Process the parts for other markdown
-                            const processedParts = parts.map((part) => {
-                              if (typeof part === 'string') {
-                                // Handle bold text **text**
-                                const boldRegex = /\*\*(.*?)\*\*/g;
-                                return part.replace(boldRegex, '<strong>$1</strong>');
-                              }
-                              return part;
-                            });
-                            
-                            // Handle list items starting with -
-                            if (line.trim().startsWith('- ')) {
-                              return (
-                                <li key={index} className="ml-4">
-                                  {processedParts.map((part, partIndex) => 
-                                    typeof part === 'string' ? 
-                                      <span key={partIndex} dangerouslySetInnerHTML={{ __html: part.replace(/^- /, '') }} /> : 
-                                      part
-                                  )}
-                                </li>
-                              );
-                            }
-                            
-                            // Handle numbered lists
-                            const numberedListMatch = line.match(/^(\d+)\.\s+(.+)/);
-                            if (numberedListMatch) {
-                              return (
-                                <li key={index} className="ml-4">
-                                  {processedParts.map((part, partIndex) => 
-                                    typeof part === 'string' ? 
-                                      <span key={partIndex} dangerouslySetInnerHTML={{ __html: part.replace(/^\d+\.\s+/, '') }} /> : 
-                                      part
-                                  )}
-                                </li>
-                              );
-                            }
-                            
-                            // Handle headings
-                            if (line.startsWith('### ')) {
-                              return (
-                                <h3 key={index} className="text-base font-semibold mt-2 mb-1">
-                                  {processedParts.map((part, partIndex) => 
-                                    typeof part === 'string' ? 
-                                      <span key={partIndex} dangerouslySetInnerHTML={{ __html: part.replace('### ', '') }} /> : 
-                                      part
-                                  )}
-                                </h3>
-                              );
-                            }
-                            if (line.startsWith('## ')) {
-                              return (
-                                <h2 key={index} className="text-lg font-semibold mt-2 mb-1">
-                                  {processedParts.map((part, partIndex) => 
-                                    typeof part === 'string' ? 
-                                      <span key={partIndex} dangerouslySetInnerHTML={{ __html: part.replace('## ', '') }} /> : 
-                                      part
-                                  )}
-                                </h2>
-                              );
-                            }
-                            
-                            return (
-                              <p key={index} className="mb-1">
-                                {processedParts.map((part, partIndex) => 
-                                  typeof part === 'string' ? 
-                                    <span key={partIndex} dangerouslySetInnerHTML={{ __html: part }} /> : 
-                                    part
-                                )}
-                              </p>
-                            );
-                          })}
-                        </div>
+                            {message.sender === 'user' && (
+                              <div className="w-6 h-6 bg-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                                <User className="w-3 h-3 text-white" />
+                              </div>
+                            )}
                       </div>
                     </div>
                   ))}
 
-                  {agentStates[activeAgent].isTyping && (
+                      {currentState.isTyping && (
                     <div className="flex justify-start">
-                      <div className="bg-gray-100 dark:bg-gray-700 px-3 py-2 rounded-lg">
+                          <div className="flex items-start space-x-2">
+                            <div className={`w-6 h-6 ${currentAgent.color} rounded-lg flex items-center justify-center`}>
+                              <AgentIcon className="w-3 h-3 text-white" />
+                            </div>
+                            <div className="bg-white dark:bg-gray-700 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600">
                         <div className="flex space-x-1">
                           <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
                           <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
@@ -558,26 +464,83 @@ const ChatWidget: React.FC = () => {
                         </div>
                       </div>
                     </div>
+                        </div>
+                      )}
+                      <div ref={messagesEndRef} />
+                    </>
                   )}
-                  <div ref={messagesEndRef} />
                 </div>
 
-                {/* Chat Input */}
-                <div className="border-t border-gray-200 dark:border-gray-600 p-4">
-                  <div className="flex space-x-2">
-                    <input
+                {/* Input Area */}
+                <div className="border-t border-gray-200 dark:border-gray-700 p-4 flex-shrink-0">
+                  {/* Integrated Input Field with Buttons */}
+                  <div className="relative flex items-center bg-gray-100 dark:bg-gray-700 rounded-2xl border-0 focus-within:bg-gray-200 dark:focus-within:bg-gray-600 transition-colors">
+                    {/* Plus Button with Dropdown */}
+                    <div className="relative plus-dropdown">
+                      <button
+                        onClick={() => setShowPlusDropdown(!showPlusDropdown)}
+                        disabled={currentState.isTyping}
+                        className="p-3 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors disabled:cursor-not-allowed flex items-center"
+                        title="More options"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+
+                      {/* Dropdown Menu (appears above button) */}
+                      {showPlusDropdown && (
+                        <div className="absolute bottom-full left-0 mb-2 w-48 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50">
+                          {/* Upload File Option */}
+                          <button
+                            onClick={() => {
+                              // Handle file upload
+                              setShowPlusDropdown(false);
+                            }}
+                            className="w-full p-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors first:rounded-t-lg flex items-center space-x-3"
+                          >
+                            <Upload className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+                            <span className="text-sm text-gray-900 dark:text-white">Upload file</span>
+                          </button>
+
+                          {/* Web Search Option */}
+                          <button
+                            onClick={() => {
+                              setWebSearchEnabled(!webSearchEnabled);
+                              setShowPlusDropdown(false);
+                            }}
+                            className="w-full p-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors last:rounded-b-lg flex items-center space-x-3"
+                          >
+                            <Globe className={`w-4 h-4 ${
+                              webSearchEnabled 
+                                ? 'text-green-600 dark:text-green-400' 
+                                : 'text-gray-600 dark:text-gray-400'
+                            }`} />
+                            <span className="text-sm text-gray-900 dark:text-white">
+                              {webSearchEnabled ? 'Disable web search' : 'Search online'}
+                            </span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    
+                    {/* Text Input */}
+                    <textarea
                       ref={inputRef}
-                      type="text"
-                      value={currentInputValue}
-                      onChange={(e) => updateAgentState(activeAgent, { inputValue: e.target.value })}
+                      value={currentState.inputValue}
+                      onChange={handleInputChange}
                       onKeyPress={handleKeyPress}
                       placeholder={`Ask ${currentAgent.name} anything...`}
-                      className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                      className="flex-1 px-3 py-3 bg-transparent text-sm text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 border-0 focus:outline-none resize-none min-h-[48px] max-h-32 overflow-y-auto"
+                      disabled={currentState.isTyping}
+                      rows={1}
                     />
+                    
+                    {/* Send Button */}
                     <button
                       onClick={sendMessage}
-                      disabled={!currentInputValue.trim()}
-                      className="px-3 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white rounded-lg transition-colors disabled:cursor-not-allowed"
+                      disabled={!currentState.inputValue.trim() || currentState.isTyping}
+                      className="p-2 m-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 dark:disabled:bg-gray-500 text-white rounded-lg transition-colors disabled:cursor-not-allowed flex items-center"
+                      title="Send message"
                     >
                       <Send className="w-4 h-4" />
                     </button>
