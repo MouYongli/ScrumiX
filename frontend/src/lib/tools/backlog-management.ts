@@ -7,6 +7,8 @@ import { tool } from 'ai';
 import { z } from 'zod';
 import { api } from '@/utils/api';
 import { BacklogStatus, BacklogPriority, BacklogType } from '@/types/api';
+import { semanticBacklogManagementTools } from './semantic-backlog-management';
+import { semanticDocumentationTools } from './semantic-documentation-search';
 
 /**
  * Helper function to create backlog items with authentication context
@@ -428,12 +430,23 @@ ${backlogItems.map((item: any, index: number) => {
 });
 
 /**
- * Collection of all backlog management tools
+ * Collection of all backlog management tools including semantic search capabilities
  * Export this to use in the Product Owner Agent
  */
 export const backlogManagementTools = {
+  // Core backlog management
   createBacklogItem: createBacklogItemTool,
-  getBacklogItems: getBacklogItemsTool
+  getBacklogItems: getBacklogItemsTool,
+  
+  // Semantic backlog search and discovery
+  semanticSearchBacklog: semanticBacklogManagementTools.semanticSearchBacklog,
+  bm25SearchBacklog: semanticBacklogManagementTools.bm25SearchBacklog,
+  hybridSearchBacklog: semanticBacklogManagementTools.hybridSearchBacklog,
+  findSimilarBacklog: semanticBacklogManagementTools.findSimilarBacklog,
+  
+  // Semantic documentation search
+  searchDocumentationByField: semanticDocumentationTools.searchDocumentationByField,
+  searchDocumentationMultiField: semanticDocumentationTools.searchDocumentationMultiField
 };
 
 /**

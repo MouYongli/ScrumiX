@@ -5,6 +5,9 @@ from typing import Optional, List, Dict, Any, Tuple
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import and_, or_, func, text
 from datetime import datetime, timedelta
+import math
+import re
+from collections import Counter
 
 from .base import CRUDBase
 from ..models.backlog import Backlog, BacklogStatus, BacklogPriority, BacklogType
@@ -490,6 +493,228 @@ class BacklogCRUD(CRUDBase[Backlog, BacklogCreate, BacklogUpdate]):
         
         return results
     
+    def _calculate_bm25_score(
+        self,
+        query_terms: List[str],
+        document_text: str,
+        corpus_stats: Dict[str, Any],
+        k1: float = 1.5,
+        b: float = 0.75
+    ) -> float:
+        """
+        Calculate BM25 score for a document given query terms
+        
+        Args:
+            query_terms: List of query terms
+            document_text: Document text to score
+            corpus_stats: Statistics about the corpus (avg_doc_length, doc_count, term_frequencies)
+            k1: BM25 parameter k1 (term frequency saturation point)
+            b: BM25 parameter b (length normalization)
+            
+        Returns:
+            BM25 score
+        """
+        if not document_text or not query_terms:
+            return 0.0
+        
+        # Tokenize and normalize document
+        doc_terms = self._tokenize_text(document_text.lower())
+        doc_length = len(doc_terms)
+        
+        if doc_length == 0:
+            return 0.0
+        
+        # Calculate term frequencies in document
+        doc_term_freq = Counter(doc_terms)
+        
+        # Get corpus statistics
+        avg_doc_length = corpus_stats.get('avg_doc_length', 100)
+        total_docs = corpus_stats.get('doc_count', 1)
+        term_doc_frequencies = corpus_stats.get('term_doc_frequencies', {})
+        
+        score = 0.0
+        
+        for term in query_terms:
+            term = term.lower()
+            
+            # Term frequency in document
+            tf = doc_term_freq.get(term, 0)
+            
+            if tf == 0:
+                continue
+            
+            # Document frequency (how many documents contain this term)
+            df = term_doc_frequencies.get(term, 1)
+            
+            # Inverse document frequency
+            idf = math.log((total_docs - df + 0.5) / (df + 0.5))
+            
+            # BM25 formula
+            numerator = tf * (k1 + 1)
+            denominator = tf + k1 * (1 - b + b * (doc_length / avg_doc_length))
+            
+            score += idf * (numerator / denominator)
+        
+        return max(0.0, score)
+    
+    def _tokenize_text(self, text: str) -> List[str]:
+        """
+        Simple tokenization - split on whitespace and punctuation
+        """
+        # Remove punctuation and split on whitespace
+        tokens = re.findall(r'\b\w+\b', text.lower())
+        return [token for token in tokens if len(token) > 1]  # Filter out single characters
+    
+    def _get_corpus_statistics(self, db: Session, project_id: Optional[int] = None) -> Dict[str, Any]:
+        """
+        Calculate corpus statistics needed for BM25 scoring
+        """
+        # Get all backlog items for statistics
+        query = db.query(Backlog)
+        if project_id:
+            query = query.filter(Backlog.project_id == project_id)
+        
+        backlogs = query.all()
+        
+        if not backlogs:
+            return {
+                'doc_count': 1,
+                'avg_doc_length': 100,
+                'term_doc_frequencies': {}
+            }
+        
+        # Calculate document lengths and term frequencies
+        doc_lengths = []
+        term_doc_frequencies = Counter()
+        
+        for backlog in backlogs:
+            doc_text = backlog.get_searchable_content()
+            tokens = self._tokenize_text(doc_text)
+            doc_lengths.append(len(tokens))
+            
+            # Count unique terms in this document
+            unique_terms = set(tokens)
+            for term in unique_terms:
+                term_doc_frequencies[term] += 1
+        
+        avg_doc_length = sum(doc_lengths) / len(doc_lengths) if doc_lengths else 100
+        
+        return {
+            'doc_count': len(backlogs),
+            'avg_doc_length': avg_doc_length,
+            'term_doc_frequencies': dict(term_doc_frequencies)
+        }
+    
+    def _reciprocal_rank_fusion(
+        self,
+        semantic_results: List[Tuple[Backlog, float]],
+        keyword_results: List[Tuple[Backlog, float]],
+        k: int = 60
+    ) -> List[Tuple[Backlog, float]]:
+        """
+        Implement Reciprocal Rank Fusion (RRF) algorithm
+        
+        RRF Score = Σ(1 / (k + rank_i)) for all rankings where item appears
+        
+        Args:
+            semantic_results: List of (backlog, score) from semantic search
+            keyword_results: List of (backlog, score) from BM25 search
+            k: RRF parameter (typically 60)
+            
+        Returns:
+            List of (backlog, rrf_score) sorted by RRF score
+        """
+        rrf_scores = {}
+        
+        # Process semantic results
+        for rank, (backlog, score) in enumerate(semantic_results):
+            if backlog.id not in rrf_scores:
+                rrf_scores[backlog.id] = {
+                    'backlog': backlog,
+                    'rrf_score': 0.0,
+                    'semantic_score': score,
+                    'bm25_score': 0.0
+                }
+            
+            # Add RRF contribution from semantic ranking
+            rrf_scores[backlog.id]['rrf_score'] += 1.0 / (k + rank + 1)
+            rrf_scores[backlog.id]['semantic_score'] = score
+        
+        # Process BM25 results
+        for rank, (backlog, score) in enumerate(keyword_results):
+            if backlog.id not in rrf_scores:
+                rrf_scores[backlog.id] = {
+                    'backlog': backlog,
+                    'rrf_score': 0.0,
+                    'semantic_score': 0.0,
+                    'bm25_score': score
+                }
+            
+            # Add RRF contribution from BM25 ranking
+            rrf_scores[backlog.id]['rrf_score'] += 1.0 / (k + rank + 1)
+            rrf_scores[backlog.id]['bm25_score'] = score
+        
+        # Sort by RRF score and return
+        sorted_results = sorted(
+            rrf_scores.values(),
+            key=lambda x: x['rrf_score'],
+            reverse=True
+        )
+        
+        return [(item['backlog'], item['rrf_score']) for item in sorted_results]
+    
+    async def bm25_search(
+        self,
+        db: Session,
+        query: str,
+        project_id: Optional[int] = None,
+        limit: int = 10
+    ) -> List[Tuple[Backlog, float]]:
+        """
+        Perform BM25 keyword search on backlog items
+        
+        Args:
+            db: Database session
+            query: Search query text
+            project_id: Optional project ID to filter results
+            limit: Maximum number of results to return
+            
+        Returns:
+            List of tuples containing (Backlog, bm25_score)
+        """
+        # Get query terms
+        query_terms = self._tokenize_text(query)
+        if not query_terms:
+            return []
+        
+        # Get corpus statistics
+        corpus_stats = self._get_corpus_statistics(db, project_id)
+        
+        # Get candidate documents (use broad search to get candidates)
+        candidates = self.search_backlogs_by_project(
+            db, project_id, query, 0, limit * 3
+        ) if project_id else self.search_backlogs(db, query, 0, limit * 3)
+        
+        # If no candidates from basic search, get all items for BM25 scoring
+        if not candidates:
+            query_filter = db.query(Backlog)
+            if project_id:
+                query_filter = query_filter.filter(Backlog.project_id == project_id)
+            candidates = query_filter.limit(limit * 5).all()
+        
+        # Calculate BM25 scores
+        scored_results = []
+        for backlog in candidates:
+            doc_text = backlog.get_searchable_content()
+            bm25_score = self._calculate_bm25_score(query_terms, doc_text, corpus_stats)
+            
+            if bm25_score > 0.0:  # Only include items with non-zero scores
+                scored_results.append((backlog, bm25_score))
+        
+        # Sort by BM25 score and limit
+        scored_results.sort(key=lambda x: x[1], reverse=True)
+        return scored_results[:limit]
+    
     async def hybrid_search(
         self,
         db: Session,
@@ -498,19 +723,25 @@ class BacklogCRUD(CRUDBase[Backlog, BacklogCreate, BacklogUpdate]):
         limit: int = 10,
         semantic_weight: float = 0.7,
         keyword_weight: float = 0.3,
-        similarity_threshold: float = 0.5
+        similarity_threshold: float = 0.5,
+        use_rrf: bool = True
     ) -> List[Tuple[Backlog, float]]:
         """
-        Perform hybrid search combining semantic and keyword search
+        Perform hybrid search combining semantic embeddings with BM25 keyword search
+        
+        Uses either Reciprocal Rank Fusion (RRF) or weighted scoring:
+        - RRF: Industry standard that combines rankings from both methods
+        - Weighted: final_score = α * semantic_similarity + β * bm25_score
         
         Args:
             db: Database session
             query: Search query text
             project_id: Optional project ID to filter results
             limit: Maximum number of results to return
-            semantic_weight: Weight for semantic search results (0-1)
-            keyword_weight: Weight for keyword search results (0-1)
+            semantic_weight: Weight for semantic search (used in weighted mode)
+            keyword_weight: Weight for BM25 search (used in weighted mode)
             similarity_threshold: Minimum similarity score for semantic results
+            use_rrf: If True, use RRF algorithm; if False, use weighted scoring
             
         Returns:
             List of tuples containing (Backlog, combined_score)
@@ -520,47 +751,53 @@ class BacklogCRUD(CRUDBase[Backlog, BacklogCreate, BacklogUpdate]):
             db, query, project_id, limit * 2, similarity_threshold
         )
         
-        # Get keyword search results
-        keyword_results = self.search_backlogs_by_project(
-            db, project_id, query, 0, limit * 2
-        ) if project_id else self.search_backlogs(db, query, 0, limit * 2)
+        # Get BM25 keyword search results
+        bm25_results = await self.bm25_search(
+            db, query, project_id, limit * 2
+        )
         
-        # Combine and score results
-        combined_scores = {}
-        
-        # Add semantic scores
-        for backlog, semantic_score in semantic_results:
-            combined_scores[backlog.id] = {
-                'backlog': backlog,
-                'semantic_score': semantic_score,
-                'keyword_score': 0.0
-            }
-        
-        # Add keyword scores (simple relevance based on position)
-        for i, backlog in enumerate(keyword_results):
-            keyword_score = 1.0 - (i / len(keyword_results))  # Higher score for earlier results
+        if use_rrf:
+            # Use Reciprocal Rank Fusion (recommended for production)
+            return self._reciprocal_rank_fusion(semantic_results, bm25_results)[:limit]
+        else:
+            # Use weighted scoring (legacy mode)
+            combined_scores = {}
             
-            if backlog.id in combined_scores:
-                combined_scores[backlog.id]['keyword_score'] = keyword_score
-            else:
+            # Add semantic scores
+            for backlog, semantic_score in semantic_results:
                 combined_scores[backlog.id] = {
                     'backlog': backlog,
-                    'semantic_score': 0.0,
-                    'keyword_score': keyword_score
+                    'semantic_score': semantic_score,
+                    'bm25_score': 0.0
                 }
-        
-        # Calculate combined scores and sort
-        final_results = []
-        for item_id, scores in combined_scores.items():
-            combined_score = (
-                scores['semantic_score'] * semantic_weight +
-                scores['keyword_score'] * keyword_weight
-            )
-            final_results.append((scores['backlog'], combined_score))
-        
-        # Sort by combined score and limit results
-        final_results.sort(key=lambda x: x[1], reverse=True)
-        return final_results[:limit]
+            
+            # Add BM25 scores
+            for backlog, bm25_score in bm25_results:
+                if backlog.id in combined_scores:
+                    combined_scores[backlog.id]['bm25_score'] = bm25_score
+                else:
+                    combined_scores[backlog.id] = {
+                        'backlog': backlog,
+                        'semantic_score': 0.0,
+                        'bm25_score': bm25_score
+                    }
+            
+            # Calculate weighted scores
+            final_results = []
+            for item_id, scores in combined_scores.items():
+                # Normalize scores to 0-1 range for fair weighting
+                normalized_semantic = scores['semantic_score']  # Already 0-1
+                normalized_bm25 = min(1.0, scores['bm25_score'] / 10.0)  # Normalize BM25 (rough)
+                
+                combined_score = (
+                    normalized_semantic * semantic_weight +
+                    normalized_bm25 * keyword_weight
+                )
+                final_results.append((scores['backlog'], combined_score))
+            
+            # Sort by combined score and limit results
+            final_results.sort(key=lambda x: x[1], reverse=True)
+            return final_results[:limit]
     
     async def find_similar_backlogs(
         self,

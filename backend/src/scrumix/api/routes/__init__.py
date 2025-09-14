@@ -20,6 +20,7 @@ from .meeting_participants import router as meeting_participants_router
 from .notifications import router as notifications_router
 from .user_notification_preferences import router as user_notification_preferences_router
 from .personal_notes import router as personal_notes_router
+from .semantic_search import router as semantic_search_router
 
 api_router = APIRouter()
 
@@ -41,3 +42,4 @@ api_router.include_router(meeting_participants_router, prefix="/meeting-particip
 api_router.include_router(notifications_router, prefix="/notifications", tags=["notifications"])
 api_router.include_router(user_notification_preferences_router, prefix="/notification-preferences", tags=["notification-preferences"])
 api_router.include_router(personal_notes_router, prefix="", tags=["personal-notes"])
+api_router.include_router(semantic_search_router, prefix="/semantic-search", tags=["semantic-search"])
