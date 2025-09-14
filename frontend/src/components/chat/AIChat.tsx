@@ -20,7 +20,9 @@ import {
   Image as ImageIcon,
   File,
   Upload,
-  Globe
+  Globe,
+  Copy,
+  Check
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -94,6 +96,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   const [activeAgent, setActiveAgent] = useState<AgentType>('product-owner');
   const [isClient, setIsClient] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(true);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [agentStates, setAgentStates] = useState<Record<AgentType, AgentChatStateWithFiles>>({
     'product-owner': { 
       messages: [], 
@@ -546,6 +549,31 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     }
   };
 
+  const copyToClipboard = async (messageId: string, content: string) => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopiedMessageId(messageId);
+      // Clear the copied state after 2 seconds
+      setTimeout(() => setCopiedMessageId(null), 2000);
+    } catch (error) {
+      console.error('Failed to copy message:', error);
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea');
+      textArea.value = content;
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        setCopiedMessageId(messageId);
+        setTimeout(() => setCopiedMessageId(null), 2000);
+      } catch (fallbackError) {
+        console.error('Fallback copy failed:', fallbackError);
+      }
+      document.body.removeChild(textArea);
+    }
+  };
+
   const currentAgent = AGENTS[activeAgent];
   const currentState = agentStates[activeAgent];
   const AgentIcon = getAgentIcon(activeAgent);
@@ -748,7 +776,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
           </div>
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+          <div className="flex-1 overflow-y-auto p-6 space-y-2">
             {currentState.messages.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center">
                 <div className={`w-20 h-20 ${currentAgent.color} rounded-full flex items-center justify-center mb-4`}>
@@ -776,7 +804,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                 {currentState.messages.map((message) => (
                   <div
                     key={message.id}
-                    className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+                    className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'} group`}
                   >
                     <div className="flex items-start space-x-3 max-w-2xl">
                       {message.sender === 'agent' && (
@@ -785,13 +813,14 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                         </div>
                       )}
                       
-                      <div
-                        className={`px-4 py-3 rounded-xl ${
-                          message.sender === 'user'
-                            ? 'bg-blue-600 text-white'
-                            : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
-                        }`}
-                      >
+                      <div className="relative">
+                        <div
+                          className={`px-4 py-2 rounded-xl ${
+                            message.sender === 'user'
+                              ? 'bg-blue-600 text-white'
+                              : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
+                          }`}
+                        >
                         <div className="text-sm prose prose-sm max-w-none prose-slate dark:prose-invert">
                           {/* Display file attachments for multimodal messages */}
                           {message.parts && message.parts.length > 0 && (
@@ -955,13 +984,31 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                             );
                           })}
                         </div>
-                        <p className={`text-xs mt-2 ${
-                          message.sender === 'user' 
-                            ? 'text-blue-100' 
-                            : 'text-gray-500 dark:text-gray-400'
-                        }`}>
-                          {formatTimestamp(message.timestamp)}
-                        </p>
+                          <p className={`text-xs mt-1 ${
+                            message.sender === 'user' 
+                              ? 'text-blue-100' 
+                              : 'text-gray-500 dark:text-gray-400'
+                          }`}>
+                            {formatTimestamp(message.timestamp)}
+                          </p>
+                        </div>
+                        
+                        {/* Copy Button */}
+                        <button
+                          onClick={() => copyToClipboard(message.id, message.content)}
+                          className={`absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 p-1 rounded-md hover:bg-black/10 dark:hover:bg-white/10 ${
+                            message.sender === 'user' 
+                              ? 'text-blue-100 hover:text-white' 
+                              : 'text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300'
+                          }`}
+                          title="Copy message"
+                        >
+                          {copiedMessageId === message.id ? (
+                            <Check className="w-4 h-4" />
+                          ) : (
+                            <Copy className="w-4 h-4" />
+                          )}
+                        </button>
                       </div>
                       
                       {message.sender === 'user' && (
@@ -979,7 +1026,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                       <div className={`w-8 h-8 ${currentAgent.color} rounded-lg flex items-center justify-center`}>
                         <AgentIcon className="w-4 h-4 text-white" />
                       </div>
-                      <div className="bg-gray-100 dark:bg-gray-700 px-4 py-3 rounded-xl">
+                      <div className="bg-gray-100 dark:bg-gray-700 px-4 py-2 rounded-xl">
                         <div className="flex items-center space-x-2">
                           <div className="flex space-x-1">
                             <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
