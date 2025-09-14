@@ -318,6 +318,7 @@ const ChatWidget: React.FC = () => {
                   {projectId && (
                     <Link
                       href={`/project/${projectId}/ai-chat`}
+                      onClick={closeChat}
                       className="p-1 hover:bg-gray-200 dark:hover:bg-gray-600 rounded transition-colors group"
                       title="Open full-page AI chat"
                     >
