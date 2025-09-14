@@ -22,7 +22,8 @@ import {
   Upload,
   Globe,
   Copy,
-  Check
+  Check,
+  Edit3
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -97,6 +98,8 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   const [isClient, setIsClient] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(true);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingContent, setEditingContent] = useState<string>('');
   const [agentStates, setAgentStates] = useState<Record<AgentType, AgentChatStateWithFiles>>({
     'product-owner': { 
       messages: [], 
@@ -451,8 +454,8 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
         return;
       } else {
         // Send message with Enter
-        e.preventDefault();
-        sendMessage(agentType);
+      e.preventDefault();
+      sendMessage(agentType);
       }
     }
   };
@@ -571,6 +574,208 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
         console.error('Fallback copy failed:', fallbackError);
       }
       document.body.removeChild(textArea);
+    }
+  };
+
+  const startEditingMessage = (messageId: string, content: string) => {
+    setEditingMessageId(messageId);
+    setEditingContent(content);
+    
+    // Auto-resize textarea after it's rendered
+    setTimeout(() => {
+      const textarea = document.querySelector(`textarea[placeholder="Edit your message..."]`) as HTMLTextAreaElement;
+      if (textarea) {
+        textarea.style.height = 'auto';
+        textarea.style.height = `${Math.max(48, Math.min(textarea.scrollHeight, 200))}px`;
+      }
+    }, 0);
+  };
+
+  const cancelEditingMessage = () => {
+    setEditingMessageId(null);
+    setEditingContent('');
+  };
+
+  const saveEditedMessage = async (agentType: AgentType, messageId: string) => {
+    if (!editingContent.trim()) return;
+
+    const currentState = agentStates[agentType];
+    const messageIndex = currentState.messages.findIndex(msg => msg.id === messageId);
+    
+    if (messageIndex === -1) return;
+
+    // Create updated message
+    const updatedMessage: ChatMessage = {
+      ...currentState.messages[messageIndex],
+      content: editingContent.trim(),
+      timestamp: new Date().toISOString()
+    };
+
+    // Remove all messages after the edited one (including agent responses)
+    const messagesUpToEdit = currentState.messages.slice(0, messageIndex);
+    const updatedMessages = [...messagesUpToEdit, updatedMessage];
+
+    // Update state with edited message and removed subsequent messages
+    updateAgentState(agentType, {
+      messages: updatedMessages,
+      isTyping: true,
+      loadingState: webSearchEnabled ? 'searching' : 'thinking'
+    });
+
+    // Clear editing state
+    setEditingMessageId(null);
+    setEditingContent('');
+
+    // Regenerate conversation from the edited message
+    await regenerateConversationFromMessage(agentType, updatedMessages, updatedMessage);
+  };
+
+  const regenerateConversationFromMessage = async (agentType: AgentType, messages: ChatMessage[], editedMessage: ChatMessage) => {
+    const getApiEndpoint = (type: AgentType) => {
+      switch (type) {
+        case 'product-owner': return '/api/chat/product-owner';
+        case 'scrum-master': return '/api/chat/scrum-master';
+        case 'developer': return '/api/chat/developer';
+        default: return '/api/chat/product-owner';
+      }
+    };
+
+    try {
+      const currentState = agentStates[agentType];
+      const apiEndpoint = getApiEndpoint(agentType);
+      
+      // Prepare messages for API
+      const apiMessages = messages.map(msg => ({
+        role: msg.sender === 'user' ? 'user' : 'assistant',
+        content: msg.content
+      }));
+
+      const response = await fetch(apiEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: apiMessages,
+          projectId: projectId ? parseInt(projectId, 10) : null,
+          selectedModel: currentState.selectedModel,
+          webSearchEnabled: webSearchEnabled
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`API Error: ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('No response stream available');
+      }
+
+      let aiResponse = '';
+      const decoder = new TextDecoder();
+      let messageId = `agent-${Date.now()}`;
+      let hasStartedGenerating = false;
+
+      // Set initial thinking state after a short delay if web search is not enabled
+      if (!webSearchEnabled) {
+        setTimeout(() => {
+          updateAgentState(agentType, {
+            messages: messages,
+            isTyping: true,
+            loadingState: 'thinking'
+          });
+        }, 500);
+      }
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        
+        // Try to parse chunk for tool usage information
+        try {
+          const lines = chunk.split('\n');
+          for (const line of lines) {
+            if (line.trim().startsWith('data: ')) {
+              const data = line.replace('data: ', '');
+              if (data && data !== '[DONE]') {
+                const parsed = JSON.parse(data);
+                
+                // Check for tool calls
+                if (parsed.type === 'tool-call' || parsed.toolName) {
+                  const toolName = parsed.toolName || parsed.tool?.name || 'tool';
+                  updateAgentState(agentType, {
+                    messages: messages,
+                    isTyping: true,
+                    loadingState: 'tool-call',
+                    currentTool: toolName
+                  });
+                  continue;
+                }
+                
+                // Check for text generation
+                if (parsed.type === 'text-delta' || parsed.delta || parsed.content) {
+                  if (!hasStartedGenerating) {
+                    hasStartedGenerating = true;
+                    updateAgentState(agentType, {
+                      messages: messages,
+                      isTyping: true,
+                      loadingState: 'generating'
+                    });
+                  }
+                }
+              }
+            }
+          }
+        } catch (e) {
+          // If chunk is not JSON, it's likely text content
+          if (!hasStartedGenerating && chunk.trim()) {
+            hasStartedGenerating = true;
+            updateAgentState(agentType, {
+              messages: messages,
+              isTyping: true,
+              loadingState: 'generating'
+            });
+          }
+        }
+        
+        aiResponse += chunk;
+        
+        // Update the agent message in real-time
+        const agentMessage: ChatMessage = {
+          id: messageId,
+          content: aiResponse,
+          timestamp: new Date().toISOString(),
+          sender: 'agent',
+          agentType: agentType,
+          model: currentState.selectedModel
+        };
+
+        updateAgentState(agentType, {
+          messages: [...messages, agentMessage],
+          isTyping: false,
+          loadingState: undefined,
+          currentTool: undefined
+        });
+      }
+    } catch (error) {
+      console.error('Regenerate conversation error:', error);
+      const errorMessage: ChatMessage = {
+        id: `agent-${Date.now()}`,
+        content: `I apologize, but I encountered an error while processing your edited request.`,
+        timestamp: new Date().toISOString(),
+        sender: 'agent',
+        agentType: agentType
+      };
+
+      updateAgentState(agentType, {
+        messages: [...messages, errorMessage],
+        isTyping: false,
+        loadingState: undefined,
+        currentTool: undefined
+      });
     }
   };
 
@@ -814,13 +1019,56 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                       )}
                       
                       <div className="relative">
-                        <div
-                          className={`px-4 py-2 rounded-xl ${
-                            message.sender === 'user'
-                              ? 'bg-blue-600 text-white'
-                              : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
-                          }`}
-                        >
+                         {editingMessageId === message.id ? (
+                           /* Edit Mode */
+                           <div className="px-4 py-3 rounded-xl bg-gray-50 dark:bg-gray-800 border-2 border-blue-500" style={{ width: '600px', maxWidth: '90vw' }}>
+                             <textarea
+                               value={editingContent}
+                               onChange={(e) => {
+                                 setEditingContent(e.target.value);
+                                 // Auto-resize textarea
+                                 const textarea = e.target;
+                                 textarea.style.height = 'auto';
+                                 textarea.style.height = `${Math.max(48, Math.min(textarea.scrollHeight, 200))}px`;
+                               }}
+                               onKeyPress={(e) => {
+                                 if (e.key === 'Enter' && !e.shiftKey) {
+                                   e.preventDefault();
+                                   saveEditedMessage(activeAgent, message.id);
+                                 }
+                               }}
+                               className="w-full bg-transparent text-gray-900 dark:text-white text-sm resize-none border-none outline-none min-h-[48px] overflow-hidden"
+                               placeholder="Edit your message..."
+                               autoFocus
+                               style={{ height: 'auto', minHeight: '48px' }}
+                             />
+                             <div className="flex justify-end space-x-2 mt-2">
+                               <button
+                                 onClick={cancelEditingMessage}
+                                 className="px-3 py-2 text-sm bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-300 rounded-lg transition-colors"
+                               >
+                                 Cancel
+                               </button>
+                               <button
+                                 onClick={() => saveEditedMessage(activeAgent, message.id)}
+                                 disabled={!editingContent.trim()}
+                                 className="px-3 py-2 text-sm bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg transition-colors disabled:cursor-not-allowed flex items-center space-x-1"
+                               >
+                                 <Send className="w-4 h-4" />
+                                 <span>Send</span>
+                               </button>
+                             </div>
+                           </div>
+                        ) : (
+                          /* Normal Message Display */
+                          <>
+                            <div
+                              className={`px-4 py-2 rounded-xl ${
+                          message.sender === 'user'
+                            ? 'bg-blue-600 text-white'
+                            : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
+                        }`}
+                      >
                         <div className="text-sm prose prose-sm max-w-none prose-slate dark:prose-invert">
                           {/* Display file attachments for multimodal messages */}
                           {message.parts && message.parts.length > 0 && (
@@ -984,31 +1232,47 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                             );
                           })}
                         </div>
-                          <p className={`text-xs mt-1 ${
-                            message.sender === 'user' 
-                              ? 'text-blue-100' 
-                              : 'text-gray-500 dark:text-gray-400'
-                          }`}>
-                            {formatTimestamp(message.timestamp)}
-                          </p>
-                        </div>
-                        
-                        {/* Copy Button */}
-                        <button
-                          onClick={() => copyToClipboard(message.id, message.content)}
-                          className={`absolute bottom-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 p-1 rounded-md hover:bg-black/10 dark:hover:bg-white/10 ${
-                            message.sender === 'user' 
-                              ? 'text-blue-100 hover:text-white' 
-                              : 'text-gray-400 hover:text-gray-600 dark:text-gray-500 dark:hover:text-gray-300'
-                          }`}
-                          title="Copy message"
-                        >
-                          {copiedMessageId === message.id ? (
-                            <Check className="w-4 h-4" />
-                          ) : (
-                            <Copy className="w-4 h-4" />
-                          )}
-                        </button>
+                            <p className={`text-xs mt-1 ${
+                          message.sender === 'user' 
+                            ? 'text-blue-100' 
+                            : 'text-gray-500 dark:text-gray-400'
+                        }`}>
+                          {formatTimestamp(message.timestamp)}
+                        </p>
+                      </div>
+                           </>
+                         )}
+                         
+                         {/* Action Buttons - Show below message on hover */}
+                         {editingMessageId !== message.id && (
+                           <div className={`opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex space-x-2 mt-2 ${
+                             message.sender === 'user' ? 'justify-end' : 'justify-start'
+                           }`}>
+                             {/* Edit Button - Only show for user messages */}
+                             {message.sender === 'user' && (
+                               <button
+                                 onClick={() => startEditingMessage(message.id, message.content)}
+                                 className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
+                                 title="Edit message"
+                               >
+                                 <Edit3 className="w-4 h-4" />
+                               </button>
+                             )}
+                             
+                             {/* Copy Button */}
+                             <button
+                               onClick={() => copyToClipboard(message.id, message.content)}
+                               className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
+                               title="Copy message"
+                             >
+                               {copiedMessageId === message.id ? (
+                                 <Check className="w-4 h-4" />
+                               ) : (
+                                 <Copy className="w-4 h-4" />
+                               )}
+                             </button>
+                           </div>
+                         )}
                       </div>
                       
                       {message.sender === 'user' && (
@@ -1028,10 +1292,10 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                       </div>
                       <div className="bg-gray-100 dark:bg-gray-700 px-4 py-2 rounded-xl">
                         <div className="flex items-center space-x-2">
-                          <div className="flex space-x-1">
-                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
-                            <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                        <div className="flex space-x-1">
+                          <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
+                          <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
+                          <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
                           </div>
                           <span className="text-sm text-gray-600 dark:text-gray-300 ml-2">
                             {getLoadingMessage(currentState, currentAgent.name)}
