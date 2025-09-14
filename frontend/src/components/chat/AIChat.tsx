@@ -20,7 +20,16 @@ import {
   Image as ImageIcon,
   File,
   Upload,
-  Globe
+  Globe,
+  Copy,
+  Check,
+  Edit3,
+  CheckCircle,
+  XCircle,
+  ChevronDown,
+  History,
+  Plus,
+  ArrowUp
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -85,36 +94,51 @@ interface AIChatProps {
 interface AgentChatStateWithFiles extends AgentChatState {
   files?: FileList;
   isDragOver?: boolean;
+  loadingState?: 'thinking' | 'searching' | 'tool-call' | 'generating';
+  currentTool?: string;
+  pendingConfirmations?: Set<string>; // Message IDs that need confirmation
+  confirmedMessages?: Set<string>; // Message IDs that have been confirmed/declined
 }
 
 
 const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   const [activeAgent, setActiveAgent] = useState<AgentType>('product-owner');
   const [isClient, setIsClient] = useState(false);
-  const [webSearchEnabled, setWebSearchEnabled] = useState(true);
+  const [webSearchEnabled, setWebSearchEnabled] = useState(false);
+  const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
+  const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
+  const [editingContent, setEditingContent] = useState<string>('');
+  const [showAgentDropdown, setShowAgentDropdown] = useState(false);
+  const [showPlusDropdown, setShowPlusDropdown] = useState(false);
   const [agentStates, setAgentStates] = useState<Record<AgentType, AgentChatStateWithFiles>>({
     'product-owner': { 
       messages: [], 
       isTyping: false, 
       inputValue: '', 
-      selectedModel: getPreferredModel('product-owner')
+      selectedModel: getPreferredModel('product-owner'),
+      pendingConfirmations: new Set(),
+      confirmedMessages: new Set()
     },
     'scrum-master': { 
       messages: [], 
       isTyping: false, 
       inputValue: '', 
-      selectedModel: getPreferredModel('scrum-master')
+      selectedModel: getPreferredModel('scrum-master'),
+      pendingConfirmations: new Set(),
+      confirmedMessages: new Set()
     },
     'developer': { 
       messages: [], 
       isTyping: false, 
       inputValue: '', 
-      selectedModel: getPreferredModel('developer')
+      selectedModel: getPreferredModel('developer'),
+      pendingConfirmations: new Set(),
+      confirmedMessages: new Set()
     }
   });
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRefs = useRef<Record<AgentType, HTMLInputElement | null>>({
+  const inputRefs = useRef<Record<AgentType, HTMLTextAreaElement | null>>({
     'product-owner': null,
     'scrum-master': null,
     'developer': null
@@ -144,6 +168,34 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       inputRef.focus();
     }
   }, [activeAgent]);
+
+  useEffect(() => {
+    // Reset textarea height when input is cleared
+    const inputRef = inputRefs.current[activeAgent];
+    if (inputRef && !agentStates[activeAgent].inputValue) {
+      inputRef.style.height = '48px'; // Reset to min-height
+    }
+  }, [activeAgent, agentStates]);
+
+  // Close dropdowns when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Element;
+      
+      if (showAgentDropdown && !target.closest('.agent-dropdown')) {
+        setShowAgentDropdown(false);
+      }
+      
+      if (showPlusDropdown && !target.closest('.plus-dropdown')) {
+        setShowPlusDropdown(false);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [showAgentDropdown, showPlusDropdown]);
 
   const updateAgentState = (agentType: AgentType, updates: Partial<AgentChatStateWithFiles>) => {
     setAgentStates(prev => ({
@@ -261,7 +313,8 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       messages: [...currentState.messages, userMessage],
       isTyping: true,
       inputValue: '',
-      files: undefined
+      files: undefined,
+      loadingState: webSearchEnabled ? 'searching' : 'thinking'
     });
 
     // Clear file input
@@ -325,12 +378,72 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
         let aiResponse = '';
         const decoder = new TextDecoder();
         let messageId = `agent-${Date.now()}`;
+        let hasStartedGenerating = false;
+        
+        // Set initial thinking state after a short delay if web search is not enabled
+        if (!webSearchEnabled) {
+          setTimeout(() => {
+            updateAgentState(agentType, {
+              messages: [...currentState.messages, userMessage],
+              isTyping: true,
+              loadingState: 'thinking'
+            });
+          }, 500);
+        }
 
         while (true) {
           const { done, value } = await reader.read();
           if (done) break;
 
           const chunk = decoder.decode(value, { stream: true });
+          
+          // Try to parse chunk for tool usage information
+          try {
+            const lines = chunk.split('\n');
+            for (const line of lines) {
+              if (line.trim().startsWith('data: ')) {
+                const data = line.replace('data: ', '');
+                if (data && data !== '[DONE]') {
+                  const parsed = JSON.parse(data);
+                  
+                  // Check for tool calls
+                  if (parsed.type === 'tool-call' || parsed.toolName) {
+                    const toolName = parsed.toolName || parsed.tool?.name || 'tool';
+                    updateAgentState(agentType, {
+                      messages: [...currentState.messages, userMessage],
+                      isTyping: true,
+                      loadingState: 'tool-call',
+                      currentTool: toolName
+                    });
+                    continue;
+                  }
+                  
+                  // Check for text generation
+                  if (parsed.type === 'text-delta' || parsed.delta || parsed.content) {
+                    if (!hasStartedGenerating) {
+                      hasStartedGenerating = true;
+                      updateAgentState(agentType, {
+                        messages: [...currentState.messages, userMessage],
+                        isTyping: true,
+                        loadingState: 'generating'
+                      });
+                    }
+                  }
+                }
+              }
+            }
+          } catch (e) {
+            // If chunk is not JSON, it's likely text content
+            if (!hasStartedGenerating && chunk.trim()) {
+              hasStartedGenerating = true;
+              updateAgentState(agentType, {
+                messages: [...currentState.messages, userMessage],
+                isTyping: true,
+                loadingState: 'generating'
+              });
+            }
+          }
+          
           aiResponse += chunk;
           
           // Update the agent message in real-time
@@ -343,9 +456,18 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
             model: currentState.selectedModel
           };
 
+          // Check if this agent message contains a confirmation request
+          const needsConfirmation = isConfirmationRequest(agentMessage.content);
+          const newPendingConfirmations = needsConfirmation 
+            ? new Set([...currentState.pendingConfirmations!, agentMessage.id])
+            : currentState.pendingConfirmations;
+
           updateAgentState(agentType, {
             messages: [...currentState.messages, userMessage, agentMessage],
-            isTyping: false
+            isTyping: false,
+            loadingState: undefined,
+            currentTool: undefined,
+            pendingConfirmations: newPendingConfirmations
           });
         }
       } catch (error) {
@@ -360,21 +482,35 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
 
         updateAgentState(agentType, {
           messages: [...currentState.messages, userMessage, errorMessage],
-          isTyping: false
+          isTyping: false,
+          loadingState: undefined,
+          currentTool: undefined
         });
       }
     }
   };
 
   const handleKeyPress = (e: React.KeyboardEvent, agentType: AgentType) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
+    if (e.key === 'Enter') {
+      if (e.shiftKey) {
+        // Allow line break with Shift + Enter
+        return;
+      } else {
+        // Send message with Enter
       e.preventDefault();
       sendMessage(agentType);
+      }
     }
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>, agentType: AgentType) => {
-    updateAgentState(agentType, { inputValue: e.target.value });
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>, agentType: AgentType) => {
+    const textarea = e.target;
+    
+    // Auto-resize textarea
+    textarea.style.height = 'auto';
+    textarea.style.height = `${Math.min(textarea.scrollHeight, 128)}px`; // max-height: 128px (8rem)
+    
+    updateAgentState(agentType, { inputValue: textarea.value });
   };
 
   const clearChatHistory = (agentType: AgentType) => {
@@ -426,15 +562,476 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     }
   };
 
+  const getLoadingMessage = (state: AgentChatStateWithFiles, agentName: string) => {
+    switch (state.loadingState) {
+      case 'searching':
+        return 'Searching the web';
+      case 'thinking':
+        return 'Scrumming through ideas';
+      case 'tool-call':
+        if (state.currentTool) {
+          // Make tool names more user-friendly
+          const toolDisplayNames: Record<string, string> = {
+            'createBacklogItem': 'Creating backlog item',
+            'getBacklogItems': 'Reviewing backlog',
+            'semanticSearchBacklog': 'Searching backlog',
+            'hybridSearchBacklog': 'Searching backlog',
+            'bm25SearchBacklog': 'Searching backlog',
+            'findSimilarBacklog': 'Finding similar items',
+            'createDocumentation': 'Creating documentation',
+            'getDocumentation': 'Reviewing documentation',
+            'searchDocumentationByField': 'Searching documentation',
+            'web_search_preview': 'Searching the web',
+            'google_search': 'Searching the web'
+          };
+          const displayName = toolDisplayNames[state.currentTool] || `Using ${state.currentTool}`;
+          return `${displayName}...`;
+        }
+        return 'Processing...';
+      case 'generating':
+        return `${agentName} is responding...`;
+      default:
+        return 'Thinking...';
+    }
+  };
+
+  const copyToClipboard = async (messageId: string, content: string) => {
+    try {
+      await navigator.clipboard.writeText(content);
+      setCopiedMessageId(messageId);
+      // Clear the copied state after 2 seconds
+      setTimeout(() => setCopiedMessageId(null), 2000);
+    } catch (error) {
+      console.error('Failed to copy message:', error);
+      // Fallback for older browsers
+      const textArea = document.createElement('textarea');
+      textArea.value = content;
+      document.body.appendChild(textArea);
+      textArea.focus();
+      textArea.select();
+      try {
+        document.execCommand('copy');
+        setCopiedMessageId(messageId);
+        setTimeout(() => setCopiedMessageId(null), 2000);
+      } catch (fallbackError) {
+        console.error('Fallback copy failed:', fallbackError);
+      }
+      document.body.removeChild(textArea);
+    }
+  };
+
+  const isConfirmationRequest = (content: string): boolean => {
+    // Only detect true binary yes/no questions, not suggestions or multiple choices
+    const binaryQuestionPatterns = [
+      // Direct action requests
+      /would you like me to (?:create|add|update|delete|remove|generate|implement|build|set up|configure)\b/i,
+      /should I (?:create|add|update|delete|remove|generate|implement|build|set up|configure|proceed with)\b/i,
+      /do you want me to (?:create|add|update|delete|remove|generate|implement|build|set up|configure)\b/i,
+      /shall I (?:create|add|update|delete|remove|generate|implement|build|set up|configure|proceed with)\b/i,
+      /(?:can|may) I (?:create|add|update|delete|remove|generate|implement|build|set up|configure|proceed)\b/i,
+      
+      // Confirmation requests for specific actions
+      /please confirm.*(?:create|add|update|delete|remove|generate|implement|build|set up|configure)/i,
+      /is this correct.*(?:create|add|update|delete|remove|generate|implement|build|set up|configure)/i,
+      /does this look (?:good|correct|right).*(?:create|add|update|delete|remove|generate|implement|build)/i,
+      /ready to (?:create|add|update|delete|remove|generate|implement|build|set up|configure|proceed)/i,
+      
+      // Story/item creation specific
+      /shall I create (?:this|the) (?:story|item|task|epic|feature)/i,
+      /would you like me to create (?:this|the) (?:story|item|task|epic|feature)/i,
+      /do you want me to create (?:this|the) (?:story|item|task|epic|feature)/i,
+      
+      // Proceed with specific action
+      /shall I proceed with (?:creating|adding|updating|implementing)/i,
+      /ready to proceed with (?:creating|adding|updating|implementing)/i
+    ];
+    
+    // Exclude patterns that suggest multiple options or open-ended questions
+    const exclusionPatterns = [
+      // Open-ended questions
+      /how would you like/i,
+      /what would you like/i,
+      /which (?:one|option|approach|way)/i,
+      /where would you like/i,
+      /when would you like/i,
+      
+      // Multiple choice indicators
+      /(?:or|,)\s*(?:add|create|update|delete|remove|you could|alternatively)/i,
+      /multiple (?:options|ways|approaches|choices)/i,
+      /several (?:ways|options|approaches|alternatives)/i,
+      /different (?:approaches|ways|options)/i,
+      /various (?:options|ways|approaches)/i,
+      /(?:another|other) (?:option|way|approach)/i,
+      
+      // Suggestion language
+      /you could (?:also )?(?:add|create|update|delete|remove)/i,
+      /(?:options|choices) include/i,
+      /alternatives/i,
+      /suggestions/i,
+      /recommendations/i,
+      /here are (?:some|a few)/i,
+      /(?:some|a few) (?:options|suggestions|ideas)/i,
+      
+      // Non-committal language
+      /might want to/i,
+      /consider (?:adding|creating|updating)/i,
+      /perhaps/i,
+      /maybe/i,
+      /possibly/i,
+      
+      // Lists or enumeration
+      /\d+\./,  // Numbered lists like "1.", "2."
+      /^\s*[-•*]/m,  // Bullet points
+      /first.*second/i,
+      /next.*then/i
+    ];
+    
+    // Check if it's a binary question
+    const isBinaryQuestion = binaryQuestionPatterns.some(pattern => pattern.test(content));
+    
+    // Check if it contains exclusion patterns (suggestions/multiple choices)
+    const hasExclusions = exclusionPatterns.some(pattern => pattern.test(content));
+    
+    // Only return true for binary questions without exclusion patterns
+    return isBinaryQuestion && !hasExclusions;
+  };
+
+  const handleConfirmation = async (agentType: AgentType, messageId: string, accepted: boolean) => {
+    const currentState = agentStates[agentType];
+    
+    // Mark this message as confirmed
+    const newConfirmedMessages = new Set(currentState.confirmedMessages);
+    newConfirmedMessages.add(messageId);
+    
+    const newPendingConfirmations = new Set(currentState.pendingConfirmations);
+    newPendingConfirmations.delete(messageId);
+    
+    updateAgentState(agentType, {
+      confirmedMessages: newConfirmedMessages,
+      pendingConfirmations: newPendingConfirmations
+    });
+
+    // Send the confirmation response as a user message
+    const confirmationMessage = accepted ? "Yes, please proceed." : "No, please don't proceed.";
+    
+    const userMessage: ChatMessage = {
+      id: `user-${Date.now()}`,
+      content: confirmationMessage,
+      timestamp: new Date().toISOString(),
+      sender: 'user',
+      parts: [{ type: 'text', text: confirmationMessage }]
+    };
+
+    // Add user message and trigger AI response
+    updateAgentState(agentType, {
+      messages: [...currentState.messages, userMessage],
+      isTyping: true,
+      loadingState: 'thinking'
+    });
+
+    // Send to AI for response (similar to regular sendMessage logic)
+    await sendConfirmationResponse(agentType, userMessage);
+  };
+
+  const sendConfirmationResponse = async (agentType: AgentType, userMessage: ChatMessage) => {
+    const currentState = agentStates[agentType];
+    const getApiEndpoint = (type: AgentType) => {
+      switch (type) {
+        case 'product-owner': return '/api/chat/product-owner';
+        case 'scrum-master': return '/api/chat/scrum-master';
+        case 'developer': return '/api/chat/developer';
+        default: return '/api/chat/product-owner';
+      }
+    };
+
+    try {
+      const apiEndpoint = getApiEndpoint(agentType);
+      const apiMessages = [...currentState.messages, userMessage].map(msg => ({
+        role: msg.sender === 'user' ? 'user' : 'assistant',
+        content: msg.content
+      }));
+
+      const response = await fetch(apiEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: apiMessages,
+          projectId: projectId ? parseInt(projectId, 10) : null,
+          selectedModel: currentState.selectedModel,
+          webSearchEnabled: webSearchEnabled
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`API Error: ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('No response stream available');
+      }
+
+      let aiResponse = '';
+      const decoder = new TextDecoder();
+      let messageId = `agent-${Date.now()}`;
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        aiResponse += chunk;
+        
+        const agentMessage: ChatMessage = {
+          id: messageId,
+          content: aiResponse,
+          timestamp: new Date().toISOString(),
+          sender: 'agent',
+          agentType: agentType,
+          model: currentState.selectedModel
+        };
+
+        updateAgentState(agentType, {
+          messages: [...currentState.messages, userMessage, agentMessage],
+          isTyping: false,
+          loadingState: undefined,
+          currentTool: undefined
+        });
+      }
+    } catch (error) {
+      console.error('Confirmation response error:', error);
+      const errorMessage: ChatMessage = {
+        id: `agent-${Date.now()}`,
+        content: `I apologize, but I encountered an error processing your confirmation.`,
+        timestamp: new Date().toISOString(),
+        sender: 'agent',
+        agentType: agentType
+      };
+
+      updateAgentState(agentType, {
+        messages: [...currentState.messages, userMessage, errorMessage],
+        isTyping: false,
+        loadingState: undefined,
+        currentTool: undefined
+      });
+    }
+  };
+
+  const startEditingMessage = (messageId: string, content: string) => {
+    setEditingMessageId(messageId);
+    setEditingContent(content);
+    
+    // Auto-resize textarea after it's rendered
+    setTimeout(() => {
+      const textarea = document.querySelector(`textarea[placeholder="Edit your message..."]`) as HTMLTextAreaElement;
+      if (textarea) {
+        textarea.style.height = 'auto';
+        textarea.style.height = `${Math.max(48, Math.min(textarea.scrollHeight, 200))}px`;
+      }
+    }, 0);
+  };
+
+  const cancelEditingMessage = () => {
+    setEditingMessageId(null);
+    setEditingContent('');
+  };
+
+  const saveEditedMessage = async (agentType: AgentType, messageId: string) => {
+    if (!editingContent.trim()) return;
+
+    const currentState = agentStates[agentType];
+    const messageIndex = currentState.messages.findIndex(msg => msg.id === messageId);
+    
+    if (messageIndex === -1) return;
+
+    // Create updated message
+    const updatedMessage: ChatMessage = {
+      ...currentState.messages[messageIndex],
+      content: editingContent.trim(),
+      timestamp: new Date().toISOString()
+    };
+
+    // Remove all messages after the edited one (including agent responses)
+    const messagesUpToEdit = currentState.messages.slice(0, messageIndex);
+    const updatedMessages = [...messagesUpToEdit, updatedMessage];
+
+    // Update state with edited message and removed subsequent messages
+    updateAgentState(agentType, {
+      messages: updatedMessages,
+      isTyping: true,
+      loadingState: webSearchEnabled ? 'searching' : 'thinking'
+    });
+
+    // Clear editing state
+    setEditingMessageId(null);
+    setEditingContent('');
+
+    // Regenerate conversation from the edited message
+    await regenerateConversationFromMessage(agentType, updatedMessages, updatedMessage);
+  };
+
+  const regenerateConversationFromMessage = async (agentType: AgentType, messages: ChatMessage[], editedMessage: ChatMessage) => {
+    const getApiEndpoint = (type: AgentType) => {
+      switch (type) {
+        case 'product-owner': return '/api/chat/product-owner';
+        case 'scrum-master': return '/api/chat/scrum-master';
+        case 'developer': return '/api/chat/developer';
+        default: return '/api/chat/product-owner';
+      }
+    };
+
+    try {
+      const currentState = agentStates[agentType];
+      const apiEndpoint = getApiEndpoint(agentType);
+      
+      // Prepare messages for API
+      const apiMessages = messages.map(msg => ({
+        role: msg.sender === 'user' ? 'user' : 'assistant',
+        content: msg.content
+      }));
+
+      const response = await fetch(apiEndpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: apiMessages,
+          projectId: projectId ? parseInt(projectId, 10) : null,
+          selectedModel: currentState.selectedModel,
+          webSearchEnabled: webSearchEnabled
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`API Error: ${response.status}`);
+      }
+
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error('No response stream available');
+      }
+
+      let aiResponse = '';
+      const decoder = new TextDecoder();
+      let messageId = `agent-${Date.now()}`;
+      let hasStartedGenerating = false;
+
+      // Set initial thinking state after a short delay if web search is not enabled
+      if (!webSearchEnabled) {
+        setTimeout(() => {
+          updateAgentState(agentType, {
+            messages: messages,
+            isTyping: true,
+            loadingState: 'thinking'
+          });
+        }, 500);
+      }
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        
+        // Try to parse chunk for tool usage information
+        try {
+          const lines = chunk.split('\n');
+          for (const line of lines) {
+            if (line.trim().startsWith('data: ')) {
+              const data = line.replace('data: ', '');
+              if (data && data !== '[DONE]') {
+                const parsed = JSON.parse(data);
+                
+                // Check for tool calls
+                if (parsed.type === 'tool-call' || parsed.toolName) {
+                  const toolName = parsed.toolName || parsed.tool?.name || 'tool';
+                  updateAgentState(agentType, {
+                    messages: messages,
+                    isTyping: true,
+                    loadingState: 'tool-call',
+                    currentTool: toolName
+                  });
+                  continue;
+                }
+                
+                // Check for text generation
+                if (parsed.type === 'text-delta' || parsed.delta || parsed.content) {
+                  if (!hasStartedGenerating) {
+                    hasStartedGenerating = true;
+                    updateAgentState(agentType, {
+                      messages: messages,
+                      isTyping: true,
+                      loadingState: 'generating'
+                    });
+                  }
+                }
+              }
+            }
+          }
+        } catch (e) {
+          // If chunk is not JSON, it's likely text content
+          if (!hasStartedGenerating && chunk.trim()) {
+            hasStartedGenerating = true;
+            updateAgentState(agentType, {
+              messages: messages,
+              isTyping: true,
+              loadingState: 'generating'
+            });
+          }
+        }
+        
+        aiResponse += chunk;
+        
+        // Update the agent message in real-time
+        const agentMessage: ChatMessage = {
+          id: messageId,
+          content: aiResponse,
+          timestamp: new Date().toISOString(),
+          sender: 'agent',
+          agentType: agentType,
+          model: currentState.selectedModel
+        };
+
+        updateAgentState(agentType, {
+          messages: [...messages, agentMessage],
+          isTyping: false,
+          loadingState: undefined,
+          currentTool: undefined
+        });
+      }
+    } catch (error) {
+      console.error('Regenerate conversation error:', error);
+      const errorMessage: ChatMessage = {
+        id: `agent-${Date.now()}`,
+        content: `I apologize, but I encountered an error while processing your edited request.`,
+        timestamp: new Date().toISOString(),
+        sender: 'agent',
+        agentType: agentType
+      };
+
+      updateAgentState(agentType, {
+        messages: [...messages, errorMessage],
+        isTyping: false,
+        loadingState: undefined,
+        currentTool: undefined
+      });
+    }
+  };
+
   const currentAgent = AGENTS[activeAgent];
   const currentState = agentStates[activeAgent];
   const AgentIcon = getAgentIcon(activeAgent);
 
   return (
-    <div className="flex flex-col h-screen bg-gray-50 dark:bg-gray-900">
-      {/* Header */}
-      <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 px-6 py-4">
-        <div className="flex items-center justify-between">
+     <div className="flex flex-col h-screen bg-gray-50 dark:bg-gray-900 p-4">
+       {/* Unified Complete Container */}
+       <div className="flex flex-col flex-1 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden">
+         
+         {/* Navigation Header */}
+         <div className="border-b border-gray-200 dark:border-gray-700 px-6 py-4">
           <div className="flex items-center space-x-4">
             <Link
               href={`/project/${projectId}/dashboard`}
@@ -450,127 +1047,219 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
               <p className="text-sm text-gray-600 dark:text-gray-400">
                 Chat with specialized Scrum agents for Project {projectId}
               </p>
+             </div>
             </div>
           </div>
           
-          <div className="flex items-center space-x-2">
+           {/* AI Assistant Header */}
+           <div className="border-b border-gray-200 dark:border-gray-700 p-4">
+             <div className="flex items-center justify-between">
+               <div className="flex items-center space-x-4">
+                  {/* Agent Dropdown */}
+                  <div className="relative agent-dropdown">
             <button
-              onClick={() => exportChatHistory(activeAgent)}
-              className="flex items-center space-x-2 px-3 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors text-sm"
-              disabled={currentState.messages.length === 0}
-            >
-              <Download className="w-4 h-4" />
-              <span>Export</span>
-            </button>
-            <button
-              onClick={() => clearChatHistory(activeAgent)}
-              className="flex items-center space-x-2 px-3 py-2 bg-red-100 dark:bg-red-900/30 hover:bg-red-200 dark:hover:bg-red-900/50 text-red-600 dark:text-red-400 rounded-lg transition-colors text-sm"
-              disabled={currentState.messages.length === 0}
-            >
-              <Trash2 className="w-4 h-4" />
-              <span>Clear</span>
-            </button>
+                      onClick={() => setShowAgentDropdown(!showAgentDropdown)}
+                      className="flex items-center space-x-3 px-4 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
+                    >
+                      <div className={`w-8 h-8 ${currentAgent.color} rounded-lg flex items-center justify-center`}>
+                        <AgentIcon className="w-4 h-4 text-white" />
           </div>
+                      <div className="text-left">
+                        <div className="text-sm font-semibold text-gray-900 dark:text-white">
+                     {currentAgent.name}
         </div>
+                        <div className="text-xs text-gray-600 dark:text-gray-400">
+                     {currentAgent.description}
       </div>
-
-      <div className="flex flex-1 overflow-hidden">
-        {/* Agent Sidebar */}
-        <div className="w-80 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 flex flex-col">
-          <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-              Select Agent
-            </h2>
-            <p className="text-sm text-gray-600 dark:text-gray-400">
-              Choose an AI assistant to help with your project needs
-            </p>
           </div>
+                      <ChevronDown className={`w-4 h-4 text-gray-500 transition-transform ${showAgentDropdown ? 'rotate-180' : ''}`} />
+                    </button>
           
-          <div className="flex-1 p-4 space-y-3">
+                    {/* Dropdown Menu */}
+                    {showAgentDropdown && (
+                      <div className="absolute top-full left-0 mt-1 w-80 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50">
             {Object.values(AGENTS).map((agent) => {
               const IconComponent = getAgentIcon(agent.id);
               const isActive = activeAgent === agent.id;
               const agentState = agentStates[agent.id];
               const messageCount = agentState.messages.length;
-              const lastMessage = agentState.messages[agentState.messages.length - 1];
               
               return (
-                <motion.button
+                            <button
                   key={agent.id}
-                  onClick={() => setActiveAgent(agent.id)}
-                  className={`w-full p-4 rounded-xl text-left transition-all duration-200 border-2 ${
-                    isActive
-                      ? `bg-white dark:bg-white border-current shadow-lg ${agent.accentColor}`
-                      : 'bg-gray-50 dark:bg-gray-700 border-transparent hover:bg-gray-100 dark:hover:bg-gray-600'
-                  }`}
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                >
-                  <div className="flex items-start space-x-3">
-                    <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${agent.color}`}>
-                      <IconComponent className="w-5 h-5 text-white" />
+                              onClick={() => {
+                                setActiveAgent(agent.id);
+                                setShowAgentDropdown(false);
+                              }}
+                              className={`w-full p-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors first:rounded-t-lg last:rounded-b-lg ${
+                                isActive ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                              }`}
+                            >
+                              <div className="flex items-center space-x-3">
+                                <div className={`w-8 h-8 ${agent.color} rounded-lg flex items-center justify-center`}>
+                                  <IconComponent className="w-4 h-4 text-white" />
                     </div>
-                    
-                    <div className="flex-1 min-w-0">
+                                <div className="flex-1">
                       <div className="flex items-center justify-between">
-                        <h3 className={`font-semibold text-sm ${
-                          isActive ? agent.accentColor : 'text-gray-900 dark:text-white'
-                        }`}>
+                                    <span className="text-sm font-semibold text-gray-900 dark:text-white">
                           {agent.name}
-                        </h3>
+                                    </span>
                         {messageCount > 0 && (
-                          <span className={`text-xs px-2 py-1 rounded-full ${
-                            isActive 
-                              ? `${agent.color} text-white` 
-                              : 'bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300'
-                          }`}>
+                                      <span className="text-xs px-2 py-1 bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 rounded-full">
                             {messageCount}
                           </span>
                         )}
                       </div>
-                      
-                      <p className={`text-xs mt-1 ${
-                        isActive ? 'text-gray-700 dark:text-gray-700' : 'text-gray-600 dark:text-gray-400'
-                      }`}>
+                                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
                         {agent.description}
                       </p>
-                      
-                      {lastMessage && (
-                        <p className={`text-xs mt-2 truncate ${
-                          isActive ? 'text-gray-600 dark:text-gray-600' : 'text-gray-500 dark:text-gray-500'
-                        }`}>
-                          <Clock className="w-3 h-3 inline mr-1" />
-                          {formatTimestamp(lastMessage.timestamp)}
-                        </p>
-                      )}
-                      
-                      <div className="flex flex-wrap gap-1 mt-2">
-                        {agent.expertise.slice(0, 2).map((skill, index) => (
-                          <span
-                            key={index}
-                            className={`text-xs px-2 py-1 rounded-full ${
-                              isActive
-                                ? 'bg-gray-100 dark:bg-gray-100 text-gray-700 dark:text-gray-700'
-                                : 'bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300'
-                            }`}
-                          >
-                            {skill}
-                          </span>
-                        ))}
+                                </div>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                 </div>
+
+                 {/* AI Model Selector */}
+
+                 <div>
+                   <ModelSelector
+                     selectedModel={currentState.selectedModel || currentAgent.defaultModel || AI_MODELS.CHAT}
+                     onModelChange={(modelId) => {
+                       updateAgentState(activeAgent, { selectedModel: modelId });
+                       setPreferredModel(activeAgent, modelId);
+                     }}
+                     agentType={activeAgent}
+                     className="min-w-[220px]"
+                   />
+                 </div>
+               </div>
+               
+               {/* Export Button */}
+               <div>
+                 <button
+                   onClick={() => exportChatHistory(activeAgent)}
+                   className="flex items-center space-x-2 px-3 py-2 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors text-sm"
+                   disabled={currentState.messages.length === 0}
+                 >
+                   <Download className="w-4 h-4" />
+                   <span>Export</span>
+                 </button>
                       </div>
                     </div>
                   </div>
-                </motion.button>
-              );
-            })}
+
+           {/* Main Content Area */}
+      <div className="flex flex-1 overflow-hidden">
+           {/* Chat History Sidebar */}
+           <div className="w-80 border-r border-gray-200 dark:border-gray-700 flex flex-col">
+          <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-2 flex items-center">
+              <History className="w-5 h-5 mr-2" />
+              Chat History
+            </h2>
+            <p className="text-sm text-gray-600 dark:text-gray-400">
+              Your recent conversations with AI agents
+            </p>
+          </div>
+          
+          <div className="flex-1 p-4 space-y-3 overflow-y-auto">
+            {/* Sample Chat History Items - Frontend only for now */}
+            <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors">
+                  <div className="flex items-start space-x-3">
+                <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <User className="w-4 h-4 text-white" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                  <h4 className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                    User Story Creation
+                  </h4>
+                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
+                    Created user story for chatbot functionality with acceptance criteria...
+                  </p>
+                  <div className="flex items-center justify-between mt-2">
+                    <span className="text-xs text-gray-500">Product Owner</span>
+                    <span className="text-xs text-gray-500">2 hours ago</span>
+                  </div>
+                </div>
+              </div>
+                      </div>
+                      
+            <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors">
+              <div className="flex items-start space-x-3">
+                <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <Settings className="w-4 h-4 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                    Sprint Planning Session
+                  </h4>
+                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
+                    Discussed sprint goals and capacity planning for the upcoming iteration...
+                  </p>
+                  <div className="flex items-center justify-between mt-2">
+                    <span className="text-xs text-gray-500">Scrum Master</span>
+                    <span className="text-xs text-gray-500">1 day ago</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors">
+              <div className="flex items-start space-x-3">
+                <div className="w-8 h-8 bg-purple-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <Code2 className="w-4 h-4 text-white" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                    Code Review Guidelines
+                  </h4>
+                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
+                    Reviewed best practices for code reviews and established team standards...
+                  </p>
+                  <div className="flex items-center justify-between mt-2">
+                    <span className="text-xs text-gray-500">Developer</span>
+                    <span className="text-xs text-gray-500">2 days ago</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors">
+              <div className="flex items-start space-x-3">
+                <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center flex-shrink-0">
+                  <User className="w-4 h-4 text-white" />
+                      </div>
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                    Backlog Refinement
+                  </h4>
+                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
+                    Refined backlog items and updated priorities based on stakeholder feedback...
+                  </p>
+                  <div className="flex items-center justify-between mt-2">
+                    <span className="text-xs text-gray-500">Product Owner</span>
+                    <span className="text-xs text-gray-500">3 days ago</span>
+                    </div>
+                  </div>
+              </div>
+            </div>
+
+            {/* Empty State */}
+            <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+              <History className="w-12 h-12 mx-auto mb-3 opacity-50" />
+              <p className="text-sm">No more chat history</p>
+            </div>
           </div>
         </div>
 
         {/* Chat Area */}
         <div 
-          className={`flex-1 flex flex-col relative ${
+             className={`flex-1 flex flex-col relative min-w-0 ${
             currentState.isDragOver 
-              ? 'bg-blue-50 dark:bg-blue-900/20 border-2 border-dashed border-blue-400' 
+                 ? 'bg-blue-50 dark:bg-blue-900/20' 
               : ''
           }`}
           onDragOver={(e) => handleDragOverChat(e, activeAgent)}
@@ -580,55 +1269,21 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
         >
           {/* Drag overlay */}
           {currentState.isDragOver && (
-            <div className="absolute inset-0 bg-blue-50/90 dark:bg-blue-900/40 z-10 flex items-center justify-center">
-              <div className="text-center">
-                <Upload className="w-16 h-16 text-blue-500 mx-auto mb-4" />
-                <h3 className="text-xl font-semibold text-blue-700 dark:text-blue-300 mb-2">
+            <div className="absolute inset-0 bg-blue-50/95 dark:bg-gray-800/95 border-2 border-dashed border-blue-400 dark:border-blue-300 z-10 flex items-center justify-center">
+              <div className="text-center p-8 bg-white/90 dark:bg-gray-700/90 rounded-xl border border-blue-200 dark:border-blue-400 shadow-lg">
+                <Upload className="w-16 h-16 text-blue-500 dark:text-blue-400 mx-auto mb-4" />
+                <h3 className="text-xl font-semibold text-blue-700 dark:text-white mb-2">
                   Drop files to attach
                 </h3>
-                <p className="text-sm text-blue-600 dark:text-blue-400 max-w-md">
+                <p className="text-sm text-blue-600 dark:text-gray-300 max-w-md">
                   {getSupportedFormatsString()}
                 </p>
               </div>
             </div>
           )}
-          {/* Chat Header */}
-          <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700 p-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-3">
-                <div className={`w-10 h-10 ${currentAgent.color} rounded-lg flex items-center justify-center`}>
-                  <AgentIcon className="w-5 h-5 text-white" />
-                </div>
-                <div>
-                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
-                    {currentAgent.name}
-                  </h2>
-                  <p className="text-sm text-gray-600 dark:text-gray-400">
-                    {currentAgent.description}
-                  </p>
-                </div>
-              </div>
-              
-              {/* Model Selector */}
-              <div className="flex items-center space-x-3">
-                <div className="text-right">
-                  <p className="text-xs text-gray-500 dark:text-gray-400">AI Model</p>
-                </div>
-                <ModelSelector
-                  selectedModel={currentState.selectedModel || currentAgent.defaultModel || AI_MODELS.CHAT}
-                  onModelChange={(modelId) => {
-                    updateAgentState(activeAgent, { selectedModel: modelId });
-                    setPreferredModel(activeAgent, modelId);
-                  }}
-                  agentType={activeAgent}
-                  className="min-w-[220px]"
-                />
-              </div>
-            </div>
-          </div>
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto p-6 space-y-4">
+           <div className="flex-1 overflow-y-auto px-4 py-6 space-y-2 max-w-full bg-gray-50 dark:bg-gray-900">
             {currentState.messages.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center">
                 <div className={`w-20 h-20 ${currentAgent.color} rounded-full flex items-center justify-center mb-4`}>
@@ -656,7 +1311,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                 {currentState.messages.map((message) => (
                   <div
                     key={message.id}
-                    className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+                    className={`flex ${message.sender === 'user' ? 'justify-end' : 'justify-start'} group`}
                   >
                     <div className="flex items-start space-x-3 max-w-2xl">
                       {message.sender === 'agent' && (
@@ -665,8 +1320,52 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                         </div>
                       )}
                       
-                      <div
-                        className={`px-4 py-3 rounded-xl ${
+                      <div className="relative">
+                         {editingMessageId === message.id ? (
+                           /* Edit Mode */
+                           <div className="px-4 py-3 rounded-xl bg-gray-50 dark:bg-gray-800 border-2 border-blue-500" style={{ width: '600px', maxWidth: '90vw' }}>
+                             <textarea
+                               value={editingContent}
+                               onChange={(e) => {
+                                 setEditingContent(e.target.value);
+                                 // Auto-resize textarea
+                                 const textarea = e.target;
+                                 textarea.style.height = 'auto';
+                                 textarea.style.height = `${Math.max(48, Math.min(textarea.scrollHeight, 200))}px`;
+                               }}
+                               onKeyPress={(e) => {
+                                 if (e.key === 'Enter' && !e.shiftKey) {
+                                   e.preventDefault();
+                                   saveEditedMessage(activeAgent, message.id);
+                                 }
+                               }}
+                               className="w-full bg-transparent text-gray-900 dark:text-white text-sm resize-none border-none outline-none min-h-[48px] overflow-hidden"
+                               placeholder="Edit your message..."
+                               autoFocus
+                               style={{ height: 'auto', minHeight: '48px' }}
+                             />
+                             <div className="flex justify-end space-x-2 mt-2">
+                               <button
+                                 onClick={cancelEditingMessage}
+                                 className="px-3 py-2 text-sm bg-gray-200 dark:bg-gray-600 hover:bg-gray-300 dark:hover:bg-gray-500 text-gray-700 dark:text-gray-300 rounded-lg transition-colors"
+                               >
+                                 Cancel
+                               </button>
+                               <button
+                                 onClick={() => saveEditedMessage(activeAgent, message.id)}
+                                 disabled={!editingContent.trim()}
+                                 className="px-3 py-2 text-sm bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 text-white rounded-lg transition-colors disabled:cursor-not-allowed flex items-center space-x-1"
+                               >
+                                 <Send className="w-4 h-4" />
+                                 <span>Send</span>
+                               </button>
+                             </div>
+                           </div>
+                        ) : (
+                          /* Normal Message Display */
+                          <>
+                            <div
+                              className={`px-4 py-2 rounded-xl ${
                           message.sender === 'user'
                             ? 'bg-blue-600 text-white'
                             : 'bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-white'
@@ -835,13 +1534,69 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                             );
                           })}
                         </div>
-                        <p className={`text-xs mt-2 ${
+                            <p className={`text-xs mt-1 ${
                           message.sender === 'user' 
                             ? 'text-blue-100' 
                             : 'text-gray-500 dark:text-gray-400'
                         }`}>
                           {formatTimestamp(message.timestamp)}
                         </p>
+                           </div>
+                           
+                           {/* Confirmation Buttons - Show for agent messages that need confirmation */}
+                           {message.sender === 'agent' && 
+                            currentState.pendingConfirmations?.has(message.id) && 
+                            !currentState.confirmedMessages?.has(message.id) && (
+                             <div className="flex space-x-3 mt-3 justify-center">
+                               <button
+                                 onClick={() => handleConfirmation(activeAgent, message.id, true)}
+                                 className="flex items-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-colors"
+                               >
+                                 <CheckCircle className="w-4 h-4" />
+                                 <span>Accept</span>
+                               </button>
+                               <button
+                                 onClick={() => handleConfirmation(activeAgent, message.id, false)}
+                                 className="flex items-center space-x-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+                               >
+                                 <XCircle className="w-4 h-4" />
+                                 <span>Decline</span>
+                               </button>
+                             </div>
+                           )}
+                           </>
+                         )}
+                         
+                         {/* Action Buttons - Show below message on hover */}
+                         {editingMessageId !== message.id && (
+                           <div className={`opacity-0 group-hover:opacity-100 transition-opacity duration-200 flex space-x-2 mt-2 ${
+                             message.sender === 'user' ? 'justify-end' : 'justify-start'
+                           }`}>
+                             {/* Edit Button - Only show for user messages */}
+                             {message.sender === 'user' && (
+                               <button
+                                 onClick={() => startEditingMessage(message.id, message.content)}
+                                 className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
+                                 title="Edit message"
+                               >
+                                 <Edit3 className="w-4 h-4" />
+                               </button>
+                             )}
+                             
+                             {/* Copy Button */}
+                             <button
+                               onClick={() => copyToClipboard(message.id, message.content)}
+                               className="p-2 rounded-lg hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200 transition-colors"
+                               title="Copy message"
+                             >
+                               {copiedMessageId === message.id ? (
+                                 <Check className="w-4 h-4" />
+                               ) : (
+                                 <Copy className="w-4 h-4" />
+                               )}
+                             </button>
+                           </div>
+                         )}
                       </div>
                       
                       {message.sender === 'user' && (
@@ -859,11 +1614,16 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                       <div className={`w-8 h-8 ${currentAgent.color} rounded-lg flex items-center justify-center`}>
                         <AgentIcon className="w-4 h-4 text-white" />
                       </div>
-                      <div className="bg-gray-100 dark:bg-gray-700 px-4 py-3 rounded-xl">
+                      <div className="bg-gray-100 dark:bg-gray-700 px-4 py-2 rounded-xl">
+                        <div className="flex items-center space-x-2">
                         <div className="flex space-x-1">
                           <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
                           <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.1s' }}></div>
                           <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0.2s' }}></div>
+                          </div>
+                          <span className="text-sm text-gray-600 dark:text-gray-300 ml-2">
+                            {getLoadingMessage(currentState, currentAgent.name)}
+                          </span>
                         </div>
                       </div>
                     </div>
@@ -875,7 +1635,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
           </div>
 
           {/* Input Area */}
-          <div className="bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 p-4">
+           <div className="border-t border-gray-200 dark:border-gray-700 p-4">
             {/* File Preview */}
             {currentState.files && currentState.files.length > 0 && (
               <div className="mb-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
@@ -913,8 +1673,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
               </div>
             )}
             
-            <div className="flex space-x-3">
-              {/* File Upload Button */}
+            {/* Hidden File Input */}
               <input
                 ref={(el) => {
                   fileInputRefs.current[activeAgent] = el;
@@ -925,60 +1684,121 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                 onChange={(e) => handleFileChange(e, activeAgent)}
                 className="hidden"
               />
+
+            {/* Integrated Input Field with Buttons */}
+            <div className="relative flex items-center bg-gray-100 dark:bg-gray-700 rounded-2xl border-0 focus-within:bg-gray-200 dark:focus-within:bg-gray-600 transition-colors">
+              {/* Plus Button with Dropdown */}
+              <div className="relative plus-dropdown">
               <button
-                onClick={() => fileInputRefs.current[activeAgent]?.click()}
+                  onClick={() => setShowPlusDropdown(!showPlusDropdown)}
                 disabled={currentState.isTyping}
-                className="px-3 py-3 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-gray-600 dark:text-gray-400 rounded-xl transition-colors disabled:cursor-not-allowed flex items-center"
-                title="Attach images or PDFs"
+                  className="p-3 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors disabled:cursor-not-allowed flex items-center"
+                  title="More options"
               >
-                <Paperclip className="w-4 h-4" />
+                  <Plus className="w-4 h-4" />
               </button>
 
-              {/* Web Search Toggle Button */}
+                {/* Dropdown Menu (appears above button) */}
+                {showPlusDropdown && (
+                  <div className="absolute bottom-full left-0 mb-2 w-48 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50">
+                    {/* Upload File Option */}
+                    <button
+                      onClick={() => {
+                        fileInputRefs.current[activeAgent]?.click();
+                        setShowPlusDropdown(false);
+                      }}
+                      className="w-full p-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors first:rounded-t-lg flex items-center space-x-3"
+                    >
+                      <Upload className="w-4 h-4 text-gray-600 dark:text-gray-400" />
+                      <span className="text-sm text-gray-900 dark:text-white">Upload file</span>
+                    </button>
+
+                    {/* Web Search Option */}
               {isClient && hasNativeWebSearch(currentState.selectedModel || currentAgent.defaultModel || '') && (
                 <button
                   onClick={() => {
-                    // Simple toggle - click to enable/disable
                     setWebSearchEnabled(!webSearchEnabled);
+                          setShowPlusDropdown(false);
                   }}
-                  disabled={currentState.isTyping}
-                  className={`px-3 py-3 rounded-xl transition-colors disabled:cursor-not-allowed flex items-center ${
+                        className="w-full p-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors last:rounded-b-lg flex items-center space-x-3"
+                      >
+                        <Globe className={`w-4 h-4 ${
                     webSearchEnabled
-                      ? 'bg-green-100 dark:bg-green-800 hover:bg-green-200 dark:hover:bg-green-700 text-green-600 dark:text-green-400'
-                      : 'bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 dark:text-gray-400'
-                  } ${currentState.isTyping ? 'disabled:bg-gray-300 dark:disabled:bg-gray-600' : ''}`}
-                  title={webSearchEnabled 
-                    ? "Web search enabled - click to disable" 
-                    : "Web search disabled - click to enable"
-                  }
-                >
-                  <Globe className="w-4 h-4" />
+                            ? 'text-green-600 dark:text-green-400' 
+                            : 'text-gray-600 dark:text-gray-400'
+                        }`} />
+                        <span className="text-sm text-gray-900 dark:text-white">
+                          {webSearchEnabled ? 'Disable web search' : 'Search online'}
+                        </span>
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Active Functionality Indicators (next to plus button) */}
+              {(currentState.files?.length || webSearchEnabled) && (
+                <div className="flex items-center space-x-2 ml-1">
+                  {/* Web Search Indicator */}
+                  {isClient && webSearchEnabled && hasNativeWebSearch(currentState.selectedModel || currentAgent.defaultModel || '') && (
+                    <div className="group relative">
+                      <div className="flex items-center space-x-1 px-2 py-1 bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 rounded-md text-xs">
+                        <Globe className="w-3 h-3" />
+                        <span>Search</span>
+                      </div>
+                      {/* Hover X to disable */}
+                      <button
+                        onClick={() => setWebSearchEnabled(false)}
+                        className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 hover:bg-red-600 text-white rounded-full items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity hidden group-hover:flex"
+                      >
+                        <X className="w-2.5 h-2.5" />
                 </button>
+                    </div>
+                  )}
+
+                  {/* File Upload Indicator */}
+                  {currentState.files && currentState.files.length > 0 && (
+                    <div className="group relative">
+                      <div className="flex items-center space-x-1 px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 rounded-md text-xs">
+                        <Upload className="w-3 h-3" />
+                        <span>{currentState.files.length}</span>
+                      </div>
+                      {/* Hover X to remove */}
+                      <button
+                        onClick={() => removeFiles(activeAgent)}
+                        className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 hover:bg-red-600 text-white rounded-full items-center justify-center text-xs opacity-0 group-hover:opacity-100 transition-opacity hidden group-hover:flex"
+                      >
+                        <X className="w-2.5 h-2.5" />
+                      </button>
+                    </div>
+                  )}
+                </div>
               )}
               
               {/* Text Input */}
-              <input
+              <textarea
                 ref={(el) => {
                   inputRefs.current[activeAgent] = el;
                 }}
-                type="text"
                 value={currentState.inputValue}
                 onChange={(e) => handleInputChange(e, activeAgent)}
                 onKeyPress={(e) => handleKeyPress(e, activeAgent)}
                 placeholder={`Ask ${currentAgent.name} anything about your project...`}
-                className="flex-1 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl text-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                className="flex-1 px-3 py-3 bg-transparent text-sm text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 border-0 focus:outline-none resize-none min-h-[48px] max-h-32 overflow-y-auto"
                 disabled={currentState.isTyping}
+                rows={1}
               />
               
               {/* Send Button */}
               <button
                 onClick={() => sendMessage(activeAgent)}
                 disabled={(!currentState.inputValue.trim() && !currentState.files?.length) || currentState.isTyping}
-                className="px-6 py-3 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 dark:disabled:bg-gray-600 text-white rounded-xl transition-colors disabled:cursor-not-allowed flex items-center space-x-2"
+                className="p-2 m-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 dark:disabled:bg-gray-500 text-white rounded-lg transition-colors disabled:cursor-not-allowed flex items-center"
+                title="Send message"
               >
                 <Send className="w-4 h-4" />
-                <span>Send</span>
               </button>
+            </div>
             </div>
           </div>
         </div>
