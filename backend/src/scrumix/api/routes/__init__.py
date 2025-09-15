@@ -21,6 +21,7 @@ from .notifications import router as notifications_router
 from .user_notification_preferences import router as user_notification_preferences_router
 from .personal_notes import router as personal_notes_router
 from .semantic_search import router as semantic_search_router
+from .chat import router as chat_router
 
 api_router = APIRouter()
 
@@ -43,3 +44,4 @@ api_router.include_router(notifications_router, prefix="/notifications", tags=["
 api_router.include_router(user_notification_preferences_router, prefix="/notification-preferences", tags=["notification-preferences"])
 api_router.include_router(personal_notes_router, prefix="", tags=["personal-notes"])
 api_router.include_router(semantic_search_router, prefix="/semantic-search", tags=["semantic-search"])
+api_router.include_router(chat_router, prefix="/chat", tags=["chat"])

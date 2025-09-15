@@ -48,6 +48,9 @@ class Project(Base):
     user_projects = relationship("UserProject", back_populates="project", cascade="all, delete-orphan")
     users = relationship("User", secondary="user_project", back_populates="projects", overlaps="user_projects")
     
+    # Chat relationships
+    chat_conversations = relationship("ChatConversation", back_populates="project", cascade="all, delete-orphan")
+    
     def __repr__(self):
         return f"<Project(id={self.id}, name='{self.name}', status='{self.status.value}')>"
     
