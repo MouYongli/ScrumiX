@@ -215,7 +215,9 @@ const ChatWidget: React.FC = () => {
   const handleKeyPress = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      sendMessage();
+      if (!currentState.isTyping) {
+        sendMessage();
+      }
     }
   };
 
@@ -479,8 +481,7 @@ const ChatWidget: React.FC = () => {
                     <div className="relative plus-dropdown">
                       <button
                         onClick={() => setShowPlusDropdown(!showPlusDropdown)}
-                        disabled={currentState.isTyping}
-                        className="p-3 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors disabled:cursor-not-allowed flex items-center"
+                        className="p-3 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors flex items-center"
                         title="More options"
                       >
                         <Plus className="w-4 h-4" />
@@ -531,7 +532,6 @@ const ChatWidget: React.FC = () => {
                       onKeyPress={handleKeyPress}
                       placeholder={`Ask ${currentAgent.name} anything...`}
                       className="flex-1 px-3 py-3 bg-transparent text-sm text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 border-0 focus:outline-none resize-none min-h-[48px] max-h-32 overflow-y-auto"
-                      disabled={currentState.isTyping}
                       rows={1}
                     />
                     
