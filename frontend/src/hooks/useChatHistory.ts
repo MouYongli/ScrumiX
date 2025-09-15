@@ -144,18 +144,9 @@ export function useChatHistory(options: UseChatHistoryOptions) {
         parts
       };
 
-      // Save user message to backend
-      await chatAPI.saveMessage(conversation.id, {
-        role: 'user',
-        parts: parts.map(part => ({
-          type: part.type,
-          text: (part as any).text,
-          file_url: (part as any).file_url
-        }))
-      }); // No cookies - client-side will use credentials: 'include'
-
-      // Don't add to local state here - let the final conversation sync handle it
-      // This prevents duplication when the conversation is loaded after API response
+      // Do NOT save the user message here.
+      // The frontend API route persists the user message once per request to prevent duplicates.
+      // We also avoid adding to local state here (AIChat handles optimistic UI).
 
       // Send to frontend API for AI processing (still uses frontend routes for streaming)
       const apiEndpoint = getApiEndpoint(agentType);

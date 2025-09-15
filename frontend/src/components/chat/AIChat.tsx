@@ -255,6 +255,28 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  // Helpers for deduplication and merging (id first, role+content fallback)
+  const upsertMessage = (existing: ChatMessage[], incoming: ChatMessage): ChatMessage[] => {
+    const idx = existing.findIndex(m => m.id === incoming.id);
+    if (idx !== -1) {
+      const copy = existing.slice();
+      copy[idx] = incoming;
+      return copy;
+    }
+    const key = `${incoming.sender}:${incoming.content}`;
+    const existsByContent = existing.some(m => `${m.sender}:${m.content}` === key);
+    if (existsByContent) return existing;
+    return [...existing, incoming];
+  };
+
+  const mergeMessages = (existing: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] => {
+    let result = existing.slice();
+    for (const msg of incoming) {
+      result = upsertMessage(result, msg);
+    }
+    return result;
+  };
+
   // Periodic sync function to reconcile state with backend
   const performPeriodicSync = async (agentType: AgentType, force = false) => {
     const now = Date.now();
@@ -276,7 +298,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       const backendMessages = await chatHistory.loadConversation(chatHistory.conversation.id);
       const currentMessages = agentStates[agentType].messages;
 
-      // Only update if backend has more messages than local state
+      // Only append new messages, deduping by id/content
       if (backendMessages.length > currentMessages.length) {
         const syncedMessages = backendMessages.map(msg => ({
           id: msg.id,
@@ -287,7 +309,8 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
           agentType: msg.role === 'assistant' ? agentType : undefined
         } as ChatMessage));
 
-        updateAgentState(agentType, { messages: syncedMessages });
+        const merged = mergeMessages(currentMessages, syncedMessages);
+        updateAgentState(agentType, { messages: merged });
         setLastSyncTimes(prev => ({ ...prev, [agentType]: now }));
         console.log(`Synced ${backendMessages.length - currentMessages.length} new messages for ${agentType}`);
       }
@@ -432,7 +455,6 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
         aiResponse += chunk;
         
         // Update the agent message in real-time during streaming
-        const currentMessages = agentStates[agentType].messages;
         const agentMessage: ChatMessage = {
           id: messageId,
           content: aiResponse,
@@ -448,13 +470,21 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
           ? new Set([...currentState.pendingConfirmations!, agentMessage.id])
           : currentState.pendingConfirmations;
 
-        // Update with current messages + streaming agent response
-        updateAgentState(agentType, {
-          messages: [...currentMessages.filter(m => m.id !== messageId), agentMessage],
-          isTyping: false,
-          loadingState: undefined,
-          currentTool: undefined,
-          pendingConfirmations: newPendingConfirmations
+        // Update using functional state to avoid stale snapshots and dedupe by id/content
+        setAgentStates(prev => {
+          const prevState = prev[agentType];
+          const merged = upsertMessage(prevState.messages, agentMessage);
+          return {
+            ...prev,
+            [agentType]: {
+              ...prevState,
+              messages: merged,
+              isTyping: false,
+              loadingState: undefined,
+              currentTool: undefined,
+              pendingConfirmations: newPendingConfirmations
+            }
+          };
         });
       }
 
