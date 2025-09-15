@@ -274,32 +274,83 @@ async def keycloak_callback(
             detail="Failed to get user info from Keycloak"
         )
     
-    # Build user data
+    # Ensure a corresponding local user exists; create if missing
+    # Prefer matching by email; fall back to creating by Keycloak profile
+    db = next(get_db())
+    existing_user = user_crud.get_by_email(db, user_info["email"])
+    if not existing_user:
+        # Map Keycloak names
+        full_name = user_info.get("name")
+        preferred_username = user_info.get("preferred_username")
+        # Build create payload (password None for OAuth users)
+        user_create = UserCreate(
+            email=user_info["email"],
+            username=preferred_username,
+            full_name=full_name,
+            avatar_url=user_info.get("picture"),
+            password=None,
+            timezone="UTC",
+            language="en"
+        )
+        try:
+            existing_user = user_crud.create_user(db, user_create)
+            # Mark verified for SSO users
+            existing_user.is_verified = True
+            db.commit()
+            db.refresh(existing_user)
+        except ValueError:
+            # Race or constraints: try fetch again by email
+            existing_user = user_crud.get_by_email(db, user_info["email"])  # type: ignore
+    # Upsert OAuth account record and tokens
+    oauth_account = oauth_crud.get_by_provider_user_id(db, AuthProvider.KEYCLOAK, user_info["sub"])
+    if not oauth_account:
+        oauth_account = oauth_crud.create_oauth_account(
+            db,
+            user_id=existing_user.id,  # type: ignore
+            provider=AuthProvider.KEYCLOAK,
+            provider_user_id=user_info["sub"],
+            access_token=token_data["access_token"],
+            refresh_token=token_data.get("refresh_token"),
+            raw_data=user_info
+        )
+    else:
+        # Compute expiry if provided
+        expires_at = None
+        try:
+            from datetime import datetime
+            expires_at = datetime.now() + timedelta(seconds=token_data.get("expires_in", 3600))
+        except Exception:
+            expires_at = None
+        oauth_crud.update_oauth_tokens(
+            db,
+            oauth_id=oauth_account.id,
+            access_token=token_data["access_token"],
+            refresh_token=token_data.get("refresh_token"),
+            expires_at=expires_at
+        )
+
+    # Build user data to return to frontend based on local user
     user_data = {
-        "id": user_info["sub"],  # Use Keycloak's subject ID
-        "email": user_info["email"],
-        "full_name": user_info.get("name"),
-        "username": user_info.get("preferred_username"),
-        "avatar_url": user_info.get("picture"),
+        "id": existing_user.id,  # local DB id
+        "email": existing_user.email,
+        "full_name": existing_user.full_name,
+        "username": existing_user.username,
+        "avatar_url": existing_user.avatar_url,
         "is_verified": True,
         "provider": "keycloak"
     }
-    
-    # Debug logging for Keycloak user data
-    print(f" Keycloak user_info received: {user_info}")
-    print(f" Mapped user_data: {user_data}")
-    
-    # Create internal JWT token for unified authentication architecture - Include full user data
+
+    # Create internal JWT token with local user id and keycloak provider
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     internal_access_token = create_access_token(
         data={
-            "sub": user_data["id"], 
-            "email": user_data["email"], 
-            "full_name": user_data["full_name"],
-            "username": user_data["username"],
-            "avatar_url": user_data["avatar_url"],
+            "sub": str(existing_user.id),
+            "email": existing_user.email,
+            "full_name": existing_user.full_name,
+            "username": existing_user.username,
+            "avatar_url": existing_user.avatar_url,
             "provider": "keycloak"
-        }, 
+        },
         expires_delta=access_token_expires
     )
     
@@ -333,15 +384,12 @@ async def keycloak_callback(
     
     # Return secure response - do not expose sensitive tokens in response body
     return {
-        "access_token": internal_access_token,  # Our internal token (backward compatible)
+        "access_token": internal_access_token,
         "token_type": "bearer",
         "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
         "user": user_data,
         "provider": "keycloak",
-        "auth_method": "cookie",  # Indicates using cookie authentication
-        # Remove sensitive Keycloak tokens from response body
-        # "keycloak_access_token": token_data["access_token"],  # Now in cookie
-        # "keycloak_refresh_token": token_data.get("refresh_token"),  # Now in cookie
+        "auth_method": "cookie",
         "keycloak_expires_in": token_data.get("expires_in", 3600)
     }
 
@@ -432,13 +480,55 @@ async def refresh_keycloak_token(
         if not user_info:
             raise credentials_exception
         
-        # Build user data
+        # Ensure local user exists and update OAuth tokens
+        db = next(get_db())
+        local_user = user_crud.get_by_email(db, user_info["email"])  # type: ignore
+        if not local_user:
+            user_create = UserCreate(
+                email=user_info["email"],
+                username=user_info.get("preferred_username"),
+                full_name=user_info.get("name"),
+                avatar_url=user_info.get("picture"),
+                password=None,
+                timezone="UTC",
+                language="en"
+            )
+            try:
+                local_user = user_crud.create_user(db, user_create)
+                local_user.is_verified = True
+                db.commit()
+                db.refresh(local_user)
+            except ValueError:
+                local_user = user_crud.get_by_email(db, user_info["email"])  # type: ignore
+        oauth_account = oauth_crud.get_by_provider_user_id(db, AuthProvider.KEYCLOAK, user_info["sub"])  # type: ignore
+        if not oauth_account and local_user:
+            oauth_crud.create_oauth_account(
+                db,
+                user_id=local_user.id,
+                provider=AuthProvider.KEYCLOAK,
+                provider_user_id=user_info["sub"],
+                access_token=token_data["access_token"],
+                refresh_token=token_data.get("refresh_token"),
+                raw_data=user_info
+            )
+        else:
+            from datetime import datetime
+            expires_at = datetime.now() + timedelta(seconds=token_data.get("expires_in", 3600))
+            oauth_crud.update_oauth_tokens(
+                db,
+                oauth_id=oauth_account.id,  # type: ignore
+                access_token=token_data["access_token"],
+                refresh_token=token_data.get("refresh_token"),
+                expires_at=expires_at
+            )
+
+        # Build user data based on local user
         user_data = {
-            "id": user_info["sub"],
-            "email": user_info["email"],
-            "full_name": user_info.get("name"),
-            "username": user_info.get("preferred_username"),
-            "avatar_url": user_info.get("picture"),
+            "id": local_user.id if local_user else user_info["sub"],
+            "email": local_user.email if local_user else user_info["email"],
+            "full_name": (local_user.full_name if local_user else user_info.get("name")),
+            "username": (local_user.username if local_user else user_info.get("preferred_username")),
+            "avatar_url": (local_user.avatar_url if local_user else user_info.get("picture")),
             "is_verified": True,
             "provider": "keycloak"
         }
@@ -447,8 +537,8 @@ async def refresh_keycloak_token(
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         new_internal_token = create_access_token(
             data={
-                "sub": user_data["id"], 
-                "email": user_data["email"], 
+                "sub": str(user_data["id"]),
+                "email": user_data["email"],
                 "full_name": user_data["full_name"],
                 "username": user_data["username"],
                 "avatar_url": user_data["avatar_url"],
