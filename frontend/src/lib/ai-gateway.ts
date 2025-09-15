@@ -88,17 +88,17 @@ export const getAvailableModels = async () => {
 export const AGENT_MODEL_CONFIG = {
   'product-owner': {
     model: AI_MODELS.CHAT,
-    temperature: 0.7,
+    temperature: 0.3,
     description: 'Optimized for backlog management and stakeholder communication'
   },
   'scrum-master': {
     model: AI_MODELS.ANALYSIS,
-    temperature: 0.6,
+    temperature: 0.2,
     description: 'Enhanced analysis capabilities for sprint monitoring and coaching'
   },
   'developer': {
     model: AI_MODELS.CHAT,
-    temperature: 0.7,
+    temperature: 0.3,
     description: 'Balanced for technical guidance and implementation support'
   }
 } as const;
