@@ -266,8 +266,8 @@ async def keycloak_callback(
             detail="Failed to exchange code for token"
         )
     
-    # Get user information
-    user_info = await keycloak_oauth.get_user_info(token_data["access_token"])
+    # Get user information (try ID token first, then userinfo endpoint)
+    user_info = await keycloak_oauth.get_user_info_from_token_response(token_data)
     if not user_info:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -476,7 +476,7 @@ async def refresh_keycloak_token(
             raise credentials_exception
         
         # Get user information (verify new token validity)
-        user_info = await keycloak_oauth.get_user_info(token_data["access_token"])
+        user_info = await keycloak_oauth.get_user_info_from_token_response(token_data)
         if not user_info:
             raise credentials_exception
         
