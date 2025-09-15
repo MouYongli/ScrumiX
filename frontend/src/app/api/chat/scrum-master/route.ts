@@ -4,6 +4,7 @@ import { selectModel } from '@/lib/adaptive-models';
 import { scrumMasterTools } from '@/lib/tools/scrum-master';
 import { documentationTools } from '@/lib/tools/documentation';
 import { getWebSearchToolsForModel } from '@/lib/tools/web-search';
+import { chatAPI } from '@/lib/chat-api';
 
 // Scrum Master AI Agent System Prompt
 const SCRUM_MASTER_SYSTEM_PROMPT = `You are the Scrum Master AI Agent for ScrumiX, acting as a professional digital assistant to the human Scrum Master.
@@ -134,72 +135,203 @@ Communication Style
 
 export async function POST(req: Request) {
   try {
-    const { messages, projectId, selectedModel, webSearchEnabled } = await req.json();
+    const body = await req.json();
+    
+    // New format: { id, message, projectId, selectedModel, webSearchEnabled }
+    // Legacy format: { messages, projectId, selectedModel, webSearchEnabled }
+    const isNewFormat = body.id && body.message;
+    
+    if (isNewFormat) {
+      // Handle new persistent chat format
+      const { id: conversationId, message, projectId, selectedModel, webSearchEnabled } = body as {
+        id: string;
+        message: UIMessage;
+        projectId?: number | null;
+        selectedModel?: string;
+        webSearchEnabled?: boolean;
+      };
 
-    // Validate request
-    if (!messages || !Array.isArray(messages)) {
-      console.error('Invalid request: messages array required');
-      return new Response('Invalid request: messages array required', { 
-        status: 400 
+      if (!conversationId || !message) {
+        return new Response('conversation id and message required', { status: 400 });
+      }
+
+      // Extract cookies for authentication
+      const cookies = req.headers.get('cookie') || '';
+
+      // Upsert conversation via backend API
+      await chatAPI.upsertConversation({
+        id: conversationId,
+        agent_type: 'scrum-master',
+        project_id: projectId ?? undefined,
+      }, cookies);
+
+      // Load existing history from backend
+      const historyData = await chatAPI.getConversationHistory(conversationId, cookies);
+      const history: UIMessage[] = historyData.messages.map(msg => ({
+        id: msg.id || `msg_${Date.now()}`,
+        role: msg.role as 'user' | 'assistant' | 'system',
+        parts: msg.parts.map(part => {
+          if (part.type === 'text') {
+            return { type: 'text', text: (part as any).text || '' };
+          }
+          // Handle other part types as needed
+          return { type: 'text', text: (part as any).text || '' };
+        })
+      }));
+      console.log(`Scrum Master Agent - Loaded ${history.length} messages from history`);
+
+      // Convert message parts to proper format
+      const userParts: UIMessage['parts'] = message.parts.map(part => {
+        if (part.type === 'text') {
+          return { type: 'text', text: (part as any).text || '' };
+        }
+        // Handle other part types as needed
+        return { type: 'text', text: (part as any).text || '' };
       });
+      
+      // Save the incoming user message via backend API
+      const savedMessage = await chatAPI.saveMessage(conversationId, {
+        role: 'user',
+        parts: message.parts
+      }, cookies);
+
+      // Combine history with new message for model context
+      const allMessages = [...history, { id: savedMessage.id || message.id, role: 'user', parts: userParts } satisfies UIMessage];
+      const modelMessages = convertToModelMessages(allMessages);
+
+      // Get model configuration
+      const modelConfig = getAgentModelConfig('scrum-master');
+      const modelToUse = await selectModel(selectedModel || modelConfig.model, 'analysis');
+      
+      // Add project context to system prompt
+      const contextualSystemPrompt = projectId 
+        ? `${SCRUM_MASTER_SYSTEM_PROMPT}\n\nCURRENT PROJECT CONTEXT: You are currently working with project ID ${projectId}. When creating documentation, wiki pages, meeting notes, sprint retrospectives, or any project-related content, use this project ID automatically. You don't need to ask the user for the project ID - it's provided automatically.`
+        : SCRUM_MASTER_SYSTEM_PROMPT;
+
+      // Generate streaming response
+      const result = streamText({
+        model: modelToUse,
+        system: contextualSystemPrompt,
+        messages: modelMessages,
+        tools: {
+          // Scrum Master Tools
+          analyzeSprintHealth: scrumMasterTools.analyzeSprintHealth,
+          scheduleEvent: scrumMasterTools.scheduleEvent,
+          analyzeVelocity: scrumMasterTools.analyzeVelocity,
+          analyzeRetrospectives: scrumMasterTools.analyzeRetrospectives,
+          checkScrumCompliance: scrumMasterTools.checkScrumCompliance,
+          manageMeetingAgenda: scrumMasterTools.manageMeetingAgenda,
+          manageMeetingActionItems: scrumMasterTools.manageMeetingActionItems,
+          // Process Documentation Tools
+          ...documentationTools,
+          // Web Search Tools (native for OpenAI/Gemini)
+          ...getWebSearchToolsForModel(modelToUse, webSearchEnabled),
+        },
+        temperature: modelConfig.temperature,
+        toolChoice: 'auto',
+        stopWhen: stepCountIs(20),
+        experimental_context: {
+          cookies: cookies,
+        },
+        onFinish: async (finishResult) => {
+          // Save assistant response after streaming completes
+          try {
+            const assistantText = finishResult.text ?? '';
+            const assistantParts: UIMessage['parts'] = [{ type: 'text', text: assistantText }];
+            
+            await chatAPI.saveMessage(conversationId, {
+              role: 'assistant',
+              parts: [{ type: 'text', text: assistantText }]
+            }, cookies);
+            
+            console.log(`Scrum Master Agent - Saved assistant response (${assistantText.length} chars)`);
+          } catch (saveError) {
+            console.error('Failed to save assistant message:', saveError);
+          }
+        },
+      });
+
+      return result.toTextStreamResponse();
+
+    } else {
+      // Handle legacy format for backward compatibility
+      const { messages, projectId, selectedModel, webSearchEnabled } = body;
+
+      if (!messages || !Array.isArray(messages)) {
+        console.error('Invalid request: messages array required');
+        return new Response('Invalid request: messages array required', { status: 400 });
+      }
+
+      console.log('Scrum Master Agent - Using legacy message format (no persistence)');
+
+      // Check message format
+      const isUIMessages = Array.isArray(messages) && messages.length > 0 && messages[0]?.parts;
+      const modelMessages = isUIMessages ? convertToModelMessages(messages as UIMessage[]) : messages;
+
+      // Get model configuration
+      const modelConfig = getAgentModelConfig('scrum-master');
+      const modelToUse = await selectModel(selectedModel || modelConfig.model, 'analysis');
+      
+      const contextualSystemPrompt = projectId 
+        ? `${SCRUM_MASTER_SYSTEM_PROMPT}\n\nCURRENT PROJECT CONTEXT: You are currently working with project ID ${projectId}. When creating documentation, wiki pages, meeting notes, sprint retrospectives, or any project-related content, use this project ID automatically. You don't need to ask the user for the project ID - it's provided automatically.`
+        : SCRUM_MASTER_SYSTEM_PROMPT;
+
+      const cookies = req.headers.get('cookie') || '';
+
+      const result = streamText({
+        model: modelToUse,
+        system: contextualSystemPrompt,
+        messages: modelMessages,
+        tools: {
+          analyzeSprintHealth: scrumMasterTools.analyzeSprintHealth,
+          scheduleEvent: scrumMasterTools.scheduleEvent,
+          analyzeVelocity: scrumMasterTools.analyzeVelocity,
+          analyzeRetrospectives: scrumMasterTools.analyzeRetrospectives,
+          checkScrumCompliance: scrumMasterTools.checkScrumCompliance,
+          manageMeetingAgenda: scrumMasterTools.manageMeetingAgenda,
+          manageMeetingActionItems: scrumMasterTools.manageMeetingActionItems,
+          ...documentationTools,
+          ...getWebSearchToolsForModel(modelToUse, webSearchEnabled),
+        },
+        temperature: modelConfig.temperature,
+        toolChoice: 'auto',
+        stopWhen: stepCountIs(20),
+        experimental_context: { cookies },
+      });
+
+      return result.toTextStreamResponse();
     }
 
-    // Check if we're dealing with multimodal UI messages or legacy text-only messages
-    const isUIMessages = Array.isArray(messages) && messages.length > 0 && messages[0]?.parts;
-    console.log('Scrum Master Agent - Message format:', isUIMessages ? 'UIMessage (multimodal)' : 'Legacy (text-only)');
-
-    // Get model configuration for Scrum Master agent
-    const modelConfig = getAgentModelConfig('scrum-master');
-    
-    // Use adaptive model selection with fallback
-    const modelToUse = await selectModel(selectedModel || modelConfig.model, 'analysis');
-
-    // Add project context to system prompt if available
-    const contextualSystemPrompt = projectId 
-      ? `${SCRUM_MASTER_SYSTEM_PROMPT}\n\nCURRENT PROJECT CONTEXT: You are currently working with project ID ${projectId}. When creating documentation, wiki pages, meeting notes, sprint retrospectives, or any project-related content, use this project ID automatically. You don't need to ask the user for the project ID - it's provided automatically.`
-      : SCRUM_MASTER_SYSTEM_PROMPT;
-
-    // Get authentication context for tools
-    const cookies = req.headers.get('cookie');
-
-    // Convert messages to the format expected by the model
-    const modelMessages = isUIMessages
-      ? convertToModelMessages(messages as UIMessage[])
-      : messages;
-
-    // Generate streaming response using AI Gateway
-    const result = streamText({
-      model: modelToUse, // Using selected model or default
-      system: contextualSystemPrompt,
-      messages: modelMessages,
-      tools: {
-        // Scrum Master Tools
-        analyzeSprintHealth: scrumMasterTools.analyzeSprintHealth,
-        scheduleEvent: scrumMasterTools.scheduleEvent,
-        analyzeVelocity: scrumMasterTools.analyzeVelocity,
-        analyzeRetrospectives: scrumMasterTools.analyzeRetrospectives,
-        checkScrumCompliance: scrumMasterTools.checkScrumCompliance,
-        manageMeetingAgenda: scrumMasterTools.manageMeetingAgenda,
-        manageMeetingActionItems: scrumMasterTools.manageMeetingActionItems,
-        // Process Documentation Tools
-        ...documentationTools,
-        // Web Search Tools (native for OpenAI/Gemini)
-        ...getWebSearchToolsForModel(modelToUse, webSearchEnabled),
-      },
-      temperature: modelConfig.temperature, // Agent-specific temperature setting
-      toolChoice: 'auto', // Allow the model to choose when to use tools
-      stopWhen: stepCountIs(20), // Increased limit for complex workflows 
-      experimental_context: {
-        cookies: cookies, // Pass cookies for authentication
-      },
-    });
-
-    return result.toTextStreamResponse();
   } catch (error) {
     console.error('Scrum Master AI Chat Error:', error);
     console.error('Error details:', error instanceof Error ? error.message : 'Unknown error');
     console.error('Error stack:', error instanceof Error ? error.stack : 'No stack trace');
     return new Response(`Internal server error: ${error instanceof Error ? error.message : 'Unknown error'}`, { status: 500 });
+  }
+}
+
+// GET endpoint to load conversation history
+export async function GET(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url);
+    const conversationId = searchParams.get('id');
+    
+    if (!conversationId) {
+      return new Response('conversation id required', { status: 400 });
+    }
+
+    // Load conversation history from backend API
+    const cookies = req.headers.get('cookie') || '';
+    const historyData = await chatAPI.getConversationHistory(conversationId, cookies);
+    
+    return Response.json({
+      conversation: historyData.conversation,
+      messages: historyData.messages
+    });
+
+  } catch (error) {
+    console.error('Failed to load conversation:', error);
+    return new Response('Internal server error', { status: 500 });
   }
 }
 

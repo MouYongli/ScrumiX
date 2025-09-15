@@ -3,24 +3,32 @@
  * Provides centralized access to multiple AI providers through Vercel's AI Gateway
  */
 
-import { createGateway } from 'ai';
+import { createGateway } from '@ai-sdk/gateway';
 
 /**
  * AI Gateway provider instance
  * Automatically configured with environment variables
  */
+
+// Debug: Check if API key is available
+if (!process.env.AI_GATEWAY_API_KEY) {
+  console.warn('AI_GATEWAY_API_KEY is not set. AI Gateway authentication will fail.');
+} else {
+  console.log('AI_GATEWAY_API_KEY is configured');
+}
+
 export const gateway = createGateway({
-  // API key from environment variable (optional when using OIDC)
+  // API key from environment variable
   apiKey: process.env.AI_GATEWAY_API_KEY,
+  
+  // Custom base URL (default)
+  baseURL: 'https://ai-gateway.vercel.sh/v1/ai',
   
   // Custom headers for additional configuration
   headers: {
     'X-Application': 'ScrumiX',
     'X-Version': '1.0.0',
   },
-  
-  // Metadata cache refresh interval (5 minutes)
-  metadataCacheRefreshMillis: 5 * 60 * 1000,
 });
 
 /**

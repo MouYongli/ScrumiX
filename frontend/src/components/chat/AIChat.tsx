@@ -38,6 +38,7 @@ import { getAgentModelConfig, AI_MODELS } from '@/lib/ai-gateway';
 import { getPreferredModel, setPreferredModel } from '@/lib/model-preferences';
 import { hasNativeWebSearch } from '@/lib/tools/web-search';
 import { convertFilesToDataURLs, validateFile, formatFileSize, getFileCategory, handleDragOver, handleDragEnter, handleDragLeave, handleDrop, getSupportedFormatsString } from '@/utils/multimodal';
+import { useChatHistory } from '@/hooks/useChatHistory';
 import ModelSelector from './ModelSelector';
 
 // Agent definitions with Scrum-specific roles
@@ -94,7 +95,7 @@ interface AIChatProps {
 interface AgentChatStateWithFiles extends AgentChatState {
   files?: FileList;
   isDragOver?: boolean;
-  loadingState?: 'thinking' | 'searching' | 'tool-call' | 'generating';
+  loadingState?: 'thinking' | 'searching' | 'tool-call' | 'generating' | 'using-tool' | 'processing-tool-result';
   currentTool?: string;
   pendingConfirmations?: Set<string>; // Message IDs that need confirmation
   confirmedMessages?: Set<string>; // Message IDs that have been confirmed/declined
@@ -149,13 +150,364 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     'developer': null
   });
 
+  // Track if we're currently sending a message to avoid state conflicts
+  const [sendingStates, setSendingStates] = useState<Record<AgentType, boolean>>({
+    'product-owner': false,
+    'scrum-master': false,
+    'developer': false
+  });
+
+  // Track initial loading to prevent duplication during page load
+  const [initialLoadingStates, setInitialLoadingStates] = useState<Record<AgentType, boolean>>({
+    'product-owner': true,
+    'scrum-master': true,
+    'developer': true
+  });
+
+  // Track last sync time for periodic reconciliation
+  const [lastSyncTimes, setLastSyncTimes] = useState<Record<AgentType, number>>({
+    'product-owner': 0,
+    'scrum-master': 0,
+    'developer': 0
+  });
+
+  // Chat history hooks for persistent storage
+  const productOwnerChat = useChatHistory({
+    agentType: 'product-owner',
+    projectId: projectId ? parseInt(projectId, 10) : null,
+    onMessagesUpdated: (messages) => {
+      // Only perform full sync during initial load or periodic reconciliation
+      if (initialLoadingStates['product-owner']) {
+        // Initial load - set all messages
+        const chatMessages = messages.map(msg => ({
+          id: msg.id,
+          content: msg.parts?.find(p => p.type === 'text')?.text || '',
+          timestamp: new Date().toISOString(),
+          sender: msg.role === 'user' ? 'user' as const : 'agent' as const,
+          parts: msg.parts || [],
+          agentType: msg.role === 'assistant' ? 'product-owner' as const : undefined
+        } as ChatMessage));
+        updateAgentState('product-owner', { messages: chatMessages });
+        setInitialLoadingStates(prev => ({ ...prev, 'product-owner': false }));
+        setLastSyncTimes(prev => ({ ...prev, 'product-owner': Date.now() }));
+      }
+      // For all other cases, ignore - we'll handle message updates locally
+    }
+  });
+  
+  const scrumMasterChat = useChatHistory({
+    agentType: 'scrum-master',
+    projectId: projectId ? parseInt(projectId, 10) : null,
+    onMessagesUpdated: (messages) => {
+      // Only perform full sync during initial load or periodic reconciliation
+      if (initialLoadingStates['scrum-master']) {
+        // Initial load - set all messages
+        const chatMessages = messages.map(msg => ({
+          id: msg.id,
+          content: msg.parts?.find(p => p.type === 'text')?.text || '',
+          timestamp: new Date().toISOString(),
+          sender: msg.role === 'user' ? 'user' as const : 'agent' as const,
+          parts: msg.parts || [],
+          agentType: msg.role === 'assistant' ? 'scrum-master' as const : undefined
+        } as ChatMessage));
+        updateAgentState('scrum-master', { messages: chatMessages });
+        setInitialLoadingStates(prev => ({ ...prev, 'scrum-master': false }));
+        setLastSyncTimes(prev => ({ ...prev, 'scrum-master': Date.now() }));
+      }
+      // For all other cases, ignore - we'll handle message updates locally
+    }
+  });
+  
+  const developerChat = useChatHistory({
+    agentType: 'developer',
+    projectId: projectId ? parseInt(projectId, 10) : null,
+    onMessagesUpdated: (messages) => {
+      // Only perform full sync during initial load or periodic reconciliation
+      if (initialLoadingStates['developer']) {
+        // Initial load - set all messages
+        const chatMessages = messages.map(msg => ({
+          id: msg.id,
+          content: msg.parts?.find(p => p.type === 'text')?.text || '',
+          timestamp: new Date().toISOString(),
+          sender: msg.role === 'user' ? 'user' as const : 'agent' as const,
+          parts: msg.parts || [],
+          agentType: msg.role === 'assistant' ? 'developer' as const : undefined
+        } as ChatMessage));
+        updateAgentState('developer', { messages: chatMessages });
+        setInitialLoadingStates(prev => ({ ...prev, 'developer': false }));
+        setLastSyncTimes(prev => ({ ...prev, 'developer': Date.now() }));
+      }
+      // For all other cases, ignore - we'll handle message updates locally
+    }
+  });
+
+  // Helper to get chat history hook for agent
+  const getChatHistory = (agentType: AgentType) => {
+    switch (agentType) {
+      case 'product-owner': return productOwnerChat;
+      case 'scrum-master': return scrumMasterChat;
+      case 'developer': return developerChat;
+      default: return productOwnerChat;
+    }
+  };
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  // Periodic sync function to reconcile state with backend
+  const performPeriodicSync = async (agentType: AgentType, force = false) => {
+    const now = Date.now();
+    const lastSync = lastSyncTimes[agentType];
+    const SYNC_INTERVAL = 5 * 60 * 1000; // 5 minutes
+
+    // Only sync if enough time has passed or forced
+    if (!force && now - lastSync < SYNC_INTERVAL) {
+      return;
+    }
+
+    // Don't sync if currently sending a message
+    if (sendingStates[agentType]) {
+      return;
+    }
+
+    try {
+      const chatHistory = getChatHistory(agentType);
+      const backendMessages = await chatHistory.loadConversation(chatHistory.conversation.id);
+      const currentMessages = agentStates[agentType].messages;
+
+      // Only update if backend has more messages than local state
+      if (backendMessages.length > currentMessages.length) {
+        const syncedMessages = backendMessages.map(msg => ({
+          id: msg.id,
+          content: msg.parts?.find(p => p.type === 'text')?.text || '',
+          timestamp: new Date().toISOString(),
+          sender: msg.role === 'user' ? 'user' as const : 'agent' as const,
+          parts: msg.parts || [],
+          agentType: msg.role === 'assistant' ? agentType : undefined
+        } as ChatMessage));
+
+        updateAgentState(agentType, { messages: syncedMessages });
+        setLastSyncTimes(prev => ({ ...prev, [agentType]: now }));
+        console.log(`Synced ${backendMessages.length - currentMessages.length} new messages for ${agentType}`);
+      }
+    } catch (error) {
+      console.warn(`Failed to sync messages for ${agentType}:`, error);
+    }
+  };
+
+  // New persistent chat message sender
+  const sendPersistentMessage = async (agentType: AgentType) => {
+    const currentState = agentStates[agentType];
+    if (!currentState.inputValue.trim() && !currentState.files?.length) return;
+
+    // Mark as sending to prevent state conflicts
+    setSendingStates(prev => ({ ...prev, [agentType]: true }));
+
+    const chatHistory = getChatHistory(agentType);
+    
+    // Store the message content before clearing the input
+    const messageContent = currentState.inputValue;
+    const messageFiles = currentState.files;
+    
+    // Convert files to data URLs if present (for future multimodal support)
+    const fileParts: MessagePart[] = messageFiles && messageFiles.length > 0
+      ? await convertFilesToDataURLs(messageFiles)
+      : [];
+
+    // Create user message and add it to local state immediately
+    const userMessage: ChatMessage = {
+      id: `user-${Date.now()}`,
+      content: messageContent,
+      timestamp: new Date().toISOString(),
+      sender: 'user',
+      parts: [
+        { type: 'text', text: messageContent },
+        ...fileParts
+      ]
+    };
+
+    // Clear input and show user message immediately
+    updateAgentState(agentType, {
+      messages: [...currentState.messages, userMessage],
+      inputValue: '',
+      files: undefined,
+      isTyping: true,
+      loadingState: webSearchEnabled ? 'searching' : 'thinking'
+    });
+
+    // Clear file input
+    const fileInput = fileInputRefs.current[agentType];
+    if (fileInput) {
+      fileInput.value = '';
+    }
+
+    try {
+      // Send message using persistent chat history (use stored content)
+      const responseStream = await chatHistory.sendMessage(
+        messageContent,
+        currentState.selectedModel,
+        webSearchEnabled,
+        messageFiles ? Array.from(messageFiles) : undefined
+      );
+
+      if (!responseStream) {
+        throw new Error('No response stream received');
+      }
+
+      // Process the streaming response
+      const reader = responseStream.getReader();
+      const decoder = new TextDecoder();
+      let aiResponse = '';
+      let hasStartedGenerating = false;
+      let messageId = `agent-${Date.now()}`;
+
+      // Set initial thinking state after a short delay if web search is not enabled
+      if (!webSearchEnabled) {
+        setTimeout(() => {
+          updateAgentState(agentType, {
+            isTyping: true,
+            loadingState: 'thinking'
+          });
+        }, 500);
+      }
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        
+        // Try to parse chunk for tool usage information
+        try {
+          const lines = chunk.split('\n');
+          for (const line of lines) {
+            if (line.trim().startsWith('data: ')) {
+              const data = line.replace('data: ', '');
+              if (data && data !== '[DONE]') {
+                const parsed = JSON.parse(data);
+                
+                // Check for tool calls
+                if (parsed.type === 'tool-call' || parsed.toolName) {
+                  const toolName = parsed.toolName || parsed.tool?.name || 'tool';
+                  updateAgentState(agentType, {
+                    isTyping: true,
+                    loadingState: 'using-tool',
+                    currentTool: toolName
+                  });
+                }
+                
+                // Check for tool results
+                if (parsed.type === 'tool-result') {
+                  updateAgentState(agentType, {
+                    isTyping: true,
+                    loadingState: 'processing-tool-result'
+                  });
+                }
+                
+                // Check for text generation
+                if (parsed.type === 'text-delta' || parsed.delta) {
+                  if (!hasStartedGenerating) {
+                    hasStartedGenerating = true;
+                    updateAgentState(agentType, {
+                      isTyping: true,
+                      loadingState: 'generating'
+                    });
+                  }
+                }
+              }
+            }
+          }
+        } catch (e) {
+          // Ignore parsing errors for non-JSON chunks
+          if (!hasStartedGenerating && chunk.trim()) {
+            hasStartedGenerating = true;
+            updateAgentState(agentType, {
+              isTyping: true,
+              loadingState: 'generating'
+            });
+          }
+        }
+        
+        aiResponse += chunk;
+        
+        // Update the agent message in real-time during streaming
+        const currentMessages = agentStates[agentType].messages;
+        const agentMessage: ChatMessage = {
+          id: messageId,
+          content: aiResponse,
+          timestamp: new Date().toISOString(),
+          sender: 'agent',
+          agentType: agentType,
+          model: currentState.selectedModel
+        };
+
+        // Check if this agent message contains a confirmation request
+        const needsConfirmation = isConfirmationRequest(agentMessage.content);
+        const newPendingConfirmations = needsConfirmation 
+          ? new Set([...currentState.pendingConfirmations!, agentMessage.id])
+          : currentState.pendingConfirmations;
+
+        // Update with current messages + streaming agent response
+        updateAgentState(agentType, {
+          messages: [...currentMessages.filter(m => m.id !== messageId), agentMessage],
+          isTyping: false,
+          loadingState: undefined,
+          currentTool: undefined,
+          pendingConfirmations: newPendingConfirmations
+        });
+      }
+
+      // Clean up the response by removing SSE formatting
+      const cleanResponse = aiResponse
+        .split('\n')
+        .filter(line => !line.startsWith('data: '))
+        .join('\n')
+        .trim();
+
+      // Final state update - streaming is complete
+      // No need to reload conversation, messages are already properly managed
+      updateAgentState(agentType, {
+        isTyping: false,
+        loadingState: undefined,
+        currentTool: undefined
+      });
+
+      // Optional: Perform a light sync after a delay to ensure backend state is consistent
+      // This won't cause duplication since we only append new messages
+      setTimeout(() => {
+        performPeriodicSync(agentType);
+      }, 1000);
+
+    } catch (error) {
+      console.error('Error sending persistent message:', error);
+      
+      // Add error message to local state only (not persistent)
+      const errorMessage: ChatMessage = {
+        id: `error-${Date.now()}`,
+        content: 'Sorry, I encountered an error. Please try again.',
+        timestamp: new Date().toISOString(),
+        sender: 'agent',
+        agentType: agentType
+      };
+
+      updateAgentState(agentType, {
+        messages: [...currentState.messages, errorMessage],
+        isTyping: false,
+        loadingState: undefined,
+        currentTool: undefined
+      });
+    } finally {
+      // Always reset sending state when done
+      setSendingStates(prev => ({ ...prev, [agentType]: false }));
+    }
   };
 
   useEffect(() => {
     scrollToBottom();
   }, [agentStates[activeAgent].messages]);
+
+  // Message updates are now handled by the useChatHistory hook callbacks
 
   useEffect(() => {
     setIsClient(true);
@@ -167,7 +519,39 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     if (inputRef) {
       inputRef.focus();
     }
+
+    // Perform periodic sync when switching agents (but not on initial load)
+    if (!initialLoadingStates[activeAgent]) {
+      performPeriodicSync(activeAgent);
+    }
   }, [activeAgent]);
+
+  // Periodic sync interval
+  useEffect(() => {
+    const interval = setInterval(() => {
+      // Sync all agents periodically
+      (['product-owner', 'scrum-master', 'developer'] as AgentType[]).forEach(agentType => {
+        performPeriodicSync(agentType);
+      });
+    }, 5 * 60 * 1000); // Every 5 minutes
+
+    return () => clearInterval(interval);
+  }, [lastSyncTimes, sendingStates, agentStates]);
+
+  // Sync when page becomes visible again
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        // Page became visible, sync all agents
+        (['product-owner', 'scrum-master', 'developer'] as AgentType[]).forEach(agentType => {
+          performPeriodicSync(agentType, true); // Force sync
+        });
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, []);
 
   useEffect(() => {
     // Reset textarea height when input is cleared
@@ -499,7 +883,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
         // Send message with Enter
         e.preventDefault();
         if (!agentStates[agentType].isTyping) {
-          sendMessage(agentType);
+          sendPersistentMessage(agentType);
         }
       }
     }
@@ -1791,7 +2175,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
               
               {/* Send Button */}
               <button
-                onClick={() => sendMessage(activeAgent)}
+                onClick={() => sendPersistentMessage(activeAgent)}
                 disabled={(!currentState.inputValue.trim() && !currentState.files?.length) || currentState.isTyping}
                 className="p-2 m-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 dark:disabled:bg-gray-500 text-white rounded-lg transition-colors disabled:cursor-not-allowed flex items-center"
                 title="Send message"
