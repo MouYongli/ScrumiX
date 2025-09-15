@@ -71,7 +71,8 @@ class Settings(BaseSettings):
     POSTGRES_PORT: str = os.environ.get("POSTGRES_PORT", "5433")
 
     # OAuth/Keycloak Configuration
-    KEYCLOAK_SERVER_URL: str = os.environ.get("KEYCLOAK_SERVER_URL", "http://localhost:8080")
+    KEYCLOAK_SERVER_URL: str = os.environ.get("KEYCLOAK_SERVER_URL", "http://localhost:8080")  # Internal URL
+    KEYCLOAK_PUBLIC_URL: str = os.environ.get("KEYCLOAK_PUBLIC_URL", "http://localhost:8080")  # Public URL for browser
     KEYCLOAK_REALM: str = os.environ.get("KEYCLOAK_REALM", "scrumix-app")
     KEYCLOAK_CLIENT_ID: str = os.environ.get("KEYCLOAK_CLIENT_ID", "scrumix-client")
     KEYCLOAK_CLIENT_SECRET: str = os.environ.get("KEYCLOAK_CLIENT_SECRET", "")
@@ -90,6 +91,11 @@ class Settings(BaseSettings):
     @property
     def KEYCLOAK_USERINFO_URL(self) -> str:
         return f"{self.KEYCLOAK_SERVER_URL}/realms/{self.KEYCLOAK_REALM}/protocol/openid-connect/userinfo"
+    
+    @property
+    def KEYCLOAK_PUBLIC_AUTH_URL(self) -> str:
+        """Public authorization URL for browser redirects"""
+        return f"{self.KEYCLOAK_PUBLIC_URL}/realms/{self.KEYCLOAK_REALM}/protocol/openid-connect/auth"
 
     SQLALCHEMY_DATABASE_URI: Optional[PostgresDsn] = None
     
