@@ -117,7 +117,7 @@ const backlogItemZod = z.object({
     .min(0, 'Story points must be non-negative')
     .max(100, 'Story points must be 100 or less')
     .optional()
-    .describe('Estimation in story points (optional)'),
+    .describe('Estimation in story points using Fibonacci sequence (1,2,3,5,8,13,21). Epics: 13-21, Stories: 1-8, Bugs: 1-5. Always provide initial estimation.'),
   
   project_id: z.number()
     .int('Project ID must be a whole number')
@@ -152,8 +152,12 @@ console.log('Zod schema defined:', !!backlogItemZod);
 console.log('Schema shape keys:', Object.keys(backlogItemZod.shape || {}));
 
 export const createBacklogItemTool = tool({
-  description: `Create a new backlog item (epic, story, or bug) in the project backlog. 
+  description: `Create a new backlog item (epic, story, or bug) in the project backlog with proper story point estimation. 
     Use this tool when users request to add new features, user stories, epics, or bug reports to the backlog.
+    ALWAYS include story point estimation using Fibonacci sequence (1,2,3,5,8,13,21):
+    - Epics: 13-21 points (large, should be broken down)
+    - User Stories: 1-8 points (ideal for sprint work)  
+    - Bugs: 1-5 points (based on complexity)
     The tool validates the input and ensures proper Scrum practices are followed.`,
   inputSchema: backlogItemZod,
   execute: async (input, { experimental_context }) => {
@@ -233,9 +237,10 @@ export const createBacklogItemTool = tool({
 
 - **Priority:** ${priorityDisplay}
 - **Status:** ${statusDisplay}
+- **Story Points:** ${createdBacklog.story_point || 'Not estimated'}
 - **Item ID:** #${createdBacklog.id}${createdBacklog.description ? `\n- **Description:** ${createdBacklog.description}` : ''}${acceptanceCriteriaText}
 
-You can view this ${createdBacklog.item_type} in the [Project Backlog](/project/${createdBacklog.project_id}/backlog). If you have any further requirements or modifications, just let me know!`;
+You can view this ${createdBacklog.item_type} in the [Project Backlog](http://localhost:3000/project/${createdBacklog.project_id}/backlog). If you have any further requirements or modifications, just let me know!`;
       
       return successMessage;
 
