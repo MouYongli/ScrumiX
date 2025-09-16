@@ -10,7 +10,7 @@ import {
   FileText, ListChecks, Eye, 
   PenTool, Bold, Italic, Code, List,
   Quote, Image, Link as LinkIcon, Hash, FolderOpen,
-  Trash2, X, Check, GripVertical
+  Trash2, X, Check, GripVertical, Settings
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
 import { useDateFormat } from '@/hooks/useDateFormat';
@@ -758,6 +758,270 @@ const ActionItemModal = ({
   );
 };
 
+// Meeting Edit Modal Component
+const MeetingEditModal = ({ 
+  isOpen, 
+  onClose, 
+  onSave, 
+  meeting,
+  allSprints = []
+}: {
+  isOpen: boolean;
+  onClose: () => void;
+  onSave: (meetingData: any) => void;
+  meeting: ApiMeeting | null;
+  allSprints?: any[];
+}) => {
+  const [formData, setFormData] = useState({
+    title: '',
+    meeting_type: MeetingType.TEAM_MEETING,
+    start_datetime: '',
+    description: '',
+    duration: 60,
+    location: '',
+    sprint_id: 0
+  });
+  const [isLoading, setIsLoading] = useState(false);
+
+  // Update form when meeting data changes
+  useEffect(() => {
+    if (meeting && isOpen) {
+      // Parse the start datetime for the datetime-local input
+      const startDate = new Date(meeting.startDatetime);
+      const localDatetime = new Date(startDate.getTime() - startDate.getTimezoneOffset() * 60000)
+        .toISOString()
+        .slice(0, 16);
+
+      setFormData({
+        title: meeting.title || '',
+        meeting_type: meeting.meetingType || MeetingType.TEAM_MEETING,
+        start_datetime: localDatetime,
+        description: meeting.description || '',
+        duration: meeting.duration || 60,
+        location: meeting.location || '',
+        sprint_id: meeting.sprintId || 0
+      });
+    }
+  }, [meeting, isOpen]);
+
+  const handleSave = async () => {
+    if (!formData.title.trim()) return;
+    
+    setIsLoading(true);
+    try {
+      // Convert local datetime back to UTC for API
+      const localDate = new Date(formData.start_datetime);
+      const utcDatetime = new Date(localDate.getTime() + localDate.getTimezoneOffset() * 60000).toISOString();
+      
+      const updateData = {
+        title: formData.title.trim(),
+        meeting_type: formData.meeting_type,
+        start_datetime: utcDatetime,
+        description: formData.description.trim() || undefined,
+        duration: formData.duration,
+        location: formData.location.trim() || undefined,
+        sprint_id: formData.sprint_id || undefined
+      };
+      
+      onSave(updateData);
+      onClose();
+    } catch (error) {
+      console.error('Error preparing meeting data:', error);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleClose = () => {
+    setFormData({
+      title: '',
+      meeting_type: MeetingType.TEAM_MEETING,
+      start_datetime: '',
+      description: '',
+      duration: 60,
+      location: '',
+      sprint_id: 0
+    });
+    onClose();
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+      <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-2xl w-full mx-4 max-h-[90vh] overflow-y-auto">
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-xl font-semibold text-gray-900 dark:text-white flex items-center gap-2">
+            <Settings className="w-5 h-5" />
+            Edit Meeting
+          </h3>
+          <button
+            onClick={handleClose}
+            className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+          >
+            <X className="w-5 h-5" />
+          </button>
+        </div>
+
+        <div className="space-y-6">
+          {/* Title */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Meeting Title *
+            </label>
+            <input
+              type="text"
+              value={formData.title}
+              onChange={(e) => setFormData({...formData, title: e.target.value})}
+              placeholder="Enter meeting title..."
+              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg
+                       bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+                       placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              disabled={isLoading}
+            />
+          </div>
+
+          {/* Meeting Type */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Meeting Type
+            </label>
+            <select
+              value={formData.meeting_type}
+              onChange={(e) => setFormData({...formData, meeting_type: e.target.value as MeetingType})}
+              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg
+                       bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+                       focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              disabled={isLoading}
+            >
+              {Object.values(MeetingType).map((type) => (
+                <option key={type} value={type}>
+                  {meetingTypes[type]?.name || type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Date and Time */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Start Date & Time *
+              </label>
+              <input
+                type="datetime-local"
+                value={formData.start_datetime}
+                onChange={(e) => setFormData({...formData, start_datetime: e.target.value})}
+                className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg
+                         bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+                         focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                disabled={isLoading}
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Duration (minutes)
+              </label>
+              <input
+                type="number"
+                min="15"
+                max="480"
+                step="15"
+                value={formData.duration}
+                onChange={(e) => setFormData({...formData, duration: parseInt(e.target.value) || 60})}
+                className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg
+                         bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+                         focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                disabled={isLoading}
+              />
+            </div>
+          </div>
+
+          {/* Location */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Location
+            </label>
+            <input
+              type="text"
+              value={formData.location}
+              onChange={(e) => setFormData({...formData, location: e.target.value})}
+              placeholder="Enter meeting location or video link..."
+              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg
+                       bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+                       placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              disabled={isLoading}
+            />
+          </div>
+
+          {/* Sprint Selection */}
+          {allSprints.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                Associated Sprint
+              </label>
+              <select
+                value={formData.sprint_id}
+                onChange={(e) => setFormData({...formData, sprint_id: parseInt(e.target.value) || 0})}
+                className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg
+                         bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+                         focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                disabled={isLoading}
+              >
+                <option value={0}>No sprint selected</option>
+                {allSprints.map((sprint) => (
+                  <option key={sprint.id} value={sprint.id}>
+                    {sprint.sprintName || sprint.sprint_name} ({sprint.status})
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {/* Description */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Description
+            </label>
+            <textarea
+              value={formData.description}
+              onChange={(e) => setFormData({...formData, description: e.target.value})}
+              placeholder="Enter meeting description..."
+              rows={4}
+              className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg resize-none
+                       bg-white dark:bg-gray-700 text-gray-900 dark:text-white
+                       placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+              disabled={isLoading}
+            />
+          </div>
+        </div>
+
+        <div className="flex justify-end gap-3 mt-8 pt-6 border-t border-gray-200 dark:border-gray-600">
+          <button
+            onClick={handleClose}
+            disabled={isLoading}
+            className="px-6 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            disabled={!formData.title.trim() || !formData.start_datetime || isLoading}
+            className="px-6 py-2 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed text-white rounded-lg transition-colors flex items-center gap-2"
+          >
+            {isLoading ? (
+              <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+            ) : (
+              <Save className="w-4 h-4" />
+            )}
+            {isLoading ? 'Saving...' : 'Save Changes'}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 const MeetingDetail = () => {
   const params = useParams();
   const projectId = params['project-id'] as string;
@@ -770,6 +1034,7 @@ const MeetingDetail = () => {
   const [agendaItems, setAgendaItems] = useState<ApiMeetingAgenda[]>([]);
   const [meetingNotes, setMeetingNotes] = useState<ApiMeetingNote[]>([]);
   const [actionItems, setActionItems] = useState<ApiMeetingActionItem[]>([]);
+  const [allSprints, setAllSprints] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
@@ -797,6 +1062,7 @@ const MeetingDetail = () => {
   const [agendaModalOpen, setAgendaModalOpen] = useState(false);
   const [actionModalOpen, setActionModalOpen] = useState(false);
   const [confirmModalOpen, setConfirmModalOpen] = useState(false);
+  const [meetingEditModalOpen, setMeetingEditModalOpen] = useState(false);
   const [editingAgendaIndex, setEditingAgendaIndex] = useState<number | null>(null);
   const [editingActionItem, setEditingActionItem] = useState<any>(null);
   const [deleteTarget, setDeleteTarget] = useState<{type: string, index?: number, item?: any} | null>(null);
@@ -841,6 +1107,17 @@ const MeetingDetail = () => {
           console.warn('Failed to fetch project:', projectResponse.error);
         } else {
           setProject(projectResponse.data);
+        }
+        
+        // Fetch project sprints for edit modal
+        try {
+          const sprintsResponse = await api.sprints.getByProject(parseInt(projectId));
+          if (sprintsResponse.data) {
+            setAllSprints(sprintsResponse.data);
+          }
+        } catch (error) {
+          console.warn('Failed to fetch sprints:', error);
+          setAllSprints([]);
         }
         
         // Fetch project members for participants
@@ -1100,6 +1377,23 @@ const MeetingDetail = () => {
   const handleCancelDescription = () => {
     setTempDescription(meeting.description || '');
     setEditingDescription(false);
+  };
+
+  // Meeting edit handlers
+  const handleEditMeeting = async (meetingData: any) => {
+    try {
+      const response = await api.meetings.update(parseInt(meetingId), meetingData);
+      if (response.error) throw new Error(response.error);
+      
+      if (response.data) {
+        setMeeting(response.data);
+        console.log('Updated meeting:', response.data);
+        // TODO: Show success notification
+      }
+    } catch (error) {
+      console.error('Error updating meeting:', error);
+      // TODO: Show error notification to user
+    }
   };
 
 
@@ -1719,6 +2013,16 @@ const MeetingDetail = () => {
             <span className={`px-3 py-1 text-sm font-medium rounded-full ${statusStyle.className}`}>
               {statusStyle.text}
             </span>
+            {statusStyle.text !== 'Completed' && (
+              <button
+                onClick={() => setMeetingEditModalOpen(true)}
+                className="flex items-center gap-2 px-3 py-2 text-gray-600 dark:text-gray-400 hover:text-blue-600 dark:hover:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors"
+                title="Edit meeting"
+              >
+                <Settings className="w-4 h-4" />
+                <span className="text-sm font-medium">Edit Meeting</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -2579,6 +2883,14 @@ const MeetingDetail = () => {
           deleteTarget?.type === 'notes' ? 'Are you sure you want to delete all meeting notes? This action cannot be undone.' :
           'Are you sure you want to delete this item?'
         }
+      />
+
+      <MeetingEditModal
+        isOpen={meetingEditModalOpen}
+        onClose={() => setMeetingEditModalOpen(false)}
+        onSave={handleEditMeeting}
+        meeting={meeting}
+        allSprints={allSprints}
       />
     </div>
   );
