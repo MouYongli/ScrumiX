@@ -920,20 +920,42 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
 
       // Set trend based on velocity trend from backend
       if (metrics.velocity_trend && metrics.velocity_trend.length >= 2) {
-        const recentTrend = metrics.velocity_trend.slice(-3); // Last 3 sprints
-        const firstHalf = recentTrend.slice(0, Math.ceil(recentTrend.length / 2));
-        const secondHalf = recentTrend.slice(Math.ceil(recentTrend.length / 2));
+        // Use the most recent 3-5 sprints for trend analysis
+        const recentTrend = metrics.velocity_trend.slice(-Math.min(5, metrics.velocity_trend.length));
         
-        const firstAvg = firstHalf.reduce((sum, point) => sum + point.velocity_points, 0) / firstHalf.length;
-        const secondAvg = secondHalf.reduce((sum, point) => sum + point.velocity_points, 0) / secondHalf.length;
-        
-        const difference = secondAvg - firstAvg;
-        if (Math.abs(difference) < 2) {
-          setVelocityTrend('stable');
-        } else if (difference > 0) {
-          setVelocityTrend('improving');
+        if (recentTrend.length >= 3) {
+          // Compare first half vs second half of recent sprints
+          const midPoint = Math.ceil(recentTrend.length / 2);
+          const firstHalf = recentTrend.slice(0, midPoint);
+          const secondHalf = recentTrend.slice(midPoint);
+          
+          const firstAvg = firstHalf.reduce((sum, point) => sum + point.velocity_points, 0) / firstHalf.length;
+          const secondAvg = secondHalf.reduce((sum, point) => sum + point.velocity_points, 0) / secondHalf.length;
+          
+          const difference = secondAvg - firstAvg;
+          const changePercentage = Math.abs(difference) / firstAvg * 100;
+          
+          // Use percentage-based threshold for more meaningful trend detection
+          if (changePercentage < 15) { // Less than 15% change is considered stable
+            setVelocityTrend('stable');
+          } else if (difference > 0) {
+            setVelocityTrend('improving');
+          } else {
+            setVelocityTrend('declining');
+          }
         } else {
-          setVelocityTrend('declining');
+          // For 2 sprints, just compare the two values
+          const lastTwo = recentTrend.slice(-2);
+          const difference = lastTwo[1].velocity_points - lastTwo[0].velocity_points;
+          const changePercentage = Math.abs(difference) / lastTwo[0].velocity_points * 100;
+          
+          if (changePercentage < 15) {
+            setVelocityTrend('stable');
+          } else if (difference > 0) {
+            setVelocityTrend('improving');
+          } else {
+            setVelocityTrend('declining');
+          }
         }
       } else {
         setVelocityTrend(null);

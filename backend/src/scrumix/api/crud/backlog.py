@@ -330,8 +330,10 @@ class BacklogCRUD(CRUDBase[Backlog, BacklogCreate, BacklogUpdate]):
         if not backlog:
             return None
         
-        # Store old status for velocity tracking
+        # Store old values for velocity tracking
         old_status = backlog.status
+        old_story_points = backlog.story_point
+        old_item_type = backlog.item_type
         
         update_data = backlog_update.model_dump(exclude_unset=True, by_alias=True)
         
@@ -355,8 +357,19 @@ class BacklogCRUD(CRUDBase[Backlog, BacklogCreate, BacklogUpdate]):
         for field, value in update_data.items():
             setattr(backlog, field, value)
         
-        # Handle velocity and burndown tracking if status changed
+        # First, commit the backlog changes to ensure they're persisted
+        db.commit()
+        db.refresh(backlog)
+        
+        # Now handle velocity and burndown tracking with committed data
         new_status = backlog.status
+        new_story_points = backlog.story_point
+        new_item_type = backlog.item_type
+        
+        # Check if we need to update velocity/burndown tracking
+        needs_burndown_update = False
+        
+        # Status changes always trigger updates
         if "status" in update_data and new_status != old_status:
             velocity_tracking_service.update_backlog_completion_status(
                 db=db,
@@ -364,14 +377,58 @@ class BacklogCRUD(CRUDBase[Backlog, BacklogCreate, BacklogUpdate]):
                 new_status=new_status,
                 old_status=old_status
             )
-            # Ensure caller sees latest database state
-            db.refresh(backlog)
-        else:
-            # Commit the regular updates if no status change
-            db.commit()
-            db.refresh(backlog)
+            needs_burndown_update = True
+        
+        # Story point changes for completed user stories/bugs trigger velocity recalculation
+        elif (backlog.sprint_id and 
+              backlog.status == BacklogStatus.DONE and 
+              backlog.item_type in [BacklogType.STORY, BacklogType.BUG] and
+              "story_point" in update_data and 
+              new_story_points != old_story_points):
+            
+            # Recalculate sprint velocity when story points change for completed items
+            # Now the updated story points are already committed to the database
+            self._recalculate_sprint_velocity(db, backlog.sprint_id)
+            needs_burndown_update = True
+        
+        # Item type changes for completed items with story points trigger velocity recalculation
+        elif (backlog.sprint_id and 
+              backlog.status == BacklogStatus.DONE and 
+              backlog.story_point and
+              "item_type" in update_data and 
+              new_item_type != old_item_type):
+            
+            # Recalculate sprint velocity when item type changes for completed items
+            # Now the updated item type is already committed to the database
+            self._recalculate_sprint_velocity(db, backlog.sprint_id)
+            needs_burndown_update = True
+        
+        # Update burndown snapshot if needed
+        if needs_burndown_update and backlog.sprint_id and backlog.project_id:
+            velocity_tracking_service._update_burndown_snapshot(db, backlog.sprint_id, backlog.project_id)
         
         return backlog
+    
+    def _recalculate_sprint_velocity(self, db: Session, sprint_id: int) -> None:
+        """Recalculate sprint velocity based on completed story points"""
+        from ..models.sprint import Sprint
+        
+        # Calculate total completed story points for user stories and bugs only
+        completed_points = db.query(func.sum(Backlog.story_point)).filter(
+            and_(
+                Backlog.sprint_id == sprint_id,
+                Backlog.status == BacklogStatus.DONE,
+                Backlog.item_type.in_([BacklogType.STORY, BacklogType.BUG]),
+                Backlog.story_point.isnot(None)
+            )
+        ).scalar() or 0
+        
+        # Update sprint velocity
+        sprint = db.query(Sprint).filter(Sprint.id == sprint_id).first()
+        if sprint:
+            sprint.velocity_points = completed_points
+            sprint.updated_at = datetime.utcnow()
+            db.commit()
     
     def delete_backlog(self, db: Session, backlog_id: int, delete_children: bool = False) -> bool:
         """Delete backlog item - OPTIMIZED"""

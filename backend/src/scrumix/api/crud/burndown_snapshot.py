@@ -170,10 +170,19 @@ class BurndownSnapshotCRUD(CRUDBase[BurndownSnapshot, BurndownSnapshotCreate, Bu
         db: Session, 
         sprint_id: int
     ) -> Dict[str, Any]:
-        """Get formatted data for burndown chart visualization"""
-        snapshots = self.get_sprint_snapshots(db, sprint_id)
+        """
+        Get formatted data for burndown chart visualization with complete sprint timeline.
         
-        if not snapshots:
+        This method generates chart data for all days in the sprint duration, including:
+        - Days with actual snapshots (from completed backlog items)
+        - Days without snapshots (carry forward previous values)
+        - Proper ideal burndown line based on sprint duration
+        """
+        from ..crud.sprint import sprint_crud
+        
+        # Get sprint details to determine date range
+        sprint = sprint_crud.get_by_id(db, sprint_id)
+        if not sprint or not sprint.start_date or not sprint.end_date:
             return {
                 "dates": [],
                 "remaining_points": [],
@@ -182,34 +191,64 @@ class BurndownSnapshotCRUD(CRUDBase[BurndownSnapshot, BurndownSnapshotCreate, Bu
                 "ideal_line": []
             }
         
-        # Sort by date
+        # Get all existing snapshots for this sprint
+        snapshots = self.get_sprint_snapshots(db, sprint_id)
         snapshots.sort(key=lambda x: x.date)
         
-        # Extract data for chart
-        dates = [snapshot.date.isoformat() for snapshot in snapshots]
-        remaining_points = [snapshot.remaining_story_point for snapshot in snapshots]
-        completed_points = [snapshot.completed_story_point for snapshot in snapshots]
-        total_points = [snapshot.total_story_points for snapshot in snapshots]
+        # Create a map of date -> snapshot for quick lookup
+        snapshot_map = {snapshot.date: snapshot for snapshot in snapshots}
         
-        # Calculate ideal burndown line
-        if snapshots:
-            start_total = snapshots[0].total_story_points
-            num_days = len(snapshots)
-            ideal_line = []
+        # Generate complete date range from sprint start to end (full sprint duration)
+        start_date = sprint.start_date.date()
+        end_date = sprint.end_date.date()
+        
+        # Initialize lists for chart data
+        dates = []
+        remaining_points = []
+        completed_points = []
+        total_points = []
+        
+        # Calculate initial total story points from sprint backlog
+        from ..models.backlog import Backlog
+        initial_total = db.query(func.sum(Backlog.story_point)).filter(
+            and_(
+                Backlog.sprint_id == sprint_id,
+                Backlog.story_point.isnot(None)
+            )
+        ).scalar() or 0
+        
+        # Track the last known values for carry-forward
+        last_completed = 0
+        last_remaining = initial_total
+        last_total = initial_total
+        
+        # Generate data for each day in the sprint
+        current_date = start_date
+        while current_date <= end_date:
+            dates.append(current_date.isoformat())
             
-            for i in range(num_days):
-                # Linear decrease from start_total to 0
-                ideal_remaining = start_total * (1 - (i / (num_days - 1))) if num_days > 1 else start_total
-                ideal_line.append(max(0, ideal_remaining))
-        else:
-            ideal_line = []
+            if current_date in snapshot_map:
+                # Use actual snapshot data
+                snapshot = snapshot_map[current_date]
+                last_completed = snapshot.completed_story_point
+                last_remaining = snapshot.remaining_story_point
+                last_total = snapshot.total_story_points
+            # else: carry forward the last known values
+            
+            completed_points.append(last_completed)
+            remaining_points.append(last_remaining)
+            total_points.append(last_total)
+            
+            current_date += timedelta(days=1)
         
         return {
             "dates": dates,
             "remaining_points": remaining_points,
             "completed_points": completed_points,
             "total_points": total_points,
-            "ideal_line": ideal_line
+            "sprint_duration_days": len(dates),
+            "snapshots_with_data": len(snapshots),
+            "initial_total_points": initial_total
         }
     
     def delete_sprint_snapshots(self, db: Session, sprint_id: int) -> int:

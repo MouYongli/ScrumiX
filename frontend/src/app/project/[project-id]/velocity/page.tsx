@@ -103,6 +103,7 @@ interface VelocityDataPoint {
   totalStories: number;
   startDate: string;
   endDate: string;
+  sortOrder?: number;
 }
 
 const ProjectVelocity: React.FC<ProjectVelocityProps> = ({ params }) => {
@@ -157,7 +158,8 @@ const ProjectVelocity: React.FC<ProjectVelocityProps> = ({ params }) => {
         setVelocityMetrics(metrics);
 
         // Transform backend velocity trend data to frontend display format
-        const velocityDataPoints: VelocityDataPoint[] = metrics.velocity_trend.map(trend => {
+        // Backend already returns data in chronological order (earliest first)
+        const velocityDataPoints: VelocityDataPoint[] = metrics.velocity_trend.map((trend, index) => {
           // For display purposes, we'll estimate story counts based on velocity
           // In a real scenario, you might want to fetch additional data or store this in the backend
           const estimatedTotalStories = Math.ceil(trend.velocity_points / 3); // Assume avg 3 points per story
@@ -169,8 +171,18 @@ const ProjectVelocity: React.FC<ProjectVelocityProps> = ({ params }) => {
             completedStories: estimatedCompletedStories,
             totalStories: estimatedTotalStories,
             startDate: trend.end_date || '', // We only have end_date from backend
-            endDate: trend.end_date || ''
+            endDate: trend.end_date || '',
+            // Add sort key to ensure proper ordering
+            sortOrder: index
           };
+        });
+
+        // Ensure data is sorted chronologically (should already be, but double-check)
+        velocityDataPoints.sort((a, b) => {
+          if (a.endDate && b.endDate) {
+            return new Date(a.endDate).getTime() - new Date(b.endDate).getTime();
+          }
+          return (a.sortOrder || 0) - (b.sortOrder || 0);
         });
 
         setVelocityData(velocityDataPoints);
@@ -319,22 +331,27 @@ const ProjectVelocity: React.FC<ProjectVelocityProps> = ({ params }) => {
       {/* Velocity Chart */}
       {velocityData.length > 0 ? (
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">Velocity Trend</h2>
+          <div className="flex justify-between items-center mb-4">
+            <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Velocity Trend</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400">
+              Showing {velocityData.length} completed sprint{velocityData.length !== 1 ? 's' : ''} (chronological order)
+            </p>
+          </div>
           <div className="w-full h-96">
-        <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={velocityData} margin={{ top: 20, right: 30, left: 10, bottom: 20 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={velocityData} margin={{ top: 20, right: 30, left: 20, bottom: 60 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" opacity={0.3} />
                 <XAxis 
                   dataKey="sprint" 
-                  angle={-20} 
+                  angle={-45} 
                   textAnchor="end" 
-                  height={60} 
+                  height={80} 
                   interval={0} 
-                  tick={{ fill: '#6B7280' }} 
+                  tick={{ fill: '#6B7280', fontSize: 12 }} 
                   label={{ 
-                    value: 'Sprint', 
+                    value: 'Sprint (Chronological Order)', 
                     position: 'insideBottom', 
-                    offset: -10, 
+                    offset: -5, 
                     fill: '#6B7280' 
                   }} 
                 />
@@ -355,8 +372,13 @@ const ProjectVelocity: React.FC<ProjectVelocityProps> = ({ params }) => {
                     borderRadius: '8px',
                     color: '#F9FAFB'
                   }}
+                  formatter={(value, name) => [
+                    `${value} points`,
+                    'Story Points Completed'
+                  ]}
+                  labelFormatter={(label) => `Sprint: ${label}`}
                 />
-            <Legend verticalAlign="top" />
+                <Legend verticalAlign="top" />
                 <Line 
                   type="monotone" 
                   dataKey="velocity" 
@@ -371,9 +393,9 @@ const ProjectVelocity: React.FC<ProjectVelocityProps> = ({ params }) => {
                   }} 
                   activeDot={{ r: 8, stroke: '#1E40AF' }} 
                 />
-          </LineChart>
-        </ResponsiveContainer>
-      </div>
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
         </div>
       ) : (
         <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6 text-center">
@@ -415,7 +437,7 @@ const ProjectVelocity: React.FC<ProjectVelocityProps> = ({ params }) => {
                     Stories Completed
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                    Period
+                    End Date
                   </th>
                 </tr>
               </thead>
@@ -434,7 +456,11 @@ const ProjectVelocity: React.FC<ProjectVelocityProps> = ({ params }) => {
                       {data.completedStories} / {data.totalStories}
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                      <FormattedDate date={new Date(data.startDate)} short={true} /> - <FormattedDate date={new Date(data.endDate)} short={true} />
+                      {data.endDate ? (
+                        <FormattedDate date={new Date(data.endDate)} short={true} />
+                      ) : (
+                        'No date'
+                      )}
                     </td>
                   </tr>
                 ))}

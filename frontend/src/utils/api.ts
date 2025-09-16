@@ -766,7 +766,9 @@ export const api = {
         remaining_points: number[];
         completed_points: number[];
         total_points: number[];
-        ideal_line: number[];
+        sprint_duration_days: number;
+        snapshots_with_data: number;
+        initial_total_points: number;
       }>(`/api/v1/velocity/sprint/${sprintId}/burndown${queryString}`);
     },
 

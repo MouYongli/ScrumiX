@@ -41,7 +41,9 @@ async def get_sprint_burndown_chart(
                     "remaining_points": [],
                     "completed_points": [],
                     "total_points": [],
-                    "ideal_line": []
+                    "sprint_duration_days": 0,
+                    "snapshots_with_data": 0,
+                    "initial_total_points": 0
                 }
 
             snapshots.sort(key=lambda x: x.date)
@@ -50,19 +52,14 @@ async def get_sprint_burndown_chart(
             completed_points = [s.completed_story_point for s in snapshots]
             total_points = [s.completed_story_point + s.remaining_story_point for s in snapshots]
 
-            start_total = total_points[0]
-            num_days = len(snapshots)
-            ideal_line = []
-            for i in range(num_days):
-                ideal_remaining = start_total * (1 - (i / (num_days - 1))) if num_days > 1 else start_total
-                ideal_line.append(max(0, ideal_remaining))
-
             chart_data = {
                 "dates": dates,
                 "remaining_points": remaining_points,
                 "completed_points": completed_points,
                 "total_points": total_points,
-                "ideal_line": ideal_line
+                "sprint_duration_days": len(snapshots),
+                "snapshots_with_data": len(snapshots),
+                "initial_total_points": total_points[0] if total_points else 0
             }
         else:
             chart_data = burndown_snapshot_crud.get_burndown_chart_data(db, sprint_id)
@@ -120,6 +117,44 @@ async def backfill_sprint_burndown_snapshots(
             "message": f"Created {snapshots_created} burndown snapshots",
             "snapshots_created": snapshots_created
         }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/sprint/{sprint_id}/burndown/initialize")
+async def initialize_sprint_burndown(
+    sprint_id: int,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Initialize burndown tracking for a sprint by creating the baseline snapshot"""
+    try:
+        from ..crud.sprint import sprint_crud
+        
+        # Verify sprint exists and get project_id
+        sprint = sprint_crud.get_by_id(db, sprint_id)
+        if not sprint:
+            raise HTTPException(status_code=404, detail="Sprint not found")
+        
+        # Create initial snapshot
+        snapshot = velocity_tracking_service.create_initial_sprint_snapshot(
+            db, sprint_id, sprint.project_id
+        )
+        
+        if snapshot:
+            return {
+                "message": "Sprint burndown tracking initialized successfully",
+                "snapshot_created": True,
+                "initial_total_points": snapshot.remaining_story_point,
+                "sprint_start_date": snapshot.date.isoformat()
+            }
+        else:
+            return {
+                "message": "No initialization needed - sprint has no story points or snapshot already exists",
+                "snapshot_created": False
+            }
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

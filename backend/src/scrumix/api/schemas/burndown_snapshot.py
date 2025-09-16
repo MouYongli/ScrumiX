@@ -49,12 +49,14 @@ class BurndownSnapshotResponse(BurndownSnapshotBase):
 
 
 class BurndownChartData(BaseModel):
-    """Schema for burndown chart data"""
-    dates: List[str] = Field(..., description="List of dates in ISO format")
+    """Schema for burndown chart data with complete sprint timeline"""
+    dates: List[str] = Field(..., description="List of dates in ISO format covering full sprint duration")
     remaining_points: List[int] = Field(..., description="Remaining story points for each date")
     completed_points: List[int] = Field(..., description="Completed story points for each date")
     total_points: List[int] = Field(..., description="Total story points for each date")
-    ideal_line: List[float] = Field(..., description="Ideal burndown line")
+    sprint_duration_days: int = Field(..., description="Total number of days in the sprint")
+    snapshots_with_data: int = Field(..., description="Number of days with actual completion data")
+    initial_total_points: int = Field(..., description="Initial total story points at sprint start")
 
 
 class BurndownTrendAnalysis(BaseModel):

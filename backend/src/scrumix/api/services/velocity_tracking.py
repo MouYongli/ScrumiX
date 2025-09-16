@@ -99,10 +99,19 @@ class VelocityTrackingService:
             sprint.updated_at = datetime.utcnow()
     
     def _update_burndown_snapshot(self, db: Session, sprint_id: int, project_id: int) -> None:
-        """Update or create burndown snapshot for today"""
-        today = date.today()
+        """
+        Update or create burndown snapshot for today when backlog items are completed.
         
-        # Calculate current completed and remaining story points for the sprint
+        This method implements event-driven burndown tracking:
+        - Only creates/updates snapshots when backlog items are actually completed
+        - Updates existing snapshots if items are completed on the same day
+        - Maintains cumulative completed story points for accurate burndown tracking
+        """
+        # Use UTC date to align with frontend ISO date handling
+        today = datetime.utcnow().date()
+        
+        # Calculate current completed story points for the sprint (cumulative)
+        # This includes all items marked as DONE, regardless of when they were completed
         completed_points = db.query(func.sum(Backlog.story_point)).filter(
             and_(
                 Backlog.sprint_id == sprint_id,
@@ -111,24 +120,97 @@ class VelocityTrackingService:
             )
         ).scalar() or 0
         
-        remaining_points = db.query(func.sum(Backlog.story_point)).filter(
+        # Calculate total points once and derive remaining to avoid double counting
+        total_points = db.query(func.sum(Backlog.story_point)).filter(
             and_(
                 Backlog.sprint_id == sprint_id,
-                Backlog.status != BacklogStatus.DONE,
                 Backlog.story_point.isnot(None)
             )
         ).scalar() or 0
         
-        # Create or update snapshot for today
-        burndown_snapshot_crud.create_or_update_snapshot(
-            db=db,
-            sprint_id=sprint_id,
-            project_id=project_id,
-            snapshot_date=today,
-            completed_story_points=completed_points,
-            remaining_story_points=remaining_points
-        )
+        remaining_points = max(0, total_points - completed_points)
+        
+        # Only create/update snapshot if there are completed points
+        # This ensures we don't create empty snapshots for days with no progress
+        if completed_points > 0:
+            # Check if snapshot already exists for today
+            existing_snapshot = burndown_snapshot_crud.get_by_sprint_and_date(
+                db, sprint_id, today
+            )
+            
+            if existing_snapshot:
+                # Update existing snapshot with new completed points
+                # This handles multiple completions on the same day
+                existing_snapshot.completed_story_point = completed_points
+                existing_snapshot.remaining_story_point = remaining_points
+                existing_snapshot.updated_at = datetime.utcnow()
+                db.commit()
+                db.refresh(existing_snapshot)
+            else:
+                # Create new snapshot for today
+                burndown_snapshot_crud.create_or_update_snapshot(
+                    db=db,
+                    sprint_id=sprint_id,
+                    project_id=project_id,
+                    snapshot_date=today,
+                    completed_story_points=completed_points,
+                    remaining_story_points=remaining_points
+                )
     
+    def create_initial_sprint_snapshot(
+        self, 
+        db: Session, 
+        sprint_id: int, 
+        project_id: int
+    ) -> Optional[BurndownSnapshot]:
+        """
+        Create initial burndown snapshot for sprint start date.
+        
+        This creates a baseline snapshot with 0 completed points and all points remaining.
+        Should be called when a sprint is started or when backlog items are added to a sprint.
+        
+        Args:
+            db: Database session
+            sprint_id: Sprint ID
+            project_id: Project ID
+            
+        Returns:
+            Created snapshot or None if sprint not found
+        """
+        from ..crud.sprint import sprint_crud
+        
+        sprint = sprint_crud.get_by_id(db, sprint_id)
+        if not sprint or not sprint.start_date:
+            return None
+        
+        start_date = sprint.start_date.date()
+        
+        # Check if initial snapshot already exists
+        existing = burndown_snapshot_crud.get_by_sprint_and_date(db, sprint_id, start_date)
+        if existing:
+            return existing
+        
+        # Calculate total story points for the sprint
+        total_points = db.query(func.sum(Backlog.story_point)).filter(
+            and_(
+                Backlog.sprint_id == sprint_id,
+                Backlog.story_point.isnot(None)
+            )
+        ).scalar() or 0
+        
+        # Create initial snapshot with 0 completed, all remaining
+        if total_points > 0:
+            return burndown_snapshot_crud.create_or_update_snapshot(
+                db=db,
+                sprint_id=sprint_id,
+                project_id=project_id,
+                snapshot_date=start_date,
+                completed_story_points=0,
+                remaining_story_points=total_points
+            )
+        
+        return None
+
     def calculate_sprint_velocity_average(
         self, 
         db: Session, 
