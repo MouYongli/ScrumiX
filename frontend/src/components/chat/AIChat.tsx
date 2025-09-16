@@ -150,6 +150,12 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   const [showChatMenu, setShowChatMenu] = useState<string | null>(null);
   const [renamingChat, setRenamingChat] = useState<string | null>(null);
   const [renameValue, setRenameValue] = useState<string>('');
+  const [deleteConfirmModal, setDeleteConfirmModal] = useState<{
+    show: boolean;
+    conversationId: string;
+    conversationTitle: string;
+    agentType: string;
+  } | null>(null);
   const [agentStates, setAgentStates] = useState<Record<AgentType, AgentChatStateWithFiles>>({
     'product-owner': { 
       messages: [], 
@@ -378,21 +384,30 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     setRenameValue('');
   }, []);
 
+  // Show delete confirmation modal
+  const showDeleteConfirmation = useCallback((conversationId: string, conversationTitle: string, agentType: string) => {
+    setDeleteConfirmModal({
+      show: true,
+      conversationId,
+      conversationTitle,
+      agentType
+    });
+    setShowChatMenu(null);
+  }, []);
+
   // Delete a chat conversation
-  const deleteChat = useCallback(async (conversationId: string) => {
-    if (!confirm('Are you sure you want to delete this conversation? This action cannot be undone.')) {
-      return;
-    }
+  const deleteChat = useCallback(async () => {
+    if (!deleteConfirmModal) return;
     
     try {
-      await chatAPI.deleteConversation(conversationId);
+      await chatAPI.deleteConversation(deleteConfirmModal.conversationId);
       
       // Refresh conversations list
       await loadAllConversations();
       
       // If the deleted conversation was the current one, clear the current chat
       const currentConversationId = getChatHistory(activeAgent).conversation.id;
-      if (conversationId === currentConversationId) {
+      if (deleteConfirmModal.conversationId === currentConversationId) {
         updateAgentState(activeAgent, { 
           messages: [], 
           inputValue: '', 
@@ -405,12 +420,17 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
         });
       }
       
-      setShowChatMenu(null);
+      setDeleteConfirmModal(null);
     } catch (error) {
       console.error('Failed to delete conversation:', error);
       alert('Failed to delete conversation. Please try again.');
     }
-  }, [activeAgent, loadAllConversations, getChatHistory]);
+  }, [deleteConfirmModal, activeAgent, loadAllConversations, getChatHistory]);
+
+  // Cancel delete confirmation
+  const cancelDelete = useCallback(() => {
+    setDeleteConfirmModal(null);
+  }, []);
 
   // Load a specific conversation
   const loadConversation = useCallback(async (conversationId: string, agentType: AgentType) => {
@@ -759,6 +779,13 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     // Load all conversations for the sidebar
     loadAllConversations();
   }, [loadAllConversations]);
+
+  // Reload conversations when active agent changes
+  useEffect(() => {
+    if (isClient) {
+      loadAllConversations();
+    }
+  }, [activeAgent, isClient, loadAllConversations]);
 
   useEffect(() => {
     // Focus input when switching agents
@@ -1788,11 +1815,10 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                     </div>
             ) : (
               <>
-                {/* Show conversations for all agent types */}
-                {Object.entries(allConversations).map(([agentType, conversations]) => 
-                  conversations.map((conversation) => {
-                    const agent = AGENTS[agentType as AgentType];
-                    const AgentIcon = getAgentIcon(agentType as AgentType);
+                {/* Show conversations for the currently selected agent only */}
+                {allConversations[activeAgent]?.map((conversation) => {
+                    const agent = AGENTS[activeAgent];
+                    const AgentIcon = getAgentIcon(activeAgent);
                     const timeAgo = formatTimeAgo(conversation.last_message_at || conversation.updated_at || conversation.created_at);
                     
                     return (
@@ -1844,23 +1870,23 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                               className="flex items-start space-x-3 cursor-pointer"
                               onClick={() => {
                                 // Load the specific conversation
-                                loadConversation(conversation.id, agentType as AgentType);
+                                loadConversation(conversation.id, activeAgent);
                               }}
                             >
                               <div className={`w-8 h-8 ${agent?.color || 'bg-gray-500'} rounded-lg flex items-center justify-center flex-shrink-0`}>
                                 <AgentIcon className="w-4 h-4 text-white" />
                 </div>
                 <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                                  {conversation.title || `${agent?.name || agentType} Chat`}
-                  </h4>
-                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
+                                <h4 className="text-sm font-medium text-gray-900 dark:text-white truncate">
+                                  {conversation.title || `${agent?.name || activeAgent} Chat`}
+                                </h4>
+                                <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
                                   {conversation.summary || 'No summary available'}
-                  </p>
-                  <div className="flex items-center justify-between mt-2">
-                                  <span className="text-xs text-gray-500">{agent?.name || agentType}</span>
+                                </p>
+                                <div className="flex items-center justify-between mt-2">
+                                  <span className="text-xs text-gray-500">{agent?.name || activeAgent}</span>
                                   <span className="text-xs text-gray-500">{timeAgo}</span>
-                </div>
+                                </div>
               </div>
             </div>
 
@@ -1894,7 +1920,11 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                                     <button
                                       onClick={(e) => {
                                         e.stopPropagation();
-                                        deleteChat(conversation.id);
+                                        showDeleteConfirmation(
+                                          conversation.id, 
+                                          conversation.title || `${agent?.name || activeAgent} Chat`,
+                                          activeAgent
+                                        );
                                       }}
                                       className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors last:rounded-b-lg flex items-center space-x-2"
                                     >
@@ -1907,18 +1937,19 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                   </div>
                           </>
                         )}
-              </div>
+                      </div>
                     );
-                  })
-                )}
-
-            {/* Empty State */}
-                {Object.keys(allConversations).length === 0 && !loadingConversations && (
-            <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-              <History className="w-12 h-12 mx-auto mb-3 opacity-50" />
-                    <p className="text-sm">No chat history yet</p>
-                    <p className="text-xs mt-1">Start a conversation with an AI agent</p>
-            </div>
+                  }) || []}
+                
+                {/* Empty State */}
+                {(!allConversations[activeAgent] || allConversations[activeAgent].length === 0) && !loadingConversations && (
+                  <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                    <div className={`w-12 h-12 ${AGENTS[activeAgent].color} rounded-full flex items-center justify-center mx-auto mb-3 opacity-50`}>
+                      {React.createElement(getAgentIcon(activeAgent), { className: "w-6 h-6 text-white" })}
+                    </div>
+                    <p className="text-sm">No {AGENTS[activeAgent].name} conversations yet</p>
+                    <p className="text-xs mt-1">Start chatting to see your history here</p>
+                  </div>
                 )}
               </>
             )}
@@ -2464,6 +2495,62 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
           </div>
         </div>
       </div>
+
+      {/* Enhanced Delete Confirmation Modal */}
+      {deleteConfirmModal && (
+        <div className="fixed inset-0 bg-black bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div className="p-6">
+              <div className="flex items-center space-x-3 mb-4">
+                <div className="w-12 h-12 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center">
+                  <Trash2 className="w-6 h-6 text-red-600 dark:text-red-400" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    Delete Conversation
+                  </h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    This action cannot be undone
+                  </p>
+                </div>
+              </div>
+              
+              <div className="mb-6">
+                <p className="text-gray-700 dark:text-gray-300 mb-3">
+                  Are you sure you want to delete this conversation?
+                </p>
+                <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 border-l-4 border-red-500">
+                  <div className="flex items-center space-x-2 mb-1">
+                    <div className={`w-4 h-4 ${AGENTS[deleteConfirmModal.agentType as AgentType]?.color || 'bg-gray-500'} rounded`}></div>
+                    <span className="font-medium text-sm text-gray-900 dark:text-white">
+                      {deleteConfirmModal.conversationTitle}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-600 dark:text-gray-400">
+                    {AGENTS[deleteConfirmModal.agentType as AgentType]?.name || deleteConfirmModal.agentType} conversation
+                  </p>
+                </div>
+              </div>
+              
+              <div className="flex space-x-3">
+                <button
+                  onClick={cancelDelete}
+                  className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-600 hover:bg-gray-200 dark:hover:bg-gray-500 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={deleteChat}
+                  className="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors flex items-center justify-center space-x-2"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Delete</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
