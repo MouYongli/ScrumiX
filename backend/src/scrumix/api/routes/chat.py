@@ -67,8 +67,13 @@ async def get_conversation_history(
                 messages=[]
             )
         
-        # Check if user has access (optional: add proper authorization logic)
-        # For now, allow access to all conversations
+        # Enforce ownership: only the owner can access this conversation
+        if conversation.user_id is not None and conversation.user_id != current_user.id:
+            # Return 404 to avoid leaking existence
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Conversation not found"
+            )
         
         # Get messages
         messages = chat_crud.get_conversation_messages(db, conversation_id)
@@ -103,7 +108,14 @@ async def save_message(
                 detail="Conversation not found"
             )
         
-        # Create message
+        # Enforce ownership before allowing writes
+        if conversation.user_id is not None and conversation.user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Conversation not found"
+            )
+
+        # Create message (text-only parts are persisted in CRUD)
         message = chat_crud.create_message(
             db=db,
             conversation_id=conversation_id,
@@ -128,6 +140,14 @@ async def upsert_conversation(
 ):
     """Create or update a chat conversation"""
     try:
+        # If conversation exists and is owned by another user, deny upsert
+        existing = chat_crud.get_conversation(db, conversation_data.id)
+        if existing and existing.user_id is not None and existing.user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied"
+            )
+
         conversation = chat_crud.upsert_conversation(
             db=db,
             conversation_data=conversation_data,
