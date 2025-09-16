@@ -777,7 +777,7 @@ const MeetingEditModal = ({
     meeting_type: MeetingType.TEAM_MEETING,
     start_datetime: '',
     description: '',
-    duration: 60,
+    duration: 60 as number | '',
     location: '',
     sprint_id: 0
   });
@@ -813,12 +813,15 @@ const MeetingEditModal = ({
       const localDate = new Date(formData.start_datetime);
       const utcDatetime = new Date(localDate.getTime() + localDate.getTimezoneOffset() * 60000).toISOString();
       
+      // Ensure duration is a valid number
+      const duration = typeof formData.duration === 'string' || formData.duration < 15 ? 60 : formData.duration;
+      
       const updateData = {
         title: formData.title.trim(),
         meeting_type: formData.meeting_type,
         start_datetime: utcDatetime,
         description: formData.description.trim() || undefined,
-        duration: formData.duration,
+        duration: duration,
         location: formData.location.trim() || undefined,
         sprint_id: formData.sprint_id || undefined
       };
@@ -838,7 +841,7 @@ const MeetingEditModal = ({
       meeting_type: MeetingType.TEAM_MEETING,
       start_datetime: '',
       description: '',
-      duration: 60,
+      duration: 60 as number | '',
       location: '',
       sprint_id: 0
     });
@@ -922,16 +925,35 @@ const MeetingEditModal = ({
               <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
                 Duration (minutes)
               </label>
-              <input
+                <input
                 type="number"
                 min="15"
                 max="480"
                 step="15"
                 value={formData.duration}
-                onChange={(e) => setFormData({...formData, duration: parseInt(e.target.value) || 60})}
+                placeholder="15"
+                onChange={(e) => {
+                  const value = e.target.value;
+                  // Allow empty string and any numeric input during editing
+                  if (value === '') {
+                    setFormData({...formData, duration: '' as any});
+                  } else {
+                    const numValue = parseInt(value);
+                    if (!isNaN(numValue)) {
+                      setFormData({...formData, duration: numValue});
+                    }
+                  }
+                }}
+                onBlur={(e) => {
+                  // On blur, ensure we have a valid duration
+                  const value = e.target.value;
+                  if (value === '' || parseInt(value) < 15) {
+                    setFormData({...formData, duration: 60});
+                  }
+                }}
                 className="w-full p-3 border border-gray-300 dark:border-gray-600 rounded-lg
                          bg-white dark:bg-gray-700 text-gray-900 dark:text-white
-                         focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                         placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 disabled={isLoading}
               />
             </div>
