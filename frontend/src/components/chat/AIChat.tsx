@@ -388,10 +388,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     
     try {
       // Update the conversation title via API
-      await chatAPI.upsertConversation({
-        id: conversationId,
-        agent_type: activeAgent,
-        project_id: projectId ? parseInt(projectId, 10) : undefined,
+      await chatAPI.updateConversation(conversationId, {
         title: renameValue.trim()
       });
       
@@ -403,7 +400,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     } catch (error) {
       console.error('Failed to rename conversation:', error);
     }
-  }, [renameValue, activeAgent, projectId, loadAllConversations]);
+  }, [renameValue, loadAllConversations]);
 
   // Cancel renaming
   const cancelRename = useCallback(() => {
@@ -1941,8 +1938,6 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
               const IconComponent = getAgentIcon(agent.id);
               const isActive = activeAgent === agent.id;
               const agentState = agentStates[agent.id];
-              const messageCount = agentState.messages.length;
-              
               return (
                             <button
                   key={agent.id}
@@ -1965,11 +1960,6 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                                     <span className="text-sm font-semibold text-gray-900 dark:text-white">
                           {agent.name}
                                     </span>
-                        {messageCount > 0 && (
-                                      <span className="text-xs px-2 py-1 bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 rounded-full">
-                            {messageCount}
-                          </span>
-                        )}
                       </div>
                                   <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
                         {agent.description}

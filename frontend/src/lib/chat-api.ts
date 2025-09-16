@@ -143,6 +143,14 @@ class ChatAPI {
     }, cookies);
     return response.json();
   }
+
+  async updateConversation(conversationId: string, updates: {title?: string}, cookies?: string): Promise<ChatConversation> {
+    const response = await this.fetchWithAuth(`${API_BASE_URL}/chat/conversations/${conversationId}`, {
+      method: 'PUT',
+      body: JSON.stringify(updates),
+    }, cookies);
+    return response.json();
+  }
 }
 
 export const chatAPI = new ChatAPI();

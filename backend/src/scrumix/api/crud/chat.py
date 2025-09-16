@@ -8,7 +8,7 @@ from datetime import datetime
 import uuid
 
 from ..models.chat import ChatConversation, ChatMessage
-from ..schemas.chat import ChatConversationCreate, ChatMessageCreate
+from ..schemas.chat import ChatConversationCreate, ChatMessageCreate, ChatConversationUpdate
 
 
 class ChatCRUD:
@@ -182,6 +182,35 @@ class ChatCRUD:
         
         db.commit()
         return True
+
+    def update_conversation(
+        self,
+        db: Session,
+        conversation_id: str,
+        conversation_update: ChatConversationUpdate,
+        user_id: Optional[int] = None
+    ) -> Optional[ChatConversation]:
+        """Update a chat conversation"""
+        conversation = db.query(ChatConversation).filter(
+            ChatConversation.id == conversation_id
+        ).first()
+        
+        if not conversation:
+            return None
+            
+        # Check if user has permission to update this conversation
+        if user_id is not None and conversation.user_id != user_id:
+            return None
+        
+        # Update fields
+        if conversation_update.title is not None:
+            conversation.title = conversation_update.title
+        
+        conversation.updated_at = datetime.now()
+        
+        db.commit()
+        db.refresh(conversation)
+        return conversation
 
 
 # Create instance

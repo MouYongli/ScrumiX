@@ -44,6 +44,11 @@ class ChatConversationCreate(BaseModel):
     title: Optional[str] = Field(None, description="Conversation title")
 
 
+class ChatConversationUpdate(BaseModel):
+    """Schema for updating a chat conversation"""
+    title: Optional[str] = Field(None, description="New conversation title")
+
+
 class ChatConversationResponse(BaseModel):
     """Schema for chat conversation response"""
     id: str

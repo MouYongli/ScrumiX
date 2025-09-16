@@ -10,7 +10,7 @@ from ..core.security import get_current_user
 from ..db.database import get_db
 from ..crud.chat import chat_crud
 from ..schemas.chat import (
-    ChatConversationCreate, ChatConversationResponse,
+    ChatConversationCreate, ChatConversationResponse, ChatConversationUpdate,
     ChatMessageCreate, ChatMessageResponse,
     ChatHistoryResponse, SaveMessageRequest
 )
@@ -181,6 +181,38 @@ async def get_user_conversations(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to get conversations: {str(e)}"
+        )
+
+
+@router.put("/conversations/{conversation_id}", response_model=ChatConversationResponse)
+async def update_conversation(
+    conversation_id: str,
+    conversation_update: ChatConversationUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update a chat conversation (e.g., rename title)"""
+    try:
+        updated_conversation = chat_crud.update_conversation(
+            db=db,
+            conversation_id=conversation_id,
+            conversation_update=conversation_update,
+            user_id=current_user.id
+        )
+        
+        if not updated_conversation:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Conversation not found or access denied"
+            )
+        
+        return ChatConversationResponse.model_validate(updated_conversation)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update conversation: {str(e)}"
         )
 
 
