@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   User,
@@ -29,7 +29,8 @@ import {
   ChevronDown,
   History,
   Plus,
-  ArrowUp
+  ArrowUp,
+  MoreHorizontal
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -38,6 +39,8 @@ import { getAgentModelConfig, AI_MODELS } from '@/lib/ai-gateway';
 import { getPreferredModel, setPreferredModel } from '@/lib/model-preferences';
 import { hasNativeWebSearch } from '@/lib/tools/web-search';
 import { convertFilesToDataURLs, validateFile, formatFileSize, getFileCategory, handleDragOver, handleDragEnter, handleDragLeave, handleDrop, getSupportedFormatsString } from '@/utils/multimodal';
+import { useChatHistory } from '@/hooks/useChatHistory';
+import { chatAPI } from '@/lib/chat-api';
 import ModelSelector from './ModelSelector';
 
 // Agent definitions with Scrum-specific roles
@@ -91,10 +94,42 @@ interface AIChatProps {
   projectId: string;
 }
 
+interface SessionData {
+  fileParts?: MessagePart[];
+  tempUploadId?: string;
+}
+
+// Utility function to format time ago
+const formatTimeAgo = (dateString: string): string => {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+  
+  if (diffInSeconds < 60) {
+    return 'Just now';
+  } else if (diffInSeconds < 3600) {
+    const minutes = Math.floor(diffInSeconds / 60);
+    return `${minutes}m ago`;
+  } else if (diffInSeconds < 86400) {
+    const hours = Math.floor(diffInSeconds / 3600);
+    return `${hours}h ago`;
+  } else if (diffInSeconds < 604800) {
+    const days = Math.floor(diffInSeconds / 86400);
+    return `${days}d ago`;
+  } else {
+    return date.toLocaleDateString();
+  }
+};
+
+interface EnhancedChatMessage extends ChatMessage {
+  sessionData?: SessionData;
+}
+
 interface AgentChatStateWithFiles extends AgentChatState {
+  messages: EnhancedChatMessage[];
   files?: FileList;
   isDragOver?: boolean;
-  loadingState?: 'thinking' | 'searching' | 'tool-call' | 'generating';
+  loadingState?: 'thinking' | 'searching' | 'tool-call' | 'generating' | 'using-tool' | 'processing-tool-result';
   currentTool?: string;
   pendingConfirmations?: Set<string>; // Message IDs that need confirmation
   confirmedMessages?: Set<string>; // Message IDs that have been confirmed/declined
@@ -110,6 +145,29 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   const [editingContent, setEditingContent] = useState<string>('');
   const [showAgentDropdown, setShowAgentDropdown] = useState(false);
   const [showPlusDropdown, setShowPlusDropdown] = useState(false);
+  const [allConversations, setAllConversations] = useState<Record<string, any[]>>({});
+  const [loadingConversations, setLoadingConversations] = useState(false);
+  const [showChatMenu, setShowChatMenu] = useState<string | null>(null);
+  const [renamingChat, setRenamingChat] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState<string>('');
+  const [deleteConfirmModal, setDeleteConfirmModal] = useState<{
+    show: boolean;
+    conversationId: string;
+    conversationTitle: string;
+    agentType: string;
+  } | null>(null);
+  const [currentConversationIds, setCurrentConversationIds] = useState<Record<AgentType, string>>({
+    'product-owner': '',
+    'scrum-master': '',
+    'developer': ''
+  });
+  
+  // Track the currently selected conversation for highlighting
+  const [selectedConversationIds, setSelectedConversationIds] = useState<Record<AgentType, string>>({
+    'product-owner': '',
+    'scrum-master': '',
+    'developer': ''
+  });
   const [agentStates, setAgentStates] = useState<Record<AgentType, AgentChatStateWithFiles>>({
     'product-owner': { 
       messages: [], 
@@ -149,25 +207,798 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     'developer': null
   });
 
+  // Track if we're currently sending a message to avoid state conflicts
+  const [sendingStates, setSendingStates] = useState<Record<AgentType, boolean>>({
+    'product-owner': false,
+    'scrum-master': false,
+    'developer': false
+  });
+
+  // Track initial loading to prevent duplication during page load
+  const [initialLoadingStates, setInitialLoadingStates] = useState<Record<AgentType, boolean>>({
+    'product-owner': true,
+    'scrum-master': true,
+    'developer': true
+  });
+
+  // Track last sync time for periodic reconciliation
+  const [lastSyncTimes, setLastSyncTimes] = useState<Record<AgentType, number>>({
+    'product-owner': 0,
+    'scrum-master': 0,
+    'developer': 0
+  });
+
+  // Chat history hooks for persistent storage
+  const productOwnerChat = useChatHistory({
+    agentType: 'product-owner',
+    projectId: projectId ? parseInt(projectId, 10) : null,
+    onMessagesUpdated: (messages) => {
+      // Only perform full sync during initial load
+      if (initialLoadingStates['product-owner']) {
+        // Initial load - set all messages as enhanced messages (no session data from backend)
+        const chatMessages: EnhancedChatMessage[] = messages.map(msg => ({
+          id: msg.id,
+          content: msg.parts?.find(p => p.type === 'text')?.text || '',
+          timestamp: new Date().toISOString(),
+          sender: msg.role === 'user' ? 'user' as const : 'agent' as const,
+          parts: (msg.parts || []).filter(p => p.type === 'text').map(p => ({ type: 'text', text: (p as any).text || '' })),
+          agentType: msg.role === 'assistant' ? 'product-owner' as const : undefined,
+          sessionData: undefined // No session data from backend
+        }));
+        updateAgentState('product-owner', { messages: chatMessages });
+        setInitialLoadingStates(prev => ({ ...prev, 'product-owner': false }));
+        setLastSyncTimes(prev => ({ ...prev, 'product-owner': Date.now() }));
+      }
+      // For all other cases, ignore - we'll handle message updates locally
+    }
+  });
+  
+  const scrumMasterChat = useChatHistory({
+    agentType: 'scrum-master',
+    projectId: projectId ? parseInt(projectId, 10) : null,
+    onMessagesUpdated: (messages) => {
+      // Only perform full sync during initial load
+      if (initialLoadingStates['scrum-master']) {
+        // Initial load - set all messages as enhanced messages (no session data from backend)
+        const chatMessages: EnhancedChatMessage[] = messages.map(msg => ({
+          id: msg.id,
+          content: msg.parts?.find(p => p.type === 'text')?.text || '',
+          timestamp: new Date().toISOString(),
+          sender: msg.role === 'user' ? 'user' as const : 'agent' as const,
+          parts: (msg.parts || []).filter(p => p.type === 'text').map(p => ({ type: 'text', text: (p as any).text || '' })),
+          agentType: msg.role === 'assistant' ? 'scrum-master' as const : undefined,
+          sessionData: undefined // No session data from backend
+        }));
+        updateAgentState('scrum-master', { messages: chatMessages });
+        setInitialLoadingStates(prev => ({ ...prev, 'scrum-master': false }));
+        setLastSyncTimes(prev => ({ ...prev, 'scrum-master': Date.now() }));
+      }
+      // For all other cases, ignore - we'll handle message updates locally
+    }
+  });
+  
+  const developerChat = useChatHistory({
+    agentType: 'developer',
+    projectId: projectId ? parseInt(projectId, 10) : null,
+    onMessagesUpdated: (messages) => {
+      // Only perform full sync during initial load
+      if (initialLoadingStates['developer']) {
+        // Initial load - set all messages as enhanced messages (no session data from backend)
+        const chatMessages: EnhancedChatMessage[] = messages.map(msg => ({
+          id: msg.id,
+          content: msg.parts?.find(p => p.type === 'text')?.text || '',
+          timestamp: new Date().toISOString(),
+          sender: msg.role === 'user' ? 'user' as const : 'agent' as const,
+          parts: (msg.parts || []).filter(p => p.type === 'text').map(p => ({ type: 'text', text: (p as any).text || '' })),
+          agentType: msg.role === 'assistant' ? 'developer' as const : undefined,
+          sessionData: undefined // No session data from backend
+        }));
+        updateAgentState('developer', { messages: chatMessages });
+        setInitialLoadingStates(prev => ({ ...prev, 'developer': false }));
+        setLastSyncTimes(prev => ({ ...prev, 'developer': Date.now() }));
+      }
+      // For all other cases, ignore - we'll handle message updates locally
+    }
+  });
+
+  // Helper to get chat history hook for agent
+  const getChatHistory = (agentType: AgentType) => {
+    switch (agentType) {
+      case 'product-owner': return productOwnerChat;
+      case 'scrum-master': return scrumMasterChat;
+      case 'developer': return developerChat;
+      default: return productOwnerChat;
+    }
+  };
+
+  // Load all conversations for the sidebar
+  const loadAllConversations = useCallback(async () => {
+    setLoadingConversations(true);
+    try {
+      const conversations = await chatAPI.getUserConversations();
+      
+      // Group conversations by agent type
+      const groupedConversations: Record<string, any[]> = {};
+      conversations.forEach((conv: any) => {
+        if (!groupedConversations[conv.agent_type]) {
+          groupedConversations[conv.agent_type] = [];
+        }
+        groupedConversations[conv.agent_type].push(conv);
+      });
+      
+      // Sort conversations by last message time (most recent first)
+      Object.keys(groupedConversations).forEach(agentType => {
+        groupedConversations[agentType].sort((a, b) => 
+          new Date(b.last_message_at || b.updated_at || b.created_at).getTime() - 
+          new Date(a.last_message_at || a.updated_at || a.created_at).getTime()
+        );
+      });
+      
+      setAllConversations(groupedConversations);
+    } catch (error) {
+      console.error('Failed to load conversations:', error);
+    } finally {
+      setLoadingConversations(false);
+    }
+  }, []);
+
+  // Create a new chat session
+  const createNewChat = useCallback(() => {
+    // Generate a unique conversation ID for the new chat
+    const newConversationId = `${activeAgent}-${projectId || 'no-project'}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
+    // Clear the current agent's messages to start fresh
+    updateAgentState(activeAgent, { 
+      messages: [], 
+      inputValue: '', 
+      files: undefined,
+      isTyping: false,
+      loadingState: undefined,
+      currentTool: undefined,
+      pendingConfirmations: new Set(),
+      confirmedMessages: new Set()
+    });
+    
+    // Store the new conversation ID for this agent session
+    // This will be used when sending the first message
+    setCurrentConversationIds(prev => ({
+      ...prev,
+      [activeAgent]: newConversationId
+    }));
+    
+    // Clear the selected conversation ID since this is a new chat
+    setSelectedConversationIds(prev => ({
+      ...prev,
+      [activeAgent]: ''
+    }));
+    
+    console.log(`Started new chat for ${activeAgent} with ID: ${newConversationId}`);
+  }, [activeAgent, projectId]);
+
+  // Start renaming a chat
+  const startRenaming = useCallback((conversationId: string, currentTitle: string) => {
+    setRenamingChat(conversationId);
+    setRenameValue(currentTitle || '');
+    setShowChatMenu(null);
+  }, []);
+
+  // Save renamed chat
+  const saveRename = useCallback(async (conversationId: string) => {
+    if (!renameValue.trim()) return;
+    
+    try {
+      // Update the conversation title via API
+      await chatAPI.updateConversation(conversationId, {
+        title: renameValue.trim()
+      });
+      
+      // Refresh conversations list
+      await loadAllConversations();
+      
+      setRenamingChat(null);
+      setRenameValue('');
+    } catch (error) {
+      console.error('Failed to rename conversation:', error);
+    }
+  }, [renameValue, loadAllConversations]);
+
+  // Cancel renaming
+  const cancelRename = useCallback(() => {
+    setRenamingChat(null);
+    setRenameValue('');
+  }, []);
+
+  // Show delete confirmation modal
+  const showDeleteConfirmation = useCallback((conversationId: string, conversationTitle: string, agentType: string) => {
+    setDeleteConfirmModal({
+      show: true,
+      conversationId,
+      conversationTitle,
+      agentType
+    });
+    setShowChatMenu(null);
+  }, []);
+
+  // Delete a chat conversation
+  const deleteChat = useCallback(async () => {
+    if (!deleteConfirmModal) return;
+    
+    try {
+      await chatAPI.deleteConversation(deleteConfirmModal.conversationId);
+      
+      // Refresh conversations list
+      await loadAllConversations();
+      
+      // If the deleted conversation was the current one, clear the current chat
+      const currentConversationId = getChatHistory(activeAgent).conversation.id;
+      if (deleteConfirmModal.conversationId === currentConversationId) {
+        updateAgentState(activeAgent, { 
+          messages: [], 
+          inputValue: '', 
+          files: undefined,
+          isTyping: false,
+          loadingState: undefined,
+          currentTool: undefined,
+          pendingConfirmations: new Set(),
+          confirmedMessages: new Set()
+        });
+      }
+      
+      setDeleteConfirmModal(null);
+    } catch (error) {
+      console.error('Failed to delete conversation:', error);
+      alert('Failed to delete conversation. Please try again.');
+    }
+  }, [deleteConfirmModal, activeAgent, loadAllConversations, getChatHistory]);
+
+  // Cancel delete confirmation
+  const cancelDelete = useCallback(() => {
+    setDeleteConfirmModal(null);
+  }, []);
+
+  // Load a specific conversation
+  const loadConversation = useCallback(async (conversationId: string, agentType: AgentType) => {
+    try {
+      // Prevent auto-scroll during conversation load and agent switch
+      suppressAutoScrollRef.current = true;
+      // Switch to the appropriate agent
+      setActiveAgent(agentType);
+      
+      // Update the selected conversation ID for highlighting
+      setSelectedConversationIds(prev => ({
+        ...prev,
+        [agentType]: conversationId
+      }));
+      
+      // Load the conversation and update the UI
+      const chatHistory = getChatHistory(agentType);
+      const backendMessages = await chatHistory.loadConversation(conversationId);
+      
+      // Convert backend messages to enhanced messages for the UI
+      const enhancedMessages: EnhancedChatMessage[] = backendMessages.map(msg => ({
+        id: msg.id,
+        content: msg.parts?.find(p => p.type === 'text')?.text || '',
+        timestamp: new Date().toISOString(),
+        sender: msg.role === 'user' ? 'user' as const : 'agent' as const,
+        parts: (msg.parts || []).filter(p => p.type === 'text').map(p => ({ 
+          type: 'text' as const, 
+          text: (p as any).text || '' 
+        })),
+        agentType: msg.role === 'assistant' ? agentType : undefined,
+        sessionData: undefined // Fresh load, no session data
+      }));
+      
+      // Update the agent state with the loaded messages
+      updateAgentState(agentType, { 
+        messages: enhancedMessages,
+        pendingConfirmations: new Set(),
+        confirmedMessages: new Set(),
+        isTyping: false,
+        loadingState: undefined,
+        currentTool: undefined
+      });
+      
+      console.log(`Loaded conversation ${conversationId} for ${agentType} with ${enhancedMessages.length} messages`);
+    } catch (error) {
+      console.error('Failed to load conversation:', error);
+    }
+  }, [getChatHistory]);
+
+  // Helper function to get API endpoint for agent type
+  const getApiEndpoint = (agentType: AgentType): string => {
+    switch (agentType) {
+      case 'product-owner': return '/api/chat/product-owner';
+      case 'scrum-master': return '/api/chat/scrum-master';
+      case 'developer': return '/api/chat/developer';
+      default: return '/api/chat/product-owner';
+    }
+  };
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
+  // Helpers for deduplication and merging (id first, role+content fallback)
+  const upsertMessage = (existing: EnhancedChatMessage[], incoming: EnhancedChatMessage): EnhancedChatMessage[] => {
+    const idx = existing.findIndex(m => m.id === incoming.id);
+    if (idx !== -1) {
+      const copy = existing.slice();
+      copy[idx] = incoming;
+      return copy;
+    }
+    const key = `${incoming.sender}:${incoming.content}`;
+    const existsByContent = existing.some(m => `${m.sender}:${m.content}` === key);
+    if (existsByContent) return existing;
+    return [...existing, incoming];
+  };
+
+  const mergeMessages = (existing: EnhancedChatMessage[], incoming: EnhancedChatMessage[]): EnhancedChatMessage[] => {
+    let result = existing.slice();
+    for (const msg of incoming) {
+      result = upsertMessage(result, msg);
+    }
+    return result;
+  };
+
+  // Explicit refresh function - only called when user explicitly needs fresh data
+  const refreshConversation = async (agentType: AgentType) => {
+    // Don't refresh if currently sending a message
+    if (sendingStates[agentType]) {
+      return;
+    }
+
+    try {
+      const chatHistory = getChatHistory(agentType);
+      const backendMessages = await chatHistory.loadConversation(chatHistory.conversation.id);
+      const currentMessages = agentStates[agentType].messages;
+
+      // Merge backend messages with preserved session data
+      const enhancedMessages: EnhancedChatMessage[] = backendMessages.map(msg => {
+        // Find existing local message to preserve session data
+        const existingLocal = currentMessages.find(local => local.id === msg.id);
+        
+        return {
+          id: msg.id,
+          content: msg.parts?.find(p => p.type === 'text')?.text || '',
+          timestamp: new Date().toISOString(),
+          sender: msg.role === 'user' ? 'user' as const : 'agent' as const,
+          parts: msg.parts || [], // Backend parts (text-only)
+          agentType: msg.role === 'assistant' ? agentType : undefined,
+          sessionData: existingLocal?.sessionData // Preserve session data (files, etc.)
+        } as EnhancedChatMessage;
+      });
+
+      // Only update if there are actually new messages
+      if (enhancedMessages.length > currentMessages.length) {
+        updateAgentState(agentType, { messages: enhancedMessages });
+        console.log(`Refreshed conversation: ${enhancedMessages.length - currentMessages.length} new messages for ${agentType}`);
+      }
+    } catch (error) {
+      console.warn(`Failed to refresh conversation for ${agentType}:`, error);
+    }
+  };
+
+  // New persistent chat message sender
+  const sendPersistentMessage = async (agentType: AgentType) => {
+    const currentState = agentStates[agentType];
+    if (!currentState.inputValue.trim() && !currentState.files?.length) return;
+
+    // Mark as sending to prevent state conflicts
+    setSendingStates(prev => ({ ...prev, [agentType]: true }));
+
+    // Use the new conversation ID if we're starting a new chat, otherwise use the existing one
+    const conversationId = currentConversationIds[agentType] || getChatHistory(agentType).conversation.id;
+    
+    // If we have a new conversation ID, we need to create the conversation first
+    if (currentConversationIds[agentType]) {
+      try {
+        await chatAPI.upsertConversation({
+          id: conversationId,
+          agent_type: agentType,
+          project_id: projectId ? parseInt(projectId, 10) : undefined,
+          title: `${AGENTS[agentType].name} Chat`
+        });
+      } catch (error) {
+        console.error('Failed to create new conversation:', error);
+      }
+    }
+
+    const chatHistory = getChatHistory(agentType);
+    
+    // Store the message content before clearing the input
+    let messageContent = currentState.inputValue;
+    const messageFiles = currentState.files;
+    
+    // Show user message immediately with file previews (non-blocking)
+    let fileParts: MessagePart[] = [];
+    if (messageFiles && messageFiles.length > 0) {
+      try {
+        fileParts = await convertFilesToDataURLs(messageFiles);
+      } catch (e) {
+        console.warn('Failed to convert files to data URLs', e);
+      }
+    }
+
+    // Create user message with session data for files
+    const userMessage: EnhancedChatMessage = {
+      id: `user-${Date.now()}`,
+      content: messageContent,
+      timestamp: new Date().toISOString(),
+      sender: 'user',
+      parts: [{ type: 'text', text: messageContent }], // Only text in parts
+      sessionData: fileParts.length > 0 ? { fileParts } : undefined // Files in session data
+    };
+
+    // Clear input and show user message immediately
+    updateAgentState(agentType, {
+      messages: [...currentState.messages, userMessage],
+      inputValue: '',
+      files: undefined,
+      isTyping: true,
+      loadingState: webSearchEnabled ? 'searching' : 'thinking'
+    });
+
+    // Clear file input
+    const fileInput = fileInputRefs.current[agentType];
+    if (fileInput) {
+      fileInput.value = '';
+    }
+
+    try {
+      // Start file upload in parallel while showing message
+      let uploadPromise: Promise<string | null> = Promise.resolve(null);
+      if (messageFiles && messageFiles.length > 0) {
+        uploadPromise = (async () => {
+          try {
+            const form = new FormData();
+            Array.from(messageFiles).forEach(f => form.append('files', f));
+            const res = await fetch('/api/uploads/temp', { method: 'POST', body: form });
+            if (res.ok) {
+              const data = await res.json();
+              return data.uploadId;
+            }
+          } catch (e) {
+            console.warn('Temp upload error', e);
+          }
+          return null;
+        })();
+      }
+
+      // Wait for upload to complete, then send with uploadId
+      const uploadId = await uploadPromise;
+      if (uploadId) {
+        // Inject uploadId into the message for server-side file access
+        userMessage.parts = [
+          ...(userMessage.parts || []),
+          { type: 'text', text: `__UPLOAD_ID__:${uploadId}` }
+        ];
+      }
+
+      // For new conversations, we need to send directly to API with the new conversation ID
+      let responseStream;
+      if (currentConversationIds[agentType]) {
+        // Send to API directly with the new conversation ID
+        const apiEndpoint = getApiEndpoint(agentType);
+        const userMessage = {
+          id: `msg_${Date.now()}`,
+          role: 'user' as const,
+          parts: [{ type: 'text', text: messageContent }]
+        };
+
+        const response = await fetch(apiEndpoint, {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            id: conversationId,
+            message: userMessage,
+            projectId: projectId ? parseInt(projectId, 10) : null,
+            selectedModel: currentState.selectedModel,
+            webSearchEnabled
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`API Error: ${response.status}`);
+        }
+
+        responseStream = response.body;
+        
+        // Clear the new conversation ID since we've now created the conversation
+        setCurrentConversationIds(prev => ({
+          ...prev,
+          [agentType]: ''
+        }));
+      } else {
+        // Use existing chat history method for ongoing conversations
+        responseStream = await chatHistory.sendMessage(
+          messageContent,
+          currentState.selectedModel,
+          webSearchEnabled,
+          messageFiles ? Array.from(messageFiles) : undefined
+        );
+      }
+
+      if (!responseStream) {
+        throw new Error('No response stream received');
+      }
+
+      // Process the streaming response
+      const reader = responseStream.getReader();
+      const decoder = new TextDecoder();
+      let aiResponse = '';
+      let hasStartedGenerating = false;
+      let messageId = `agent-${Date.now()}`;
+      const startTime = Date.now();
+      const MIN_LOADING_TIME = 800; // Minimum loading time to prevent flashing
+
+      // Set initial thinking state immediately for short responses
+      updateAgentState(agentType, {
+        isTyping: true,
+        loadingState: webSearchEnabled ? 'searching' : 'thinking'
+      });
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        
+        // Try to parse chunk for tool usage information
+        try {
+          const lines = chunk.split('\n');
+          for (const line of lines) {
+            if (line.trim().startsWith('data: ')) {
+              const data = line.replace('data: ', '');
+              if (data && data !== '[DONE]') {
+                const parsed = JSON.parse(data);
+                
+                // Check for tool calls
+                if (parsed.type === 'tool-call' || parsed.toolName) {
+                  const toolName = parsed.toolName || parsed.tool?.name || 'tool';
+                  updateAgentState(agentType, {
+                    isTyping: true,
+                    loadingState: 'using-tool',
+                    currentTool: toolName
+                  });
+                }
+                
+                // Check for tool results
+                if (parsed.type === 'tool-result') {
+                  updateAgentState(agentType, {
+                    isTyping: true,
+                    loadingState: 'processing-tool-result'
+                  });
+                }
+                
+                // Check for text generation
+                if (parsed.type === 'text-delta' || parsed.delta) {
+                  if (!hasStartedGenerating) {
+                    hasStartedGenerating = true;
+                    updateAgentState(agentType, {
+                      isTyping: true,
+                      loadingState: 'generating'
+                    });
+                  }
+                }
+              }
+            }
+          }
+        } catch (e) {
+          // Ignore parsing errors for non-JSON chunks
+          if (!hasStartedGenerating && chunk.trim()) {
+            hasStartedGenerating = true;
+            updateAgentState(agentType, {
+              isTyping: true,
+              loadingState: 'generating'
+            });
+          }
+        }
+        
+        aiResponse += chunk;
+        
+        // Update the agent message in real-time during streaming
+        const agentMessage: ChatMessage = {
+          id: messageId,
+          content: aiResponse,
+          timestamp: new Date().toISOString(),
+          sender: 'agent',
+          agentType: agentType,
+          model: currentState.selectedModel
+        };
+
+        // Check if this agent message contains a confirmation request
+        const needsConfirmation = isConfirmationRequest(agentMessage.content);
+        const newPendingConfirmations = needsConfirmation 
+          ? new Set([...currentState.pendingConfirmations!, agentMessage.id])
+          : currentState.pendingConfirmations;
+
+        // Update using functional state to avoid stale snapshots and dedupe by id/content
+        setAgentStates(prev => {
+          const prevState = prev[agentType];
+          const merged = upsertMessage(prevState.messages, agentMessage as EnhancedChatMessage);
+          return {
+            ...prev,
+            [agentType]: {
+              ...prevState,
+              messages: merged,
+              isTyping: true, // Keep typing true during streaming
+              loadingState: 'generating', // Keep generating state during streaming
+              currentTool: undefined,
+              pendingConfirmations: newPendingConfirmations
+            }
+          };
+        });
+      }
+
+      // Clean up the response by removing SSE formatting and normalize to final text
+      const cleanResponse = aiResponse
+        .split('\n')
+        .filter(line => !line.startsWith('data: '))
+        .join('\n')
+        .trim();
+
+      // Finalize: ensure the streamed agent message content matches persisted text to avoid duplicates
+      const finalized: EnhancedChatMessage = {
+        id: messageId,
+        content: cleanResponse,
+        timestamp: new Date().toISOString(),
+        sender: 'agent',
+        agentType: agentType,
+        model: currentState.selectedModel
+      } as EnhancedChatMessage;
+
+      // Calculate remaining time to meet minimum loading duration
+      const elapsedTime = Date.now() - startTime;
+      const remainingTime = Math.max(0, MIN_LOADING_TIME - elapsedTime);
+
+      // Update messages immediately but delay clearing loading state if needed
+      setAgentStates(prev => {
+        const prevState = prev[agentType];
+        const merged = upsertMessage(prevState.messages, finalized);
+        return {
+          ...prev,
+          [agentType]: {
+            ...prevState,
+            messages: merged,
+            isTyping: remainingTime > 0, // Keep typing if we need more time
+            loadingState: remainingTime > 0 ? 'generating' : undefined,
+            currentTool: undefined,
+          }
+        };
+      });
+
+      // Clear loading state after minimum time if needed
+      if (remainingTime > 0) {
+        setTimeout(() => {
+          updateAgentState(agentType, {
+            isTyping: false,
+            loadingState: undefined,
+            currentTool: undefined
+          });
+        }, remainingTime);
+      }
+
+      // Check if this was a new conversation that needs to be highlighted
+      const wasNewConversation = currentConversationIds[agentType];
+      
+      // Refresh conversations list to show the new chat in history (non-blocking)
+      loadAllConversations().then(() => {
+        // If this was a new conversation, automatically select it for highlighting
+        if (wasNewConversation) {
+          setSelectedConversationIds(prev => ({
+            ...prev,
+            [agentType]: conversationId
+          }));
+          
+          // Clear the currentConversationIds since the conversation is now persisted
+          setCurrentConversationIds(prev => ({
+            ...prev,
+            [agentType]: ''
+          }));
+          
+          console.log(`Auto-selected new conversation ${conversationId} for ${agentType}`);
+        }
+      }).catch(error => {
+        console.warn('Failed to refresh conversations after message:', error);
+      });
+
+
+    } catch (error) {
+      console.error('Error sending persistent message:', error);
+      
+      // Add error message to local state only (not persistent)
+      const errorMessage: ChatMessage = {
+        id: `error-${Date.now()}`,
+        content: 'Sorry, I encountered an error. Please try again.',
+        timestamp: new Date().toISOString(),
+        sender: 'agent',
+        agentType: agentType
+      };
+
+      updateAgentState(agentType, {
+        messages: [...currentState.messages, errorMessage],
+        isTyping: false,
+        loadingState: undefined,
+        currentTool: undefined
+      });
+    } finally {
+      // Always reset sending state when done
+      setSendingStates(prev => ({ ...prev, [agentType]: false }));
+    }
+  };
+
+  // Track previous message count to only scroll when new messages are added
+  const suppressAutoScrollRef = useRef(false);
+  const prevMessageCountRef = useRef<{[key in AgentType]: number}>({
+    'product-owner': 0,
+    'scrum-master': 0,
+    'developer': 0
+  });
+
   useEffect(() => {
-    scrollToBottom();
-  }, [agentStates[activeAgent].messages]);
+    const currentMessages = agentStates[activeAgent].messages;
+    const currentCount = currentMessages.length;
+    const prevCount = prevMessageCountRef.current[activeAgent];
+
+    // Suppress auto-scroll if flagged (e.g., when switching agents or loading a conversation)
+    if (suppressAutoScrollRef.current) {
+      suppressAutoScrollRef.current = false;
+    } else if (currentCount > prevCount) {
+      // Only scroll if messages were actually added (not just switching agents)
+      scrollToBottom();
+    }
+
+    // Update the count for this agent
+    prevMessageCountRef.current[activeAgent] = currentCount;
+  }, [activeAgent, agentStates[activeAgent].messages]);
+
+  // Message updates are now handled by the useChatHistory hook callbacks
 
   useEffect(() => {
     setIsClient(true);
-  }, []);
+    // Load all conversations for the sidebar
+    loadAllConversations();
+  }, [loadAllConversations]);
+
+  // Reload conversations when active agent changes
+  useEffect(() => {
+    if (isClient) {
+      loadAllConversations();
+    }
+  }, [activeAgent, isClient, loadAllConversations]);
 
   useEffect(() => {
-    // Focus input when switching agents
+    // Focus input when switching agents without scrolling the viewport
     const inputRef = inputRefs.current[activeAgent];
     if (inputRef) {
-      inputRef.focus();
+      try {
+        (inputRef as any).focus({ preventScroll: true });
+      } catch {
+        inputRef.focus();
+      }
     }
   }, [activeAgent]);
+
+  // Manual refresh when page becomes visible (optional - only if user was away for a while)
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (!document.hidden) {
+        // Optional: Only refresh if user was away for more than 5 minutes
+        const now = Date.now();
+        const lastActivity = Math.max(...Object.values(lastSyncTimes));
+        if (now - lastActivity > 5 * 60 * 1000) {
+          console.log('User returned after extended absence, refreshing current conversation');
+          refreshConversation(activeAgent);
+        }
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [activeAgent, lastSyncTimes]);
 
   useEffect(() => {
     // Reset textarea height when input is cleared
@@ -189,13 +1020,19 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       if (showPlusDropdown && !target.closest('.plus-dropdown')) {
         setShowPlusDropdown(false);
       }
+      
+      // Improved chat menu handling - check for both the menu button and dropdown
+      if (showChatMenu && !target.closest('.chat-menu') && !target.closest('[data-chat-dropdown]')) {
+        setShowChatMenu(null);
+      }
     };
 
-    document.addEventListener('mousedown', handleClickOutside);
+    // Use 'click' instead of 'mousedown' to avoid interfering with hover interactions
+    document.addEventListener('click', handleClickOutside);
     return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('click', handleClickOutside);
     };
-  }, [showAgentDropdown, showPlusDropdown]);
+  }, [showAgentDropdown, showPlusDropdown, showChatMenu]);
 
   const updateAgentState = (agentType: AgentType, updates: Partial<AgentChatStateWithFiles>) => {
     setAgentStates(prev => ({
@@ -379,17 +1216,15 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
         const decoder = new TextDecoder();
         let messageId = `agent-${Date.now()}`;
         let hasStartedGenerating = false;
+        const startTime = Date.now();
+        const MIN_LOADING_TIME = 800; // Minimum loading time to prevent flashing
         
-        // Set initial thinking state after a short delay if web search is not enabled
-        if (!webSearchEnabled) {
-          setTimeout(() => {
-            updateAgentState(agentType, {
-              messages: [...currentState.messages, userMessage],
-              isTyping: true,
-              loadingState: 'thinking'
-            });
-          }, 500);
-        }
+        // Set initial thinking state immediately for short responses
+        updateAgentState(agentType, {
+          messages: [...currentState.messages, userMessage],
+          isTyping: true,
+          loadingState: webSearchEnabled ? 'searching' : 'thinking'
+        });
 
         while (true) {
           const { done, value } = await reader.read();
@@ -462,14 +1297,34 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
             ? new Set([...currentState.pendingConfirmations!, agentMessage.id])
             : currentState.pendingConfirmations;
 
+          // Calculate remaining time to meet minimum loading duration
+          const elapsedTime = Date.now() - startTime;
+          const remainingTime = Math.max(0, MIN_LOADING_TIME - elapsedTime);
+
           updateAgentState(agentType, {
             messages: [...currentState.messages, userMessage, agentMessage],
-            isTyping: false,
-            loadingState: undefined,
+            isTyping: remainingTime > 0,
+            loadingState: remainingTime > 0 ? 'generating' : undefined,
             currentTool: undefined,
             pendingConfirmations: newPendingConfirmations
           });
+
+          // Clear loading state after minimum time if needed
+          if (remainingTime > 0) {
+            setTimeout(() => {
+              updateAgentState(agentType, {
+                isTyping: false,
+                loadingState: undefined,
+                currentTool: undefined
+              });
+            }, remainingTime);
+          }
         }
+        
+        // Refresh conversations list after AI response is complete (non-blocking)
+        loadAllConversations().catch(error => {
+          console.warn('Failed to refresh conversations after message:', error);
+        });
       } catch (error) {
         console.error('AI Chat Error:', error);
         const errorMessage: ChatMessage = {
@@ -499,7 +1354,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
         // Send message with Enter
         e.preventDefault();
         if (!agentStates[agentType].isTyping) {
-          sendMessage(agentType);
+          sendPersistentMessage(agentType);
         }
       }
     }
@@ -544,25 +1399,6 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     URL.revokeObjectURL(url);
   };
 
-  const formatTimestamp = (timestamp: string) => {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
-    
-    if (diffInHours < 1) {
-      return 'Just now';
-    } else if (diffInHours < 24) {
-      return `${Math.floor(diffInHours)}h ago`;
-    } else {
-      return date.toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-    }
-  };
 
   const getLoadingMessage = (state: AgentChatStateWithFiles, agentName: string) => {
     switch (state.loadingState) {
@@ -591,7 +1427,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
         }
         return 'Processing...';
       case 'generating':
-        return `${agentName} is responding...`;
+        return 'Generating response...';
       default:
         return 'Thinking...';
     }
@@ -650,12 +1486,17 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     
     // Exclude patterns that suggest multiple options or open-ended questions
     const exclusionPatterns = [
+      // Multiple question indicators - count question marks
+      /\?.*\?.*\?/,  // Three or more question marks in the content
+      
       // Open-ended questions
       /how would you like/i,
       /what would you like/i,
       /which (?:one|option|approach|way)/i,
       /where would you like/i,
       /when would you like/i,
+      /what should (?:the|this|it)/i,
+      /how should (?:the|this|it)/i,
       
       // Multiple choice indicators
       /(?:or|,)\s*(?:add|create|update|delete|remove|you could|alternatively)/i,
@@ -685,8 +1526,21 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       /\d+\./,  // Numbered lists like "1.", "2."
       /^\s*[-•*]/m,  // Bullet points
       /first.*second/i,
-      /next.*then/i
+      /next.*then/i,
+      
+      // Multiple separate questions (common patterns)
+      /\?\s*(?:what|how|which|where|when|should|would|could|do you|can you)/i,  // Question followed by another question word
+      /(?:what|how|which|where|when|should|would|could).*\?.*(?:what|how|which|where|when|should|would|could)/i,  // Two question patterns
+      /(?:also|additionally|furthermore|moreover|and).*\?/i,  // Additional questions
     ];
+    
+    // Count question marks to detect multiple questions
+    const questionMarkCount = (content.match(/\?/g) || []).length;
+    
+    // If there are multiple question marks, it's likely multiple questions
+    if (questionMarkCount > 1) {
+      return false;
+    }
     
     // Check if it's a binary question
     const isBinaryQuestion = binaryQuestionPatterns.some(pattern => pattern.test(content));
@@ -1084,12 +1938,12 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
               const IconComponent = getAgentIcon(agent.id);
               const isActive = activeAgent === agent.id;
               const agentState = agentStates[agent.id];
-              const messageCount = agentState.messages.length;
-              
               return (
                             <button
                   key={agent.id}
                               onClick={() => {
+                                // Prevent auto-scroll on first-time switch to this agent
+                                suppressAutoScrollRef.current = true;
                                 setActiveAgent(agent.id);
                                 setShowAgentDropdown(false);
                               }}
@@ -1106,11 +1960,6 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                                     <span className="text-sm font-semibold text-gray-900 dark:text-white">
                           {agent.name}
                                     </span>
-                        {messageCount > 0 && (
-                                      <span className="text-xs px-2 py-1 bg-gray-200 dark:bg-gray-600 text-gray-600 dark:text-gray-300 rounded-full">
-                            {messageCount}
-                          </span>
-                        )}
                       </div>
                                   <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
                         {agent.description}
@@ -1158,102 +2007,202 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
            {/* Chat History Sidebar */}
            <div className="w-80 border-r border-gray-200 dark:border-gray-700 flex flex-col">
           <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-2 flex items-center">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
               <History className="w-5 h-5 mr-2" />
               Chat History
             </h2>
+              <button
+                onClick={createNewChat}
+                className="flex items-center space-x-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors"
+                title="Start a new chat"
+              >
+                <Plus className="w-4 h-4" />
+                <span>New</span>
+              </button>
+            </div>
             <p className="text-sm text-gray-600 dark:text-gray-400">
               Your recent conversations with AI agents
             </p>
           </div>
           
-          <div className="flex-1 p-4 space-y-3 overflow-y-auto">
-            {/* Sample Chat History Items - Frontend only for now */}
-            <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors">
-                  <div className="flex items-start space-x-3">
-                <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <User className="w-4 h-4 text-white" />
+                          <div className="flex-1 p-4 space-y-3 overflow-y-auto relative" style={{ zIndex: 1 }}>
+            {/* Real Chat History Items */}
+            {loadingConversations ? (
+              <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                <div className="animate-spin w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full mx-auto mb-2"></div>
+                <p className="text-sm">Loading conversations...</p>
                     </div>
-                    <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                    User Story Creation
-                  </h4>
-                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
-                    Created user story for chatbot functionality with acceptance criteria...
-                  </p>
-                  <div className="flex items-center justify-between mt-2">
-                    <span className="text-xs text-gray-500">Product Owner</span>
-                    <span className="text-xs text-gray-500">2 hours ago</span>
+            ) : (
+              <>
+                {/* Show conversations for the currently selected agent only */}
+                {allConversations[activeAgent]?.map((conversation, index) => {
+                    const agent = AGENTS[activeAgent];
+                    const AgentIcon = getAgentIcon(activeAgent);
+                    const timeAgo = formatTimeAgo(conversation.last_message_at || conversation.updated_at || conversation.created_at);
+                    
+                    // Check if this conversation is currently selected
+                    const isActiveConversation = conversation.id === selectedConversationIds[activeAgent];
+                    
+                    // Determine dropdown position based on item position in list
+                    const isFirstItem = index === 0;
+                    const dropdownPositionClass = isFirstItem ? 'top-full mt-1' : 'bottom-full mb-1';
+                    
+                    return (
+                      <div 
+                        key={conversation.id}
+                        className={`group p-3 rounded-lg border-2 transition-all duration-200 relative min-h-[60px] ${
+                          isActiveConversation 
+                            ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/30 dark:border-blue-400 shadow-md ring-2 ring-blue-200 dark:ring-blue-800 transform scale-[1.02] border-l-4 border-l-blue-600 dark:border-l-blue-400' 
+                            : 'border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-gray-300 dark:hover:border-gray-500'
+                        }`}
+                        style={{ zIndex: showChatMenu === conversation.id ? 100000 : 'auto' }}
+                      >
+                        {renamingChat === conversation.id ? (
+                          // Rename Mode
+                          <div className="flex items-center space-x-2">
+                            <div className={`w-8 h-8 ${agent?.color || 'bg-gray-500'} rounded-lg flex items-center justify-center flex-shrink-0`}>
+                              <AgentIcon className="w-4 h-4 text-white" />
+                </div>
+                            <div className="flex-1">
+                              <input
+                                type="text"
+                                value={renameValue}
+                                onChange={(e) => setRenameValue(e.target.value)}
+                                onKeyPress={(e) => {
+                                  if (e.key === 'Enter') {
+                                    saveRename(conversation.id);
+                                  } else if (e.key === 'Escape') {
+                                    cancelRename();
+                                  }
+                                }}
+                                className="w-full px-2 py-1 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                autoFocus
+                              />
                   </div>
+                            <button
+                              onClick={() => saveRename(conversation.id)}
+                              className="p-1 text-green-600 hover:text-green-700"
+                              title="Save"
+                            >
+                              <Check className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={cancelRename}
+                              className="p-1 text-gray-500 hover:text-gray-700"
+                              title="Cancel"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
                 </div>
-              </div>
-                      </div>
-                      
-            <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors">
-              <div className="flex items-start space-x-3">
-                <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <Settings className="w-4 h-4 text-white" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                    Sprint Planning Session
-                  </h4>
-                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
-                    Discussed sprint goals and capacity planning for the upcoming iteration...
-                  </p>
-                  <div className="flex items-center justify-between mt-2">
-                    <span className="text-xs text-gray-500">Scrum Master</span>
-                    <span className="text-xs text-gray-500">1 day ago</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+                        ) : (
+                          // Normal Display Mode
+                          <>
+                            <div 
+                              className="cursor-pointer relative h-full"
+                              onClick={() => {
+                                // Load the specific conversation
+                                loadConversation(conversation.id, activeAgent);
+                              }}
+                            >
+                              <div className="flex items-center h-full">
+                                <div className={`w-8 h-8 ${agent?.color || 'bg-gray-500'} rounded-lg flex items-center justify-center flex-shrink-0 mr-3 ${
+                                  isActiveConversation ? 'ring-2 ring-white dark:ring-gray-800 shadow-sm' : ''
+                                }`}>
+                                  <AgentIcon className="w-4 h-4 text-white" />
+                                </div>
+                                <div className="flex-1 flex items-center justify-start pl-2 pr-16">
+                                  <h4 className={`text-base font-medium truncate ${
+                                    isActiveConversation 
+                                      ? 'text-blue-700 dark:text-blue-300 font-semibold' 
+                                      : 'text-gray-900 dark:text-white'
+                                  }`}>
+                                    {conversation.title || `${agent?.name || activeAgent} Chat`}
+                                  </h4>
+                                </div>
+                              </div>
+                            </div>
+                            
+                            {/* Timestamp positioned relative to the main container */}
+                            <span className={`absolute bottom-1 right-1 text-xs px-1 rounded ${
+                              isActiveConversation 
+                                ? 'text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/50 font-medium' 
+                                : 'text-gray-500 bg-white dark:bg-gray-800'
+                            }`}>{timeAgo}</span>
 
-            <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors">
-              <div className="flex items-start space-x-3">
-                <div className="w-8 h-8 bg-purple-500 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <Code2 className="w-4 h-4 text-white" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                    Code Review Guidelines
-                  </h4>
-                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
-                    Reviewed best practices for code reviews and established team standards...
-                  </p>
-                  <div className="flex items-center justify-between mt-2">
-                    <span className="text-xs text-gray-500">Developer</span>
-                    <span className="text-xs text-gray-500">2 days ago</span>
-                  </div>
-                </div>
+                            {/* Three-dot menu */}
+                            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <div className="relative chat-menu">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setShowChatMenu(showChatMenu === conversation.id ? null : conversation.id);
+                                  }}
+                                  className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                                  title="More options"
+                                >
+                                  <MoreHorizontal className="w-4 h-4" />
+                                </button>
+                                
+                                {/* Dropdown Menu - Positioned with higher z-index */}
+                                {showChatMenu === conversation.id && (
+                                  <div 
+                                    className={`absolute right-0 ${dropdownPositionClass} w-32 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl overflow-hidden`}
+                                    data-chat-dropdown="true"
+                                    style={{ 
+                                      zIndex: 99999,
+                                      boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.15), 0 10px 10px -5px rgba(0, 0, 0, 0.1)',
+                                      position: 'absolute'
+                                    }}
+                                  >
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setShowChatMenu(null);
+                                        startRenaming(conversation.id, conversation.title);
+                                      }}
+                                      className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors first:rounded-t-lg flex items-center space-x-2"
+                                    >
+                                      <Edit3 className="w-3 h-3" />
+                                      <span>Rename</span>
+                                    </button>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        setShowChatMenu(null);
+                                        showDeleteConfirmation(
+                                          conversation.id, 
+                                          conversation.title || `${agent?.name || activeAgent} Chat`,
+                                          activeAgent
+                                        );
+                                      }}
+                                      className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors last:rounded-b-lg flex items-center space-x-2"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                      <span>Delete</span>
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </>
+                        )}
               </div>
-            </div>
-
-            <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors">
-              <div className="flex items-start space-x-3">
-                <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <User className="w-4 h-4 text-white" />
-                      </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                    Backlog Refinement
-                  </h4>
-                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
-                    Refined backlog items and updated priorities based on stakeholder feedback...
-                  </p>
-                  <div className="flex items-center justify-between mt-2">
-                    <span className="text-xs text-gray-500">Product Owner</span>
-                    <span className="text-xs text-gray-500">3 days ago</span>
-                    </div>
-                  </div>
-              </div>
-            </div>
+                    );
+                  }) || []}
 
             {/* Empty State */}
+                {(!allConversations[activeAgent] || allConversations[activeAgent].length === 0) && !loadingConversations && (
             <div className="text-center py-8 text-gray-500 dark:text-gray-400">
-              <History className="w-12 h-12 mx-auto mb-3 opacity-50" />
-              <p className="text-sm">No more chat history</p>
+                    <div className={`w-12 h-12 ${AGENTS[activeAgent].color} rounded-full flex items-center justify-center mx-auto mb-3 opacity-50`}>
+                      {React.createElement(getAgentIcon(activeAgent), { className: "w-6 h-6 text-white" })}
             </div>
+                    <p className="text-sm">No {AGENTS[activeAgent].name} conversations yet</p>
+                    <p className="text-xs mt-1">Start chatting to see your history here</p>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         </div>
 
@@ -1374,10 +2323,10 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                         }`}
                       >
                         <div className="text-sm prose prose-sm max-w-none prose-slate dark:prose-invert">
-                          {/* Display file attachments for multimodal messages */}
-                          {message.parts && message.parts.length > 0 && (
+                          {/* Display file attachments from session data */}
+                          {message.sessionData?.fileParts && message.sessionData.fileParts.length > 0 && (
                             <div className="mb-3">
-                              {message.parts.map((part, partIndex) => {
+                              {message.sessionData.fileParts.map((part, partIndex) => {
                                 if (part.type === 'file' && part.url) {
                                   const fileCategory = getFileCategory(part.mediaType || '');
                                   
@@ -1536,13 +2485,6 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                             );
                           })}
                         </div>
-                            <p className={`text-xs mt-1 ${
-                          message.sender === 'user' 
-                            ? 'text-blue-100' 
-                            : 'text-gray-500 dark:text-gray-400'
-                        }`}>
-                          {formatTimestamp(message.timestamp)}
-                        </p>
                            </div>
                            
                            {/* Confirmation Buttons - Show for agent messages that need confirmation */}
@@ -1791,7 +2733,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
               
               {/* Send Button */}
               <button
-                onClick={() => sendMessage(activeAgent)}
+                onClick={() => sendPersistentMessage(activeAgent)}
                 disabled={(!currentState.inputValue.trim() && !currentState.files?.length) || currentState.isTyping}
                 className="p-2 m-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 dark:disabled:bg-gray-500 text-white rounded-lg transition-colors disabled:cursor-not-allowed flex items-center"
                 title="Send message"
@@ -1803,8 +2745,65 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
           </div>
         </div>
       </div>
+
+      {/* Enhanced Delete Confirmation Modal */}
+      {deleteConfirmModal && (
+        <div className="fixed inset-0 bg-black bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-md w-full mx-4">
+            <div className="p-6">
+              <div className="flex items-center space-x-3 mb-4">
+                <div className="w-12 h-12 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center">
+                  <Trash2 className="w-6 h-6 text-red-600 dark:text-red-400" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    Delete Conversation
+                  </h3>
+                  <p className="text-sm text-gray-600 dark:text-gray-400">
+                    This action cannot be undone
+                  </p>
+                </div>
+              </div>
+              
+              <div className="mb-6">
+                <p className="text-gray-700 dark:text-gray-300 mb-3">
+                  Are you sure you want to delete this conversation?
+                </p>
+                <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 border-l-4 border-red-500">
+                  <div className="flex items-center space-x-2 mb-1">
+                    <div className={`w-4 h-4 ${AGENTS[deleteConfirmModal.agentType as AgentType]?.color || 'bg-gray-500'} rounded`}></div>
+                    <span className="font-medium text-sm text-gray-900 dark:text-white">
+                      {deleteConfirmModal.conversationTitle}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-600 dark:text-gray-400">
+                    {AGENTS[deleteConfirmModal.agentType as AgentType]?.name || deleteConfirmModal.agentType} conversation
+                  </p>
+                </div>
+              </div>
+              
+              <div className="flex space-x-3">
+                <button
+                  onClick={cancelDelete}
+                  className="flex-1 px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-gray-100 dark:bg-gray-600 hover:bg-gray-200 dark:hover:bg-gray-500 rounded-lg transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={deleteChat}
+                  className="flex-1 px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg transition-colors flex items-center justify-center space-x-2"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Delete</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
 export default AIChat;
+
