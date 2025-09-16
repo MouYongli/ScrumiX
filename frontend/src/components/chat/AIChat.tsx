@@ -462,6 +462,8 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   // Load a specific conversation
   const loadConversation = useCallback(async (conversationId: string, agentType: AgentType) => {
     try {
+      // Prevent auto-scroll during conversation load and agent switch
+      suppressAutoScrollRef.current = true;
       // Switch to the appropriate agent
       setActiveAgent(agentType);
       
@@ -931,9 +933,30 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     }
   };
 
+  // Track previous message count to only scroll when new messages are added
+  const suppressAutoScrollRef = useRef(false);
+  const prevMessageCountRef = useRef<{[key in AgentType]: number}>({
+    'product-owner': 0,
+    'scrum-master': 0,
+    'developer': 0
+  });
+
   useEffect(() => {
-    scrollToBottom();
-  }, [agentStates[activeAgent].messages]);
+    const currentMessages = agentStates[activeAgent].messages;
+    const currentCount = currentMessages.length;
+    const prevCount = prevMessageCountRef.current[activeAgent];
+
+    // Suppress auto-scroll if flagged (e.g., when switching agents or loading a conversation)
+    if (suppressAutoScrollRef.current) {
+      suppressAutoScrollRef.current = false;
+    } else if (currentCount > prevCount) {
+      // Only scroll if messages were actually added (not just switching agents)
+      scrollToBottom();
+    }
+
+    // Update the count for this agent
+    prevMessageCountRef.current[activeAgent] = currentCount;
+  }, [activeAgent, agentStates[activeAgent].messages]);
 
   // Message updates are now handled by the useChatHistory hook callbacks
 
@@ -951,10 +974,14 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   }, [activeAgent, isClient, loadAllConversations]);
 
   useEffect(() => {
-    // Focus input when switching agents
+    // Focus input when switching agents without scrolling the viewport
     const inputRef = inputRefs.current[activeAgent];
     if (inputRef) {
-      inputRef.focus();
+      try {
+        (inputRef as any).focus({ preventScroll: true });
+      } catch {
+        inputRef.focus();
+      }
     }
   }, [activeAgent]);
 
@@ -1920,6 +1947,8 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                             <button
                   key={agent.id}
                               onClick={() => {
+                                // Prevent auto-scroll on first-time switch to this agent
+                                suppressAutoScrollRef.current = true;
                                 setActiveAgent(agent.id);
                                 setShowAgentDropdown(false);
                               }}
