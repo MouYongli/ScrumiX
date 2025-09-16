@@ -364,6 +364,8 @@ class BacklogCRUD(CRUDBase[Backlog, BacklogCreate, BacklogUpdate]):
                 new_status=new_status,
                 old_status=old_status
             )
+            # Ensure caller sees latest database state
+            db.refresh(backlog)
         else:
             # Commit the regular updates if no status change
             db.commit()

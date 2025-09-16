@@ -2,7 +2,7 @@
 Pydantic schemas for Burndown Snapshots
 """
 from typing import Optional, List
-from datetime import date, datetime
+import datetime as dt
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -10,7 +10,7 @@ class BurndownSnapshotBase(BaseModel):
     """Base schema for burndown snapshots"""
     sprint_id: int = Field(..., gt=0, description="Sprint ID")
     project_id: int = Field(..., gt=0, description="Project ID")
-    snapshot_date: date = Field(..., description="Date of the snapshot", alias="date")
+    date: dt.date = Field(..., description="Date of the snapshot")
     completed_story_point: int = Field(..., ge=0, description="Completed story points")
     remaining_story_point: int = Field(..., ge=0, description="Remaining story points")
 
@@ -31,8 +31,8 @@ class BurndownSnapshotResponse(BurndownSnapshotBase):
     model_config = ConfigDict(from_attributes=True)
     
     id: int
-    created_at: datetime
-    updated_at: datetime
+    created_at: dt.datetime
+    updated_at: dt.datetime
     
     @property
     def total_story_points(self) -> int:
@@ -62,7 +62,7 @@ class BurndownTrendAnalysis(BaseModel):
     total_snapshots: int = Field(..., description="Total number of snapshots")
     trend: str = Field(..., description="Trend direction: decreasing, increasing, stable, insufficient_data, no_data")
     velocity: float = Field(..., description="Average daily velocity (story points per day)")
-    projected_completion: Optional[date] = Field(None, description="Projected completion date")
+    projected_completion: Optional[dt.date] = Field(None, description="Projected completion date")
     is_on_track: bool = Field(..., description="Whether the sprint is on track")
     current_remaining: int = Field(..., description="Current remaining story points")
     current_completed: int = Field(..., description="Current completed story points")

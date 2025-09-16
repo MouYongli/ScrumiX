@@ -9,7 +9,7 @@ from datetime import date, datetime, timedelta
 from sqlalchemy import and_, func
 
 from ..models.backlog import Backlog, BacklogStatus
-from ..models.sprint import Sprint
+from ..models.sprint import Sprint, SprintStatus
 from ..models.burndown_snapshot import BurndownSnapshot
 from ..crud.burndown_snapshot import burndown_snapshot_crud
 from ..crud.sprint import sprint_crud
@@ -149,7 +149,7 @@ class VelocityTrackingService:
         query = db.query(Sprint.velocity_points).filter(
             and_(
                 Sprint.project_id == project_id,
-                Sprint.status == "completed",
+                Sprint.status == SprintStatus.COMPLETED,
                 Sprint.velocity_points > 0
             )
         )
@@ -185,7 +185,7 @@ class VelocityTrackingService:
         sprints = db.query(Sprint).filter(
             and_(
                 Sprint.project_id == project_id,
-                Sprint.status == "completed"
+                Sprint.status == SprintStatus.COMPLETED
             )
         ).order_by(Sprint.end_date.desc()).limit(limit).all()
         
@@ -294,7 +294,7 @@ class VelocityTrackingService:
         completed_sprints = db.query(Sprint).filter(
             and_(
                 Sprint.project_id == project_id,
-                Sprint.status == "completed"
+                Sprint.status == SprintStatus.COMPLETED
             )
         ).order_by(Sprint.end_date.desc()).all()
         

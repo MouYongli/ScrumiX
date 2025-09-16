@@ -89,7 +89,7 @@ class BurndownSnapshotCRUD(CRUDBase[BurndownSnapshot, BurndownSnapshotCreate, Bu
             snapshot_data = BurndownSnapshotCreate(
                 sprint_id=sprint_id,
                 project_id=project_id,
-                snapshot_date=snapshot_date,
+                date=snapshot_date,
                 completed_story_point=completed_story_points,
                 remaining_story_point=remaining_story_points
             )

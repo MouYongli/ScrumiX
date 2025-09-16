@@ -31,7 +31,41 @@ async def get_sprint_burndown_chart(
 ):
     """Get burndown chart data for a sprint"""
     try:
-        chart_data = burndown_snapshot_crud.get_burndown_chart_data(db, sprint_id)
+        # Respect optional date filters
+        if start_date or end_date:
+            snapshots = burndown_snapshot_crud.get_sprint_snapshots(db, sprint_id, start_date, end_date)
+            # Build chart data from filtered snapshots
+            if not snapshots:
+                return {
+                    "dates": [],
+                    "remaining_points": [],
+                    "completed_points": [],
+                    "total_points": [],
+                    "ideal_line": []
+                }
+
+            snapshots.sort(key=lambda x: x.date)
+            dates = [s.date.isoformat() for s in snapshots]
+            remaining_points = [s.remaining_story_point for s in snapshots]
+            completed_points = [s.completed_story_point for s in snapshots]
+            total_points = [s.completed_story_point + s.remaining_story_point for s in snapshots]
+
+            start_total = total_points[0]
+            num_days = len(snapshots)
+            ideal_line = []
+            for i in range(num_days):
+                ideal_remaining = start_total * (1 - (i / (num_days - 1))) if num_days > 1 else start_total
+                ideal_line.append(max(0, ideal_remaining))
+
+            chart_data = {
+                "dates": dates,
+                "remaining_points": remaining_points,
+                "completed_points": completed_points,
+                "total_points": total_points,
+                "ideal_line": ideal_line
+            }
+        else:
+            chart_data = burndown_snapshot_crud.get_burndown_chart_data(db, sprint_id)
         return chart_data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
