@@ -65,33 +65,29 @@ class ChatCRUD:
         message_data: ChatMessageCreate
     ) -> ChatMessage:
         """Create a new chat message"""
-        # Generate text content from parts
-        text_content = None
+        # Filter parts to only keep text; drop any non-text content
+        filtered_text_parts: List[str] = []
+        filtered_parts: List[dict] = []
         if message_data.parts:
-            text_parts = []
             for part in message_data.parts:
-                if hasattr(part, 'text') and part.text and getattr(part, 'type', None) == 'text':
-                    text_parts.append(part.text)
-                elif isinstance(part, dict) and part.get('type') == 'text' and part.get('text'):
-                    text_parts.append(part['text'])
-            if text_parts:
-                text_content = '\n'.join(text_parts)
+                if isinstance(part, dict):
+                    if part.get('type') == 'text' and part.get('text'):
+                        filtered_text_parts.append(part['text'])
+                        filtered_parts.append({'type': 'text', 'text': part['text']})
+                else:
+                    p_type = getattr(part, 'type', None)
+                    p_text = getattr(part, 'text', None)
+                    if p_type == 'text' and p_text:
+                        filtered_text_parts.append(p_text)
+                        filtered_parts.append({'type': 'text', 'text': p_text})
 
-        # Convert parts to dict format for JSON storage
-        parts_dict = []
-        for part in message_data.parts:
-            if hasattr(part, 'model_dump'):
-                parts_dict.append(part.model_dump())
-            elif hasattr(part, 'dict'):
-                parts_dict.append(part.dict())
-            else:
-                parts_dict.append(dict(part))
+        text_content = '\n'.join(filtered_text_parts) if filtered_text_parts else None
 
         db_message = ChatMessage(
             id=str(uuid.uuid4()),
             conversation_id=conversation_id,
             role=message_data.role,
-            parts=parts_dict,
+            parts=filtered_parts,
             text_content=text_content,
             tool_name=message_data.tool_name,
             tool_call_id=message_data.tool_call_id

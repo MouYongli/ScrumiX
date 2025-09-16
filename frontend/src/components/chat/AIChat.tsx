@@ -92,7 +92,17 @@ interface AIChatProps {
   projectId: string;
 }
 
+interface SessionData {
+  fileParts?: MessagePart[];
+  tempUploadId?: string;
+}
+
+interface EnhancedChatMessage extends ChatMessage {
+  sessionData?: SessionData;
+}
+
 interface AgentChatStateWithFiles extends AgentChatState {
+  messages: EnhancedChatMessage[];
   files?: FileList;
   isDragOver?: boolean;
   loadingState?: 'thinking' | 'searching' | 'tool-call' | 'generating' | 'using-tool' | 'processing-tool-result';
@@ -176,17 +186,18 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     agentType: 'product-owner',
     projectId: projectId ? parseInt(projectId, 10) : null,
     onMessagesUpdated: (messages) => {
-      // Only perform full sync during initial load or periodic reconciliation
+      // Only perform full sync during initial load
       if (initialLoadingStates['product-owner']) {
-        // Initial load - set all messages
-        const chatMessages = messages.map(msg => ({
+        // Initial load - set all messages as enhanced messages (no session data from backend)
+        const chatMessages: EnhancedChatMessage[] = messages.map(msg => ({
           id: msg.id,
           content: msg.parts?.find(p => p.type === 'text')?.text || '',
           timestamp: new Date().toISOString(),
           sender: msg.role === 'user' ? 'user' as const : 'agent' as const,
-          parts: msg.parts || [],
-          agentType: msg.role === 'assistant' ? 'product-owner' as const : undefined
-        } as ChatMessage));
+          parts: (msg.parts || []).filter(p => p.type === 'text').map(p => ({ type: 'text', text: (p as any).text || '' })),
+          agentType: msg.role === 'assistant' ? 'product-owner' as const : undefined,
+          sessionData: undefined // No session data from backend
+        }));
         updateAgentState('product-owner', { messages: chatMessages });
         setInitialLoadingStates(prev => ({ ...prev, 'product-owner': false }));
         setLastSyncTimes(prev => ({ ...prev, 'product-owner': Date.now() }));
@@ -199,17 +210,18 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     agentType: 'scrum-master',
     projectId: projectId ? parseInt(projectId, 10) : null,
     onMessagesUpdated: (messages) => {
-      // Only perform full sync during initial load or periodic reconciliation
+      // Only perform full sync during initial load
       if (initialLoadingStates['scrum-master']) {
-        // Initial load - set all messages
-        const chatMessages = messages.map(msg => ({
+        // Initial load - set all messages as enhanced messages (no session data from backend)
+        const chatMessages: EnhancedChatMessage[] = messages.map(msg => ({
           id: msg.id,
           content: msg.parts?.find(p => p.type === 'text')?.text || '',
           timestamp: new Date().toISOString(),
           sender: msg.role === 'user' ? 'user' as const : 'agent' as const,
-          parts: msg.parts || [],
-          agentType: msg.role === 'assistant' ? 'scrum-master' as const : undefined
-        } as ChatMessage));
+          parts: (msg.parts || []).filter(p => p.type === 'text').map(p => ({ type: 'text', text: (p as any).text || '' })),
+          agentType: msg.role === 'assistant' ? 'scrum-master' as const : undefined,
+          sessionData: undefined // No session data from backend
+        }));
         updateAgentState('scrum-master', { messages: chatMessages });
         setInitialLoadingStates(prev => ({ ...prev, 'scrum-master': false }));
         setLastSyncTimes(prev => ({ ...prev, 'scrum-master': Date.now() }));
@@ -222,17 +234,18 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     agentType: 'developer',
     projectId: projectId ? parseInt(projectId, 10) : null,
     onMessagesUpdated: (messages) => {
-      // Only perform full sync during initial load or periodic reconciliation
+      // Only perform full sync during initial load
       if (initialLoadingStates['developer']) {
-        // Initial load - set all messages
-        const chatMessages = messages.map(msg => ({
+        // Initial load - set all messages as enhanced messages (no session data from backend)
+        const chatMessages: EnhancedChatMessage[] = messages.map(msg => ({
           id: msg.id,
           content: msg.parts?.find(p => p.type === 'text')?.text || '',
           timestamp: new Date().toISOString(),
           sender: msg.role === 'user' ? 'user' as const : 'agent' as const,
-          parts: msg.parts || [],
-          agentType: msg.role === 'assistant' ? 'developer' as const : undefined
-        } as ChatMessage));
+          parts: (msg.parts || []).filter(p => p.type === 'text').map(p => ({ type: 'text', text: (p as any).text || '' })),
+          agentType: msg.role === 'assistant' ? 'developer' as const : undefined,
+          sessionData: undefined // No session data from backend
+        }));
         updateAgentState('developer', { messages: chatMessages });
         setInitialLoadingStates(prev => ({ ...prev, 'developer': false }));
         setLastSyncTimes(prev => ({ ...prev, 'developer': Date.now() }));
@@ -256,7 +269,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   };
 
   // Helpers for deduplication and merging (id first, role+content fallback)
-  const upsertMessage = (existing: ChatMessage[], incoming: ChatMessage): ChatMessage[] => {
+  const upsertMessage = (existing: EnhancedChatMessage[], incoming: EnhancedChatMessage): EnhancedChatMessage[] => {
     const idx = existing.findIndex(m => m.id === incoming.id);
     if (idx !== -1) {
       const copy = existing.slice();
@@ -269,7 +282,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     return [...existing, incoming];
   };
 
-  const mergeMessages = (existing: ChatMessage[], incoming: ChatMessage[]): ChatMessage[] => {
+  const mergeMessages = (existing: EnhancedChatMessage[], incoming: EnhancedChatMessage[]): EnhancedChatMessage[] => {
     let result = existing.slice();
     for (const msg of incoming) {
       result = upsertMessage(result, msg);
@@ -277,18 +290,9 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     return result;
   };
 
-  // Periodic sync function to reconcile state with backend
-  const performPeriodicSync = async (agentType: AgentType, force = false) => {
-    const now = Date.now();
-    const lastSync = lastSyncTimes[agentType];
-    const SYNC_INTERVAL = 5 * 60 * 1000; // 5 minutes
-
-    // Only sync if enough time has passed or forced
-    if (!force && now - lastSync < SYNC_INTERVAL) {
-      return;
-    }
-
-    // Don't sync if currently sending a message
+  // Explicit refresh function - only called when user explicitly needs fresh data
+  const refreshConversation = async (agentType: AgentType) => {
+    // Don't refresh if currently sending a message
     if (sendingStates[agentType]) {
       return;
     }
@@ -298,24 +302,29 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       const backendMessages = await chatHistory.loadConversation(chatHistory.conversation.id);
       const currentMessages = agentStates[agentType].messages;
 
-      // Only append new messages, deduping by id/content
-      if (backendMessages.length > currentMessages.length) {
-        const syncedMessages = backendMessages.map(msg => ({
+      // Merge backend messages with preserved session data
+      const enhancedMessages: EnhancedChatMessage[] = backendMessages.map(msg => {
+        // Find existing local message to preserve session data
+        const existingLocal = currentMessages.find(local => local.id === msg.id);
+        
+        return {
           id: msg.id,
           content: msg.parts?.find(p => p.type === 'text')?.text || '',
           timestamp: new Date().toISOString(),
           sender: msg.role === 'user' ? 'user' as const : 'agent' as const,
-          parts: msg.parts || [],
-          agentType: msg.role === 'assistant' ? agentType : undefined
-        } as ChatMessage));
+          parts: msg.parts || [], // Backend parts (text-only)
+          agentType: msg.role === 'assistant' ? agentType : undefined,
+          sessionData: existingLocal?.sessionData // Preserve session data (files, etc.)
+        } as EnhancedChatMessage;
+      });
 
-        const merged = mergeMessages(currentMessages, syncedMessages);
-        updateAgentState(agentType, { messages: merged });
-        setLastSyncTimes(prev => ({ ...prev, [agentType]: now }));
-        console.log(`Synced ${backendMessages.length - currentMessages.length} new messages for ${agentType}`);
+      // Only update if there are actually new messages
+      if (enhancedMessages.length > currentMessages.length) {
+        updateAgentState(agentType, { messages: enhancedMessages });
+        console.log(`Refreshed conversation: ${enhancedMessages.length - currentMessages.length} new messages for ${agentType}`);
       }
     } catch (error) {
-      console.warn(`Failed to sync messages for ${agentType}:`, error);
+      console.warn(`Failed to refresh conversation for ${agentType}:`, error);
     }
   };
 
@@ -330,24 +339,27 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     const chatHistory = getChatHistory(agentType);
     
     // Store the message content before clearing the input
-    const messageContent = currentState.inputValue;
+    let messageContent = currentState.inputValue;
     const messageFiles = currentState.files;
     
-    // Convert files to data URLs if present (for future multimodal support)
-    const fileParts: MessagePart[] = messageFiles && messageFiles.length > 0
-      ? await convertFilesToDataURLs(messageFiles)
-      : [];
+    // Show user message immediately with file previews (non-blocking)
+    let fileParts: MessagePart[] = [];
+    if (messageFiles && messageFiles.length > 0) {
+      try {
+        fileParts = await convertFilesToDataURLs(messageFiles);
+      } catch (e) {
+        console.warn('Failed to convert files to data URLs', e);
+      }
+    }
 
-    // Create user message and add it to local state immediately
-    const userMessage: ChatMessage = {
+    // Create user message with session data for files
+    const userMessage: EnhancedChatMessage = {
       id: `user-${Date.now()}`,
       content: messageContent,
       timestamp: new Date().toISOString(),
       sender: 'user',
-      parts: [
-        { type: 'text', text: messageContent },
-        ...fileParts
-      ]
+      parts: [{ type: 'text', text: messageContent }], // Only text in parts
+      sessionData: fileParts.length > 0 ? { fileParts } : undefined // Files in session data
     };
 
     // Clear input and show user message immediately
@@ -366,7 +378,35 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     }
 
     try {
-      // Send message using persistent chat history (use stored content)
+      // Start file upload in parallel while showing message
+      let uploadPromise: Promise<string | null> = Promise.resolve(null);
+      if (messageFiles && messageFiles.length > 0) {
+        uploadPromise = (async () => {
+          try {
+            const form = new FormData();
+            Array.from(messageFiles).forEach(f => form.append('files', f));
+            const res = await fetch('/api/uploads/temp', { method: 'POST', body: form });
+            if (res.ok) {
+              const data = await res.json();
+              return data.uploadId;
+            }
+          } catch (e) {
+            console.warn('Temp upload error', e);
+          }
+          return null;
+        })();
+      }
+
+      // Wait for upload to complete, then send with uploadId
+      const uploadId = await uploadPromise;
+      if (uploadId) {
+        // Inject uploadId into the message for server-side file access
+        userMessage.parts = [
+          ...(userMessage.parts || []),
+          { type: 'text', text: `__UPLOAD_ID__:${uploadId}` }
+        ];
+      }
+
       const responseStream = await chatHistory.sendMessage(
         messageContent,
         currentState.selectedModel,
@@ -473,7 +513,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
         // Update using functional state to avoid stale snapshots and dedupe by id/content
         setAgentStates(prev => {
           const prevState = prev[agentType];
-          const merged = upsertMessage(prevState.messages, agentMessage);
+          const merged = upsertMessage(prevState.messages, agentMessage as EnhancedChatMessage);
           return {
             ...prev,
             [agentType]: {
@@ -488,26 +528,38 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
         });
       }
 
-      // Clean up the response by removing SSE formatting
+      // Clean up the response by removing SSE formatting and normalize to final text
       const cleanResponse = aiResponse
         .split('\n')
         .filter(line => !line.startsWith('data: '))
         .join('\n')
         .trim();
 
-      // Final state update - streaming is complete
-      // No need to reload conversation, messages are already properly managed
-      updateAgentState(agentType, {
-        isTyping: false,
-        loadingState: undefined,
-        currentTool: undefined
+      // Finalize: ensure the streamed agent message content matches persisted text to avoid duplicates
+      setAgentStates(prev => {
+        const prevState = prev[agentType];
+        const finalized: EnhancedChatMessage = {
+          id: messageId,
+          content: cleanResponse,
+          timestamp: new Date().toISOString(),
+          sender: 'agent',
+          agentType: agentType,
+          model: currentState.selectedModel
+        } as EnhancedChatMessage;
+        const merged = upsertMessage(prevState.messages, finalized);
+        return {
+          ...prev,
+          [agentType]: {
+            ...prevState,
+            messages: merged,
+            isTyping: false,
+            loadingState: undefined,
+            currentTool: undefined,
+          }
+        };
       });
 
-      // Optional: Perform a light sync after a delay to ensure backend state is consistent
-      // This won't cause duplication since we only append new messages
-      setTimeout(() => {
-        performPeriodicSync(agentType);
-      }, 1000);
+      // No automatic sync - let the user's message flow complete naturally
 
     } catch (error) {
       console.error('Error sending persistent message:', error);
@@ -549,39 +601,25 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     if (inputRef) {
       inputRef.focus();
     }
-
-    // Perform periodic sync when switching agents (but not on initial load)
-    if (!initialLoadingStates[activeAgent]) {
-      performPeriodicSync(activeAgent);
-    }
   }, [activeAgent]);
 
-  // Periodic sync interval
-  useEffect(() => {
-    const interval = setInterval(() => {
-      // Sync all agents periodically
-      (['product-owner', 'scrum-master', 'developer'] as AgentType[]).forEach(agentType => {
-        performPeriodicSync(agentType);
-      });
-    }, 5 * 60 * 1000); // Every 5 minutes
-
-    return () => clearInterval(interval);
-  }, [lastSyncTimes, sendingStates, agentStates]);
-
-  // Sync when page becomes visible again
+  // Manual refresh when page becomes visible (optional - only if user was away for a while)
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (!document.hidden) {
-        // Page became visible, sync all agents
-        (['product-owner', 'scrum-master', 'developer'] as AgentType[]).forEach(agentType => {
-          performPeriodicSync(agentType, true); // Force sync
-        });
+        // Optional: Only refresh if user was away for more than 5 minutes
+        const now = Date.now();
+        const lastActivity = Math.max(...Object.values(lastSyncTimes));
+        if (now - lastActivity > 5 * 60 * 1000) {
+          console.log('User returned after extended absence, refreshing current conversation');
+          refreshConversation(activeAgent);
+        }
       }
     };
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, []);
+  }, [activeAgent, lastSyncTimes]);
 
   useEffect(() => {
     // Reset textarea height when input is cleared
@@ -958,25 +996,6 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     URL.revokeObjectURL(url);
   };
 
-  const formatTimestamp = (timestamp: string) => {
-    const date = new Date(timestamp);
-    const now = new Date();
-    const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
-    
-    if (diffInHours < 1) {
-      return 'Just now';
-    } else if (diffInHours < 24) {
-      return `${Math.floor(diffInHours)}h ago`;
-    } else {
-      return date.toLocaleDateString('en-US', {
-        year: 'numeric',
-        month: 'short',
-        day: 'numeric',
-        hour: '2-digit',
-        minute: '2-digit'
-      });
-    }
-  };
 
   const getLoadingMessage = (state: AgentChatStateWithFiles, agentName: string) => {
     switch (state.loadingState) {
@@ -1788,10 +1807,10 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                         }`}
                       >
                         <div className="text-sm prose prose-sm max-w-none prose-slate dark:prose-invert">
-                          {/* Display file attachments for multimodal messages */}
-                          {message.parts && message.parts.length > 0 && (
+                          {/* Display file attachments from session data */}
+                          {message.sessionData?.fileParts && message.sessionData.fileParts.length > 0 && (
                             <div className="mb-3">
-                              {message.parts.map((part, partIndex) => {
+                              {message.sessionData.fileParts.map((part, partIndex) => {
                                 if (part.type === 'file' && part.url) {
                                   const fileCategory = getFileCategory(part.mediaType || '');
                                   
@@ -1950,13 +1969,6 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                             );
                           })}
                         </div>
-                            <p className={`text-xs mt-1 ${
-                          message.sender === 'user' 
-                            ? 'text-blue-100' 
-                            : 'text-gray-500 dark:text-gray-400'
-                        }`}>
-                          {formatTimestamp(message.timestamp)}
-                        </p>
                            </div>
                            
                            {/* Confirmation Buttons - Show for agent messages that need confirmation */}

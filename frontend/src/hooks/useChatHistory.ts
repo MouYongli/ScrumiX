@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback } from 'react';
 import type { UIMessage } from 'ai';
 import { nanoid } from 'nanoid';
 import { chatAPI, ChatMessage, ChatConversation as BackendConversation } from '@/lib/chat-api';
+import { convertFilesToDataURLs } from '@/utils/multimodal';
 
 export interface ChatConversation {
   id: string;
@@ -130,13 +131,19 @@ export function useChatHistory(options: UseChatHistoryOptions) {
         title: conversation.title || undefined
       }); // No cookies - client-side will use credentials: 'include'
 
-      // Create UIMessage with proper parts
+      // Create UIMessage with proper parts, including files (as data URLs) when present
       const parts: UIMessage['parts'] = [{ type: 'text', text: message }];
-      
-      // TODO: Add file support when needed
-      // if (files && files.length > 0) {
-      //   // Handle file attachments
-      // }
+      if (files && files.length > 0) {
+        try {
+          const dt = new DataTransfer();
+          for (const f of files) dt.items.add(f);
+          const fileList = dt.files;
+          const fileParts = await convertFilesToDataURLs(fileList);
+          parts.push(...(fileParts as any));
+        } catch (e) {
+          console.warn('Failed to convert files to data URLs, proceeding without attachments', e);
+        }
+      }
 
       const userMessage: UIMessage = {
         id: `msg_${nanoid()}`,
@@ -157,7 +164,7 @@ export function useChatHistory(options: UseChatHistoryOptions) {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          id: conversation.id,  // Changed from conversationId to id
+          id: conversation.id,
           message: userMessage,
           projectId,
           selectedModel,

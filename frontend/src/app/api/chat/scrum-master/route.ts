@@ -180,23 +180,41 @@ export async function POST(req: Request) {
       }));
       console.log(`Scrum Master Agent - Loaded ${history.length} messages from history`);
 
-      // Convert message parts to proper format
-      const userParts: UIMessage['parts'] = message.parts.map(part => {
-        if (part.type === 'text') {
-          return { type: 'text', text: (part as any).text || '' };
-        }
-        // Handle other part types as needed
-        return { type: 'text', text: (part as any).text || '' };
-      });
+      // Keep incoming parts for model context (allow files for analysis)
+      // If a temporary upload id was sent, load local files as data URLs for the model
+      let userPartsForModel: UIMessage['parts'] = message.parts;
+      const uploadId = (message as any).uploadId as string | undefined;
+      if (uploadId) {
+        try {
+          // Read local files into data URLs for model consumption
+          const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || ''}/api/uploads/read?id=${encodeURIComponent(uploadId)}`, {
+            method: 'GET',
+            headers: { cookie: cookies }
+          } as any);
+          if (res.ok) {
+            const data = await res.json();
+            const fileParts = (data.files as Array<{ mediaType: string; dataUrl: string }>).map(f => ({ type: 'file', mediaType: f.mediaType, url: f.dataUrl } as any));
+            userPartsForModel = [
+              ...message.parts.filter((p: any) => p.type === 'text'),
+              ...fileParts
+            ];
+          }
+        } catch {}
+      }
+
+      // Sanitize parts for persistence (text-only)
+      const userPartsForDB: UIMessage['parts'] = message.parts
+        .filter((p: any) => p.type === 'text' && (p.text ?? '').trim())
+        .map((p: any) => ({ type: 'text', text: p.text }));
       
-      // Save the incoming user message via backend API
+      // Save the incoming user message via backend API (text-only). Do this ONCE per request.
       const savedMessage = await chatAPI.saveMessage(conversationId, {
         role: 'user',
-        parts: message.parts
+        parts: userPartsForDB as any
       }, cookies);
 
       // Combine history with new message for model context
-      const allMessages = [...history, { id: savedMessage.id || message.id, role: 'user', parts: userParts } satisfies UIMessage];
+      const allMessages = [...history, { id: savedMessage.id || message.id, role: 'user', parts: userPartsForModel } satisfies UIMessage];
       const modelMessages = convertToModelMessages(allMessages);
 
       // Get model configuration
@@ -210,7 +228,7 @@ export async function POST(req: Request) {
 
       // Generate streaming response
       const result = streamText({
-        model: modelToUse,
+        model: gateway(modelToUse),
         system: contextualSystemPrompt,
         messages: modelMessages,
         tools: {
@@ -279,7 +297,7 @@ export async function POST(req: Request) {
       const cookies = req.headers.get('cookie') || '';
 
       const result = streamText({
-        model: modelToUse,
+        model: gateway(modelToUse),
         system: contextualSystemPrompt,
         messages: modelMessages,
         tools: {
