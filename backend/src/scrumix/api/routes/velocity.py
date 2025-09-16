@@ -235,3 +235,27 @@ async def delete_sprint_burndown_snapshots(
 async def velocity_health_check():
     """Health check endpoint for velocity tracking"""
     return {"status": "healthy", "service": "velocity_tracking"}
+
+
+@router.get("/sprint/{sprint_id}/velocity")
+async def get_sprint_velocity(
+    sprint_id: int,
+    current_user=Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get velocity points for a specific sprint"""
+    try:
+        from ..crud.sprint import sprint_crud
+        
+        sprint = sprint_crud.get_by_id(db, sprint_id)
+        if not sprint:
+            raise HTTPException(status_code=404, detail="Sprint not found")
+        
+        return {
+            "sprint_id": sprint_id,
+            "velocity_points": sprint.velocity_points
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))

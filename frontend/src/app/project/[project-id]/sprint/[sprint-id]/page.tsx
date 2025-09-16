@@ -2066,45 +2066,21 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
     return Math.round((elapsed / totalDuration) * 100);
   };
 
-  // Calculate sprint velocity (average story points per sprint from completed sprints)
+  // Get current sprint's velocity points (not project average)
   const getSprintVelocity = async () => {
     try {
-      if (!sprint || !projectId) return 0;
+      if (!sprint || !sprintId) return 0;
       
-      // Fetch all sprints for this project
-      const sprintsResponse = await api.sprints.getByProject(parseInt(projectId, 10));
-      if (!sprintsResponse.data) return 0;
-      
-      // Filter for completed sprints only
-      const completedSprints = sprintsResponse.data.filter((s: any) => s.status === 'completed');
-      
-      // Sort by completion date (end date)
-      completedSprints.sort((a: any, b: any) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime());
-      
-      let totalCompletedStoryPoints = 0;
-      let sprintCount = 0;
-      
-      // Fetch backlog items for each completed sprint to get actual story points
-      for (const completedSprint of completedSprints) {
-        try {
-          const backlogResponse = await api.sprints.getSprintBacklog(completedSprint.id);
-          if (backlogResponse.data) {
-            const backlogItems = backlogResponse.data;
-            // Calculate completed story points (only items with status 'done')
-            const completedItems = backlogItems.filter((item: any) => item.status === 'done');
-            const completedStoryPoints = completedItems.reduce((sum: number, item: any) => sum + (item.story_point || 0), 0);
-            totalCompletedStoryPoints += completedStoryPoints;
-            sprintCount++;
-          }
-        } catch (backlogError) {
-          console.error(`Error fetching backlog for sprint ${completedSprint.id}:`, backlogError);
-          // Skip this sprint if backlog fetch fails
-        }
+      // Use the backend velocity API to get current sprint's velocity
+      const velocityResponse = await api.velocity.getSprintVelocity(parseInt(sprintId, 10));
+      if (velocityResponse.error) {
+        console.error('Error fetching sprint velocity from API:', velocityResponse.error);
+        return 0;
       }
       
-      return sprintCount > 0 ? Math.round(totalCompletedStoryPoints / sprintCount) : 0;
+      return Math.round(velocityResponse.data?.velocity_points || 0);
     } catch (error) {
-      console.error('Error calculating velocity:', error);
+      console.error('Error calculating sprint velocity:', error);
       return 0;
     }
   };

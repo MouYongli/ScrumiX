@@ -549,10 +549,15 @@ def update_backlog_item_status(
                     detail=f"Cannot set status to '{new_status}' because not all tasks are completed. Incomplete tasks: {task_list}"
                 )
         
-        # Update the backlog item status
-        backlog_item.status = new_status_enum
-        db.commit()
-        db.refresh(backlog_item)
+        # Update the backlog item status using CRUD to trigger velocity tracking
+        from ..crud.backlog import backlog_crud
+        from ..schemas.backlog import BacklogUpdate
+        
+        backlog_update = BacklogUpdate(status=new_status_enum)
+        updated_backlog = backlog_crud.update_backlog(db, backlog_id, backlog_update)
+        
+        if not updated_backlog:
+            raise HTTPException(status_code=500, detail="Failed to update backlog item")
         
         return {
             "message": "Backlog item status updated successfully",

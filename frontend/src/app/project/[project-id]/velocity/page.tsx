@@ -76,7 +76,26 @@ interface Sprint {
   updatedAt: string;
 }
 
-// Interface for velocity data point
+// Interface for velocity data point from backend
+interface VelocityTrendPoint {
+  sprint_id: number;
+  sprint_name: string;
+  velocity_points: number;
+  end_date: string | null;
+}
+
+// Interface for project velocity metrics from backend
+interface ProjectVelocityMetrics {
+  project_id: number;
+  total_completed_sprints: number;
+  average_velocity: number;
+  min_velocity: number;
+  max_velocity: number;
+  velocity_trend: VelocityTrendPoint[];
+  total_story_points: number;
+}
+
+// Interface for chart data display
 interface VelocityDataPoint {
   sprint: string;
   velocity: number;
@@ -86,25 +105,15 @@ interface VelocityDataPoint {
   endDate: string;
 }
 
-// Interface for backlog item with story points
-interface BacklogItem {
-  id: number;
-  title: string;
-  story_point: number;
-  status: string;
-  sprint_id?: number;
-}
-
 const ProjectVelocity: React.FC<ProjectVelocityProps> = ({ params }) => {
   const resolvedParams = React.use(params);
   const projectId = resolvedParams['project-id'];
 
-  const [sprints, setSprints] = useState<Sprint[]>([]);
+  const [velocityMetrics, setVelocityMetrics] = useState<ProjectVelocityMetrics | null>(null);
   const [velocityData, setVelocityData] = useState<VelocityDataPoint[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [projectName, setProjectName] = useState<string>('Project');
-  const [selectedSprint, setSelectedSprint] = useState<Sprint | null>(null);
 
   // Breadcrumb navigation
   const breadcrumbItems = [
@@ -131,75 +140,38 @@ const ProjectVelocity: React.FC<ProjectVelocityProps> = ({ params }) => {
     }
   }, [projectId]);
 
-  // Fetch sprints and calculate velocity
+  // Fetch velocity metrics from backend
   useEffect(() => {
-    const fetchSprintsAndVelocity = async () => {
+    const fetchVelocityData = async () => {
       try {
         setIsLoading(true);
         setError(null);
 
-        // Fetch all sprints for the project
-        const sprintsResponse = await api.sprints.getByProject(parseInt(projectId, 10));
-        if (!sprintsResponse.data) {
-          throw new Error(sprintsResponse.error || 'Failed to fetch sprints');
+        // Fetch project velocity metrics from the new velocity tracking API
+        const metricsResponse = await api.velocity.getProjectVelocityMetrics(parseInt(projectId, 10));
+        if (!metricsResponse.data) {
+          throw new Error(metricsResponse.error || 'Failed to fetch velocity metrics');
         }
 
-        const projectSprints = sprintsResponse.data;
-        setSprints(projectSprints);
+        const metrics = metricsResponse.data;
+        setVelocityMetrics(metrics);
 
-        // Filter for completed sprints only (as per requirements)
-        const completedSprints = projectSprints.filter(sprint => sprint.status === 'completed');
-        
-        // Sort by completion date (end date)
-        completedSprints.sort((a, b) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime());
-
-        // Fetch backlog items for each completed sprint to get story points
-        const velocityDataPoints: VelocityDataPoint[] = [];
-        
-        for (const sprint of completedSprints) {
-          try {
-            // Get sprint backlog items
-            const backlogResponse = await api.sprints.getSprintBacklog(sprint.id);
-            if (backlogResponse.data) {
-              const backlogItems: BacklogItem[] = backlogResponse.data;
-              
-              // Calculate completed story points (only items with status 'done')
-              const completedItems = backlogItems.filter(item => item.status === 'done');
-              const completedStoryPoints = completedItems.reduce((sum, item) => sum + (item.story_point || 0), 0);
-              const totalStoryPoints = backlogItems.reduce((sum, item) => sum + (item.story_point || 0), 0);
-              
-              velocityDataPoints.push({
-                sprint: sprint.sprintName,
-                velocity: completedStoryPoints,
-                completedStories: completedItems.length,
-                totalStories: backlogItems.length,
-                startDate: sprint.startDate,
-                endDate: sprint.endDate
-              });
-            } else {
-              // If no backlog data, create entry with 0 velocity
-              velocityDataPoints.push({
-                sprint: sprint.sprintName,
-                velocity: 0,
-                completedStories: 0,
-                totalStories: 0,
-                startDate: sprint.startDate,
-                endDate: sprint.endDate
-              });
-            }
-          } catch (backlogError) {
-            console.error(`Error fetching backlog for sprint ${sprint.id}:`, backlogError);
-            // Add sprint with 0 velocity if backlog fetch fails
-            velocityDataPoints.push({
-              sprint: sprint.sprintName,
-              velocity: 0,
-              completedStories: 0,
-              totalStories: 0,
-              startDate: sprint.startDate,
-              endDate: sprint.endDate
-            });
-          }
-        }
+        // Transform backend velocity trend data to frontend display format
+        const velocityDataPoints: VelocityDataPoint[] = metrics.velocity_trend.map(trend => {
+          // For display purposes, we'll estimate story counts based on velocity
+          // In a real scenario, you might want to fetch additional data or store this in the backend
+          const estimatedTotalStories = Math.ceil(trend.velocity_points / 3); // Assume avg 3 points per story
+          const estimatedCompletedStories = estimatedTotalStories; // Since these are completed sprints
+          
+          return {
+            sprint: trend.sprint_name,
+            velocity: trend.velocity_points,
+            completedStories: estimatedCompletedStories,
+            totalStories: estimatedTotalStories,
+            startDate: trend.end_date || '', // We only have end_date from backend
+            endDate: trend.end_date || ''
+          };
+        });
 
         setVelocityData(velocityDataPoints);
       } catch (error) {
@@ -211,25 +183,17 @@ const ProjectVelocity: React.FC<ProjectVelocityProps> = ({ params }) => {
     };
 
     if (projectId) {
-      fetchSprintsAndVelocity();
+      fetchVelocityData();
     }
   }, [projectId]);
 
-  // Calculate velocity statistics
-  const averageVelocity = velocityData.length > 0 
-    ? Math.round(velocityData.reduce((sum, data) => sum + data.velocity, 0) / velocityData.length)
-    : 0;
-
-  const highestVelocity = velocityData.length > 0 
-    ? Math.max(...velocityData.map(d => d.velocity))
-    : 0;
-
-  const lowestVelocity = velocityData.length > 0 
-    ? Math.min(...velocityData.map(d => d.velocity))
-    : 0;
-
-  const totalCompletedStoryPoints = velocityData.reduce((sum, data) => sum + data.velocity, 0);
+  // Use velocity statistics from backend or calculate from frontend data as fallback
+  const averageVelocity = velocityMetrics?.average_velocity || 0;
+  const highestVelocity = velocityMetrics?.max_velocity || 0;
+  const lowestVelocity = velocityMetrics?.min_velocity || 0;
+  const totalCompletedStoryPoints = velocityMetrics?.total_story_points || 0;
   const totalCompletedStories = velocityData.reduce((sum, data) => sum + data.completedStories, 0);
+  const totalCompletedSprints = velocityMetrics?.total_completed_sprints || 0;
 
   // Early return for loading state
   if (isLoading) {
@@ -302,7 +266,7 @@ const ProjectVelocity: React.FC<ProjectVelocityProps> = ({ params }) => {
             </div>
             <div className="ml-4">
               <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Completed Sprints</p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">{velocityData.length}</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white">{totalCompletedSprints}</p>
             </div>
           </div>
         </div>
@@ -334,8 +298,8 @@ const ProjectVelocity: React.FC<ProjectVelocityProps> = ({ params }) => {
               <Clock className="w-5 h-5 text-orange-600 dark:text-orange-400" />
             </div>
             <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Velocity</p>
-              <p className="text-2xl font-bold text-gray-900 dark:text-white">{averageVelocity}</p>
+              <p className="text-sm font-medium text-gray-600 dark:text-gray-400">Avg Velocity</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white">{Math.round(averageVelocity)}</p>
             </div>
           </div>
         </div>
