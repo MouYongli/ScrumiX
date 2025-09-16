@@ -13,6 +13,7 @@ from .base import CRUDBase
 from ..models.backlog import Backlog, BacklogStatus, BacklogPriority, BacklogType
 from ..schemas.backlog import BacklogCreate, BacklogUpdate
 from ..core.embedding_service import embedding_service
+from ..services.velocity_tracking import velocity_tracking_service
 
 class BacklogCRUD(CRUDBase[Backlog, BacklogCreate, BacklogUpdate]):
     """Optimized CRUD operations for Backlog."""
@@ -324,10 +325,13 @@ class BacklogCRUD(CRUDBase[Backlog, BacklogCreate, BacklogUpdate]):
         }
     
     def update_backlog(self, db: Session, backlog_id: int, backlog_update: BacklogUpdate) -> Optional[Backlog]:
-        """Update backlog item information - OPTIMIZED with path updates"""
+        """Update backlog item information - OPTIMIZED with path updates and velocity tracking"""
         backlog = self.get_by_id(db, backlog_id)
         if not backlog:
             return None
+        
+        # Store old status for velocity tracking
+        old_status = backlog.status
         
         update_data = backlog_update.model_dump(exclude_unset=True, by_alias=True)
         
@@ -347,11 +351,24 @@ class BacklogCRUD(CRUDBase[Backlog, BacklogCreate, BacklogUpdate]):
             update_data["root_id"] = parent.root_id or parent.backlog_id
             update_data["path"] = f"{parent.get_full_path()}"
         
+        # Apply updates
         for field, value in update_data.items():
             setattr(backlog, field, value)
         
-        db.commit()
-        db.refresh(backlog)
+        # Handle velocity and burndown tracking if status changed
+        new_status = backlog.status
+        if "status" in update_data and new_status != old_status:
+            velocity_tracking_service.update_backlog_completion_status(
+                db=db,
+                backlog=backlog,
+                new_status=new_status,
+                old_status=old_status
+            )
+        else:
+            # Commit the regular updates if no status change
+            db.commit()
+            db.refresh(backlog)
+        
         return backlog
     
     def delete_backlog(self, db: Session, backlog_id: int, delete_children: bool = False) -> bool:
@@ -385,7 +402,11 @@ class BacklogCRUD(CRUDBase[Backlog, BacklogCreate, BacklogUpdate]):
         backlog_ids: List[int], 
         status: BacklogStatus
     ) -> int:
-        """Bulk update status of multiple backlog items - OPTIMIZED"""
+        """Bulk update status of multiple backlog items - OPTIMIZED with velocity tracking"""
+        # Get the backlog items before updating to track status changes
+        backlogs = db.query(Backlog).filter(Backlog.id.in_(backlog_ids)).all()
+        
+        # Update status in bulk
         result = db.query(Backlog).filter(Backlog.id.in_(backlog_ids)).update(
             {
                 Backlog.status: status,
@@ -393,7 +414,20 @@ class BacklogCRUD(CRUDBase[Backlog, BacklogCreate, BacklogUpdate]):
             },
             synchronize_session=False
         )
-        db.commit()
+        
+        # Handle velocity tracking for each item
+        for backlog in backlogs:
+            old_status = backlog.status
+            if status != old_status:
+                # Refresh backlog to get updated status
+                db.refresh(backlog)
+                velocity_tracking_service.update_backlog_completion_status(
+                    db=db,
+                    backlog=backlog,
+                    new_status=status,
+                    old_status=old_status
+                )
+        
         return result
     
     def get_backlog_hierarchy(self, db: Session, project_id: int) -> List[Dict[str, Any]]:

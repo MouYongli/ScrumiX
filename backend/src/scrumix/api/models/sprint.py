@@ -27,6 +27,7 @@ class Sprint(Base):
     end_date = Column(DateTime(timezone=True), nullable=False)
     status = Column(SQLEnum(SprintStatus), default=SprintStatus.PLANNING, nullable=False)
     sprint_capacity = Column(Integer, nullable=True, default=0)
+    velocity_points = Column(Integer, nullable=False, default=0, index=True, comment="Total story points completed in this sprint")
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
@@ -36,6 +37,7 @@ class Sprint(Base):
     backlogs = relationship("Backlog", back_populates="sprint", cascade="all, delete-orphan")
     tasks = relationship("Task", back_populates="sprint", cascade="all, delete-orphan")
     meetings = relationship("Meeting", back_populates="sprint", cascade="all, delete-orphan")
+    burndown_snapshots = relationship("BurndownSnapshot", back_populates="sprint", cascade="all, delete-orphan")
     
     @property
     def sprint_id(self) -> int:
