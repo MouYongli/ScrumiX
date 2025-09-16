@@ -156,6 +156,11 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     conversationTitle: string;
     agentType: string;
   } | null>(null);
+  const [currentConversationIds, setCurrentConversationIds] = useState<Record<AgentType, string>>({
+    'product-owner': '',
+    'scrum-master': '',
+    'developer': ''
+  });
   const [agentStates, setAgentStates] = useState<Record<AgentType, AgentChatStateWithFiles>>({
     'product-owner': { 
       messages: [], 
@@ -332,6 +337,9 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
 
   // Create a new chat session
   const createNewChat = useCallback(() => {
+    // Generate a unique conversation ID for the new chat
+    const newConversationId = `${activeAgent}-${projectId || 'no-project'}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    
     // Clear the current agent's messages to start fresh
     updateAgentState(activeAgent, { 
       messages: [], 
@@ -344,9 +352,15 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       confirmedMessages: new Set()
     });
     
-    // The chat history hook will automatically create a new conversation when the first message is sent
-    console.log(`Started new chat for ${activeAgent}`);
-  }, [activeAgent]);
+    // Store the new conversation ID for this agent session
+    // This will be used when sending the first message
+    setCurrentConversationIds(prev => ({
+      ...prev,
+      [activeAgent]: newConversationId
+    }));
+    
+    console.log(`Started new chat for ${activeAgent} with ID: ${newConversationId}`);
+  }, [activeAgent, projectId]);
 
   // Start renaming a chat
   const startRenaming = useCallback((conversationId: string, currentTitle: string) => {
@@ -447,6 +461,16 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     }
   }, [getChatHistory]);
 
+  // Helper function to get API endpoint for agent type
+  const getApiEndpoint = (agentType: AgentType): string => {
+    switch (agentType) {
+      case 'product-owner': return '/api/chat/product-owner';
+      case 'scrum-master': return '/api/chat/scrum-master';
+      case 'developer': return '/api/chat/developer';
+      default: return '/api/chat/product-owner';
+    }
+  };
+
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
@@ -519,6 +543,23 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     // Mark as sending to prevent state conflicts
     setSendingStates(prev => ({ ...prev, [agentType]: true }));
 
+    // Use the new conversation ID if we're starting a new chat, otherwise use the existing one
+    const conversationId = currentConversationIds[agentType] || getChatHistory(agentType).conversation.id;
+    
+    // If we have a new conversation ID, we need to create the conversation first
+    if (currentConversationIds[agentType]) {
+      try {
+        await chatAPI.upsertConversation({
+          id: conversationId,
+          agent_type: agentType,
+          project_id: projectId ? parseInt(projectId, 10) : undefined,
+          title: `${AGENTS[agentType].name} Chat`
+        });
+      } catch (error) {
+        console.error('Failed to create new conversation:', error);
+      }
+    }
+
     const chatHistory = getChatHistory(agentType);
     
     // Store the message content before clearing the input
@@ -590,12 +631,52 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
         ];
       }
 
-      const responseStream = await chatHistory.sendMessage(
-        messageContent,
-        currentState.selectedModel,
-        webSearchEnabled,
-        messageFiles ? Array.from(messageFiles) : undefined
-      );
+      // For new conversations, we need to send directly to API with the new conversation ID
+      let responseStream;
+      if (currentConversationIds[agentType]) {
+        // Send to API directly with the new conversation ID
+        const apiEndpoint = getApiEndpoint(agentType);
+        const userMessage = {
+          id: `msg_${Date.now()}`,
+          role: 'user' as const,
+          parts: [{ type: 'text', text: messageContent }]
+        };
+
+        const response = await fetch(apiEndpoint, {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            id: conversationId,
+            message: userMessage,
+            projectId: projectId ? parseInt(projectId, 10) : null,
+            selectedModel: currentState.selectedModel,
+            webSearchEnabled
+          }),
+        });
+
+        if (!response.ok) {
+          throw new Error(`API Error: ${response.status}`);
+        }
+
+        responseStream = response.body;
+        
+        // Clear the new conversation ID since we've now created the conversation
+        setCurrentConversationIds(prev => ({
+          ...prev,
+          [agentType]: ''
+        }));
+      } else {
+        // Use existing chat history method for ongoing conversations
+        responseStream = await chatHistory.sendMessage(
+          messageContent,
+          currentState.selectedModel,
+          webSearchEnabled,
+          messageFiles ? Array.from(messageFiles) : undefined
+        );
+      }
 
       if (!responseStream) {
         throw new Error('No response stream received');
@@ -607,16 +688,14 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       let aiResponse = '';
       let hasStartedGenerating = false;
       let messageId = `agent-${Date.now()}`;
+      const startTime = Date.now();
+      const MIN_LOADING_TIME = 800; // Minimum loading time to prevent flashing
 
-      // Set initial thinking state after a short delay if web search is not enabled
-      if (!webSearchEnabled) {
-        setTimeout(() => {
-          updateAgentState(agentType, {
-            isTyping: true,
-            loadingState: 'thinking'
-          });
-        }, 500);
-      }
+      // Set initial thinking state immediately for short responses
+      updateAgentState(agentType, {
+        isTyping: true,
+        loadingState: webSearchEnabled ? 'searching' : 'thinking'
+      });
 
       while (true) {
         const { done, value } = await reader.read();
@@ -702,8 +781,8 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
             [agentType]: {
               ...prevState,
               messages: merged,
-              isTyping: false,
-              loadingState: undefined,
+              isTyping: true, // Keep typing true during streaming
+              loadingState: 'generating', // Keep generating state during streaming
               currentTool: undefined,
               pendingConfirmations: newPendingConfirmations
             }
@@ -719,30 +798,51 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
         .trim();
 
       // Finalize: ensure the streamed agent message content matches persisted text to avoid duplicates
+      const finalized: EnhancedChatMessage = {
+        id: messageId,
+        content: cleanResponse,
+        timestamp: new Date().toISOString(),
+        sender: 'agent',
+        agentType: agentType,
+        model: currentState.selectedModel
+      } as EnhancedChatMessage;
+
+      // Calculate remaining time to meet minimum loading duration
+      const elapsedTime = Date.now() - startTime;
+      const remainingTime = Math.max(0, MIN_LOADING_TIME - elapsedTime);
+
+      // Update messages immediately but delay clearing loading state if needed
       setAgentStates(prev => {
         const prevState = prev[agentType];
-        const finalized: EnhancedChatMessage = {
-          id: messageId,
-          content: cleanResponse,
-          timestamp: new Date().toISOString(),
-          sender: 'agent',
-          agentType: agentType,
-          model: currentState.selectedModel
-        } as EnhancedChatMessage;
         const merged = upsertMessage(prevState.messages, finalized);
         return {
           ...prev,
           [agentType]: {
             ...prevState,
             messages: merged,
-            isTyping: false,
-            loadingState: undefined,
+            isTyping: remainingTime > 0, // Keep typing if we need more time
+            loadingState: remainingTime > 0 ? 'generating' : undefined,
             currentTool: undefined,
           }
         };
       });
 
-      // No automatic sync - let the user's message flow complete naturally
+      // Clear loading state after minimum time if needed
+      if (remainingTime > 0) {
+        setTimeout(() => {
+          updateAgentState(agentType, {
+            isTyping: false,
+            loadingState: undefined,
+            currentTool: undefined
+          });
+        }, remainingTime);
+      }
+
+      // Refresh conversations list to show the new chat in history (non-blocking)
+      loadAllConversations().catch(error => {
+        console.warn('Failed to refresh conversations after message:', error);
+      });
+
 
     } catch (error) {
       console.error('Error sending persistent message:', error);
@@ -1027,17 +1127,15 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
         const decoder = new TextDecoder();
         let messageId = `agent-${Date.now()}`;
         let hasStartedGenerating = false;
+        const startTime = Date.now();
+        const MIN_LOADING_TIME = 800; // Minimum loading time to prevent flashing
         
-        // Set initial thinking state after a short delay if web search is not enabled
-        if (!webSearchEnabled) {
-          setTimeout(() => {
-            updateAgentState(agentType, {
-              messages: [...currentState.messages, userMessage],
-              isTyping: true,
-              loadingState: 'thinking'
-            });
-          }, 500);
-        }
+        // Set initial thinking state immediately for short responses
+        updateAgentState(agentType, {
+          messages: [...currentState.messages, userMessage],
+          isTyping: true,
+          loadingState: webSearchEnabled ? 'searching' : 'thinking'
+        });
 
         while (true) {
           const { done, value } = await reader.read();
@@ -1110,14 +1208,34 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
             ? new Set([...currentState.pendingConfirmations!, agentMessage.id])
             : currentState.pendingConfirmations;
 
+          // Calculate remaining time to meet minimum loading duration
+          const elapsedTime = Date.now() - startTime;
+          const remainingTime = Math.max(0, MIN_LOADING_TIME - elapsedTime);
+
           updateAgentState(agentType, {
             messages: [...currentState.messages, userMessage, agentMessage],
-            isTyping: false,
-            loadingState: undefined,
+            isTyping: remainingTime > 0,
+            loadingState: remainingTime > 0 ? 'generating' : undefined,
             currentTool: undefined,
             pendingConfirmations: newPendingConfirmations
           });
+
+          // Clear loading state after minimum time if needed
+          if (remainingTime > 0) {
+            setTimeout(() => {
+              updateAgentState(agentType, {
+                isTyping: false,
+                loadingState: undefined,
+                currentTool: undefined
+              });
+            }, remainingTime);
+          }
         }
+        
+        // Refresh conversations list after AI response is complete (non-blocking)
+        loadAllConversations().catch(error => {
+          console.warn('Failed to refresh conversations after message:', error);
+        });
       } catch (error) {
         console.error('AI Chat Error:', error);
         const errorMessage: ChatMessage = {
@@ -1824,7 +1942,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                     return (
                       <div 
                         key={conversation.id}
-                        className="group p-3 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors relative"
+                        className="group p-3 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors relative min-h-[60px]"
                       >
                         {renamingChat === conversation.id ? (
                           // Rename Mode
@@ -1867,28 +1985,26 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                           // Normal Display Mode
                           <>
                             <div 
-                              className="flex items-start space-x-3 cursor-pointer"
+                              className="cursor-pointer relative h-full"
                               onClick={() => {
                                 // Load the specific conversation
                                 loadConversation(conversation.id, activeAgent);
                               }}
                             >
-                              <div className={`w-8 h-8 ${agent?.color || 'bg-gray-500'} rounded-lg flex items-center justify-center flex-shrink-0`}>
-                                <AgentIcon className="w-4 h-4 text-white" />
-                </div>
-                <div className="flex-1 min-w-0">
-                                <h4 className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                                  {conversation.title || `${agent?.name || activeAgent} Chat`}
-                                </h4>
-                                <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
-                                  {conversation.summary || 'No summary available'}
-                                </p>
-                                <div className="flex items-center justify-between mt-2">
-                                  <span className="text-xs text-gray-500">{agent?.name || activeAgent}</span>
-                                  <span className="text-xs text-gray-500">{timeAgo}</span>
+                              <div className="flex items-center h-full">
+                                <div className={`w-8 h-8 ${agent?.color || 'bg-gray-500'} rounded-lg flex items-center justify-center flex-shrink-0 mr-3`}>
+                                  <AgentIcon className="w-4 h-4 text-white" />
                                 </div>
-              </div>
-            </div>
+                                <div className="flex-1 flex items-center justify-start pl-2 pr-16">
+                                  <h4 className="text-base font-medium text-gray-900 dark:text-white truncate">
+                                    {conversation.title || `${agent?.name || activeAgent} Chat`}
+                                  </h4>
+                                </div>
+                              </div>
+                            </div>
+                            
+                            {/* Timestamp positioned relative to the main container */}
+                            <span className="absolute bottom-1 right-1 text-xs text-gray-500 bg-white dark:bg-gray-800 px-1 rounded">{timeAgo}</span>
 
                             {/* Three-dot menu */}
                             <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -1937,16 +2053,16 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                   </div>
                           </>
                         )}
-                      </div>
+              </div>
                     );
                   }) || []}
-                
-                {/* Empty State */}
+
+            {/* Empty State */}
                 {(!allConversations[activeAgent] || allConversations[activeAgent].length === 0) && !loadingConversations && (
-                  <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+            <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                     <div className={`w-12 h-12 ${AGENTS[activeAgent].color} rounded-full flex items-center justify-center mx-auto mb-3 opacity-50`}>
                       {React.createElement(getAgentIcon(activeAgent), { className: "w-6 h-6 text-white" })}
-                    </div>
+            </div>
                     <p className="text-sm">No {AGENTS[activeAgent].name} conversations yet</p>
                     <p className="text-xs mt-1">Start chatting to see your history here</p>
                   </div>
@@ -2556,3 +2672,4 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
 };
 
 export default AIChat;
+
