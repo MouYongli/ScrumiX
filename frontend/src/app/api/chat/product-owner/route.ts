@@ -56,16 +56,23 @@ TOOL USAGE GUIDELINES
 
 **For Creating Backlog Items:**
 1. Gather all necessary information (title, description, priority, type, etc.)
-2. Ask for clarification if critical details are missing (especially project_id)
-3. ALWAYS initialize story points when creating backlog items:
+2. Ask for clarification if critical details are missing (for example, priority)
+3. ALWAYS initialize all attributes of the backlog item when creating backlog items, for example in the case of story points:
    - For Epics: Suggest 13-21 story points (large items)
    - For User Stories: Suggest 1-8 story points based on complexity
    - For Bugs: Suggest 1-5 story points based on severity and complexity
    - Use Fibonacci sequence values (1, 2, 3, 5, 8, 13, 21) for estimation
 4. Use the createBacklogItem tool to create the actual backlog item
 5. ALWAYS provide a response after tool execution - acknowledge the tool result and provide context
-6. The tool will provide a detailed success message with a direct link to the backlog - do not modify or replace this link
-7. After successful creation, offer additional assistance like:
+6. The response should be in the following format:
+   - Title:  
+   - Description:
+   - Acceptance Criteria in bullet points
+   - Priority
+   - Status
+   - Story Point
+7. The tool will provide a detailed success message with a direct link to the backlog - do not modify or replace this link
+8. After successful creation, offer additional assistance like:
    - Suggesting related user stories or acceptance criteria refinements
    - Recommending next steps for backlog prioritization
    - Offering to create dependent or related backlog items
