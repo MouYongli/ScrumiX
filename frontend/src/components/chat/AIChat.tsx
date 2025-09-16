@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   User,
@@ -29,7 +29,8 @@ import {
   ChevronDown,
   History,
   Plus,
-  ArrowUp
+  ArrowUp,
+  MoreHorizontal
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -39,6 +40,7 @@ import { getPreferredModel, setPreferredModel } from '@/lib/model-preferences';
 import { hasNativeWebSearch } from '@/lib/tools/web-search';
 import { convertFilesToDataURLs, validateFile, formatFileSize, getFileCategory, handleDragOver, handleDragEnter, handleDragLeave, handleDrop, getSupportedFormatsString } from '@/utils/multimodal';
 import { useChatHistory } from '@/hooks/useChatHistory';
+import { chatAPI } from '@/lib/chat-api';
 import ModelSelector from './ModelSelector';
 
 // Agent definitions with Scrum-specific roles
@@ -97,6 +99,28 @@ interface SessionData {
   tempUploadId?: string;
 }
 
+// Utility function to format time ago
+const formatTimeAgo = (dateString: string): string => {
+  const date = new Date(dateString);
+  const now = new Date();
+  const diffInSeconds = Math.floor((now.getTime() - date.getTime()) / 1000);
+  
+  if (diffInSeconds < 60) {
+    return 'Just now';
+  } else if (diffInSeconds < 3600) {
+    const minutes = Math.floor(diffInSeconds / 60);
+    return `${minutes}m ago`;
+  } else if (diffInSeconds < 86400) {
+    const hours = Math.floor(diffInSeconds / 3600);
+    return `${hours}h ago`;
+  } else if (diffInSeconds < 604800) {
+    const days = Math.floor(diffInSeconds / 86400);
+    return `${days}d ago`;
+  } else {
+    return date.toLocaleDateString();
+  }
+};
+
 interface EnhancedChatMessage extends ChatMessage {
   sessionData?: SessionData;
 }
@@ -121,6 +145,11 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   const [editingContent, setEditingContent] = useState<string>('');
   const [showAgentDropdown, setShowAgentDropdown] = useState(false);
   const [showPlusDropdown, setShowPlusDropdown] = useState(false);
+  const [allConversations, setAllConversations] = useState<Record<string, any[]>>({});
+  const [loadingConversations, setLoadingConversations] = useState(false);
+  const [showChatMenu, setShowChatMenu] = useState<string | null>(null);
+  const [renamingChat, setRenamingChat] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState<string>('');
   const [agentStates, setAgentStates] = useState<Record<AgentType, AgentChatStateWithFiles>>({
     'product-owner': { 
       messages: [], 
@@ -263,6 +292,140 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       default: return productOwnerChat;
     }
   };
+
+  // Load all conversations for the sidebar
+  const loadAllConversations = useCallback(async () => {
+    setLoadingConversations(true);
+    try {
+      const conversations = await chatAPI.getUserConversations();
+      
+      // Group conversations by agent type
+      const groupedConversations: Record<string, any[]> = {};
+      conversations.forEach((conv: any) => {
+        if (!groupedConversations[conv.agent_type]) {
+          groupedConversations[conv.agent_type] = [];
+        }
+        groupedConversations[conv.agent_type].push(conv);
+      });
+      
+      // Sort conversations by last message time (most recent first)
+      Object.keys(groupedConversations).forEach(agentType => {
+        groupedConversations[agentType].sort((a, b) => 
+          new Date(b.last_message_at || b.updated_at || b.created_at).getTime() - 
+          new Date(a.last_message_at || a.updated_at || a.created_at).getTime()
+        );
+      });
+      
+      setAllConversations(groupedConversations);
+    } catch (error) {
+      console.error('Failed to load conversations:', error);
+    } finally {
+      setLoadingConversations(false);
+    }
+  }, []);
+
+  // Create a new chat session
+  const createNewChat = useCallback(() => {
+    // Clear the current agent's messages to start fresh
+    updateAgentState(activeAgent, { 
+      messages: [], 
+      inputValue: '', 
+      files: undefined,
+      isTyping: false,
+      loadingState: undefined,
+      currentTool: undefined,
+      pendingConfirmations: new Set(),
+      confirmedMessages: new Set()
+    });
+    
+    // The chat history hook will automatically create a new conversation when the first message is sent
+    console.log(`Started new chat for ${activeAgent}`);
+  }, [activeAgent]);
+
+  // Start renaming a chat
+  const startRenaming = useCallback((conversationId: string, currentTitle: string) => {
+    setRenamingChat(conversationId);
+    setRenameValue(currentTitle || '');
+    setShowChatMenu(null);
+  }, []);
+
+  // Save renamed chat
+  const saveRename = useCallback(async (conversationId: string) => {
+    if (!renameValue.trim()) return;
+    
+    try {
+      // Update the conversation title via API
+      await chatAPI.upsertConversation({
+        id: conversationId,
+        agent_type: activeAgent,
+        project_id: projectId ? parseInt(projectId, 10) : undefined,
+        title: renameValue.trim()
+      });
+      
+      // Refresh conversations list
+      await loadAllConversations();
+      
+      setRenamingChat(null);
+      setRenameValue('');
+    } catch (error) {
+      console.error('Failed to rename conversation:', error);
+    }
+  }, [renameValue, activeAgent, projectId, loadAllConversations]);
+
+  // Cancel renaming
+  const cancelRename = useCallback(() => {
+    setRenamingChat(null);
+    setRenameValue('');
+  }, []);
+
+  // Delete a chat conversation
+  const deleteChat = useCallback(async (conversationId: string) => {
+    if (!confirm('Are you sure you want to delete this conversation? This action cannot be undone.')) {
+      return;
+    }
+    
+    try {
+      await chatAPI.deleteConversation(conversationId);
+      
+      // Refresh conversations list
+      await loadAllConversations();
+      
+      // If the deleted conversation was the current one, clear the current chat
+      const currentConversationId = getChatHistory(activeAgent).conversation.id;
+      if (conversationId === currentConversationId) {
+        updateAgentState(activeAgent, { 
+          messages: [], 
+          inputValue: '', 
+          files: undefined,
+          isTyping: false,
+          loadingState: undefined,
+          currentTool: undefined,
+          pendingConfirmations: new Set(),
+          confirmedMessages: new Set()
+        });
+      }
+      
+      setShowChatMenu(null);
+    } catch (error) {
+      console.error('Failed to delete conversation:', error);
+      alert('Failed to delete conversation. Please try again.');
+    }
+  }, [activeAgent, loadAllConversations, getChatHistory]);
+
+  // Load a specific conversation
+  const loadConversation = useCallback(async (conversationId: string, agentType: AgentType) => {
+    try {
+      // Switch to the appropriate agent
+      setActiveAgent(agentType);
+      
+      // The useChatHistory hook will automatically load the conversation
+      // when the agent type changes, but we can trigger a manual load if needed
+      const chatHistory = getChatHistory(agentType);
+      await chatHistory.loadConversation(conversationId);
+    } catch (error) {
+      console.error('Failed to load conversation:', error);
+    }
+  }, [getChatHistory]);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -593,7 +756,9 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
 
   useEffect(() => {
     setIsClient(true);
-  }, []);
+    // Load all conversations for the sidebar
+    loadAllConversations();
+  }, [loadAllConversations]);
 
   useEffect(() => {
     // Focus input when switching agents
@@ -641,13 +806,17 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       if (showPlusDropdown && !target.closest('.plus-dropdown')) {
         setShowPlusDropdown(false);
       }
+      
+      if (showChatMenu && !target.closest('.chat-menu')) {
+        setShowChatMenu(null);
+      }
     };
 
     document.addEventListener('mousedown', handleClickOutside);
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [showAgentDropdown, showPlusDropdown]);
+  }, [showAgentDropdown, showPlusDropdown, showChatMenu]);
 
   const updateAgentState = (agentType: AgentType, updates: Partial<AgentChatStateWithFiles>) => {
     setAgentStates(prev => ({
@@ -1591,102 +1760,168 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
            {/* Chat History Sidebar */}
            <div className="w-80 border-r border-gray-200 dark:border-gray-700 flex flex-col">
           <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-            <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-2 flex items-center">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-white flex items-center">
               <History className="w-5 h-5 mr-2" />
               Chat History
             </h2>
+              <button
+                onClick={createNewChat}
+                className="flex items-center space-x-1 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-sm rounded-lg transition-colors"
+                title="Start a new chat"
+              >
+                <Plus className="w-4 h-4" />
+                <span>New</span>
+              </button>
+            </div>
             <p className="text-sm text-gray-600 dark:text-gray-400">
               Your recent conversations with AI agents
             </p>
           </div>
           
           <div className="flex-1 p-4 space-y-3 overflow-y-auto">
-            {/* Sample Chat History Items - Frontend only for now */}
-            <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors">
-                  <div className="flex items-start space-x-3">
-                <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <User className="w-4 h-4 text-white" />
+            {/* Real Chat History Items */}
+            {loadingConversations ? (
+              <div className="text-center py-8 text-gray-500 dark:text-gray-400">
+                <div className="animate-spin w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full mx-auto mb-2"></div>
+                <p className="text-sm">Loading conversations...</p>
                     </div>
-                    <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                    User Story Creation
-                  </h4>
-                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
-                    Created user story for chatbot functionality with acceptance criteria...
-                  </p>
-                  <div className="flex items-center justify-between mt-2">
-                    <span className="text-xs text-gray-500">Product Owner</span>
-                    <span className="text-xs text-gray-500">2 hours ago</span>
-                  </div>
+            ) : (
+              <>
+                {/* Show conversations for all agent types */}
+                {Object.entries(allConversations).map(([agentType, conversations]) => 
+                  conversations.map((conversation) => {
+                    const agent = AGENTS[agentType as AgentType];
+                    const AgentIcon = getAgentIcon(agentType as AgentType);
+                    const timeAgo = formatTimeAgo(conversation.last_message_at || conversation.updated_at || conversation.created_at);
+                    
+                    return (
+                      <div 
+                        key={conversation.id}
+                        className="group p-3 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors relative"
+                      >
+                        {renamingChat === conversation.id ? (
+                          // Rename Mode
+                          <div className="flex items-center space-x-2">
+                            <div className={`w-8 h-8 ${agent?.color || 'bg-gray-500'} rounded-lg flex items-center justify-center flex-shrink-0`}>
+                              <AgentIcon className="w-4 h-4 text-white" />
                 </div>
-              </div>
-                      </div>
-                      
-            <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors">
-              <div className="flex items-start space-x-3">
-                <div className="w-8 h-8 bg-blue-500 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <Settings className="w-4 h-4 text-white" />
+                            <div className="flex-1">
+                              <input
+                                type="text"
+                                value={renameValue}
+                                onChange={(e) => setRenameValue(e.target.value)}
+                                onKeyPress={(e) => {
+                                  if (e.key === 'Enter') {
+                                    saveRename(conversation.id);
+                                  } else if (e.key === 'Escape') {
+                                    cancelRename();
+                                  }
+                                }}
+                                className="w-full px-2 py-1 text-sm bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
+                                autoFocus
+                              />
+                  </div>
+                            <button
+                              onClick={() => saveRename(conversation.id)}
+                              className="p-1 text-green-600 hover:text-green-700"
+                              title="Save"
+                            >
+                              <Check className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={cancelRename}
+                              className="p-1 text-gray-500 hover:text-gray-700"
+                              title="Cancel"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                </div>
+                        ) : (
+                          // Normal Display Mode
+                          <>
+                            <div 
+                              className="flex items-start space-x-3 cursor-pointer"
+                              onClick={() => {
+                                // Load the specific conversation
+                                loadConversation(conversation.id, agentType as AgentType);
+                              }}
+                            >
+                              <div className={`w-8 h-8 ${agent?.color || 'bg-gray-500'} rounded-lg flex items-center justify-center flex-shrink-0`}>
+                                <AgentIcon className="w-4 h-4 text-white" />
                 </div>
                 <div className="flex-1 min-w-0">
                   <h4 className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                    Sprint Planning Session
+                                  {conversation.title || `${agent?.name || agentType} Chat`}
                   </h4>
                   <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
-                    Discussed sprint goals and capacity planning for the upcoming iteration...
+                                  {conversation.summary || 'No summary available'}
                   </p>
                   <div className="flex items-center justify-between mt-2">
-                    <span className="text-xs text-gray-500">Scrum Master</span>
-                    <span className="text-xs text-gray-500">1 day ago</span>
-                  </div>
+                                  <span className="text-xs text-gray-500">{agent?.name || agentType}</span>
+                                  <span className="text-xs text-gray-500">{timeAgo}</span>
                 </div>
               </div>
             </div>
 
-            <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors">
-              <div className="flex items-start space-x-3">
-                <div className="w-8 h-8 bg-purple-500 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <Code2 className="w-4 h-4 text-white" />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                    Code Review Guidelines
-                  </h4>
-                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
-                    Reviewed best practices for code reviews and established team standards...
-                  </p>
-                  <div className="flex items-center justify-between mt-2">
-                    <span className="text-xs text-gray-500">Developer</span>
-                    <span className="text-xs text-gray-500">2 days ago</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div className="p-3 rounded-lg border border-gray-200 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 cursor-pointer transition-colors">
-              <div className="flex items-start space-x-3">
-                <div className="w-8 h-8 bg-emerald-500 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <User className="w-4 h-4 text-white" />
+                            {/* Three-dot menu */}
+                            <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <div className="relative chat-menu">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setShowChatMenu(showChatMenu === conversation.id ? null : conversation.id);
+                                  }}
+                                  className="p-1 rounded hover:bg-gray-200 dark:hover:bg-gray-600 text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200"
+                                  title="More options"
+                                >
+                                  <MoreHorizontal className="w-4 h-4" />
+                                </button>
+                                
+                                {/* Dropdown Menu */}
+                                {showChatMenu === conversation.id && (
+                                  <div className="absolute right-0 top-full mt-1 w-32 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-lg z-50">
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        startRenaming(conversation.id, conversation.title);
+                                      }}
+                                      className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors first:rounded-t-lg flex items-center space-x-2"
+                                    >
+                                      <Edit3 className="w-3 h-3" />
+                                      <span>Rename</span>
+                                    </button>
+                                    <button
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        deleteChat(conversation.id);
+                                      }}
+                                      className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors last:rounded-b-lg flex items-center space-x-2"
+                                    >
+                                      <Trash2 className="w-3 h-3" />
+                                      <span>Delete</span>
+                                    </button>
                       </div>
-                <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-medium text-gray-900 dark:text-white truncate">
-                    Backlog Refinement
-                  </h4>
-                  <p className="text-xs text-gray-600 dark:text-gray-400 mt-1 line-clamp-2">
-                    Refined backlog items and updated priorities based on stakeholder feedback...
-                  </p>
-                  <div className="flex items-center justify-between mt-2">
-                    <span className="text-xs text-gray-500">Product Owner</span>
-                    <span className="text-xs text-gray-500">3 days ago</span>
+                                )}
                     </div>
                   </div>
+                          </>
+                        )}
               </div>
-            </div>
+                    );
+                  })
+                )}
 
             {/* Empty State */}
+                {Object.keys(allConversations).length === 0 && !loadingConversations && (
             <div className="text-center py-8 text-gray-500 dark:text-gray-400">
               <History className="w-12 h-12 mx-auto mb-3 opacity-50" />
-              <p className="text-sm">No more chat history</p>
+                    <p className="text-sm">No chat history yet</p>
+                    <p className="text-xs mt-1">Start a conversation with an AI agent</p>
             </div>
+                )}
+              </>
+            )}
           </div>
         </div>
 

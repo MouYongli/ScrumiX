@@ -130,6 +130,59 @@ class ChatCRUD:
         
         return query.order_by(desc(ChatConversation.last_message_at)).limit(limit).all()
 
+    def delete_conversation(
+        self,
+        db: Session,
+        conversation_id: str,
+        user_id: Optional[int] = None
+    ) -> bool:
+        """Delete a conversation and all its messages"""
+        conversation = db.query(ChatConversation).filter(
+            ChatConversation.id == conversation_id
+        ).first()
+        
+        if not conversation:
+            return False
+            
+        # Optional: Check if user has permission to delete this conversation
+        if user_id is not None and conversation.user_id != user_id:
+            return False
+        
+        # Delete the conversation (messages will be deleted automatically due to cascade)
+        db.delete(conversation)
+        db.commit()
+        return True
+
+    def delete_conversation_messages(
+        self,
+        db: Session,
+        conversation_id: str,
+        user_id: Optional[int] = None
+    ) -> bool:
+        """Delete all messages from a conversation but keep the conversation"""
+        conversation = db.query(ChatConversation).filter(
+            ChatConversation.id == conversation_id
+        ).first()
+        
+        if not conversation:
+            return False
+            
+        # Optional: Check if user has permission to modify this conversation
+        if user_id is not None and conversation.user_id != user_id:
+            return False
+        
+        # Delete all messages for this conversation
+        db.query(ChatMessage).filter(
+            ChatMessage.conversation_id == conversation_id
+        ).delete()
+        
+        # Update conversation metadata
+        conversation.last_message_at = datetime.now()
+        conversation.summary = None
+        
+        db.commit()
+        return True
+
 
 # Create instance
 chat_crud = ChatCRUD()

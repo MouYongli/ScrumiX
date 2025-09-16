@@ -129,6 +129,20 @@ class ChatAPI {
     const response = await this.fetchWithAuth(url, {}, cookies);
     return response.json();
   }
+
+  async deleteConversation(conversationId: string, cookies?: string): Promise<{message: string}> {
+    const response = await this.fetchWithAuth(`${API_BASE_URL}/chat/conversations/${conversationId}`, {
+      method: 'DELETE',
+    }, cookies);
+    return response.json();
+  }
+
+  async deleteConversationMessages(conversationId: string, cookies?: string): Promise<{message: string}> {
+    const response = await this.fetchWithAuth(`${API_BASE_URL}/chat/conversations/${conversationId}/messages`, {
+      method: 'DELETE',
+    }, cookies);
+    return response.json();
+  }
 }
 
 export const chatAPI = new ChatAPI();
