@@ -7,7 +7,6 @@ import {
   Target, Zap, BarChart3, MessageSquare, Plus, ArrowRight, Activity,
   FolderOpen, CalendarDays, BarChart4
 } from 'lucide-react';
-import FavoriteButton from '@/components/common/FavoriteButton';
 import Breadcrumb from '@/components/common/Breadcrumb';
 import { useDateFormat } from '@/hooks/useDateFormat';
 import { Timeline } from 'vis-timeline/standalone';
@@ -1590,18 +1589,6 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
 
   const project = dashboardData.project;
 
-  // Prepare favorite data
-  const favoriteItem = {
-    id: projectId,
-    type: 'project' as const,
-    title: project.name,
-    description: project.description || '',
-    url: `/project/${projectId}/dashboard`,
-    metadata: {
-      status: project.status,
-      assignee: `${project.members} members`,
-    },
-  };
 
   // Breadcrumb navigation
 
@@ -1702,11 +1689,6 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
           </p>
         </div>
         <div className="flex gap-3">
-          <FavoriteButton 
-            item={favoriteItem}
-            showText={true}
-            className="text-sm"
-          />
           <Link
             href={`/project/${projectId}/sprint`}
             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
