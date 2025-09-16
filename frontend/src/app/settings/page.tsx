@@ -163,7 +163,6 @@ const SettingsPage = () => {
     const userData = {
       profile: JSON.parse(localStorage.getItem('user') || '{}'),
       settings: settings,
-      favorites: JSON.parse(localStorage.getItem('favorites') || '[]'),
       exportDate: new Date().toISOString(),
     };
 

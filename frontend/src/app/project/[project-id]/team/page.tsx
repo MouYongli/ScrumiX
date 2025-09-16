@@ -8,7 +8,6 @@ import {
   Calendar, Clock, CheckCircle2, UserPlus, MessageSquare, Star
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
-import FavoriteButton from '@/components/common/FavoriteButton';
 import InviteMemberModal from '@/components/common/InviteMemberModal';
 import EditMemberModal from '@/components/common/EditMemberModal';
 import DeleteMemberModal from '@/components/common/DeleteMemberModal';

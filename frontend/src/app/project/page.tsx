@@ -8,7 +8,6 @@ import {
   BarChart3, CheckCircle2, AlertCircle, Clock, Star, X
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
-import FavoriteButton from '@/components/common/FavoriteButton';
 import { useDateFormat } from '@/hooks/useDateFormat';
 
 import { ApiProject, ScrumRole } from '@/types/api';
@@ -596,17 +595,6 @@ const ProjectsPage = () => {
           {filteredProjects.map(project => {
           const statusInfo = getStatusInfo(project.status);
           const daysRemainingInfo = getDaysRemainingInfo(project);
-          const favoriteItem = {
-            id: project.id,
-            type: 'project' as const,
-            title: project.name,
-            description: project.description || '',
-            url: `/project/${project.id}/dashboard`,
-            metadata: {
-              status: project.status,
-              assignee: `${project.members} Members`,
-            },
-          };
 
           return (
             <Link
@@ -636,9 +624,6 @@ const ProjectsPage = () => {
                         )}
                       </div>
                     </div>
-                  </div>
-                  <div onClick={(e) => e.preventDefault()}>
-                    <FavoriteButton item={favoriteItem} />
                   </div>
                 </div>
 
