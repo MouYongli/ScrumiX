@@ -71,7 +71,7 @@ const CreateProjectModal = ({
 }: {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (project: Omit<Project, 'id' | 'progress' | 'tasks' | 'lastActivity'>) => void;
+  onSubmit: (project: Omit<Project, 'id' | 'progress' | 'tasks' | 'lastActivity' | 'members'>) => void;
 }) => {
   const [formData, setFormData] = useState({
     name: '',
@@ -135,7 +135,7 @@ const CreateProjectModal = ({
     e.preventDefault();
     
     if (validateForm()) {
-      onSubmit({ ...formData, members: 1 });
+      onSubmit(formData);
       // Reset form
       setFormData({
         name: '',
@@ -338,7 +338,7 @@ const ProjectsPage = () => {
         // Get projects where user is a member
         const { data, error } = await api.projects.getCurrentUserProjects();
 
-        if (error) throw new Error(error);
+        if (error || !data) throw new Error(error || 'Failed to fetch projects');
 
         // Fetch backlog items for each project to calculate progress
         const projectsWithProgress = await Promise.all(
@@ -453,7 +453,7 @@ const ProjectsPage = () => {
     }
   };
 
-  const handleCreateProject = async (newProjectData: Omit<Project, 'id' | 'progress' | 'tasks' | 'lastActivity'>) => {
+  const handleCreateProject = async (newProjectData: Omit<Project, 'id' | 'progress' | 'tasks' | 'lastActivity' | 'members'>) => {
     try {
       const { data, error } = await api.projects.create({
         name: newProjectData.name,
@@ -464,7 +464,7 @@ const ProjectsPage = () => {
         color: newProjectData.color || 'bg-blue-500'
       });
 
-      if (error) throw new Error(error);
+      if (error || !data) throw new Error(error || 'Failed to create project');
 
       // Convert API response to frontend Project format
       const newProject: Project = {
@@ -472,7 +472,7 @@ const ProjectsPage = () => {
         id: data.id.toString(),
         startDate: data.start_date || '',
         endDate: data.end_date || '',
-        lastActivity: data.last_activity_at
+        lastActivity: data.last_activity_at || new Date().toISOString()
       };
       
       setProjects(prev => [newProject, ...prev]);
