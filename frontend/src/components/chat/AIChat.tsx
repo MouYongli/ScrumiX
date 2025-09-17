@@ -165,11 +165,29 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     'developer': ''
   });
   
-  // Track the currently selected conversation for highlighting
-  const [selectedConversationIds, setSelectedConversationIds] = useState<Record<ProjectAgentType, string>>({
-    'product-owner': '',
-    'scrum-master': '',
-    'developer': ''
+  // Track the currently selected conversation for highlighting - with persistence
+  const [selectedConversationIds, setSelectedConversationIds] = useState<Record<ProjectAgentType, string>>(() => {
+    // Try to restore from localStorage on initial load
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem(`chat-selected-conversations-${projectId}`);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          return {
+            'product-owner': parsed['product-owner'] || '',
+            'scrum-master': parsed['scrum-master'] || '',
+            'developer': parsed['developer'] || ''
+          };
+        }
+      } catch (error) {
+        console.warn('Failed to restore selected conversations from localStorage:', error);
+      }
+    }
+    return {
+      'product-owner': '',
+      'scrum-master': '',
+      'developer': ''
+    };
   });
   const [agentStates, setAgentStates] = useState<Record<ProjectAgentType, AgentChatStateWithFiles>>({
     'product-owner': { 
@@ -235,6 +253,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   const productOwnerChat = useChatHistory({
     agentType: 'product-owner',
     projectId: projectId ? parseInt(projectId, 10) : null,
+    selectedConversationId: selectedConversationIds['product-owner'],
     onMessagesUpdated: (messages) => {
       // Only perform full sync during initial load
       if (initialLoadingStates['product-owner']) {
@@ -259,6 +278,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   const scrumMasterChat = useChatHistory({
     agentType: 'scrum-master',
     projectId: projectId ? parseInt(projectId, 10) : null,
+    selectedConversationId: selectedConversationIds['scrum-master'],
     onMessagesUpdated: (messages) => {
       // Only perform full sync during initial load
       if (initialLoadingStates['scrum-master']) {
@@ -283,6 +303,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   const developerChat = useChatHistory({
     agentType: 'developer',
     projectId: projectId ? parseInt(projectId, 10) : null,
+    selectedConversationId: selectedConversationIds['developer'],
     onMessagesUpdated: (messages) => {
       // Only perform full sync during initial load
       if (initialLoadingStates['developer']) {
@@ -347,8 +368,11 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
 
   // Create a new chat session
   const createNewChat = useCallback(() => {
-    // Generate a unique conversation ID for the new chat
-    const newConversationId = `${activeAgent}-${projectId || 'no-project'}-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+    // Generate a unique conversation ID using a timestamp-based approach
+    // This ensures we create a truly new conversation separate from the default one
+    const timestamp = Date.now();
+    const randomSuffix = Math.random().toString(36).substr(2, 9);
+    const newConversationId = `${activeAgent}-new-${timestamp}-${randomSuffix}`;
     
     // Clear the current agent's messages to start fresh
     updateAgentState(activeAgent, { 
@@ -473,6 +497,12 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
         [agentType]: conversationId
       }));
       
+      // Clear any pending new conversation ID since we're loading an existing one
+      setCurrentConversationIds(prev => ({
+        ...prev,
+        [agentType]: ''
+      }));
+      
       // Load the conversation and update the UI
       const chatHistory = getChatHistory(agentType);
       const backendMessages = await chatHistory.loadConversation(conversationId);
@@ -592,8 +622,12 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     // Mark as sending to prevent state conflicts
     setSendingStates(prev => ({ ...prev, [agentType]: true }));
 
-    // Use the new conversation ID if we're starting a new chat, otherwise use the existing one
-    const conversationId = currentConversationIds[agentType] || getChatHistory(agentType).conversation.id;
+    // Get the chat history instance to access its conversation ID
+    const chatHistory = getChatHistory(agentType);
+    
+    // Use the new conversation ID if we're starting a new chat, otherwise use the existing one from chatHistory
+    // This ensures we maintain conversation continuity
+    const conversationId = currentConversationIds[agentType] || chatHistory.conversation.id;
     
     // If we have a new conversation ID, we need to create the conversation first
     if (currentConversationIds[agentType]) {
@@ -609,8 +643,6 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       }
     }
 
-    const chatHistory = getChatHistory(agentType);
-    
     // Store the message content before clearing the input
     let messageContent = currentState.inputValue;
     const messageFiles = currentState.files;
@@ -715,11 +747,8 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
 
         responseStream = response.body;
         
-        // Clear the new conversation ID since we've now created the conversation
-        setCurrentConversationIds(prev => ({
-          ...prev,
-          [agentType]: ''
-        }));
+        // Update the chat history to use this conversation ID for future messages
+        // Don't clear the currentConversationIds yet - we need it for subsequent messages
       } else {
         // Use existing chat history method for ongoing conversations
         responseStream = await chatHistory.sendMessage(
@@ -969,7 +998,8 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
             [agentType]: conversationId
           }));
           
-          // Clear the currentConversationIds since the conversation is now persisted
+          // Now that the conversation is fully established and visible in the sidebar,
+          // we can clear the currentConversationIds to allow normal flow
           setCurrentConversationIds(prev => ({
             ...prev,
             [agentType]: ''
@@ -1059,10 +1089,29 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
 
   // Message updates are now handled by the useChatHistory hook callbacks
 
+  // Persist selected conversation IDs to localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(`chat-selected-conversations-${projectId}`, JSON.stringify(selectedConversationIds));
+      } catch (error) {
+        console.warn('Failed to persist selected conversations to localStorage:', error);
+      }
+    }
+  }, [selectedConversationIds, projectId]);
+
   useEffect(() => {
     setIsClient(true);
     // Load all conversations for the sidebar
     loadAllConversations();
+    
+    // If we have a selected conversation ID from localStorage, load it for each agent
+    Object.entries(selectedConversationIds).forEach(([agentType, conversationId]) => {
+      if (conversationId) {
+        console.log(`Restoring conversation ${conversationId} for ${agentType} from localStorage`);
+        // The useChatHistory hook will automatically load this conversation due to the selectedConversationId prop
+      }
+    });
   }, [loadAllConversations]);
 
   // Reload conversations when active agent changes

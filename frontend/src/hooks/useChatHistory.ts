@@ -20,11 +20,12 @@ export interface UseChatHistoryOptions {
   agentType: 'product-owner' | 'scrum-master' | 'developer';
   projectId?: number | null;
   userId?: number | null;
+  selectedConversationId?: string; // Override the default conversation ID
   onMessagesUpdated?: (messages: UIMessage[]) => void;
 }
 
 export function useChatHistory(options: UseChatHistoryOptions) {
-  const { agentType, projectId, userId, onMessagesUpdated } = options;
+  const { agentType, projectId, userId, selectedConversationId, onMessagesUpdated } = options;
   
   const [conversations, setConversations] = useState<Record<string, ChatConversation>>({});
   const [isLoading, setIsLoading] = useState(false);
@@ -40,7 +41,8 @@ export function useChatHistory(options: UseChatHistoryOptions) {
 
   // Get or create conversation for current context
   const getCurrentConversation = useCallback((): ChatConversation => {
-    const conversationId = generateConversationId(agentType, projectId, userId);
+    // Use selectedConversationId if provided, otherwise fall back to generated ID
+    const conversationId = selectedConversationId || generateConversationId(agentType, projectId, userId);
     
     if (!conversations[conversationId]) {
       const newConversation: ChatConversation = {
@@ -54,7 +56,7 @@ export function useChatHistory(options: UseChatHistoryOptions) {
     }
     
     return conversations[conversationId];
-  }, [agentType, projectId, userId, conversations, generateConversationId]);
+  }, [agentType, projectId, userId, selectedConversationId, conversations, generateConversationId]);
 
   // Load conversation history from backend API
   const loadConversation = useCallback(async (conversationId: string): Promise<UIMessage[]> => {
@@ -208,11 +210,11 @@ export function useChatHistory(options: UseChatHistoryOptions) {
     }));
   }, [getCurrentConversation]);
 
-  // Initialize conversation on mount - only run once per agent/project/user combination
+  // Initialize conversation on mount - load selected conversation or default
   useEffect(() => {
-    const conversationId = generateConversationId(agentType, projectId, userId);
+    const conversationId = selectedConversationId || generateConversationId(agentType, projectId, userId);
     loadConversation(conversationId);
-  }, [agentType, projectId, userId, generateConversationId, loadConversation]);
+  }, [agentType, projectId, userId, selectedConversationId, generateConversationId, loadConversation]);
 
   const currentConversation = getCurrentConversation();
 
