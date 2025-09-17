@@ -183,6 +183,85 @@ class ChatCRUD:
         db.commit()
         return True
 
+    def update_message(
+        self,
+        db: Session,
+        message_id: str,
+        content: str,
+        user_id: Optional[int] = None
+    ) -> Optional[ChatMessage]:
+        """Update a message's content"""
+        message = db.query(ChatMessage).filter(
+            ChatMessage.id == message_id
+        ).first()
+        
+        if not message:
+            return None
+        
+        # Get the conversation to check ownership
+        conversation = db.query(ChatConversation).filter(
+            ChatConversation.id == message.conversation_id
+        ).first()
+        
+        if not conversation:
+            return None
+            
+        # Check if user has permission to update this message
+        if user_id is not None and conversation.user_id != user_id:
+            return None
+        
+        # Update message content and text_content
+        message.parts = [{'type': 'text', 'text': content}]
+        message.text_content = content
+        
+        # Update conversation last_message_at
+        conversation.last_message_at = datetime.now()
+        
+        db.commit()
+        db.refresh(message)
+        return message
+
+    def delete_messages_after(
+        self,
+        db: Session,
+        conversation_id: str,
+        after_message_id: str,
+        user_id: Optional[int] = None
+    ) -> bool:
+        """Delete all messages after a specific message in a conversation"""
+        # Get the conversation to check ownership
+        conversation = db.query(ChatConversation).filter(
+            ChatConversation.id == conversation_id
+        ).first()
+        
+        if not conversation:
+            return False
+            
+        # Check if user has permission to modify this conversation
+        if user_id is not None and conversation.user_id != user_id:
+            return False
+        
+        # Get the reference message to find its creation time
+        reference_message = db.query(ChatMessage).filter(
+            ChatMessage.id == after_message_id,
+            ChatMessage.conversation_id == conversation_id
+        ).first()
+        
+        if not reference_message:
+            return False
+        
+        # Delete all messages created after the reference message
+        deleted_count = db.query(ChatMessage).filter(
+            ChatMessage.conversation_id == conversation_id,
+            ChatMessage.created_at > reference_message.created_at
+        ).delete()
+        
+        # Update conversation metadata
+        conversation.last_message_at = datetime.now()
+        
+        db.commit()
+        return True
+
     def update_conversation(
         self,
         db: Session,

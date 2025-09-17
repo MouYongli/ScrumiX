@@ -477,6 +477,378 @@ const agendaManagementSchema = z.object({
 });
 
 /**
+ * Schema for meeting management (CRUD operations)
+ */
+const meetingManagementSchema = z.object({
+  operation: z.enum(['create', 'read', 'update', 'delete', 'list'])
+    .describe('The CRUD operation to perform on meetings'),
+  
+  meeting_id: z.number()
+    .int('Meeting ID must be a whole number')
+    .positive('Meeting ID must be a positive integer')
+    .optional()
+    .describe('The ID of the meeting (required for read, update, delete operations)'),
+  
+  project_id: z.number()
+    .int('Project ID must be a whole number')
+    .positive('Project ID must be a positive integer')
+    .optional()
+    .describe('The ID of the project (auto-detected if not provided)'),
+  
+  title: z.string()
+    .min(1, 'Title cannot be empty')
+    .max(500, 'Title must be 500 characters or less')
+    .optional()
+    .describe('The title of the meeting'),
+  
+  meeting_type: z.enum(['sprint_planning', 'daily_standup', 'sprint_review', 'sprint_retrospective', 'other'])
+    .optional()
+    .describe('Type of meeting'),
+  
+  start_datetime: z.string()
+    .optional()
+    .describe('Start date and time in ISO format (e.g., 2024-01-15T10:00:00Z)'),
+  
+  duration: z.number()
+    .int('Duration must be a whole number')
+    .min(15, 'Duration must be at least 15 minutes')
+    .max(480, 'Duration cannot exceed 8 hours')
+    .optional()
+    .describe('Duration of the meeting in minutes'),
+  
+  location: z.string()
+    .max(500, 'Location must be 500 characters or less')
+    .optional()
+    .describe('Meeting location (physical or virtual link)'),
+  
+  description: z.string()
+    .max(2000, 'Description must be 2000 characters or less')
+    .optional()
+    .describe('Meeting description or agenda notes'),
+  
+  sprint_id: z.number()
+    .int('Sprint ID must be a whole number')
+    .positive('Sprint ID must be a positive integer')
+    .optional()
+    .describe('The ID of the associated sprint'),
+  
+  search_term: z.string()
+    .optional()
+    .describe('Search term for filtering meetings (used with list operation)'),
+  
+  limit: z.number()
+    .int('Limit must be a whole number')
+    .positive('Limit must be positive')
+    .max(100)
+    .default(20)
+    .describe('Maximum number of meetings to return (for list operation)'),
+  
+  date_from: z.string()
+    .optional()
+    .describe('Filter meetings from this date (ISO format, for list operation)'),
+  
+  date_to: z.string()
+    .optional()
+    .describe('Filter meetings to this date (ISO format, for list operation)')
+});
+
+/**
+ * Tool for comprehensive meeting management (CRUD operations)
+ */
+export const manageMeetingsTool = tool({
+  description: `Comprehensive meeting management with full CRUD operations. Create new meetings, review existing meetings, 
+    edit meeting details, delete meetings, and list meetings with filtering. This tool provides complete meeting 
+    lifecycle management for the Scrum Master.`,
+  inputSchema: meetingManagementSchema,
+  execute: async (input, { experimental_context }) => {
+    try {
+      const validated = meetingManagementSchema.parse(input);
+      
+      // Auto-detect project if not provided and needed
+      let projectId = validated.project_id;
+      let projectName = '';
+      
+      if (!projectId && ['create', 'list'].includes(validated.operation)) {
+        const projectContext = await getCurrentProjectContext(experimental_context);
+        if (projectContext) {
+          projectId = projectContext.project_id;
+          projectName = projectContext.project_name;
+        }
+      }
+
+      console.log('Managing meeting:', validated.operation, validated.meeting_id || 'new');
+
+      switch (validated.operation) {
+        case 'create':
+          if (!validated.title || !validated.start_datetime) {
+            return `Please provide both 'title' and 'start_datetime' for creating a meeting.`;
+          }
+
+          if (!projectId) {
+            return `Unable to determine project context. Please provide a project_id.`;
+          }
+
+          // Get timezone info for proper datetime handling
+          const timezoneInfo = await getUserTimezoneAndFormatDatetime(
+            validated.start_datetime, 
+            experimental_context
+          );
+
+          const createData = {
+            title: validated.title,
+            meeting_type: validated.meeting_type || 'other',
+            start_datetime: timezoneInfo.formattedDatetime,
+            duration: validated.duration || 60,
+            location: validated.location || '',
+            description: validated.description || '',
+            project_id: projectId,
+            sprint_id: validated.sprint_id
+          };
+
+          const createResponse = await makeAuthenticatedRequest(
+            '/meetings/',
+            {
+              method: 'POST',
+              body: JSON.stringify(createData)
+            },
+            experimental_context
+          );
+
+          if (createResponse.error) {
+            return `Failed to create meeting: ${createResponse.error}`;
+          }
+
+          const createdMeeting = createResponse.data;
+          return `Successfully created meeting: "${validated.title}"
+
+**Meeting Details:**
+- **ID:** #${createdMeeting.id}
+- **Type:** ${validated.meeting_type || 'Other'}
+- **Date & Time:** ${timezoneInfo.displayDateTime}
+- **Duration:** ${validated.duration || 60} minutes
+- **Location:** ${validated.location || 'Not specified'}
+- **Project:** ${projectName || 'Current Project'}
+${validated.sprint_id ? `- **Sprint ID:** ${validated.sprint_id}` : ''}
+
+The meeting has been added to the project calendar.`;
+
+        case 'read':
+          if (!validated.meeting_id) {
+            return `Please provide 'meeting_id' for reading meeting details.`;
+          }
+
+          const readResponse = await makeAuthenticatedRequest(
+            `/meetings/${validated.meeting_id}`,
+            { method: 'GET' },
+            experimental_context
+          );
+
+          if (readResponse.error) {
+            return `Failed to retrieve meeting: ${readResponse.error}`;
+          }
+
+          const meeting = readResponse.data;
+          
+          // Handle different field name formats from API
+          const meetingStartDateTime = meeting.start_datetime || meeting.startDatetime || meeting.startDateTime;
+          const meetingTypeFormatted = meeting.meeting_type || meeting.meetingType || 'other';
+          const meetingProjectId = meeting.project_id || meeting.projectId;
+          const meetingSprintId = meeting.sprint_id || meeting.sprintId;
+          const meetingCreatedAt = meeting.created_at || meeting.createdAt;
+          const meetingUpdatedAt = meeting.updated_at || meeting.updatedAt;
+          
+          const meetingDate = new Date(meetingStartDateTime);
+          
+          // Get participants
+          const participantsResponse = await makeAuthenticatedRequest(
+            `/meeting-participants/meeting/${validated.meeting_id}`,
+            { method: 'GET' },
+            experimental_context
+          );
+
+          const participants = participantsResponse.data || [];
+          const participantsList = participants.length > 0 
+            ? participants.map((p: any) => p.full_name || p.external_name || 'Unknown').join(', ')
+            : 'No participants assigned';
+
+          return `# Meeting Details - ${meeting.title}
+
+**Basic Information:**
+- **Meeting ID:** #${meeting.id}
+- **Type:** ${meetingTypeFormatted}
+- **Date & Time:** ${meetingDate.toLocaleString()}
+- **Duration:** ${meeting.duration} minutes
+- **Location:** ${meeting.location || 'Not specified'}
+- **Status:** ${meeting.status || 'Scheduled'}
+
+**Project Information:**
+- **Project ID:** ${meetingProjectId}
+${meetingSprintId ? `- **Sprint ID:** ${meetingSprintId}` : ''}
+
+**Participants:** ${participantsList}
+
+**Description:**
+${meeting.description || 'No description provided'}
+
+**Created:** ${meetingCreatedAt ? new Date(meetingCreatedAt).toLocaleString() : 'Unknown'}
+**Last Updated:** ${meetingUpdatedAt ? new Date(meetingUpdatedAt).toLocaleString() : 'Unknown'}`;
+
+        case 'update':
+          if (!validated.meeting_id) {
+            return `Please provide 'meeting_id' for updating a meeting.`;
+          }
+
+          const updateData: any = {};
+          if (validated.title !== undefined) updateData.title = validated.title;
+          if (validated.meeting_type !== undefined) updateData.meeting_type = validated.meeting_type;
+          if (validated.duration !== undefined) updateData.duration = validated.duration;
+          if (validated.location !== undefined) updateData.location = validated.location;
+          if (validated.description !== undefined) updateData.description = validated.description;
+          if (validated.sprint_id !== undefined) updateData.sprint_id = validated.sprint_id;
+
+          // Handle datetime update with timezone conversion
+          if (validated.start_datetime) {
+            const updateTimezoneInfo = await getUserTimezoneAndFormatDatetime(
+              validated.start_datetime, 
+              experimental_context
+            );
+            updateData.start_datetime = updateTimezoneInfo.formattedDatetime;
+          }
+
+          if (Object.keys(updateData).length === 0) {
+            return `No updates provided. Please specify at least one field to update.`;
+          }
+
+          const updateResponse = await makeAuthenticatedRequest(
+            `/meetings/${validated.meeting_id}`,
+            {
+              method: 'PUT',
+              body: JSON.stringify(updateData)
+            },
+            experimental_context
+          );
+
+          if (updateResponse.error) {
+            return `Failed to update meeting: ${updateResponse.error}`;
+          }
+
+          const updatedFields = Object.keys(updateData).join(', ');
+          return `Successfully updated meeting #${validated.meeting_id}
+
+**Updated Fields:** ${updatedFields}
+
+The meeting details have been saved and participants will see the updated information.`;
+
+        case 'delete':
+          if (!validated.meeting_id) {
+            return `Please provide 'meeting_id' for deleting a meeting.`;
+          }
+
+          // Get meeting details first for confirmation
+          const meetingToDeleteResponse = await makeAuthenticatedRequest(
+            `/meetings/${validated.meeting_id}`,
+            { method: 'GET' },
+            experimental_context
+          );
+
+          if (meetingToDeleteResponse.error) {
+            return `Failed to find meeting to delete: ${meetingToDeleteResponse.error}`;
+          }
+
+          const meetingToDelete = meetingToDeleteResponse.data;
+          
+          // Handle different field name formats from API
+          const deleteStartDateTime = meetingToDelete.start_datetime || meetingToDelete.startDatetime || meetingToDelete.startDateTime;
+          const deleteMeetingType = meetingToDelete.meeting_type || meetingToDelete.meetingType || 'other';
+          
+          const deleteResponse = await makeAuthenticatedRequest(
+            `/meetings/${validated.meeting_id}`,
+            { method: 'DELETE' },
+            experimental_context
+          );
+
+          if (deleteResponse.error) {
+            return `Failed to delete meeting: ${deleteResponse.error}`;
+          }
+
+          return `Successfully deleted meeting: "${meetingToDelete.title}"
+
+**Deleted Meeting Details:**
+- **Meeting ID:** #${validated.meeting_id}
+- **Type:** ${deleteMeetingType}
+- **Date:** ${new Date(deleteStartDateTime).toLocaleDateString()}
+
+⚠️ **Note:** This action cannot be undone. All associated agenda items, action items, and notes have also been removed.`;
+
+        case 'list':
+          // Build query parameters
+          const queryParams = new URLSearchParams();
+          if (projectId) queryParams.append('project_id', projectId.toString());
+          if (validated.search_term) queryParams.append('search', validated.search_term);
+          if (validated.date_from) queryParams.append('date_from', validated.date_from);
+          if (validated.date_to) queryParams.append('date_to', validated.date_to);
+          if (validated.meeting_type) queryParams.append('meeting_type', validated.meeting_type);
+          queryParams.append('limit', validated.limit.toString());
+
+          const listResponse = await makeAuthenticatedRequest(
+            `/meetings/?${queryParams.toString()}`,
+            { method: 'GET' },
+            experimental_context
+          );
+
+          if (listResponse.error) {
+            return `Failed to retrieve meetings: ${listResponse.error}`;
+          }
+
+          const meetings = listResponse.data?.meetings || [];
+          
+          if (meetings.length === 0) {
+            return `No meetings found matching the specified criteria.${projectName ? ` (Project: ${projectName})` : ''}`;
+          }
+
+          const meetingsList = meetings.map((m: any, index: number) => {
+            // Handle different field name formats from API
+            const listStartDateTime = m.start_datetime || m.startDatetime || m.startDateTime;
+            const listMeetingType = m.meeting_type || m.meetingType || 'other';
+            
+            const mDate = new Date(listStartDateTime);
+            const typeDisplay = listMeetingType.replace('_', ' ').split(' ')
+              .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1))
+              .join(' ');
+            
+            return `${index + 1}. **${m.title}** (ID: #${m.id})
+   - **Type:** ${typeDisplay}
+   - **Date:** ${mDate.toLocaleDateString()} at ${mDate.toLocaleTimeString()}
+   - **Duration:** ${m.duration} minutes
+   - **Location:** ${m.location || 'Not specified'}`;
+          }).join('\n\n');
+
+          return `# Meetings List${projectName ? ` - ${projectName}` : ''}
+
+Found ${meetings.length} meeting${meetings.length === 1 ? '' : 's'}:
+
+${meetingsList}
+
+**Filters Applied:**
+${validated.search_term ? `- Search: "${validated.search_term}"` : ''}
+${validated.meeting_type ? `- Type: ${validated.meeting_type}` : ''}
+${validated.date_from ? `- From: ${new Date(validated.date_from).toLocaleDateString()}` : ''}
+${validated.date_to ? `- To: ${new Date(validated.date_to).toLocaleDateString()}` : ''}
+
+Use the meeting ID to read, update, or delete specific meetings.`;
+
+        default:
+          return `Unknown operation: ${validated.operation}`;
+      }
+
+    } catch (error) {
+      console.error('Error in manageMeetingsTool:', error);
+      return `Failed to manage meeting: ${error instanceof Error ? error.message : 'Unknown error occurred'}`;
+    }
+  }
+});
+
+/**
  * Schema for meeting action item management
  */
 const actionItemManagementSchema = z.object({
@@ -2991,6 +3363,7 @@ export const scrumMasterTools = {
   getSprintInfo: getSprintInfoTool,
   analyzeSprintHealth: analyzeSprintHealthTool,
   scheduleEvent: scheduleEventTool,
+  manageMeetings: manageMeetingsTool,
   analyzeVelocity: analyzeVelocityTool,
   analyzeBurndown: analyzeBurndownTool,
   analyzeCurrentSprintVelocity: analyzeCurrentSprintVelocityTool,

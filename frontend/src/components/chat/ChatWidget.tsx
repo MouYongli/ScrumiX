@@ -39,11 +39,11 @@ const AGENTS: Record<ProjectAgentType, ProjectAgent> = {
   'product-owner': {
     id: 'product-owner',
     name: 'Product Owner',
-    description: 'Helps with backlog management, user stories, and product vision',
+    description: 'Helps with backlog management, user stories, product vision, and backlog item updates',
     icon: 'User',
     color: 'bg-emerald-500',
     accentColor: 'text-emerald-600 dark:text-emerald-400',
-    expertise: ['User Stories', 'Backlog Prioritization', 'Acceptance Criteria', 'Stakeholder Management'],
+    expertise: ['User Stories', 'Backlog Prioritization', 'Acceptance Criteria', 'Stakeholder Management', 'Backlog Updates'],
     defaultModel: getAgentModelConfig('product-owner').model
   },
   'scrum-master': {
@@ -435,30 +435,44 @@ const ChatWidget: React.FC = () => {
     
     if (messageIndex === -1) return;
 
-    // Create updated message
-    const updatedMessage: ChatMessage = {
-      ...currentState.messages[messageIndex],
-      content: editingContent.trim(),
-      timestamp: new Date().toISOString()
-    };
+    try {
+      // Update the existing message in backend
+      await chatAPI.updateMessage(messageId, editingContent.trim());
 
-    // Remove all messages after the edited one (including agent responses)
-    const messagesUpToEdit = currentState.messages.slice(0, messageIndex);
-    const updatedMessages = [...messagesUpToEdit, updatedMessage];
+      // Delete all messages after this one in backend
+      if (currentConversationId) {
+        await chatAPI.deleteMessagesAfter(currentConversationId, messageId);
+      }
 
-    // Update state with edited message and removed subsequent messages
-    updateAgentState(activeAgent, {
-      messages: updatedMessages,
-      isTyping: true,
-      loadingState: webSearchEnabled ? 'searching' : 'thinking'
-    });
+      // Create updated message
+      const updatedMessage: ChatMessage = {
+        ...currentState.messages[messageIndex],
+        content: editingContent.trim(),
+        timestamp: new Date().toISOString()
+      };
 
-    // Clear editing state
-    setEditingMessageId(null);
-    setEditingContent('');
+      // Remove all messages after the edited one (including agent responses)
+      const messagesUpToEdit = currentState.messages.slice(0, messageIndex);
+      const updatedMessages = [...messagesUpToEdit, updatedMessage];
 
-    // Regenerate conversation from the edited message
-    await regenerateConversationFromMessage(updatedMessages, updatedMessage);
+      // Update state with edited message and removed subsequent messages
+      updateAgentState(activeAgent, {
+        messages: updatedMessages,
+        isTyping: true,
+        loadingState: webSearchEnabled ? 'searching' : 'thinking'
+      });
+
+      // Clear editing state
+      setEditingMessageId(null);
+      setEditingContent('');
+
+      // Regenerate conversation from the edited message
+      await regenerateConversationFromMessage(updatedMessages, updatedMessage);
+    } catch (error) {
+      console.error('Failed to save edited message:', error);
+      // Show error to user but don't clear editing state
+      alert('Failed to save edited message. Please try again.');
+    }
   };
 
   const regenerateConversationFromMessage = async (messages: ChatMessage[], editedMessage: ChatMessage) => {
@@ -488,11 +502,12 @@ const ChatWidget: React.FC = () => {
         });
       }
 
-      const userUIMessage: UIMessage = {
-        id: editedMessage.id,
-        role: 'user',
-        parts: [{ type: 'text', text: editedMessage.content }]
-      };
+      // Prepare messages for API (using legacy format for regeneration)
+      // This avoids duplicate message saves since we handle persistence manually
+      const apiMessages = messages.map(msg => ({
+        role: msg.sender === 'user' ? 'user' : 'assistant',
+        content: msg.content
+      }));
 
       const response = await fetch(apiEndpoint, {
         method: 'POST',
@@ -501,8 +516,7 @@ const ChatWidget: React.FC = () => {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          id: conversationId,
-          message: userUIMessage,
+          messages: apiMessages,
           projectId: projectId ? parseInt(projectId, 10) : null,
           selectedModel: currentState.selectedModel,
           webSearchEnabled
@@ -599,8 +613,56 @@ const ChatWidget: React.FC = () => {
       } catch (streamError) {
         // Handle streaming errors (including aborts)
         if (streamError instanceof Error && streamError.name === 'AbortError') {
-          console.log('Stream aborted by user');
-          return; // Don't update state on abort, preserve current state
+          console.log('Stream aborted by user, preserving partial response');
+          
+          // If we have any partial response, preserve it and save to database
+          if (aiResponse.trim()) {
+            const partialMessage: ChatMessage = {
+              id: messageId,
+              content: aiResponse.trim(),
+              timestamp: new Date().toISOString(),
+              sender: 'agent',
+              agentType: activeAgent
+            };
+
+            // Update with the partial response
+            updateAgentState(activeAgent, {
+              messages: [...messages, partialMessage],
+              isTyping: false,
+              loadingState: undefined,
+              currentTool: undefined,
+              isStreaming: false,
+              abortController: undefined
+            });
+
+            // Save the interrupted partial response to database
+            // Note: For regeneration with legacy format, we need to manually save partial responses
+            try {
+              if (conversationId) {
+                await chatAPI.saveMessage(conversationId, {
+                  id: messageId,
+                  role: 'assistant',
+                  parts: [{ type: 'text', text: aiResponse.trim() }]
+                });
+                
+                console.log(`Saved interrupted AI response (${aiResponse.trim().length} chars) to database`);
+              }
+            } catch (saveError) {
+              console.error('Failed to save interrupted AI response to backend:', saveError);
+              // Don't show error to user for this, as the message is visible in UI
+            }
+          } else {
+            // No partial response, just clean up state
+            updateAgentState(activeAgent, {
+              isTyping: false,
+              loadingState: undefined,
+              currentTool: undefined,
+              isStreaming: false,
+              abortController: undefined
+            });
+          }
+          
+          return; // Don't throw the error further, we've handled it
         }
         throw streamError;
       }
@@ -628,6 +690,20 @@ const ChatWidget: React.FC = () => {
         loadingState: undefined,
         currentTool: undefined
       });
+
+      // Save the final complete AI response to backend (using legacy format requires manual save)
+      try {
+        if (conversationId) {
+          await chatAPI.saveMessage(conversationId, {
+            id: finalAiMessage.id,
+            role: 'assistant',
+            parts: [{ type: 'text', text: aiResponse }]
+          });
+        }
+      } catch (saveError) {
+        console.error('Failed to save AI response to backend:', saveError);
+        // Don't show error to user for this, as the message is visible in UI
+      }
 
     } catch (error) {
       console.error('Failed to regenerate conversation:', error);
@@ -1059,7 +1135,27 @@ const ChatWidget: React.FC = () => {
       } catch (streamError) {
         // Handle streaming errors (including aborts)
         if (streamError instanceof Error && streamError.name === 'AbortError') {
-          console.log('Stream aborted by user');
+          console.log('Stream aborted by user, preserving partial response');
+          
+          // If we have any partial response, save it to database
+          // Note: For new persistent format, the API route handles persistence automatically
+          // via the onFinish callback, but when aborted, onFinish doesn't run
+          // So we need to manually save the partial response
+          if (aiResponse.trim()) {
+            try {
+              await chatAPI.saveMessage(conversationId, {
+                id: messageId,
+                role: 'assistant',
+                parts: [{ type: 'text', text: aiResponse.trim() }]
+              });
+              
+              console.log(`Saved interrupted AI response (${aiResponse.trim().length} chars) to database`);
+            } catch (saveError) {
+              console.error('Failed to save interrupted AI response to backend:', saveError);
+              // Don't show error to user for this, as the message is visible in UI
+            }
+          }
+          
           return; // Don't update state on abort, preserve current state
         }
         throw streamError;
@@ -1338,8 +1434,14 @@ const ChatWidget: React.FC = () => {
                               {/* Scrollable Chat List - Fixed height showing ~5 chats */}
                               <div className="max-h-[280px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent hover:scrollbar-thumb-gray-400 dark:hover:scrollbar-thumb-gray-500">
                                 <div className="divide-y divide-gray-100 dark:divide-gray-700">
-                                  {recentChats.map((chat) => (
-                                    <div key={chat.id} className="w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                                  {recentChats.map((chat) => {
+                                    const isSelected = chat.id === currentConversationId;
+                                    return (
+                                    <div key={chat.id} className={`w-full p-3 transition-colors ${
+                                      isSelected 
+                                        ? 'bg-blue-50 dark:bg-blue-900/30 border-l-4 border-l-blue-500 dark:border-l-blue-400' 
+                                        : 'hover:bg-gray-50 dark:hover:bg-gray-700'
+                                    }`}>
                                       {renamingChatId === chat.id ? (
                                         <div className="flex items-center space-x-2">
                                           <input
@@ -1399,7 +1501,8 @@ const ChatWidget: React.FC = () => {
                                         </div>
                                       )}
                                     </div>
-                                  ))}
+                                    );
+                                  })}
                                 </div>
                               </div>
                             </>

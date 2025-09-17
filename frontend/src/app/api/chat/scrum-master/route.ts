@@ -71,6 +71,7 @@ DOCUMENTATION SUMMARIZATION:
 Available Tools:
 - getSprintInfo: Access current sprint information and automatically detect active sprint with ID, name, dates, and status - use this first to get sprint context
 - scheduleEvent: Schedule Scrum ceremonies with automatic project/sprint detection, participant management, recurring meetings, and timezone handling
+- manageMeetings: Complete meeting lifecycle management with CRUD operations (create, read, update, delete, list) - create new meetings, review existing meetings, edit meeting details, delete meetings, and list meetings with filtering
 - analyzeSprintHealth: Analyze current sprint progress and detect issues
 - analyzeVelocity: Track team velocity across ALL completed sprints (up to 50), calculate averages, and provide capacity planning forecasts with comprehensive historical trend analysis
 - analyzeBurndown: Automatically analyze the current active sprint's burndown chart (call with NO parameters - auto-detects active sprint), compare actual vs ideal progress, detect spikes/plateaus/blockers, and assess whether team is ahead/behind schedule
@@ -238,11 +239,21 @@ export async function POST(req: Request) {
         .filter((p: any) => p.type === 'text' && (p.text ?? '').trim())
         .map((p: any) => ({ type: 'text', text: p.text }));
       
+      // Ensure we have at least one text part (fallback for empty messages)
+      if (userPartsForDB.length === 0) {
+        userPartsForDB.push({ type: 'text', text: 'Hello' });
+      }
+      
       // Save the incoming user message via backend API (text-only). Do this ONCE per request.
       const savedMessage = await chatAPI.saveMessage(conversationId, {
         role: 'user',
         parts: userPartsForDB as any
       }, cookies);
+
+      // Ensure userPartsForModel also has at least one part
+      if (!userPartsForModel || userPartsForModel.length === 0) {
+        userPartsForModel = [{ type: 'text', text: 'Hello' }];
+      }
 
       // Combine history with new message for model context
       const allMessages = [...history, { id: savedMessage.id || message.id, role: 'user', parts: userPartsForModel } satisfies UIMessage];
@@ -267,6 +278,7 @@ export async function POST(req: Request) {
           getSprintInfo: scrumMasterTools.getSprintInfo,
           analyzeSprintHealth: scrumMasterTools.analyzeSprintHealth,
           scheduleEvent: scrumMasterTools.scheduleEvent,
+          manageMeetings: scrumMasterTools.manageMeetings,
           analyzeVelocity: scrumMasterTools.analyzeVelocity,
           analyzeBurndown: scrumMasterTools.analyzeBurndown,
           analyzeCurrentSprintVelocity: scrumMasterTools.analyzeCurrentSprintVelocity,
@@ -347,6 +359,7 @@ export async function POST(req: Request) {
           getSprintInfo: scrumMasterTools.getSprintInfo,
           analyzeSprintHealth: scrumMasterTools.analyzeSprintHealth,
           scheduleEvent: scrumMasterTools.scheduleEvent,
+          manageMeetings: scrumMasterTools.manageMeetings,
           analyzeVelocity: scrumMasterTools.analyzeVelocity,
           analyzeBurndown: scrumMasterTools.analyzeBurndown,
           analyzeCurrentSprintVelocity: scrumMasterTools.analyzeCurrentSprintVelocity,
