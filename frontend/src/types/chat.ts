@@ -61,4 +61,6 @@ export interface AgentChatState {
   isTyping: boolean;
   inputValue: string;
   selectedModel?: string;
+  isStreaming?: boolean;
+  abortController?: AbortController;
 }

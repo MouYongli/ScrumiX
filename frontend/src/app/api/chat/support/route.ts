@@ -122,6 +122,7 @@ export async function POST(req: Request) {
       temperature: modelConfig.temperature,
       toolChoice: 'auto',
       stopWhen: stepCountIs(20),
+      abortSignal: req.signal,
     });
 
     return result.toTextStreamResponse();
