@@ -145,3 +145,4 @@ self._recalculate_sprint_velocity(db, backlog.sprint_id)
 - ✅ **Frontend integration** unchanged
 
 This fix ensures that velocity calculations always use the most recent story point values, eliminating the race condition and providing users with accurate, real-time sprint metrics.
+

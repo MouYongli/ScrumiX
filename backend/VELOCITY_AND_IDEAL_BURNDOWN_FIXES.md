@@ -208,3 +208,4 @@ if (chartData.dates.length > 1) {
 4. ✅ Long sprint (3+ weeks) → Consistent weekend handling
 
 This implementation ensures accurate velocity tracking and realistic burndown projections, bringing the system in line with professional Scrum tool standards.
+

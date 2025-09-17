@@ -2241,7 +2241,8 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
   const getTodayCompletedPoints = () => {
     if (!burndownData.length) return 0;
     
-    const today = new Date().toISOString().split('T')[0];
+    // Use local date instead of UTC date
+    const today = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD format in local timezone
     const todayData = burndownData.find(data => data.date === today);
     
     return todayData ? (todayData.completedPoints || 0) : 0;
@@ -2306,15 +2307,20 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
   const getCurrentDayIndex = () => {
     if (!sprint || !sprint.start_date || !sprint.end_date) return 0;
     
-    const start = new Date(sprint.start_date);
-    const end = new Date(sprint.end_date);
-    const today = new Date();
+    // Use string-based date comparison to avoid timezone issues
+    const startDateStr = sprint.start_date.split('T')[0]; // Get YYYY-MM-DD part
+    const endDateStr = sprint.end_date.split('T')[0];
+    const todayStr = new Date().toLocaleDateString('en-CA'); // Local date in YYYY-MM-DD format
     
-    if (today < start) return 0; // Before sprint start (Day 0)
+    const startDate = new Date(startDateStr + 'T00:00:00'); // Parse as local date
+    const endDate = new Date(endDateStr + 'T00:00:00');
+    const todayDate = new Date(todayStr + 'T00:00:00');
+    
+    if (todayDate < startDate) return 0; // Before sprint start (Day 0)
     
     // Calculate total days elapsed (including weekends)
-    const daysDiff = Math.floor((today.getTime() - start.getTime()) / (1000 * 60 * 60 * 24));
-    const totalSprintDays = Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    const daysDiff = Math.floor((todayDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    const totalSprintDays = Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
     
     // Return the array index: Day 0 = index 0, Day 1 = index 1, etc.
     // Add 1 to account for Day 0 being at index 0
@@ -3705,7 +3711,7 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                         points={burndownData
                           .filter((data, index) => {
                             const currentDayIndex = getCurrentDayIndex();
-                            const today = new Date().toISOString().split('T')[0];
+                            const today = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD format in local timezone
                             // Show points for days up to and including today or days with actual completions
                             return index <= currentDayIndex || data.date <= today || data.completedPoints > 0;
                           })
@@ -3722,7 +3728,7 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                       {/* Data points */}
                       {burndownData.map((data, index) => {
                         const currentDayIndex = getCurrentDayIndex();
-                        const today = new Date().toISOString().split('T')[0];
+                        const today = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD format in local timezone
                         const shouldShowActualPoint = index <= currentDayIndex || data.date <= today || data.completedPoints > 0;
                         
                         return (
@@ -3814,7 +3820,7 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
 
                        // Use burndown data to create daily progress breakdown for each day of the sprint
                        // This now uses the enhanced backend data that includes all sprint days
-                       const today = new Date().toISOString().split('T')[0]; // Get today's date in YYYY-MM-DD format
+                       const today = new Date().toLocaleDateString('en-CA'); // Get today's date in YYYY-MM-DD format in local timezone
                        
                        // Filter out future days - only show days up to today (but always include Day 0)
                        const pastAndCurrentDays = burndownData.filter(dayData => dayData.day === 0 || dayData.date <= today);
