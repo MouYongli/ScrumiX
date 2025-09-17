@@ -911,6 +911,26 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                 }
               };
             });
+
+            // Save the interrupted partial response to database
+            // Note: For sendPersistentMessage, the API route handles persistence automatically
+            // via the onFinish callback, but when aborted, onFinish doesn't run
+            // So we need to manually save the partial response
+            try {
+              const chatHistory = getChatHistory(agentType);
+              const conversationId = selectedConversationIds[agentType] || chatHistory.conversation.id;
+              
+              await chatAPI.saveMessage(conversationId, {
+                id: messageId,
+                role: 'assistant',
+                parts: [{ type: 'text', text: aiResponse.trim() }]
+              });
+              
+              console.log(`Saved interrupted AI response (${aiResponse.trim().length} chars) to database`);
+            } catch (saveError) {
+              console.error('Failed to save interrupted AI response to backend:', saveError);
+              // Don't show error to user for this, as the message is visible in UI
+            }
           } else {
             // No partial response, just clean up state
             updateAgentState(agentType, {
@@ -2193,6 +2213,23 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                 }
               };
             });
+
+            // Save the interrupted partial response to database
+            try {
+              const chatHistory = getChatHistory(agentType);
+              const conversationId = selectedConversationIds[agentType] || chatHistory.conversation.id;
+              
+              await chatAPI.saveMessage(conversationId, {
+                id: messageId,
+                role: 'assistant',
+                parts: [{ type: 'text', text: aiResponse.trim() }]
+              });
+              
+              console.log(`Saved interrupted AI response (${aiResponse.trim().length} chars) to database`);
+            } catch (saveError) {
+              console.error('Failed to save interrupted AI response to backend:', saveError);
+              // Don't show error to user for this, as the message is visible in UI
+            }
           } else {
             // No partial response, just clean up state
             updateAgentState(agentType, {
