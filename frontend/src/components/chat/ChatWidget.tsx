@@ -17,14 +17,14 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Agent, AgentType, ChatMessage, AgentChatState } from '@/types/chat';
+import { ProjectAgent, ProjectAgentType, ChatMessage, AgentChatState } from '@/types/chat';
 import { getAgentModelConfig, AI_MODELS } from '@/lib/ai-gateway';
 import { getPreferredModel, setPreferredModel } from '@/lib/model-preferences';
 import { hasNativeWebSearch } from '@/lib/tools/web-search';
 import ModelSelector from './ModelSelector';
 
 // Agent definitions with Scrum-specific roles
-const AGENTS: Record<AgentType, Agent> = {
+const AGENTS: Record<ProjectAgentType, ProjectAgent> = {
   'product-owner': {
     id: 'product-owner',
     name: 'Product Owner',
@@ -57,7 +57,7 @@ const AGENTS: Record<AgentType, Agent> = {
   }
 };
 
-const getAgentIcon = (agentType: AgentType) => {
+const getAgentIcon = (agentType: ProjectAgentType) => {
   switch (agentType) {
     case 'product-owner':
       return User;
@@ -72,10 +72,10 @@ const getAgentIcon = (agentType: AgentType) => {
 
 const ChatWidget: React.FC = () => {
   const [isOpen, setIsOpen] = useState(false);
-  const [activeAgent, setActiveAgent] = useState<AgentType>('product-owner');
+  const [activeAgent, setActiveAgent] = useState<ProjectAgentType>('product-owner');
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [showPlusDropdown, setShowPlusDropdown] = useState(false);
-  const [agentStates, setAgentStates] = useState<Record<AgentType, AgentChatState>>({
+  const [agentStates, setAgentStates] = useState<Record<ProjectAgentType, AgentChatState>>({
     'product-owner': { 
       messages: [], 
       isTyping: false, 
@@ -108,7 +108,7 @@ const ChatWidget: React.FC = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   };
 
-  const updateAgentState = (agentType: AgentType, updates: Partial<AgentChatState>) => {
+  const updateAgentState = (agentType: ProjectAgentType, updates: Partial<AgentChatState>) => {
     setAgentStates(prev => ({
       ...prev,
       [agentType]: { ...prev[agentType], ...updates }
@@ -154,10 +154,10 @@ const ChatWidget: React.FC = () => {
     
     // Clear chat history for all agents
     setAgentStates(prev => {
-      const clearedStates: Record<AgentType, AgentChatState> = {} as Record<AgentType, AgentChatState>;
+      const clearedStates: Record<ProjectAgentType, AgentChatState> = {} as Record<ProjectAgentType, AgentChatState>;
       
       Object.keys(prev).forEach(agentType => {
-        const agent = agentType as AgentType;
+        const agent = agentType as ProjectAgentType;
         clearedStates[agent] = {
           ...prev[agent],
           messages: [],
@@ -174,7 +174,7 @@ const ChatWidget: React.FC = () => {
     setIsMinimized(!isMinimized);
   };
 
-  const switchAgent = (agentType: AgentType) => {
+  const switchAgent = (agentType: ProjectAgentType) => {
     setActiveAgent(agentType);
   };
 

@@ -108,6 +108,11 @@ export const AGENT_MODEL_CONFIG = {
     model: AI_MODELS.CHAT,
     temperature: 0.3,
     description: 'Balanced for technical guidance and implementation support'
+  },
+  'support': {
+    model: AI_MODELS.GEMINI_FLASH,
+    temperature: 0.7,
+    description: 'Optimized for helpful and conversational support assistance'
   }
 } as const;
 
