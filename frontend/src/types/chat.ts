@@ -63,4 +63,8 @@ export interface AgentChatState {
   selectedModel?: string;
   isStreaming?: boolean;
   abortController?: AbortController;
+  loadingState?: 'thinking' | 'searching' | 'tool-call' | 'generating' | 'using-tool' | 'processing-tool-result';
+  currentTool?: string;
+  pendingConfirmations?: Set<string>;
+  confirmedMessages?: Set<string>;
 }
