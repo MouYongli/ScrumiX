@@ -1961,7 +1961,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       const chatHistory = getChatHistory(agentType);
       const conversationId = selectedConversationIds[agentType] || chatHistory.conversation.id;
 
-      // Update message in backend
+      // Update the existing message in backend
       await chatAPI.updateMessage(messageId, editingContent.trim());
 
       // Delete all messages after this one in backend
@@ -2026,7 +2026,8 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
         abortController: abortController
       });
       
-      // Prepare messages for API
+      // Prepare messages for API (using legacy format for regeneration)
+      // This avoids duplicate message saves since we handle persistence manually
       const apiMessages = messages.map(msg => ({
         role: msg.sender === 'user' ? 'user' : 'assistant',
         content: msg.content
@@ -2043,6 +2044,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
           selectedModel: currentState.selectedModel,
           webSearchEnabled: webSearchEnabled
         }),
+        signal: abortController.signal,
       });
 
       if (!response.ok) {
@@ -2070,7 +2072,8 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
         }, 500);
       }
 
-      while (true) {
+      try {
+        while (true) {
         const { done, value } = await reader.read();
         if (done) break;
 
@@ -2151,15 +2154,74 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
           };
         });
       }
+      } catch (streamError) {
+        // Handle streaming errors (including aborts)
+        const isAbortError = streamError instanceof Error && (
+          streamError.name === 'AbortError' || 
+          streamError.message.includes('aborted') ||
+          streamError.message.includes('AbortError')
+        );
+
+        if (isAbortError) {
+          console.log('Regeneration stream was aborted during reading, preserving partial response');
+          
+          // If we have any partial response, preserve it
+          if (aiResponse.trim()) {
+            const partialMessage: ChatMessage = {
+              id: messageId,
+              content: aiResponse.trim(),
+              timestamp: new Date().toISOString(),
+              sender: 'agent',
+              agentType: agentType,
+              model: currentState.selectedModel
+            };
+
+            // Update with the partial response
+            setAgentStates(prev => {
+              const prevState = prev[agentType];
+              const merged = upsertMessage([...messages, partialMessage] as EnhancedChatMessage[], partialMessage as EnhancedChatMessage);
+              return {
+                ...prev,
+                [agentType]: {
+                  ...prevState,
+                  messages: merged,
+                  isTyping: false,
+                  loadingState: undefined,
+                  currentTool: undefined,
+                  isStreaming: false,
+                  abortController: undefined
+                }
+              };
+            });
+          } else {
+            // No partial response, just clean up state
+            updateAgentState(agentType, {
+              isTyping: false,
+              loadingState: undefined,
+              currentTool: undefined,
+              isStreaming: false,
+              abortController: undefined
+            });
+          }
+          
+          // Don't throw the error further, we've handled it
+          return;
+        } else {
+          // Re-throw non-abort errors
+          throw streamError;
+        }
+      }
 
       // Final cleanup - ensure streaming state is properly cleared
       updateAgentState(agentType, {
         isTyping: false,
         loadingState: undefined,
-        currentTool: undefined
+        currentTool: undefined,
+        isStreaming: false,
+        abortController: undefined
       });
 
-      // Save the final complete AI response to backend (outside the streaming loop)
+      // Save the final complete AI response to backend (using legacy format requires manual save)
       try {
         const chatHistory = getChatHistory(agentType);
         const conversationId = selectedConversationIds[agentType] || chatHistory.conversation.id;
@@ -2175,20 +2237,43 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       }
     } catch (error) {
       console.error('Regenerate conversation error:', error);
-      const errorMessage: ChatMessage = {
-        id: `agent-${Date.now()}`,
-        content: `I apologize, but I encountered an error while processing your edited request.`,
-        timestamp: new Date().toISOString(),
-        sender: 'agent',
-        agentType: agentType
-      };
+      
+      // Check if this was an abort operation (user clicked stop)
+      const isAbortError = error instanceof Error && (
+        error.name === 'AbortError' || 
+        error.message.includes('aborted') ||
+        error.message.includes('AbortError')
+      );
 
-      updateAgentState(agentType, {
-        messages: [...messages, errorMessage],
-        isTyping: false,
-        loadingState: undefined,
-        currentTool: undefined
-      });
+      if (isAbortError) {
+        // For abort operations, just clean up state without showing error message
+        console.log('Regeneration was aborted by user, cleaning up state');
+        updateAgentState(agentType, {
+          isTyping: false,
+          loadingState: undefined,
+          currentTool: undefined,
+          isStreaming: false,
+          abortController: undefined
+        });
+      } else {
+        // Only show error message for actual errors (not aborts)
+        const errorMessage: ChatMessage = {
+          id: `agent-${Date.now()}`,
+          content: `I apologize, but I encountered an error while processing your edited request.`,
+          timestamp: new Date().toISOString(),
+          sender: 'agent',
+          agentType: agentType
+        };
+
+        updateAgentState(agentType, {
+          messages: [...messages, errorMessage],
+          isTyping: false,
+          loadingState: undefined,
+          currentTool: undefined,
+          isStreaming: false,
+          abortController: undefined
+        });
+      }
     }
   };
 
