@@ -30,7 +30,8 @@ import {
   History,
   Plus,
   ArrowUp,
-  MoreHorizontal
+  MoreHorizontal,
+  Square
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
@@ -133,6 +134,8 @@ interface AgentChatStateWithFiles extends AgentChatState {
   currentTool?: string;
   pendingConfirmations?: Set<string>; // Message IDs that need confirmation
   confirmedMessages?: Set<string>; // Message IDs that have been confirmed/declined
+  isStreaming?: boolean;
+  abortController?: AbortController;
 }
 
 
@@ -583,6 +586,9 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     const currentState = agentStates[agentType];
     if (!currentState.inputValue.trim() && !currentState.files?.length) return;
 
+    // Create abort controller for this request
+    const abortController = new AbortController();
+
     // Mark as sending to prevent state conflicts
     setSendingStates(prev => ({ ...prev, [agentType]: true }));
 
@@ -635,7 +641,9 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       inputValue: '',
       files: undefined,
       isTyping: true,
-      loadingState: webSearchEnabled ? 'searching' : 'thinking'
+      loadingState: webSearchEnabled ? 'searching' : 'thinking',
+      isStreaming: true,
+      abortController: abortController
     });
 
     // Clear file input
@@ -698,6 +706,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
             selectedModel: currentState.selectedModel,
             webSearchEnabled
           }),
+          signal: abortController.signal,
         });
 
         if (!response.ok) {
@@ -717,7 +726,8 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
           messageContent,
           currentState.selectedModel,
           webSearchEnabled,
-          messageFiles ? Array.from(messageFiles) : undefined
+          messageFiles ? Array.from(messageFiles) : undefined,
+          abortController.signal
         );
       }
 
@@ -740,97 +750,155 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
         loadingState: webSearchEnabled ? 'searching' : 'thinking'
       });
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
 
-        const chunk = decoder.decode(value, { stream: true });
-        
-        // Try to parse chunk for tool usage information
-        try {
-          const lines = chunk.split('\n');
-          for (const line of lines) {
-            if (line.trim().startsWith('data: ')) {
-              const data = line.replace('data: ', '');
-              if (data && data !== '[DONE]') {
-                const parsed = JSON.parse(data);
-                
-                // Check for tool calls
-                if (parsed.type === 'tool-call' || parsed.toolName) {
-                  const toolName = parsed.toolName || parsed.tool?.name || 'tool';
-                  updateAgentState(agentType, {
-                    isTyping: true,
-                    loadingState: 'using-tool',
-                    currentTool: toolName
-                  });
-                }
-                
-                // Check for tool results
-                if (parsed.type === 'tool-result') {
-                  updateAgentState(agentType, {
-                    isTyping: true,
-                    loadingState: 'processing-tool-result'
-                  });
-                }
-                
-                // Check for text generation
-                if (parsed.type === 'text-delta' || parsed.delta) {
-                  if (!hasStartedGenerating) {
-                    hasStartedGenerating = true;
+          const chunk = decoder.decode(value, { stream: true });
+          
+          // Try to parse chunk for tool usage information
+          try {
+            const lines = chunk.split('\n');
+            for (const line of lines) {
+              if (line.trim().startsWith('data: ')) {
+                const data = line.replace('data: ', '');
+                if (data && data !== '[DONE]') {
+                  const parsed = JSON.parse(data);
+                  
+                  // Check for tool calls
+                  if (parsed.type === 'tool-call' || parsed.toolName) {
+                    const toolName = parsed.toolName || parsed.tool?.name || 'tool';
                     updateAgentState(agentType, {
                       isTyping: true,
-                      loadingState: 'generating'
+                      loadingState: 'using-tool',
+                      currentTool: toolName
                     });
+                  }
+                  
+                  // Check for tool results
+                  if (parsed.type === 'tool-result') {
+                    updateAgentState(agentType, {
+                      isTyping: true,
+                      loadingState: 'processing-tool-result'
+                    });
+                  }
+                  
+                  // Check for text generation
+                  if (parsed.type === 'text-delta' || parsed.delta) {
+                    if (!hasStartedGenerating) {
+                      hasStartedGenerating = true;
+                      updateAgentState(agentType, {
+                        isTyping: true,
+                        loadingState: 'generating'
+                      });
+                    }
                   }
                 }
               }
             }
+          } catch (e) {
+            // Ignore parsing errors for non-JSON chunks
+            if (!hasStartedGenerating && chunk.trim()) {
+              hasStartedGenerating = true;
+              updateAgentState(agentType, {
+                isTyping: true,
+                loadingState: 'generating'
+              });
+            }
           }
-        } catch (e) {
-          // Ignore parsing errors for non-JSON chunks
-          if (!hasStartedGenerating && chunk.trim()) {
-            hasStartedGenerating = true;
+          
+          aiResponse += chunk;
+          
+          // Update the agent message in real-time during streaming
+          const agentMessage: ChatMessage = {
+            id: messageId,
+            content: aiResponse,
+            timestamp: new Date().toISOString(),
+            sender: 'agent',
+            agentType: agentType,
+            model: currentState.selectedModel
+          };
+
+          // Check if this agent message contains a confirmation request
+          const needsConfirmation = isConfirmationRequest(agentMessage.content);
+          const newPendingConfirmations = needsConfirmation 
+            ? new Set([...currentState.pendingConfirmations!, agentMessage.id])
+            : currentState.pendingConfirmations;
+
+          // Update using functional state to avoid stale snapshots and dedupe by id/content
+          setAgentStates(prev => {
+            const prevState = prev[agentType];
+            const merged = upsertMessage(prevState.messages, agentMessage as EnhancedChatMessage);
+            return {
+              ...prev,
+              [agentType]: {
+                ...prevState,
+                messages: merged,
+                isTyping: true, // Keep typing true during streaming
+                loadingState: 'generating', // Keep generating state during streaming
+                currentTool: undefined,
+                pendingConfirmations: newPendingConfirmations
+              }
+            };
+          });
+        }
+      } catch (streamError) {
+        // Handle streaming errors (including aborts)
+        const isAbortError = streamError instanceof Error && (
+          streamError.name === 'AbortError' || 
+          streamError.message.includes('aborted') ||
+          streamError.message.includes('AbortError')
+        );
+
+        if (isAbortError) {
+          console.log('Stream was aborted during reading, preserving partial response');
+          
+          // If we have any partial response, preserve it
+          if (aiResponse.trim()) {
+            const partialMessage: ChatMessage = {
+              id: messageId,
+              content: aiResponse.trim(),
+              timestamp: new Date().toISOString(),
+              sender: 'agent',
+              agentType: agentType,
+              model: currentState.selectedModel
+            };
+
+            // Update with the partial response
+            setAgentStates(prev => {
+              const prevState = prev[agentType];
+              const merged = upsertMessage(prevState.messages, partialMessage as EnhancedChatMessage);
+              return {
+                ...prev,
+                [agentType]: {
+                  ...prevState,
+                  messages: merged,
+                  isTyping: false,
+                  loadingState: undefined,
+                  currentTool: undefined,
+                  isStreaming: false,
+                  abortController: undefined
+                }
+              };
+            });
+          } else {
+            // No partial response, just clean up state
             updateAgentState(agentType, {
-              isTyping: true,
-              loadingState: 'generating'
+              isTyping: false,
+              loadingState: undefined,
+              currentTool: undefined,
+              isStreaming: false,
+              abortController: undefined
             });
           }
+          
+          // Don't throw the error further, we've handled it
+          return;
+        } else {
+          // Re-throw non-abort errors
+          throw streamError;
         }
-        
-        aiResponse += chunk;
-        
-        // Update the agent message in real-time during streaming
-        const agentMessage: ChatMessage = {
-          id: messageId,
-          content: aiResponse,
-          timestamp: new Date().toISOString(),
-          sender: 'agent',
-          agentType: agentType,
-          model: currentState.selectedModel
-        };
-
-        // Check if this agent message contains a confirmation request
-        const needsConfirmation = isConfirmationRequest(agentMessage.content);
-        const newPendingConfirmations = needsConfirmation 
-          ? new Set([...currentState.pendingConfirmations!, agentMessage.id])
-          : currentState.pendingConfirmations;
-
-        // Update using functional state to avoid stale snapshots and dedupe by id/content
-        setAgentStates(prev => {
-          const prevState = prev[agentType];
-          const merged = upsertMessage(prevState.messages, agentMessage as EnhancedChatMessage);
-          return {
-            ...prev,
-            [agentType]: {
-              ...prevState,
-              messages: merged,
-              isTyping: true, // Keep typing true during streaming
-              loadingState: 'generating', // Keep generating state during streaming
-              currentTool: undefined,
-              pendingConfirmations: newPendingConfirmations
-            }
-          };
-        });
       }
 
       // Clean up the response by removing SSE formatting and normalize to final text
@@ -876,9 +944,17 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
           updateAgentState(agentType, {
             isTyping: false,
             loadingState: undefined,
-            currentTool: undefined
+            currentTool: undefined,
+            isStreaming: false,
+            abortController: undefined
           });
         }, remainingTime);
+      } else {
+        // Clear streaming state immediately if no delay needed
+        updateAgentState(agentType, {
+          isStreaming: false,
+          abortController: undefined
+        });
       }
 
       // Check if this was a new conversation that needs to be highlighted
@@ -909,24 +985,50 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     } catch (error) {
       console.error('Error sending persistent message:', error);
       
-      // Add error message to local state only (not persistent)
-      const errorMessage: ChatMessage = {
-        id: `error-${Date.now()}`,
-        content: 'Sorry, I encountered an error. Please try again.',
-        timestamp: new Date().toISOString(),
-        sender: 'agent',
-        agentType: agentType
-      };
+      // Check if this was an abort operation (user clicked stop)
+      const isAbortError = error instanceof Error && (
+        error.name === 'AbortError' || 
+        error.message.includes('aborted') ||
+        error.message.includes('AbortError')
+      );
 
-      updateAgentState(agentType, {
-        messages: [...currentState.messages, errorMessage],
-        isTyping: false,
-        loadingState: undefined,
-        currentTool: undefined
-      });
+      if (isAbortError) {
+        // For abort operations, just clean up state without showing error message
+        // The user message should already be visible from the optimistic update
+        console.log('Stream was aborted by user, cleaning up state');
+        updateAgentState(agentType, {
+          isTyping: false,
+          loadingState: undefined,
+          currentTool: undefined,
+          isStreaming: false,
+          abortController: undefined
+        });
+      } else {
+        // Only show error message for actual errors (not aborts)
+        const errorMessage: ChatMessage = {
+          id: `error-${Date.now()}`,
+          content: 'Sorry, I encountered an error. Please try again.',
+          timestamp: new Date().toISOString(),
+          sender: 'agent',
+          agentType: agentType
+        };
+
+        updateAgentState(agentType, {
+          messages: [...currentState.messages, errorMessage],
+          isTyping: false,
+          loadingState: undefined,
+          currentTool: undefined,
+          isStreaming: false,
+          abortController: undefined
+        });
+      }
     } finally {
-      // Always reset sending state when done
+      // Always reset sending state and clear streaming state when done
       setSendingStates(prev => ({ ...prev, [agentType]: false }));
+      updateAgentState(agentType, {
+        isStreaming: false,
+        abortController: undefined
+      });
     }
   };
 
@@ -1125,6 +1227,19 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     }
   };
 
+  const stopGeneration = (agentType: ProjectAgentType) => {
+    const currentState = agentStates[agentType];
+    if (currentState.abortController) {
+      currentState.abortController.abort();
+      updateAgentState(agentType, {
+        isStreaming: false,
+        isTyping: false,
+        loadingState: undefined,
+        abortController: undefined
+      });
+    }
+  };
+
   const sendMessage = async (agentType: ProjectAgentType) => {
     const currentState = agentStates[agentType];
     if (!currentState.inputValue.trim() && !currentState.files?.length) return;
@@ -1145,13 +1260,18 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       ]
     };
 
+    // Create abort controller for this request
+    const abortController = new AbortController();
+
     // Add user message and clear input
     updateAgentState(agentType, {
       messages: [...currentState.messages, userMessage],
       isTyping: true,
       inputValue: '',
       files: undefined,
-      loadingState: webSearchEnabled ? 'searching' : 'thinking'
+      loadingState: webSearchEnabled ? 'searching' : 'thinking',
+      isStreaming: true,
+      abortController: abortController
     });
 
     // Clear file input
@@ -1199,6 +1319,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
             selectedModel: currentState.selectedModel,
             webSearchEnabled: webSearchEnabled
           }),
+          signal: abortController.signal,
         });
 
         if (!response.ok) {
@@ -1226,98 +1347,157 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
           loadingState: webSearchEnabled ? 'searching' : 'thinking'
         });
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
+        try {
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
 
-          const chunk = decoder.decode(value, { stream: true });
-          
-          // Try to parse chunk for tool usage information
-          try {
-            const lines = chunk.split('\n');
-            for (const line of lines) {
-              if (line.trim().startsWith('data: ')) {
-                const data = line.replace('data: ', '');
-                if (data && data !== '[DONE]') {
-                  const parsed = JSON.parse(data);
-                  
-                  // Check for tool calls
-                  if (parsed.type === 'tool-call' || parsed.toolName) {
-                    const toolName = parsed.toolName || parsed.tool?.name || 'tool';
-                    updateAgentState(agentType, {
-                      messages: [...currentState.messages, userMessage],
-                      isTyping: true,
-                      loadingState: 'tool-call',
-                      currentTool: toolName
-                    });
-                    continue;
-                  }
-                  
-                  // Check for text generation
-                  if (parsed.type === 'text-delta' || parsed.delta || parsed.content) {
-                    if (!hasStartedGenerating) {
-                      hasStartedGenerating = true;
+            const chunk = decoder.decode(value, { stream: true });
+            
+            // Try to parse chunk for tool usage information
+            try {
+              const lines = chunk.split('\n');
+              for (const line of lines) {
+                if (line.trim().startsWith('data: ')) {
+                  const data = line.replace('data: ', '');
+                  if (data && data !== '[DONE]') {
+                    const parsed = JSON.parse(data);
+                    
+                    // Check for tool calls
+                    if (parsed.type === 'tool-call' || parsed.toolName) {
+                      const toolName = parsed.toolName || parsed.tool?.name || 'tool';
                       updateAgentState(agentType, {
                         messages: [...currentState.messages, userMessage],
                         isTyping: true,
-                        loadingState: 'generating'
+                        loadingState: 'tool-call',
+                        currentTool: toolName
                       });
+                      continue;
+                    }
+                    
+                    // Check for text generation
+                    if (parsed.type === 'text-delta' || parsed.delta || parsed.content) {
+                      if (!hasStartedGenerating) {
+                        hasStartedGenerating = true;
+                        updateAgentState(agentType, {
+                          messages: [...currentState.messages, userMessage],
+                          isTyping: true,
+                          loadingState: 'generating'
+                        });
+                      }
                     }
                   }
                 }
               }
+            } catch (e) {
+              // If chunk is not JSON, it's likely text content
+              if (!hasStartedGenerating && chunk.trim()) {
+                hasStartedGenerating = true;
+                updateAgentState(agentType, {
+                  messages: [...currentState.messages, userMessage],
+                  isTyping: true,
+                  loadingState: 'generating'
+                });
+              }
             }
-          } catch (e) {
-            // If chunk is not JSON, it's likely text content
-            if (!hasStartedGenerating && chunk.trim()) {
-              hasStartedGenerating = true;
+            
+            aiResponse += chunk;
+            
+            // Update the agent message in real-time
+            const agentMessage: ChatMessage = {
+              id: messageId,
+              content: aiResponse,
+              timestamp: new Date().toISOString(),
+              sender: 'agent',
+              agentType: agentType,
+              model: currentState.selectedModel
+            };
+
+            // Check if this agent message contains a confirmation request
+            const needsConfirmation = isConfirmationRequest(agentMessage.content);
+            const newPendingConfirmations = needsConfirmation 
+              ? new Set([...currentState.pendingConfirmations!, agentMessage.id])
+              : currentState.pendingConfirmations;
+
+            // Calculate remaining time to meet minimum loading duration
+            const elapsedTime = Date.now() - startTime;
+            const remainingTime = Math.max(0, MIN_LOADING_TIME - elapsedTime);
+
+            updateAgentState(agentType, {
+              messages: [...currentState.messages, userMessage, agentMessage],
+              isTyping: remainingTime > 0,
+              loadingState: remainingTime > 0 ? 'generating' : undefined,
+              currentTool: undefined,
+              pendingConfirmations: newPendingConfirmations
+            });
+
+            // Clear loading state after minimum time if needed
+            if (remainingTime > 0) {
+              setTimeout(() => {
+                updateAgentState(agentType, {
+                  isTyping: false,
+                  loadingState: undefined,
+                  currentTool: undefined,
+                  isStreaming: false,
+                  abortController: undefined
+                });
+              }, remainingTime);
+            } else {
+              // Clear streaming state immediately if no delay needed
               updateAgentState(agentType, {
-                messages: [...currentState.messages, userMessage],
-                isTyping: true,
-                loadingState: 'generating'
+                isStreaming: false,
+                abortController: undefined
               });
             }
           }
-          
-          aiResponse += chunk;
-          
-          // Update the agent message in real-time
-          const agentMessage: ChatMessage = {
-            id: messageId,
-            content: aiResponse,
-            timestamp: new Date().toISOString(),
-            sender: 'agent',
-            agentType: agentType,
-            model: currentState.selectedModel
-          };
+        } catch (streamError) {
+          // Handle streaming errors (including aborts)
+          const isAbortError = streamError instanceof Error && (
+            streamError.name === 'AbortError' || 
+            streamError.message.includes('aborted') ||
+            streamError.message.includes('AbortError')
+          );
 
-          // Check if this agent message contains a confirmation request
-          const needsConfirmation = isConfirmationRequest(agentMessage.content);
-          const newPendingConfirmations = needsConfirmation 
-            ? new Set([...currentState.pendingConfirmations!, agentMessage.id])
-            : currentState.pendingConfirmations;
+          if (isAbortError) {
+            console.log('Legacy stream was aborted during reading, preserving partial response');
+            
+            // If we have any partial response, preserve it
+            if (aiResponse.trim()) {
+              const partialMessage: ChatMessage = {
+                id: messageId,
+                content: aiResponse.trim(),
+                timestamp: new Date().toISOString(),
+                sender: 'agent',
+                agentType: agentType,
+                model: currentState.selectedModel
+              };
 
-          // Calculate remaining time to meet minimum loading duration
-          const elapsedTime = Date.now() - startTime;
-          const remainingTime = Math.max(0, MIN_LOADING_TIME - elapsedTime);
-
-          updateAgentState(agentType, {
-            messages: [...currentState.messages, userMessage, agentMessage],
-            isTyping: remainingTime > 0,
-            loadingState: remainingTime > 0 ? 'generating' : undefined,
-            currentTool: undefined,
-            pendingConfirmations: newPendingConfirmations
-          });
-
-          // Clear loading state after minimum time if needed
-          if (remainingTime > 0) {
-            setTimeout(() => {
+              // Update with the partial response
               updateAgentState(agentType, {
+                messages: [...currentState.messages, userMessage, partialMessage],
                 isTyping: false,
                 loadingState: undefined,
-                currentTool: undefined
+                currentTool: undefined,
+                isStreaming: false,
+                abortController: undefined
               });
-            }, remainingTime);
+            } else {
+              // No partial response, just preserve user message and clean up state
+              updateAgentState(agentType, {
+                messages: [...currentState.messages, userMessage],
+                isTyping: false,
+                loadingState: undefined,
+                currentTool: undefined,
+                isStreaming: false,
+                abortController: undefined
+              });
+            }
+            
+            // Don't throw the error further, we've handled it
+            return;
+          } else {
+            // Re-throw non-abort errors
+            throw streamError;
           }
         }
         
@@ -1327,20 +1507,45 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
         });
       } catch (error) {
         console.error('AI Chat Error:', error);
-        const errorMessage: ChatMessage = {
-          id: `agent-${Date.now()}`,
-          content: `I apologize, but I encountered an error while processing your request. Please check the console for more details and ensure your OpenAI API key is configured correctly.`,
-          timestamp: new Date().toISOString(),
-          sender: 'agent',
-          agentType: agentType
-        };
+        
+        // Check if this was an abort operation (user clicked stop)
+        const isAbortError = error instanceof Error && (
+          error.name === 'AbortError' || 
+          error.message.includes('aborted') ||
+          error.message.includes('AbortError')
+        );
 
-        updateAgentState(agentType, {
-          messages: [...currentState.messages, userMessage, errorMessage],
-          isTyping: false,
-          loadingState: undefined,
-          currentTool: undefined
-        });
+        if (isAbortError) {
+          // For abort operations, just clean up state without showing error message
+          // The user message should already be visible from the optimistic update
+          console.log('Stream was aborted by user, cleaning up state');
+          updateAgentState(agentType, {
+            messages: [...currentState.messages, userMessage],
+            isTyping: false,
+            loadingState: undefined,
+            currentTool: undefined,
+            isStreaming: false,
+            abortController: undefined
+          });
+        } else {
+          // Only show error message for actual errors (not aborts)
+          const errorMessage: ChatMessage = {
+            id: `agent-${Date.now()}`,
+            content: `I apologize, but I encountered an error while processing your request. Please check the console for more details and ensure your OpenAI API key is configured correctly.`,
+            timestamp: new Date().toISOString(),
+            sender: 'agent',
+            agentType: agentType
+          };
+
+          updateAgentState(agentType, {
+            messages: [...currentState.messages, userMessage, errorMessage],
+            isTyping: false,
+            loadingState: undefined,
+            currentTool: undefined,
+            isStreaming: false,
+            abortController: undefined
+          });
+        }
       }
     }
   };
@@ -2731,15 +2936,25 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                 rows={1}
               />
               
-              {/* Send Button */}
-              <button
-                onClick={() => sendPersistentMessage(activeAgent)}
-                disabled={(!currentState.inputValue.trim() && !currentState.files?.length) || currentState.isTyping}
-                className="p-2 m-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 dark:disabled:bg-gray-500 text-white rounded-lg transition-colors disabled:cursor-not-allowed flex items-center"
-                title="Send message"
-              >
-                <Send className="w-4 h-4" />
-              </button>
+              {/* Send/Stop Button */}
+              {currentState.isStreaming ? (
+                <button
+                  onClick={() => stopGeneration(activeAgent)}
+                  className="p-2 m-1 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors flex items-center"
+                  title="Stop generation"
+                >
+                  <Square className="w-4 h-4" />
+                </button>
+              ) : (
+                <button
+                  onClick={() => sendPersistentMessage(activeAgent)}
+                  disabled={(!currentState.inputValue.trim() && !currentState.files?.length) || currentState.isTyping}
+                  className="p-2 m-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 dark:disabled:bg-gray-500 text-white rounded-lg transition-colors disabled:cursor-not-allowed flex items-center"
+                  title="Send message"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              )}
             </div>
             </div>
           </div>

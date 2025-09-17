@@ -117,7 +117,8 @@ export function useChatHistory(options: UseChatHistoryOptions) {
     message: string,
     selectedModel?: string,
     webSearchEnabled?: boolean,
-    files?: File[]
+    files?: File[],
+    abortSignal?: AbortSignal
   ): Promise<ReadableStream<Uint8Array> | null> => {
     const conversation = getCurrentConversation();
     setError(null);
@@ -170,6 +171,7 @@ export function useChatHistory(options: UseChatHistoryOptions) {
           selectedModel,
           webSearchEnabled
         }),
+        signal: abortSignal,
       });
 
       if (!response.ok) {

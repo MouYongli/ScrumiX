@@ -323,8 +323,17 @@ export async function POST(req: Request) {
         },
         toolChoice: 'auto',
         stopWhen: stepCountIs(20),
+        abortSignal: req.signal,
         experimental_context: {
           cookies: cookies,
+        },
+        onAbort: async () => {
+          // Save partial assistant response when aborted
+          try {
+            console.log('Developer Agent - Stream aborted, partial content may not be available for persistence');
+          } catch (saveError) {
+            console.error('Failed to handle abort:', saveError);
+          }
         },
         onFinish: async (finishResult) => {
           // Save assistant response after streaming completes
@@ -405,6 +414,7 @@ export async function POST(req: Request) {
         },
         toolChoice: 'auto',
         stopWhen: stepCountIs(20),
+        abortSignal: req.signal,
         experimental_context: { cookies },
       });
 

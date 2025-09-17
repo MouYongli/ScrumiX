@@ -13,7 +13,8 @@ import {
   ExternalLink,
   Plus,
   Upload,
-  Globe
+  Globe,
+  Square
 } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
@@ -178,9 +179,24 @@ const ChatWidget: React.FC = () => {
     setActiveAgent(agentType);
   };
 
+  const stopGeneration = (agentType: ProjectAgentType) => {
+    const currentState = agentStates[agentType];
+    if (currentState.abortController) {
+      currentState.abortController.abort();
+      updateAgentState(agentType, {
+        isStreaming: false,
+        isTyping: false,
+        abortController: undefined
+      });
+    }
+  };
+
   const sendMessage = async () => {
     const currentState = agentStates[activeAgent];
     if (!currentState.inputValue.trim()) return;
+
+    // Create abort controller for this request
+    const abortController = new AbortController();
 
     const userMessage: ChatMessage = {
       id: `user-${Date.now()}`,
@@ -192,24 +208,42 @@ const ChatWidget: React.FC = () => {
     updateAgentState(activeAgent, {
       messages: [...currentState.messages, userMessage],
       isTyping: true,
-      inputValue: ''
+      inputValue: '',
+      isStreaming: true,
+      abortController: abortController
     });
 
     // Simulate AI response (replace with actual API call)
-    setTimeout(() => {
-      const aiMessage: ChatMessage = {
-        id: `agent-${Date.now()}`,
-        content: `Hello! I'm the ${AGENTS[activeAgent].name}. How can I help you today?`,
-        timestamp: new Date().toISOString(),
-        sender: 'agent',
-        agentType: activeAgent
-      };
+    const timeoutId = setTimeout(() => {
+      if (!abortController.signal.aborted) {
+        const aiMessage: ChatMessage = {
+          id: `agent-${Date.now()}`,
+          content: `Hello! I'm the ${AGENTS[activeAgent].name}. How can I help you today?`,
+          timestamp: new Date().toISOString(),
+          sender: 'agent',
+          agentType: activeAgent
+        };
 
-      updateAgentState(activeAgent, {
-        messages: [...currentState.messages, userMessage, aiMessage],
-        isTyping: false
-      });
+        updateAgentState(activeAgent, {
+          messages: [...currentState.messages, userMessage, aiMessage],
+          isTyping: false,
+          isStreaming: false,
+          abortController: undefined
+        });
+      }
     }, 1000);
+
+    // Handle abort
+    abortController.signal.addEventListener('abort', () => {
+      clearTimeout(timeoutId);
+      // Ensure user message is preserved and state is cleaned up
+      updateAgentState(activeAgent, {
+        messages: [...currentState.messages, userMessage],
+        isTyping: false,
+        isStreaming: false,
+        abortController: undefined
+      });
+    });
   };
 
   const handleKeyPress = (e: React.KeyboardEvent) => {
@@ -536,14 +570,25 @@ const ChatWidget: React.FC = () => {
                     />
                     
                     {/* Send Button */}
-                    <button
-                      onClick={sendMessage}
-                      disabled={!currentState.inputValue.trim() || currentState.isTyping}
-                      className="p-2 m-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 dark:disabled:bg-gray-500 text-white rounded-lg transition-colors disabled:cursor-not-allowed flex items-center"
-                      title="Send message"
-                    >
-                      <Send className="w-4 h-4" />
-                    </button>
+                    {/* Send/Stop Button */}
+                    {currentState.isStreaming ? (
+                      <button
+                        onClick={() => stopGeneration(activeAgent)}
+                        className="p-2 m-1 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors flex items-center"
+                        title="Stop generation"
+                      >
+                        <Square className="w-4 h-4" />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={sendMessage}
+                        disabled={!currentState.inputValue.trim() || currentState.isTyping}
+                        className="p-2 m-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 dark:disabled:bg-gray-500 text-white rounded-lg transition-colors disabled:cursor-not-allowed flex items-center"
+                        title="Send message"
+                      >
+                        <Send className="w-4 h-4" />
+                      </button>
+                    )}
                   </div>
                 </div>
               </>
