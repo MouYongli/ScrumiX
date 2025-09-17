@@ -2013,9 +2013,18 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       }
     };
 
+    // Create abort controller for this regeneration request
+    const abortController = new AbortController();
+
     try {
       const currentState = agentStates[agentType];
       const apiEndpoint = getApiEndpoint(agentType);
+      
+      // Update state to include abort controller and streaming status
+      updateAgentState(agentType, {
+        isStreaming: true,
+        abortController: abortController
+      });
       
       // Prepare messages for API
       const apiMessages = messages.map(msg => ({
