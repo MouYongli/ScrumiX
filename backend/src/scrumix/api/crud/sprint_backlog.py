@@ -3,7 +3,7 @@ Sprint Backlog CRUD operations
 """
 from typing import List, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import and_
+from sqlalchemy import and_, func
 
 from scrumix.api.models.backlog import Backlog
 from scrumix.api.models.task import Task
@@ -215,7 +215,7 @@ class SprintBacklogCRUD:
         total_story_points = db.query(Backlog).filter(
             Backlog.sprint_id == sprint_id
         ).with_entities(
-            db.func.sum(Backlog.story_point)
+            func.sum(Backlog.story_point)
         ).scalar() or 0
         
         # Count by status
