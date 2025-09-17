@@ -73,6 +73,128 @@ async function makeAuthenticatedRequest(endpoint: string, options: RequestInit, 
 }
 
 /**
+ * Schema for sprint access and information retrieval
+ */
+const sprintAccessSchema = z.object({
+  project_id: z.number()
+    .int('Project ID must be a whole number')
+    .positive('Project ID must be a positive integer')
+    .optional()
+    .describe('The ID of the project to query sprints for (auto-detected if not provided)'),
+  
+  status: z.enum(['active', 'completed', 'planning', 'all'])
+    .default('active')
+    .describe('Filter sprints by status - defaults to active sprints'),
+  
+  limit: z.number()
+    .int('Limit must be a whole number')
+    .positive('Limit must be positive')
+    .max(50)
+    .default(10)
+    .describe('Maximum number of sprints to return')
+});
+
+/**
+ * Tool for accessing sprint information and automatically detecting active sprints
+ */
+export const getSprintInfoTool = tool({
+  description: `Access sprint information including current active sprint details. Automatically detects the active sprint 
+    and provides sprint ID, name, dates, and status. Use this tool to get sprint context before performing other analyses.`,
+  inputSchema: sprintAccessSchema,
+  execute: async (input, { experimental_context }) => {
+    try {
+      const validated = sprintAccessSchema.parse(input);
+      
+      // Auto-detect project if not provided
+      let projectId = validated.project_id;
+      let projectName = '';
+      
+      if (!projectId) {
+        const projectContext = await getCurrentProjectContext(experimental_context);
+        if (!projectContext) {
+          return `Unable to determine the current project context. Please provide a project_id or ensure you're working within a project.`;
+        }
+        projectId = projectContext.project_id;
+        projectName = projectContext.project_name;
+      }
+
+      console.log('Accessing sprint information for project:', projectId);
+
+      // Build query parameters
+      const queryParams = new URLSearchParams({
+        project_id: projectId.toString(),
+        limit: validated.limit.toString()
+      });
+
+      if (validated.status !== 'all') {
+        queryParams.append('status', validated.status);
+      }
+
+      // Get sprints
+      const sprintsResponse = await makeAuthenticatedRequest(
+        `/sprints/?${queryParams.toString()}`,
+        { method: 'GET' },
+        experimental_context
+      );
+
+      if (sprintsResponse.error) {
+        return `Failed to retrieve sprint information: ${sprintsResponse.error}`;
+      }
+
+      const sprints = sprintsResponse.data || [];
+
+      if (sprints.length === 0) {
+        return `No sprints found for ${projectName || `project ${projectId}`} with status: ${validated.status}`;
+      }
+
+      // Find active sprint specifically
+      const activeSprint = sprints.find((sprint: any) => 
+        sprint.status === 'active' || sprint.status === 'in_progress'
+      );
+
+      // Format sprint information
+      const sprintInfo = sprints.map((sprint: any) => {
+        const startDate = new Date(sprint.start_date || sprint.startDate);
+        const endDate = new Date(sprint.end_date || sprint.endDate);
+        const isActive = sprint.status === 'active' || sprint.status === 'in_progress';
+        
+        return `${isActive ? '🎯 **ACTIVE**' : '📋'} **${sprint.sprint_name || sprint.sprintName}** (ID: ${sprint.id || sprint.sprint_id})
+- Status: ${sprint.status}
+- Duration: ${startDate.toLocaleDateString()} - ${endDate.toLocaleDateString()}
+- Sprint Goal: ${sprint.sprint_goal || sprint.goal || 'Not specified'}`;
+      }).join('\n\n');
+
+      const report = `# Sprint Information - ${projectName || `Project ${projectId}`}
+
+## Sprint Overview
+${validated.status === 'active' ? 'Showing active sprints' : `Showing ${validated.status} sprints`} (${sprints.length} found)
+
+${sprintInfo}
+
+${activeSprint ? `
+## Current Active Sprint Details
+- **Sprint ID:** ${activeSprint.id || activeSprint.sprint_id}
+- **Sprint Name:** ${activeSprint.sprint_name || activeSprint.sprintName}
+- **Status:** ${activeSprint.status}
+- **Start Date:** ${new Date(activeSprint.start_date || activeSprint.startDate).toLocaleDateString()}
+- **End Date:** ${new Date(activeSprint.end_date || activeSprint.endDate).toLocaleDateString()}
+- **Sprint Goal:** ${activeSprint.sprint_goal || activeSprint.goal || 'Not specified'}
+
+*This active sprint will be used automatically for burndown analysis and velocity calculations.*
+` : validated.status === 'active' ? '\n⚠️ **No active sprint found** - Create and start a sprint to enable automatic analysis.' : ''}
+
+**Query Date:** ${new Date().toLocaleString()}`;
+
+      return report;
+
+    } catch (error) {
+      console.error('Error in getSprintInfoTool:', error);
+      return `Failed to access sprint information: ${error instanceof Error ? error.message : 'Unknown error occurred'}`;
+    }
+  }
+});
+
+/**
  * Schema for sprint metrics retrieval
  */
 const sprintMetricsSchema = z.object({
@@ -134,12 +256,12 @@ export const analyzeSprintHealthTool = tool({
         )
       ]);
 
-      if (backlogResponse.error || statsResponse.error) {
-        return `Failed to retrieve sprint data: ${backlogResponse.error || statsResponse.error}`;
+      if (backlogResponse.error) {
+        return `Failed to retrieve sprint backlog: ${backlogResponse.error}`;
       }
 
       const backlogItems = backlogResponse.data || [];
-      const stats = statsResponse.data || {};
+      const stats = statsResponse.error ? {} : (statsResponse.data || {});
 
       // Calculate sprint progress metrics
       const totalItems = backlogItems.length;
@@ -152,9 +274,16 @@ export const analyzeSprintHealthTool = tool({
         .filter((item: any) => item.status === 'done')
         .reduce((sum: number, item: any) => sum + (item.story_point || 0), 0);
 
-      // Calculate sprint timeline
-      const sprintStart = new Date(sprint.start_date);
-      const sprintEnd = new Date(sprint.end_date);
+      // Calculate sprint timeline - handle both field name formats
+      const sprintStartDate = sprint.start_date || sprint.startDate;
+      const sprintEndDate = sprint.end_date || sprint.endDate;
+      
+      if (!sprintStartDate || !sprintEndDate) {
+        return `Sprint dates are missing from the API response. Available fields: ${Object.keys(sprint).join(', ')}`;
+      }
+      
+      const sprintStart = new Date(sprintStartDate);
+      const sprintEnd = new Date(sprintEndDate);
       const now = new Date();
       const sprintDuration = sprintEnd.getTime() - sprintStart.getTime();
       const elapsed = now.getTime() - sprintStart.getTime();
@@ -207,6 +336,7 @@ export const analyzeSprintHealthTool = tool({
 
 ### Sprint Overview
 - **Sprint Goal:** ${sprint.sprint_goal || 'Not specified'}
+${statsResponse.error ? '- **Note:** Advanced statistics temporarily unavailable' : ''}
 - **Duration:** ${sprintStart.toLocaleDateString()} - ${sprintEnd.toLocaleDateString()}
 - **Status:** ${sprint.status}
 - **Time Progress:** ${progressPercentage.toFixed(1)}% elapsed
@@ -1337,9 +1467,9 @@ const velocityAnalysisSchema = z.object({
   sprint_count: z.number()
     .int('Sprint count must be a whole number')
     .min(1, 'Must analyze at least 1 sprint')
-    .max(10, 'Cannot analyze more than 10 sprints at once')
-    .default(5)
-    .describe('Number of recent sprints to include in velocity calculation'),
+    .max(50, 'Cannot analyze more than 50 sprints at once')
+    .default(20)
+    .describe('Number of recent sprints to include in velocity calculation (set to high number to include all completed sprints)'),
   
   include_forecast: z.boolean()
     .default(true)
@@ -1347,12 +1477,13 @@ const velocityAnalysisSchema = z.object({
 });
 
 /**
- * Tool for velocity tracking and capacity planning
+ * Tool for velocity tracking and capacity planning with enhanced API integration
  */
 export const analyzeVelocityTool = tool({
-  description: `Analyze team velocity based on historical sprint data and provide capacity planning forecasts. 
+  description: `Analyze team velocity based on ALL completed sprints (up to 50) and provide capacity planning forecasts. 
     This tool helps Scrum Masters understand team performance trends and make data-driven decisions 
-    for sprint planning and capacity management.`,
+    for sprint planning and capacity management. Uses dedicated velocity tracking APIs for accurate metrics.
+    By default, analyzes the last 20 completed sprints, but can analyze up to 50 for comprehensive historical analysis.`,
   inputSchema: velocityAnalysisSchema,
   execute: async (input, { experimental_context }) => {
     try {
@@ -1373,7 +1504,21 @@ export const analyzeVelocityTool = tool({
 
       console.log('Analyzing velocity for project:', projectId);
 
-      // Get recent completed sprints for the project
+      // Get project average velocity using dedicated API
+      const avgVelocityResponse = await makeAuthenticatedRequest(
+        `/velocity/project/${projectId}/velocity/average`,
+        { method: 'GET' },
+        experimental_context
+      );
+
+      // Get project velocity metrics
+      const metricsResponse = await makeAuthenticatedRequest(
+        `/velocity/project/${projectId}/velocity/metrics`,
+        { method: 'GET' },
+        experimental_context
+      );
+
+      // Get recent completed sprints for detailed analysis
       const sprintsResponse = await makeAuthenticatedRequest(
         `/sprints/?project_id=${projectId}&status=completed&limit=${validated.sprint_count}`,
         { method: 'GET' },
@@ -1390,11 +1535,27 @@ export const analyzeVelocityTool = tool({
         return `No completed sprints found for ${projectName || `project ${projectId}`}. Velocity analysis requires at least one completed sprint.`;
       }
 
-      // Get detailed statistics for each sprint
-      const sprintAnalyses = await Promise.all(
+      // Check if we might have more completed sprints available
+      let additionalSprintsNote = '';
+      if (sprints.length === validated.sprint_count && validated.sprint_count < 50) {
+        // We got exactly the limit we requested, so there might be more
+        const allSprintsResponse = await makeAuthenticatedRequest(
+          `/sprints/?project_id=${projectId}&status=completed&limit=50`,
+          { method: 'GET' },
+          experimental_context
+        );
+        
+        if (!allSprintsResponse.error && allSprintsResponse.data && allSprintsResponse.data.length > validated.sprint_count) {
+          const totalCompleted = allSprintsResponse.data.length;
+          additionalSprintsNote = `\n\n**Note:** This analysis includes ${validated.sprint_count} of ${totalCompleted} total completed sprints. For more comprehensive historical analysis, you can increase the sprint_count parameter up to ${Math.min(50, totalCompleted)}.`;
+        }
+      }
+
+      // Get individual sprint velocity data
+      const sprintVelocityData = await Promise.all(
         sprints.map(async (sprint: any) => {
-          const statsResponse = await makeAuthenticatedRequest(
-            `/sprints/${sprint.id}/statistics`,
+          const velocityResponse = await makeAuthenticatedRequest(
+            `/velocity/sprint/${sprint.id}/velocity`,
             { method: 'GET' },
             experimental_context
           );
@@ -1405,36 +1566,49 @@ export const analyzeVelocityTool = tool({
             experimental_context
           );
 
-          const stats = statsResponse.data || {};
+          const velocity = velocityResponse.data?.velocity_points || 0;
           const backlogItems = backlogResponse.data || [];
-          
           const completedItems = backlogItems.filter((item: any) => item.status === 'done');
+          
+          // Calculate actual completed story points (this is the correct velocity measure)
           const completedStoryPoints = completedItems.reduce((sum: number, item: any) => sum + (item.story_point || 0), 0);
           
           return {
             sprint: sprint,
+            velocityPoints: completedStoryPoints, // Use actual completed story points, not API velocity
             completedItems: completedItems.length,
             totalItems: backlogItems.length,
-            completedStoryPoints: completedStoryPoints,
-            totalStoryPoints: backlogItems.reduce((sum: number, item: any) => sum + (item.story_point || 0), 0),
-            stats: stats
+            totalStoryPoints: backlogItems.reduce((sum: number, item: any) => sum + (item.story_point || 0), 0)
           };
         })
       );
 
-      // Calculate velocity metrics
-      const velocityByPoints = sprintAnalyses.map(analysis => analysis.completedStoryPoints);
-      const velocityByItems = sprintAnalyses.map(analysis => analysis.completedItems);
+      // Calculate velocity metrics from actual completed story points
+      const velocityByPoints = sprintVelocityData.map(data => data.velocityPoints);
+      const velocityByItems = sprintVelocityData.map(data => data.completedItems);
       
-      const avgVelocityPoints = velocityByPoints.reduce((sum, v) => sum + v, 0) / velocityByPoints.length;
-      const avgVelocityItems = velocityByItems.reduce((sum, v) => sum + v, 0) / velocityByItems.length;
+      // Calculate ACTUAL average velocity from completed story points of analyzed sprints
+      const totalCompletedStoryPoints = velocityByPoints.reduce((sum, v) => sum + v, 0);
+      const avgVelocity = velocityByPoints.length > 0 ? totalCompletedStoryPoints / velocityByPoints.length : 0;
+      const avgVelocityItems = velocityByItems.length > 0 ? velocityByItems.reduce((sum, v) => sum + v, 0) / velocityByItems.length : 0;
+      
+      const totalSprints = sprints.length;
+      const metrics = metricsResponse.data || {};
+
+      console.log(`Velocity Calculation:
+        - Sprints analyzed: ${velocityByPoints.length}
+        - Individual completed story points: [${velocityByPoints.join(', ')}]
+        - Total completed story points: ${totalCompletedStoryPoints}
+        - Calculated average velocity: ${avgVelocity.toFixed(2)} story points per sprint
+        - Backend API average (for comparison): ${avgVelocityResponse.data?.average_velocity || 'N/A'}`);
+      
       
       // Calculate velocity consistency (coefficient of variation)
-      const pointsVariance = velocityByPoints.reduce((sum, v) => sum + Math.pow(v - avgVelocityPoints, 2), 0) / velocityByPoints.length;
+      const pointsVariance = velocityByPoints.reduce((sum, v) => sum + Math.pow(v - avgVelocity, 2), 0) / velocityByPoints.length;
       const pointsStdDev = Math.sqrt(pointsVariance);
-      const consistencyScore = avgVelocityPoints > 0 ? Math.max(0, 100 - (pointsStdDev / avgVelocityPoints * 100)) : 0;
+      const consistencyScore = avgVelocity > 0 ? Math.max(0, 100 - (pointsStdDev / avgVelocity * 100)) : 0;
 
-      // Identify trends
+      // Identify trends using recent vs earlier velocity
       const recentVelocity = velocityByPoints.slice(-3);
       const earlierVelocity = velocityByPoints.slice(0, -3);
       const recentAvg = recentVelocity.reduce((sum, v) => sum + v, 0) / recentVelocity.length;
@@ -1442,6 +1616,7 @@ export const analyzeVelocityTool = tool({
       
       const trendDirection = recentAvg > earlierAvg * 1.1 ? 'Improving' : 
                             recentAvg < earlierAvg * 0.9 ? 'Declining' : 'Stable';
+      const trendPercentage = earlierAvg > 0 ? ((recentAvg - earlierAvg) / earlierAvg * 100).toFixed(1) : '0';
 
       // Generate insights and recommendations
       const insights = [];
@@ -1453,57 +1628,67 @@ export const analyzeVelocityTool = tool({
       }
 
       if (trendDirection === 'Declining') {
-        insights.push('Velocity has been declining in recent sprints');
+        insights.push(`Velocity has been declining in recent sprints (${trendPercentage}% change)`);
         recommendations.push('Investigate potential impediments or team capacity changes');
       } else if (trendDirection === 'Improving') {
-        insights.push('Velocity is improving over recent sprints');
+        insights.push(`Velocity is improving over recent sprints (+${trendPercentage}% change)`);
         recommendations.push('Document and share practices contributing to improved performance');
+      }
+
+      if (avgVelocity < 10) {
+        insights.push('Low average velocity may indicate estimation or capacity issues');
+        recommendations.push('Consider story point calibration session and capacity planning review');
       }
 
       // Capacity forecasting
       let forecastSection = '';
       if (validated.include_forecast) {
-        const conservativeEstimate = Math.floor(avgVelocityPoints * 0.8);
-        const optimisticEstimate = Math.ceil(avgVelocityPoints * 1.2);
+        const conservativeEstimate = Math.floor(avgVelocity * 0.8);
+        const optimisticEstimate = Math.ceil(avgVelocity * 1.2);
         
         forecastSection = `
 ### 📊 Capacity Forecasting
 
 **Next Sprint Capacity Estimates:**
 - **Conservative (80% confidence):** ${conservativeEstimate} story points
-- **Expected (average):** ${Math.round(avgVelocityPoints)} story points  
+- **Expected (average):** ${Math.round(avgVelocity)} story points  
 - **Optimistic (best case):** ${optimisticEstimate} story points
 
 **Planning Recommendations:**
-- Plan for ${Math.round(avgVelocityPoints)} story points as baseline
+- Plan for ${Math.round(avgVelocity)} story points as baseline
 - Keep ${conservativeEstimate}-${optimisticEstimate} range in mind for scope flexibility
-- Reserve 10-20% capacity for unplanned work and impediments`;
+- Reserve 10-20% capacity for unplanned work and impediments
+- Consider team capacity changes when planning future sprints`;
       }
 
       const report = `# Velocity Analysis Report
 
 ## Team Velocity Summary
-- **Average Velocity:** ${avgVelocityPoints.toFixed(1)} story points per sprint
+- **Average Velocity:** ${avgVelocity.toFixed(1)} story points per sprint
 - **Average Items Completed:** ${avgVelocityItems.toFixed(1)} items per sprint
 - **Consistency Score:** ${consistencyScore.toFixed(1)}/100
-- **Trend:** ${trendDirection}
+- **Trend:** ${trendDirection} ${trendDirection !== 'Stable' ? `(${trendPercentage}%)` : ''}
+- **Total Sprints Analyzed:** ${totalSprints}
 
-## Sprint-by-Sprint Analysis
-${sprintAnalyses.map((analysis, index) => {
-  const sprint = analysis.sprint;
-  const completionRate = analysis.totalItems > 0 ? (analysis.completedItems / analysis.totalItems * 100).toFixed(1) : '0';
+## Sprint-by-Sprint Velocity Analysis
+${sprintVelocityData.map((data, index) => {
+  const sprint = data.sprint;
+  const completionRate = data.totalItems > 0 ? (data.completedItems / data.totalItems * 100).toFixed(1) : '0';
   
-  return `### Sprint ${index + 1}: ${sprint.sprint_name}
-- **Period:** ${new Date(sprint.start_date).toLocaleDateString()} - ${new Date(sprint.end_date).toLocaleDateString()}
-- **Story Points Completed:** ${analysis.completedStoryPoints}/${analysis.totalStoryPoints}
-- **Items Completed:** ${analysis.completedItems}/${analysis.totalItems} (${completionRate}%)
+  return `### Sprint ${index + 1}: ${sprint.sprint_name || sprint.sprintName}
+- **Period:** ${new Date(sprint.start_date || sprint.startDate).toLocaleDateString()} - ${new Date(sprint.end_date || sprint.endDate).toLocaleDateString()}
+- **Velocity:** ${data.velocityPoints} story points
+- **Items Completed:** ${data.completedItems}/${data.totalItems} (${completionRate}%)
+- **Total Story Points:** ${data.totalStoryPoints}
 - **Sprint Goal:** ${sprint.sprint_goal || 'Not specified'}`;
 }).join('\n\n')}
 
-## Velocity Trend Chart
+## Velocity Trend Visualization
 ${velocityByPoints.map((velocity, index) => 
   `Sprint ${index + 1}: ${'█'.repeat(Math.max(1, Math.round(velocity / 2)))} ${velocity} pts`
 ).join('\n')}
+
+Average: ${'─'.repeat(Math.max(1, Math.round(avgVelocity / 2)))} ${avgVelocity.toFixed(1)} pts
 
 ${insights.length > 0 ? `## 🔍 Key Insights
 ${insights.map(insight => `- ${insight}`).join('\n')}` : ''}
@@ -1515,18 +1700,809 @@ ${forecastSection}
 
 ## Actions for Scrum Master
 - Share velocity trends with Product Owner for backlog planning
-- Discuss capacity planning in next Sprint Planning
+- Discuss capacity planning in next Sprint Planning meeting
 - Consider velocity factors in team retrospectives
 - Monitor for impediments affecting team performance
+- Track consistency improvements over time
 
 **Analysis Date:** ${new Date().toLocaleString()}
-**Sprints Analyzed:** ${sprints.length}`;
+**Sprints Analyzed:** ${sprints.length}
+**Data Source:** ScrumiX Velocity Tracking API${additionalSprintsNote}`;
 
       return report;
 
     } catch (error) {
       console.error('Error in analyzeVelocityTool:', error);
       return `Failed to analyze velocity: ${error instanceof Error ? error.message : 'Unknown error occurred'}`;
+    }
+  }
+});
+
+/**
+ * Schema for burndown analysis - all parameters are optional, can be called with empty object {}
+ */
+const burndownAnalysisSchema = z.object({
+  sprint_id: z.number()
+    .int('Sprint ID must be a whole number')
+    .positive('Sprint ID must be a positive integer')
+    .optional()
+    .describe('The ID of the sprint to analyze burndown for (auto-detected if not provided)'),
+  
+  project_id: z.number()
+    .int('Project ID must be a whole number')
+    .positive('Project ID must be a positive integer')
+    .optional()
+    .describe('The ID of the project (auto-detected if not provided)'),
+  
+  sprint_title: z.string()
+    .optional()
+    .describe('The title of the sprint to analyze (alternative to sprint_id when no active sprint)'),
+  
+  include_trend_analysis: z.boolean()
+    .default(true)
+    .describe('Whether to include trend analysis and projections'),
+  
+  include_ideal_comparison: z.boolean()
+    .default(true)
+    .describe('Whether to compare actual progress with ideal burndown line'),
+  
+  include_pattern_analysis: z.boolean()
+    .default(true)
+    .describe('Whether to analyze burndown patterns like spikes, plateaus, and blockers'),
+  
+  start_date: z.string()
+    .optional()
+    .describe('Optional start date filter for burndown data (ISO format)'),
+  
+  end_date: z.string()
+    .optional()
+    .describe('Optional end date filter for burndown data (ISO format)')
+});
+
+/**
+ * Tool for detailed burndown chart analysis and sprint progress monitoring
+ */
+export const analyzeBurndownTool = tool({
+  description: `Automatically analyze the current active sprint's burndown chart without requiring any parameters. 
+    The tool auto-detects the active sprint, compares actual vs ideal progress, identifies spikes/plateaus/blockers, 
+    and assesses if the team is ahead/behind schedule. Call this tool immediately when users request burndown analysis.`,
+  inputSchema: burndownAnalysisSchema,
+  execute: async (input, { experimental_context }) => {
+    try {
+      const validated = burndownAnalysisSchema.parse(input);
+      
+      // Auto-detect project if not provided
+      let projectId = validated.project_id;
+      let projectName = '';
+      
+      if (!projectId) {
+        const projectContext = await getCurrentProjectContext(experimental_context);
+        if (!projectContext) {
+          return `Unable to determine the current project context. Please provide a project_id or ensure you're working within a project.`;
+        }
+        projectId = projectContext.project_id;
+        projectName = projectContext.project_name;
+      }
+
+      // Auto-detect sprint if not provided
+      let sprintId = validated.sprint_id;
+      let sprint = null;
+
+      if (!sprintId) {
+        // Try to find active sprint first
+        const activeSprintResponse = await makeAuthenticatedRequest(
+          `/sprints/?project_id=${projectId}&status=active&limit=1`,
+          { method: 'GET' },
+          experimental_context
+        );
+
+        if (!activeSprintResponse.error && activeSprintResponse.data && activeSprintResponse.data.length > 0) {
+          sprint = activeSprintResponse.data[0];
+          sprintId = sprint.id;
+          console.log('Auto-detected active sprint:', sprintId);
+        } else {
+          // No active sprint, check if sprint title was provided
+          if (validated.sprint_title) {
+            const allSprintsResponse = await makeAuthenticatedRequest(
+              `/sprints/?project_id=${projectId}&limit=20`,
+              { method: 'GET' },
+              experimental_context
+            );
+
+            if (!allSprintsResponse.error && allSprintsResponse.data) {
+              const matchingSprint = allSprintsResponse.data.find((s: any) => 
+                s.sprint_name?.toLowerCase().includes(validated.sprint_title!.toLowerCase()) ||
+                s.sprintName?.toLowerCase().includes(validated.sprint_title!.toLowerCase())
+              );
+
+              if (matchingSprint) {
+                sprint = matchingSprint;
+                sprintId = sprint.id;
+                console.log('Found sprint by title:', sprintId, sprint.sprint_name || sprint.sprintName);
+              } else {
+                return `No sprint found with title containing "${validated.sprint_title}". Please check the sprint title.`;
+              }
+            }
+          } else {
+            // No active sprint and no title provided, ask user to specify
+            const allSprintsResponse = await makeAuthenticatedRequest(
+              `/sprints/?project_id=${projectId}&limit=10`,
+              { method: 'GET' },
+              experimental_context
+            );
+
+            if (!allSprintsResponse.error && allSprintsResponse.data && allSprintsResponse.data.length > 0) {
+              const availableSprints = allSprintsResponse.data
+                .filter((s: any) => s.status !== 'planning')
+                .map((s: any) => `- **${s.sprint_name || s.sprintName}** (Status: ${s.status})`)
+                .join('\n');
+
+              return `No active sprint found. Please specify which sprint's burndown chart to analyze:
+
+${availableSprints}
+
+You can specify the sprint by saying something like: "Analyze burndown for Sprint 1" or "Show me the burndown chart for [Sprint Name]"`;
+            } else {
+              return `No sprints found for ${projectName || `project ${projectId}`}. Please create a sprint first.`;
+            }
+          }
+        }
+      } else {
+        // Sprint ID provided, get sprint details
+        const sprintResponse = await makeAuthenticatedRequest(
+          `/sprints/${sprintId}`,
+          { method: 'GET' },
+          experimental_context
+        );
+
+        if (sprintResponse.error) {
+          return `Failed to retrieve sprint details: ${sprintResponse.error}`;
+        }
+
+        sprint = sprintResponse.data;
+      }
+
+      console.log('Analyzing burndown for sprint:', sprintId);
+
+      // Get burndown chart data
+      const chartParams = new URLSearchParams();
+      if (validated.start_date) chartParams.append('start_date', validated.start_date);
+      if (validated.end_date) chartParams.append('end_date', validated.end_date);
+      const queryString = chartParams.toString() ? `?${chartParams.toString()}` : '';
+
+      const burndownResponse = await makeAuthenticatedRequest(
+        `/velocity/sprint/${sprintId}/burndown${queryString}`,
+        { method: 'GET' },
+        experimental_context
+      );
+
+      if (burndownResponse.error) {
+        return `Failed to retrieve burndown data: ${burndownResponse.error}`;
+      }
+
+      const burndownData = burndownResponse.data;
+
+      // Get trend analysis if requested
+      let trendData = null;
+      if (validated.include_trend_analysis) {
+        const trendResponse = await makeAuthenticatedRequest(
+          `/velocity/sprint/${sprintId}/burndown/trend`,
+          { method: 'GET' },
+          experimental_context
+        );
+        
+        if (!trendResponse.error) {
+          trendData = trendResponse.data;
+        }
+      }
+
+      // Calculate sprint timeline - handle both field name formats
+      const sprintStartDate = sprint.start_date || sprint.startDate;
+      const sprintEndDate = sprint.end_date || sprint.endDate;
+      
+      if (!sprintStartDate || !sprintEndDate) {
+        return `Sprint dates are missing from the API response. Available fields: ${Object.keys(sprint).join(', ')}`;
+      }
+      
+      const sprintStart = new Date(sprintStartDate);
+      const sprintEnd = new Date(sprintEndDate);
+      const now = new Date();
+      const sprintDuration = Math.ceil((sprintEnd.getTime() - sprintStart.getTime()) / (24 * 60 * 60 * 1000));
+      const elapsed = Math.max(0, Math.ceil((now.getTime() - sprintStart.getTime()) / (24 * 60 * 60 * 1000)));
+      const progressPercentage = Math.min(100, Math.max(0, (elapsed / sprintDuration) * 100));
+
+      // Analyze burndown data
+      const { dates, remaining_points, completed_points, total_points } = burndownData;
+      const currentRemaining = remaining_points[remaining_points.length - 1] || 0;
+      const currentCompleted = completed_points[completed_points.length - 1] || 0;
+      const initialTotal = burndownData.initial_total_points || 0;
+
+      // Enhanced ideal vs actual comparison with schedule status analysis
+      let idealComparison = '';
+      if (validated.include_ideal_comparison && initialTotal > 0 && dates.length > 0) {
+        // Calculate ideal burndown for current day using same logic as frontend
+        const idealRemainingAtCurrentTime = Math.max(0, initialTotal - (initialTotal * (elapsed / sprintDuration)));
+        const idealVsActual = currentRemaining - idealRemainingAtCurrentTime;
+        
+        // Use dynamic tolerance like the frontend page: 10% of ideal points or at least 2 points
+        const tolerance = Math.max(2, idealRemainingAtCurrentTime * 0.1);
+        
+        let performanceStatus, statusIcon, statusColor;
+        if (idealVsActual > tolerance) {
+          performanceStatus = 'Behind Schedule';
+          statusIcon = '🔴';
+          statusColor = 'RED';
+        } else if (idealVsActual < -tolerance) {
+          performanceStatus = 'Ahead of Schedule';
+          statusIcon = '🟢';
+          statusColor = 'GREEN';
+        } else {
+          performanceStatus = 'On Track';
+          statusIcon = '🔵';
+          statusColor = 'BLUE';
+        }
+
+        // Calculate completion rate vs ideal rate
+        const actualCompletionRate = initialTotal > 0 ? (currentCompleted / initialTotal * 100) : 0;
+        const idealCompletionRate = (elapsed / sprintDuration) * 100;
+        const completionRateDifference = actualCompletionRate - idealCompletionRate;
+
+        idealComparison = `
+### 📊 Ideal vs Actual Progress Comparison
+
+**Current Status: ${statusIcon} ${performanceStatus}** (${statusColor})
+
+#### Remaining Work Analysis
+- **Ideal Remaining (Day ${elapsed}):** ${idealRemainingAtCurrentTime.toFixed(1)} story points
+- **Actual Remaining:** ${currentRemaining} story points
+- **Variance:** ${idealVsActual > 0 ? '+' : ''}${idealVsActual.toFixed(1)} story points (${idealVsActual > 0 ? 'more' : 'less'} than ideal)
+- **Tolerance Threshold:** ±${tolerance.toFixed(1)} story points
+
+#### Completion Rate Analysis
+- **Actual Completion Rate:** ${actualCompletionRate.toFixed(1)}% (${currentCompleted}/${initialTotal} points)
+- **Ideal Completion Rate:** ${idealCompletionRate.toFixed(1)}% for Day ${elapsed}
+- **Rate Difference:** ${completionRateDifference > 0 ? '+' : ''}${completionRateDifference.toFixed(1)}%
+
+#### Schedule Assessment
+${idealVsActual > tolerance ? 
+  `⚠️ **BEHIND SCHEDULE**: The team is ${Math.abs(idealVsActual).toFixed(1)} points behind the ideal burndown line.
+  
+  **Recommended Actions:**
+  - Review current impediments and blockers
+  - Consider scope adjustment or story prioritization
+  - Increase daily focus on completing current work
+  - Hold team retrospective to identify process improvements` :
+  idealVsActual < -tolerance ?
+  `✅ **AHEAD OF SCHEDULE**: The team is ${Math.abs(idealVsActual).toFixed(1)} points ahead of the ideal burndown line.
+  
+  **Team Performance:**
+  - Excellent progress and velocity
+  - Consider adding additional scope if capacity allows
+  - Document what's working well for future sprints
+  - Team is demonstrating strong delivery capability` :
+  `📈 **ON TRACK**: The team is closely following the ideal burndown trajectory.
+  
+  **Current Status:**
+  - Progress is within acceptable variance (±${tolerance.toFixed(1)} points)
+  - Maintain current pace and focus
+  - Continue monitoring daily progress
+  - Good alignment between planned and actual delivery`
+}`;
+      }
+
+      // Generate trend analysis section
+      let trendAnalysis = '';
+      if (trendData && validated.include_trend_analysis) {
+        const projectedCompletion = trendData.projected_completion ? 
+          new Date(trendData.projected_completion).toLocaleDateString() : 'Unknown';
+        
+        trendAnalysis = `
+### 📈 Trend Analysis
+
+- **Current Velocity:** ${trendData.velocity.toFixed(1)} story points per day
+- **Trend Direction:** ${trendData.trend}
+- **On Track:** ${trendData.is_on_track ? 'Yes ✅' : 'No ⚠️'}
+- **Projected Completion:** ${projectedCompletion}
+- **Data Points:** ${trendData.total_snapshots} snapshots
+
+${!trendData.is_on_track ? 
+  '⚠️ **Warning:** Current trend suggests sprint may not complete on time. Consider scope adjustment or impediment removal.' :
+  '✅ **Good news:** Current trend indicates sprint is on track for completion.'
+}`;
+      }
+
+      // Calculate completion percentage
+      const completionPercentage = initialTotal > 0 ? (currentCompleted / initialTotal * 100).toFixed(1) : '0';
+      const remainingPercentage = initialTotal > 0 ? (currentRemaining / initialTotal * 100).toFixed(1) : '0';
+
+      // Enhanced pattern analysis
+      let patternAnalysis = '';
+      if (validated.include_pattern_analysis && remaining_points.length > 2) {
+        const patterns = [];
+        const patternInsights = [];
+        const patternRecommendations = [];
+
+        // Analyze for spikes (sudden increases in remaining work)
+        const spikes = [];
+        for (let i = 1; i < remaining_points.length; i++) {
+          const change = remaining_points[i] - remaining_points[i - 1];
+          const percentChange = remaining_points[i - 1] > 0 ? (change / remaining_points[i - 1]) * 100 : 0;
+          
+          if (change > 0 && percentChange > 15) { // Significant increase
+            spikes.push({
+              day: i + 1,
+              date: dates[i],
+              increase: change,
+              percentChange: percentChange.toFixed(1)
+            });
+          }
+        }
+
+        if (spikes.length > 0) {
+          patterns.push(`**Spikes Detected:** ${spikes.length} significant increases in remaining work`);
+          spikes.forEach(spike => {
+            patterns.push(`  - Day ${spike.day} (${new Date(spike.date).toLocaleDateString()}): +${spike.increase} points (+${spike.percentChange}%)`);
+          });
+          patternInsights.push('Work spikes detected - may indicate scope creep or task breakdown issues');
+          patternRecommendations.push('Review what caused work increases and improve initial task estimation');
+        }
+
+        // Analyze for plateaus (periods of no progress)
+        const plateaus = [];
+        let plateauStart = -1;
+        let plateauLength = 0;
+        
+        for (let i = 1; i < remaining_points.length; i++) {
+          if (remaining_points[i] === remaining_points[i - 1] && remaining_points[i] > 0) {
+            if (plateauStart === -1) {
+              plateauStart = i - 1;
+              plateauLength = 2;
+            } else {
+              plateauLength++;
+            }
+          } else {
+            if (plateauLength >= 3) { // 3+ days of no progress
+              plateaus.push({
+                startDay: plateauStart + 1,
+                endDay: plateauStart + plateauLength,
+                startDate: dates[plateauStart],
+                endDate: dates[plateauStart + plateauLength - 1],
+                length: plateauLength,
+                remainingWork: remaining_points[plateauStart]
+              });
+            }
+            plateauStart = -1;
+            plateauLength = 0;
+          }
+        }
+
+        // Check for plateau at the end
+        if (plateauLength >= 3) {
+          plateaus.push({
+            startDay: plateauStart + 1,
+            endDay: plateauStart + plateauLength,
+            startDate: dates[plateauStart],
+            endDate: dates[plateauStart + plateauLength - 1],
+            length: plateauLength,
+            remainingWork: remaining_points[plateauStart]
+          });
+        }
+
+        if (plateaus.length > 0) {
+          patterns.push(`**Plateaus Detected:** ${plateaus.length} periods of stagnant progress`);
+          plateaus.forEach(plateau => {
+            patterns.push(`  - Days ${plateau.startDay}-${plateau.endDay}: ${plateau.length} days with no progress (${plateau.remainingWork} points remaining)`);
+          });
+          patternInsights.push('Extended plateaus suggest potential blockers or impediments');
+          patternRecommendations.push('Identify and address impediments causing work stagnation in Daily Scrums');
+        }
+
+        // Analyze burndown smoothness (velocity consistency)
+        const dailyProgress = [];
+        for (let i = 1; i < remaining_points.length; i++) {
+          const progress = remaining_points[i - 1] - remaining_points[i];
+          if (progress >= 0) dailyProgress.push(progress);
+        }
+
+        if (dailyProgress.length > 0) {
+          const avgDailyProgress = dailyProgress.reduce((sum, p) => sum + p, 0) / dailyProgress.length;
+          const progressVariance = dailyProgress.reduce((sum, p) => sum + Math.pow(p - avgDailyProgress, 2), 0) / dailyProgress.length;
+          const progressStdDev = Math.sqrt(progressVariance);
+          const consistencyRatio = avgDailyProgress > 0 ? progressStdDev / avgDailyProgress : 0;
+
+          if (consistencyRatio > 1.5) {
+            patterns.push(`**Irregular Progress:** High variability in daily progress (${consistencyRatio.toFixed(2)} ratio)`);
+            patternInsights.push('Inconsistent daily progress indicates uneven work distribution or varying task complexity');
+            patternRecommendations.push('Consider better task breakdown and work distribution across team members');
+          } else if (consistencyRatio < 0.3) {
+            patterns.push(`**Steady Progress:** Very consistent daily progress (${consistencyRatio.toFixed(2)} ratio)`);
+          }
+        }
+
+        // Schedule adherence analysis
+        const scheduleAnalysis = [];
+        if (initialTotal > 0 && elapsed > 0) {
+          const expectedDailyBurn = initialTotal / sprintDuration;
+          const actualDailyBurn = (initialTotal - currentRemaining) / elapsed;
+          const scheduleRatio = actualDailyBurn / expectedDailyBurn;
+
+          if (scheduleRatio > 1.2) {
+            scheduleAnalysis.push('**Ahead of Schedule:** Team is burning down work faster than planned');
+            patternInsights.push('Team is exceeding expected velocity - excellent progress');
+          } else if (scheduleRatio < 0.8) {
+            scheduleAnalysis.push('**Behind Schedule:** Team is burning down work slower than planned');
+            patternInsights.push('Team velocity is below expectations - may need intervention');
+            patternRecommendations.push('Investigate capacity issues and consider scope adjustment');
+          } else {
+            scheduleAnalysis.push('**On Schedule:** Team progress aligns well with sprint timeline');
+          }
+
+          // Analyze trajectory
+          if (remaining_points.length >= 3) {
+            const recentTrend = remaining_points.slice(-3);
+            const recentSlope = (recentTrend[0] - recentTrend[2]) / 2; // Average daily progress over last 3 days
+            const remainingDays = sprintDuration - elapsed;
+            const projectedRemaining = currentRemaining - (recentSlope * remainingDays);
+
+            if (projectedRemaining > currentRemaining * 0.1) {
+              scheduleAnalysis.push(`**Completion Risk:** At current pace, ${projectedRemaining.toFixed(1)} points may remain unfinished`);
+              patternInsights.push('Current trajectory suggests sprint goal may not be fully achieved');
+              patternRecommendations.push('Focus on highest priority items and consider scope reduction');
+            } else if (projectedRemaining < -currentRemaining * 0.1) {
+              scheduleAnalysis.push('**Early Completion Likely:** Current pace suggests early sprint completion');
+            }
+          }
+        }
+
+        patternAnalysis = `
+### 📊 Burndown Pattern Analysis
+
+${patterns.length > 0 ? patterns.join('\n') + '\n' : '**No significant patterns detected** - Burndown appears normal\n'}
+
+${scheduleAnalysis.length > 0 ? scheduleAnalysis.join('\n') + '\n' : ''}
+
+${patternInsights.length > 0 ? `**Pattern Insights:**
+${patternInsights.map(insight => `- ${insight}`).join('\n')}
+
+` : ''}${patternRecommendations.length > 0 ? `**Pattern-Based Recommendations:**
+${patternRecommendations.map(rec => `- ${rec}`).join('\n')}` : ''}`;
+      }
+
+      // Generate burndown visualization
+      const burndownVisualization = dates.map((date: string, index: number) => {
+        const remaining = remaining_points[index];
+        const completed = completed_points[index];
+        const dateObj = new Date(date);
+        const dayOfWeek = dateObj.toLocaleDateString('en', { weekday: 'short' });
+        const shortDate = dateObj.toLocaleDateString('en', { month: 'short', day: 'numeric' });
+        
+        return `${dayOfWeek} ${shortDate}: ${'█'.repeat(Math.max(1, Math.round(completed / 2)))}${'░'.repeat(Math.max(1, Math.round(remaining / 2)))} (${completed}/${completed + remaining})`;
+      }).join('\n');
+
+      // Generate insights and recommendations
+      const insights = [];
+      const recommendations = [];
+
+      if (progressPercentage > 75 && parseFloat(remainingPercentage) > 30) {
+        insights.push('Sprint is in final quarter but significant work remains');
+        recommendations.push('Focus on completing highest priority items and consider scope reduction');
+      }
+
+      if (burndownData.snapshots_with_data < elapsed * 0.6) {
+        insights.push('Limited burndown data available for accurate trend analysis');
+        recommendations.push('Ensure daily updates to backlog item status for better tracking');
+      }
+
+      if (trendData && !trendData.is_on_track && progressPercentage > 50) {
+        insights.push('Sprint trend indicates potential completion risk');
+        recommendations.push('Conduct team discussion on impediments and consider scope adjustment');
+      }
+
+      const report = `# Burndown Analysis Report - ${sprint.sprint_name || sprint.sprintName}
+
+## Sprint Overview
+- **Sprint Goal:** ${sprint.sprint_goal || sprint.sprintGoal || 'Not specified'}
+- **Duration:** ${sprintStart.toLocaleDateString()} - ${sprintEnd.toLocaleDateString()}
+- **Days Elapsed:** ${elapsed} of ${sprintDuration} days (${progressPercentage.toFixed(1)}%)
+- **Status:** ${sprint.status}
+
+## Current Progress
+- **Total Story Points:** ${initialTotal}
+- **Completed:** ${currentCompleted} points (${completionPercentage}%)
+- **Remaining:** ${currentRemaining} points (${remainingPercentage}%)
+- **Data Points Collected:** ${burndownData.snapshots_with_data} of ${burndownData.sprint_duration_days} possible
+
+${idealComparison}
+
+${trendAnalysis}
+
+${patternAnalysis}
+
+## Burndown Progress Visualization
+\`\`\`
+${burndownVisualization}
+\`\`\`
+
+Legend: █ = Completed work, ░ = Remaining work
+
+${insights.length > 0 ? `## 🔍 Key Insights
+${insights.map(insight => `- ${insight}`).join('\n')}` : ''}
+
+${recommendations.length > 0 ? `## 💡 Recommendations
+${recommendations.map(rec => `- ${rec}`).join('\n')}` : ''}
+
+## Actions for Scrum Master
+- Monitor daily progress and update burndown chart
+- Address any impediments blocking remaining work
+- Investigate spikes and plateaus identified in pattern analysis
+- Facilitate scope discussions if trend indicates completion risk
+- Use burndown insights in Daily Scrum discussions
+- Consider velocity factors for future sprint planning
+
+## Sprint Health Assessment
+${parseFloat(remainingPercentage) <= progressPercentage + 10 ? 
+  '✅ **Healthy:** Sprint progress aligns well with timeline' :
+  parseFloat(remainingPercentage) <= progressPercentage + 25 ?
+  '⚠️ **At Risk:** Sprint may need scope adjustment or impediment removal' :
+  '🚨 **Critical:** Significant intervention needed to meet sprint goals'
+}
+
+**Analysis Date:** ${new Date().toLocaleString()}
+**Sprint Day:** ${elapsed} of ${sprintDuration}
+**Data Source:** ScrumiX Burndown Tracking API`;
+
+      return report;
+
+    } catch (error) {
+      console.error('Error in analyzeBurndownTool:', error);
+      return `Failed to analyze burndown: ${error instanceof Error ? error.message : 'Unknown error occurred'}`;
+    }
+  }
+});
+
+/**
+ * Schema for current sprint velocity analysis
+ */
+const currentSprintVelocitySchema = z.object({
+  sprint_id: z.number()
+    .int('Sprint ID must be a whole number')
+    .positive('Sprint ID must be a positive integer')
+    .optional()
+    .describe('The ID of the current sprint (auto-detected if not provided)'),
+  
+  project_id: z.number()
+    .int('Project ID must be a whole number')
+    .positive('Project ID must be a positive integer')
+    .optional()
+    .describe('The ID of the project (auto-detected if not provided)'),
+  
+  compare_with_average: z.boolean()
+    .default(true)
+    .describe('Whether to compare current sprint velocity with team average')
+});
+
+/**
+ * Tool for analyzing current sprint velocity and comparing with historical performance
+ */
+export const analyzeCurrentSprintVelocityTool = tool({
+  description: `Analyze the current sprint's velocity and compare it with the team's historical average. 
+    This tool helps Scrum Masters understand how the current sprint is performing relative to past sprints 
+    and provides insights for capacity planning and sprint goal achievement.`,
+  inputSchema: currentSprintVelocitySchema,
+  execute: async (input, { experimental_context }) => {
+    try {
+      const validated = currentSprintVelocitySchema.parse(input);
+      
+      // Auto-detect project if not provided
+      let projectId = validated.project_id;
+      let projectName = '';
+      
+      if (!projectId) {
+        const projectContext = await getCurrentProjectContext(experimental_context);
+        if (!projectContext) {
+          return `Unable to determine the current project context. Please provide a project_id or ensure you're working within a project.`;
+        }
+        projectId = projectContext.project_id;
+        projectName = projectContext.project_name;
+      }
+
+      // Auto-detect current sprint if not provided
+      let sprintId = validated.sprint_id;
+      let sprint = null;
+
+      if (!sprintId) {
+        const sprintsResponse = await makeAuthenticatedRequest(
+          `/sprints/?project_id=${projectId}&status=active&limit=1`,
+          { method: 'GET' },
+          experimental_context
+        );
+
+        if (sprintsResponse.error || !sprintsResponse.data || sprintsResponse.data.length === 0) {
+          return `No active sprint found for ${projectName || `project ${projectId}`}. Please specify a sprint_id or ensure there's an active sprint.`;
+        }
+
+        sprint = sprintsResponse.data[0];
+        sprintId = sprint.id;
+      } else {
+        const sprintResponse = await makeAuthenticatedRequest(
+          `/sprints/${sprintId}`,
+          { method: 'GET' },
+          experimental_context
+        );
+
+        if (sprintResponse.error) {
+          return `Failed to retrieve sprint details: ${sprintResponse.error}`;
+        }
+
+        sprint = sprintResponse.data;
+      }
+
+      console.log('Analyzing current sprint velocity for sprint:', sprintId);
+
+      // Get current sprint velocity
+      const currentVelocityResponse = await makeAuthenticatedRequest(
+        `/velocity/sprint/${sprintId}/velocity`,
+        { method: 'GET' },
+        experimental_context
+      );
+
+      if (currentVelocityResponse.error) {
+        return `Failed to retrieve current sprint velocity: ${currentVelocityResponse.error}`;
+      }
+
+      const currentVelocity = currentVelocityResponse.data?.velocity_points || 0;
+
+      // Get current sprint backlog for additional insights
+      const backlogResponse = await makeAuthenticatedRequest(
+        `/sprints/${sprintId}/backlog`,
+        { method: 'GET' },
+        experimental_context
+      );
+
+      const backlogItems = backlogResponse.data || [];
+      const completedItems = backlogItems.filter((item: any) => item.status === 'done');
+      const inProgressItems = backlogItems.filter((item: any) => item.status === 'in_progress');
+      const todoItems = backlogItems.filter((item: any) => item.status === 'todo');
+
+      const totalStoryPoints = backlogItems.reduce((sum: number, item: any) => sum + (item.story_point || 0), 0);
+      const completedStoryPoints = completedItems.reduce((sum: number, item: any) => sum + (item.story_point || 0), 0);
+      const inProgressStoryPoints = inProgressItems.reduce((sum: number, item: any) => sum + (item.story_point || 0), 0);
+      const remainingStoryPoints = totalStoryPoints - completedStoryPoints;
+
+      // Get team average velocity for comparison
+      let averageComparison = '';
+      if (validated.compare_with_average) {
+        const avgVelocityResponse = await makeAuthenticatedRequest(
+          `/velocity/project/${projectId}/velocity/average?exclude_sprint_id=${sprintId}`,
+          { method: 'GET' },
+          experimental_context
+        );
+
+        if (!avgVelocityResponse.error && avgVelocityResponse.data) {
+          const avgVelocity = avgVelocityResponse.data.average_velocity;
+          const totalSprints = avgVelocityResponse.data.total_sprints;
+          const velocityDifference = currentVelocity - avgVelocity;
+          const velocityPercentage = avgVelocity > 0 ? (velocityDifference / avgVelocity * 100).toFixed(1) : '0';
+
+          const performanceLevel = Math.abs(velocityDifference) < avgVelocity * 0.1 ? 'On Par' :
+                                  velocityDifference > avgVelocity * 0.1 ? 'Above Average' : 'Below Average';
+
+          averageComparison = `
+### 📊 Velocity Comparison with Team Average
+
+- **Current Sprint Velocity:** ${currentVelocity} story points
+- **Team Average Velocity:** ${avgVelocity.toFixed(1)} story points (based on ${totalSprints} completed sprints)
+- **Difference:** ${velocityDifference > 0 ? '+' : ''}${velocityDifference.toFixed(1)} story points (${parseFloat(velocityPercentage) > 0 ? '+' : ''}${velocityPercentage}%)
+- **Performance Level:** ${performanceLevel}
+
+${performanceLevel === 'Above Average' ? 
+  '🚀 **Excellent!** Current sprint is exceeding the team\'s historical average.' :
+  performanceLevel === 'Below Average' ?
+  '⚠️ **Below Average:** Current sprint velocity is lower than typical. Consider investigating impediments.' :
+  '✅ **Consistent:** Current sprint velocity aligns with team\'s historical performance.'
+}`;
+        }
+      }
+
+      // Calculate sprint timeline and progress - handle both field name formats
+      const sprintStartDate = sprint.start_date || sprint.startDate;
+      const sprintEndDate = sprint.end_date || sprint.endDate;
+      
+      if (!sprintStartDate || !sprintEndDate) {
+        return `Sprint dates are missing from the API response. Available fields: ${Object.keys(sprint).join(', ')}`;
+      }
+      
+      const sprintStart = new Date(sprintStartDate);
+      const sprintEnd = new Date(sprintEndDate);
+      const now = new Date();
+      const sprintDuration = Math.ceil((sprintEnd.getTime() - sprintStart.getTime()) / (24 * 60 * 60 * 1000));
+      const elapsed = Math.max(0, Math.ceil((now.getTime() - sprintStart.getTime()) / (24 * 60 * 60 * 1000)));
+      const progressPercentage = Math.min(100, Math.max(0, (elapsed / sprintDuration) * 100));
+
+      // Generate insights and recommendations
+      const insights = [];
+      const recommendations = [];
+
+      const completionRate = totalStoryPoints > 0 ? (completedStoryPoints / totalStoryPoints * 100) : 0;
+      const expectedProgress = progressPercentage;
+
+      if (completionRate < expectedProgress - 15) {
+        insights.push('Sprint velocity is lagging behind timeline expectations');
+        recommendations.push('Investigate impediments and consider scope adjustment in upcoming Daily Scrums');
+      } else if (completionRate > expectedProgress + 15) {
+        insights.push('Sprint is ahead of schedule with strong velocity');
+        recommendations.push('Consider adding additional scope or preparing for early completion');
+      }
+
+      if (inProgressStoryPoints > totalStoryPoints * 0.4) {
+        insights.push('High amount of work in progress may impact velocity');
+        recommendations.push('Encourage team to focus on completing items before starting new ones');
+      }
+
+      if (currentVelocity === 0 && elapsed > sprintDuration * 0.3) {
+        insights.push('No completed story points despite significant time elapsed');
+        recommendations.push('Urgent attention needed - review impediments and work breakdown');
+      }
+
+      const report = `# Current Sprint Velocity Analysis - ${sprint.sprint_name || sprint.sprintName}
+
+## Sprint Overview
+- **Sprint Goal:** ${sprint.sprint_goal || sprint.sprintGoal || 'Not specified'}
+- **Duration:** ${sprintStart.toLocaleDateString()} - ${sprintEnd.toLocaleDateString()}
+- **Progress:** Day ${elapsed} of ${sprintDuration} (${progressPercentage.toFixed(1)}% elapsed)
+- **Status:** ${sprint.status}
+
+## Current Velocity Metrics
+- **Completed Story Points:** ${currentVelocity} points
+- **Completion Rate:** ${completionRate.toFixed(1)}% of total scope
+- **Remaining Story Points:** ${remainingStoryPoints} points
+- **Work In Progress:** ${inProgressStoryPoints} points
+
+## Work Distribution
+- **Completed Items:** ${completedItems.length} (${completedStoryPoints} pts)
+- **In Progress Items:** ${inProgressItems.length} (${inProgressStoryPoints} pts)
+- **Todo Items:** ${todoItems.length} (${remainingStoryPoints - inProgressStoryPoints} pts)
+- **Total Items:** ${backlogItems.length} (${totalStoryPoints} pts)
+
+${averageComparison}
+
+## Velocity Projection
+${remainingStoryPoints > 0 ? `
+- **Days Remaining:** ${sprintDuration - elapsed}
+- **Required Daily Velocity:** ${((remainingStoryPoints) / Math.max(1, sprintDuration - elapsed)).toFixed(1)} story points per day
+- **Current Daily Velocity:** ${elapsed > 0 ? (currentVelocity / elapsed).toFixed(1) : '0'} story points per day
+` : '✅ **All story points completed!** Sprint goal achieved.'}
+
+${insights.length > 0 ? `## 🔍 Key Insights
+${insights.map(insight => `- ${insight}`).join('\n')}` : ''}
+
+${recommendations.length > 0 ? `## 💡 Recommendations
+${recommendations.map(rec => `- ${rec}`).join('\n')}` : ''}
+
+## Actions for Scrum Master
+- Monitor daily velocity trends and address impediments
+- Facilitate scope discussions if velocity indicates completion risk
+- Share velocity insights with team during Daily Scrums
+- Use current performance for future sprint capacity planning
+- Document any factors affecting velocity for retrospective
+
+## Sprint Health Assessment
+${completionRate >= expectedProgress - 10 ? 
+  '✅ **Healthy:** Sprint velocity is on track with timeline' :
+  completionRate >= expectedProgress - 25 ?
+  '⚠️ **At Risk:** Sprint velocity needs attention to meet goals' :
+  '🚨 **Critical:** Immediate intervention needed for sprint success'
+}
+
+**Analysis Date:** ${new Date().toLocaleString()}
+**Sprint Day:** ${elapsed} of ${sprintDuration}
+**Data Source:** ScrumiX Velocity Tracking API`;
+
+      return report;
+
+    } catch (error) {
+      console.error('Error in analyzeCurrentSprintVelocityTool:', error);
+      return `Failed to analyze current sprint velocity: ${error instanceof Error ? error.message : 'Unknown error occurred'}`;
     }
   }
 });
@@ -1777,7 +2753,9 @@ export const checkScrumComplianceTool = tool({
 
       const allSprints = sprintsResponse.data || [];
       const recentSprints = allSprints.filter((sprint: any) => {
-        const sprintStart = new Date(sprint.start_date);
+        const sprintStartDate = sprint.start_date || sprint.startDate;
+        if (!sprintStartDate) return false;
+        const sprintStart = new Date(sprintStartDate);
         return sprintStart >= startDate;
       });
 
@@ -1815,8 +2793,12 @@ export const checkScrumComplianceTool = tool({
       complianceScore.total++;
       const dailyScrums = projectMeetings.filter((m: any) => m.meeting_type === 'daily_standup');
       const expectedDailyScrums = activeSprints.reduce((total: number, sprint: any) => {
-        const sprintStart = new Date(sprint.start_date);
-        const sprintEnd = new Date(sprint.end_date);
+        const sprintStartDate = sprint.start_date || sprint.startDate;
+        const sprintEndDate = sprint.end_date || sprint.endDate;
+        if (!sprintStartDate || !sprintEndDate) return total;
+        
+        const sprintStart = new Date(sprintStartDate);
+        const sprintEnd = new Date(sprintEndDate);
         const workingDays = Math.max(1, Math.floor((Math.min(sprintEnd.getTime(), endDate.getTime()) - Math.max(sprintStart.getTime(), startDate.getTime())) / (24 * 60 * 60 * 1000)));
         return total + Math.max(0, workingDays - 2); // Exclude weekends roughly
       }, 0);
@@ -1867,8 +2849,12 @@ export const checkScrumComplianceTool = tool({
       complianceScore.total++;
       if (recentSprints.length > 1) {
         const sprintLengths = recentSprints.map((sprint: any) => {
-          const start = new Date(sprint.start_date);
-          const end = new Date(sprint.end_date);
+          const sprintStartDate = sprint.start_date || sprint.startDate;
+          const sprintEndDate = sprint.end_date || sprint.endDate;
+          if (!sprintStartDate || !sprintEndDate) return 14; // Default 2 weeks
+          
+          const start = new Date(sprintStartDate);
+          const end = new Date(sprintEndDate);
           return Math.round((end.getTime() - start.getTime()) / (24 * 60 * 60 * 1000));
         });
 
@@ -1904,7 +2890,9 @@ export const checkScrumComplianceTool = tool({
           const backlogItems = backlogResponse.data || [];
           const recentlyAdded = backlogItems.filter((item: any) => {
             const createdDate = new Date(item.created_at);
-            const sprintStart = new Date(sprint.start_date);
+            const sprintStartDate = sprint.start_date || sprint.startDate;
+            if (!sprintStartDate) return false;
+            const sprintStart = new Date(sprintStartDate);
             return createdDate > sprintStart;
           });
 
@@ -2000,9 +2988,12 @@ ${complianceIssues.filter(i => i.severity === 'Medium').map(issue => `- ${issue.
  * Collection of all Scrum Master tools
  */
 export const scrumMasterTools = {
+  getSprintInfo: getSprintInfoTool,
   analyzeSprintHealth: analyzeSprintHealthTool,
   scheduleEvent: scheduleEventTool,
   analyzeVelocity: analyzeVelocityTool,
+  analyzeBurndown: analyzeBurndownTool,
+  analyzeCurrentSprintVelocity: analyzeCurrentSprintVelocityTool,
   analyzeRetrospectives: analyzeRetrospectivesTool,
   checkScrumCompliance: checkScrumComplianceTool,
   manageMeetingAgenda: manageMeetingAgendaTool,
