@@ -71,6 +71,7 @@ DOCUMENTATION SUMMARIZATION:
 Available Tools:
 - getSprintInfo: Access current sprint information and automatically detect active sprint with ID, name, dates, and status - use this first to get sprint context
 - scheduleEvent: Schedule Scrum ceremonies with automatic project/sprint detection, participant management, recurring meetings, and timezone handling
+- manageMeetings: Complete meeting lifecycle management with CRUD operations (create, read, update, delete, list) - create new meetings, review existing meetings, edit meeting details, delete meetings, and list meetings with filtering
 - analyzeSprintHealth: Analyze current sprint progress and detect issues
 - analyzeVelocity: Track team velocity across ALL completed sprints (up to 50), calculate averages, and provide capacity planning forecasts with comprehensive historical trend analysis
 - analyzeBurndown: Automatically analyze the current active sprint's burndown chart (call with NO parameters - auto-detects active sprint), compare actual vs ideal progress, detect spikes/plateaus/blockers, and assess whether team is ahead/behind schedule
@@ -277,6 +278,7 @@ export async function POST(req: Request) {
           getSprintInfo: scrumMasterTools.getSprintInfo,
           analyzeSprintHealth: scrumMasterTools.analyzeSprintHealth,
           scheduleEvent: scrumMasterTools.scheduleEvent,
+          manageMeetings: scrumMasterTools.manageMeetings,
           analyzeVelocity: scrumMasterTools.analyzeVelocity,
           analyzeBurndown: scrumMasterTools.analyzeBurndown,
           analyzeCurrentSprintVelocity: scrumMasterTools.analyzeCurrentSprintVelocity,
@@ -357,6 +359,7 @@ export async function POST(req: Request) {
           getSprintInfo: scrumMasterTools.getSprintInfo,
           analyzeSprintHealth: scrumMasterTools.analyzeSprintHealth,
           scheduleEvent: scrumMasterTools.scheduleEvent,
+          manageMeetings: scrumMasterTools.manageMeetings,
           analyzeVelocity: scrumMasterTools.analyzeVelocity,
           analyzeBurndown: scrumMasterTools.analyzeBurndown,
           analyzeCurrentSprintVelocity: scrumMasterTools.analyzeCurrentSprintVelocity,
