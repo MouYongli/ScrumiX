@@ -1,7 +1,19 @@
-export type AgentType = 'product-owner' | 'scrum-master' | 'developer';
+export type AgentType = 'product-owner' | 'scrum-master' | 'developer' | 'support';
+export type ProjectAgentType = 'product-owner' | 'scrum-master' | 'developer';
 
 export interface Agent {
   id: AgentType;
+  name: string;
+  description: string;
+  icon: string;
+  color: string;
+  accentColor: string;
+  expertise: string[];
+  defaultModel?: string;
+}
+
+export interface ProjectAgent {
+  id: ProjectAgentType;
   name: string;
   description: string;
   icon: string;

@@ -34,7 +34,7 @@ import {
 } from 'lucide-react';
 import Link from 'next/link';
 import Image from 'next/image';
-import { Agent, AgentType, ChatMessage, AgentChatState, UIMessage, MessagePart } from '@/types/chat';
+import { ProjectAgent, ProjectAgentType, ChatMessage, AgentChatState, UIMessage, MessagePart } from '@/types/chat';
 import { getAgentModelConfig, AI_MODELS } from '@/lib/ai-gateway';
 import { getPreferredModel, setPreferredModel } from '@/lib/model-preferences';
 import { hasNativeWebSearch } from '@/lib/tools/web-search';
@@ -44,7 +44,7 @@ import { chatAPI } from '@/lib/chat-api';
 import ModelSelector from './ModelSelector';
 
 // Agent definitions with Scrum-specific roles
-const AGENTS: Record<AgentType, Agent> = {
+const AGENTS: Record<ProjectAgentType, ProjectAgent> = {
   'product-owner': {
     id: 'product-owner',
     name: 'Product Owner',
@@ -77,7 +77,7 @@ const AGENTS: Record<AgentType, Agent> = {
   }
 };
 
-const getAgentIcon = (agentType: AgentType) => {
+const getAgentIcon = (agentType: ProjectAgentType) => {
   switch (agentType) {
     case 'product-owner':
       return User;
@@ -137,7 +137,7 @@ interface AgentChatStateWithFiles extends AgentChatState {
 
 
 const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
-  const [activeAgent, setActiveAgent] = useState<AgentType>('product-owner');
+  const [activeAgent, setActiveAgent] = useState<ProjectAgentType>('product-owner');
   const [isClient, setIsClient] = useState(false);
   const [webSearchEnabled, setWebSearchEnabled] = useState(false);
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
@@ -156,19 +156,19 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     conversationTitle: string;
     agentType: string;
   } | null>(null);
-  const [currentConversationIds, setCurrentConversationIds] = useState<Record<AgentType, string>>({
+  const [currentConversationIds, setCurrentConversationIds] = useState<Record<ProjectAgentType, string>>({
     'product-owner': '',
     'scrum-master': '',
     'developer': ''
   });
   
   // Track the currently selected conversation for highlighting
-  const [selectedConversationIds, setSelectedConversationIds] = useState<Record<AgentType, string>>({
+  const [selectedConversationIds, setSelectedConversationIds] = useState<Record<ProjectAgentType, string>>({
     'product-owner': '',
     'scrum-master': '',
     'developer': ''
   });
-  const [agentStates, setAgentStates] = useState<Record<AgentType, AgentChatStateWithFiles>>({
+  const [agentStates, setAgentStates] = useState<Record<ProjectAgentType, AgentChatStateWithFiles>>({
     'product-owner': { 
       messages: [], 
       isTyping: false, 
@@ -196,33 +196,33 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   });
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRefs = useRef<Record<AgentType, HTMLTextAreaElement | null>>({
+  const inputRefs = useRef<Record<ProjectAgentType, HTMLTextAreaElement | null>>({
     'product-owner': null,
     'scrum-master': null,
     'developer': null
   });
-  const fileInputRefs = useRef<Record<AgentType, HTMLInputElement | null>>({
+  const fileInputRefs = useRef<Record<ProjectAgentType, HTMLInputElement | null>>({
     'product-owner': null,
     'scrum-master': null,
     'developer': null
   });
 
   // Track if we're currently sending a message to avoid state conflicts
-  const [sendingStates, setSendingStates] = useState<Record<AgentType, boolean>>({
+  const [sendingStates, setSendingStates] = useState<Record<ProjectAgentType, boolean>>({
     'product-owner': false,
     'scrum-master': false,
     'developer': false
   });
 
   // Track initial loading to prevent duplication during page load
-  const [initialLoadingStates, setInitialLoadingStates] = useState<Record<AgentType, boolean>>({
+  const [initialLoadingStates, setInitialLoadingStates] = useState<Record<ProjectAgentType, boolean>>({
     'product-owner': true,
     'scrum-master': true,
     'developer': true
   });
 
   // Track last sync time for periodic reconciliation
-  const [lastSyncTimes, setLastSyncTimes] = useState<Record<AgentType, number>>({
+  const [lastSyncTimes, setLastSyncTimes] = useState<Record<ProjectAgentType, number>>({
     'product-owner': 0,
     'scrum-master': 0,
     'developer': 0
@@ -302,7 +302,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   });
 
   // Helper to get chat history hook for agent
-  const getChatHistory = (agentType: AgentType) => {
+  const getChatHistory = (agentType: ProjectAgentType) => {
     switch (agentType) {
       case 'product-owner': return productOwnerChat;
       case 'scrum-master': return scrumMasterChat;
@@ -457,7 +457,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   }, []);
 
   // Load a specific conversation
-  const loadConversation = useCallback(async (conversationId: string, agentType: AgentType) => {
+  const loadConversation = useCallback(async (conversationId: string, agentType: ProjectAgentType) => {
     try {
       // Prevent auto-scroll during conversation load and agent switch
       suppressAutoScrollRef.current = true;
@@ -505,7 +505,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   }, [getChatHistory]);
 
   // Helper function to get API endpoint for agent type
-  const getApiEndpoint = (agentType: AgentType): string => {
+  const getApiEndpoint = (agentType: ProjectAgentType): string => {
     switch (agentType) {
       case 'product-owner': return '/api/chat/product-owner';
       case 'scrum-master': return '/api/chat/scrum-master';
@@ -541,7 +541,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   };
 
   // Explicit refresh function - only called when user explicitly needs fresh data
-  const refreshConversation = async (agentType: AgentType) => {
+  const refreshConversation = async (agentType: ProjectAgentType) => {
     // Don't refresh if currently sending a message
     if (sendingStates[agentType]) {
       return;
@@ -579,7 +579,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   };
 
   // New persistent chat message sender
-  const sendPersistentMessage = async (agentType: AgentType) => {
+  const sendPersistentMessage = async (agentType: ProjectAgentType) => {
     const currentState = agentStates[agentType];
     if (!currentState.inputValue.trim() && !currentState.files?.length) return;
 
@@ -932,7 +932,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
 
   // Track previous message count to only scroll when new messages are added
   const suppressAutoScrollRef = useRef(false);
-  const prevMessageCountRef = useRef<{[key in AgentType]: number}>({
+  const prevMessageCountRef = useRef<{[key in ProjectAgentType]: number}>({
     'product-owner': 0,
     'scrum-master': 0,
     'developer': 0
@@ -1034,14 +1034,14 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     };
   }, [showAgentDropdown, showPlusDropdown, showChatMenu]);
 
-  const updateAgentState = (agentType: AgentType, updates: Partial<AgentChatStateWithFiles>) => {
+  const updateAgentState = (agentType: ProjectAgentType, updates: Partial<AgentChatStateWithFiles>) => {
     setAgentStates(prev => ({
       ...prev,
       [agentType]: { ...prev[agentType], ...updates }
     }));
   };
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, agentType: AgentType) => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>, agentType: ProjectAgentType) => {
     const files = e.target.files;
     if (!files) return;
 
@@ -1063,7 +1063,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     updateAgentState(agentType, { files });
   };
 
-  const removeFiles = (agentType: AgentType) => {
+  const removeFiles = (agentType: ProjectAgentType) => {
     updateAgentState(agentType, { files: undefined });
     const fileInput = fileInputRefs.current[agentType];
     if (fileInput) {
@@ -1071,19 +1071,19 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     }
   };
 
-  const handleDragOverChat = (e: React.DragEvent, agentType: AgentType) => {
+  const handleDragOverChat = (e: React.DragEvent, agentType: ProjectAgentType) => {
     handleDragOver(e);
     if (!agentStates[agentType].isDragOver) {
       updateAgentState(agentType, { isDragOver: true });
     }
   };
 
-  const handleDragEnterChat = (e: React.DragEvent, agentType: AgentType) => {
+  const handleDragEnterChat = (e: React.DragEvent, agentType: ProjectAgentType) => {
     handleDragEnter(e);
     updateAgentState(agentType, { isDragOver: true });
   };
 
-  const handleDragLeaveChat = (e: React.DragEvent, agentType: AgentType) => {
+  const handleDragLeaveChat = (e: React.DragEvent, agentType: ProjectAgentType) => {
     handleDragLeave(e);
     // Only set isDragOver to false if we're leaving the chat area completely
     if (!e.currentTarget.contains(e.relatedTarget as Node)) {
@@ -1091,7 +1091,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     }
   };
 
-  const handleDropChat = (e: React.DragEvent, agentType: AgentType) => {
+  const handleDropChat = (e: React.DragEvent, agentType: ProjectAgentType) => {
     const droppedFiles = handleDrop(e);
     updateAgentState(agentType, { isDragOver: false });
     
@@ -1125,7 +1125,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     }
   };
 
-  const sendMessage = async (agentType: AgentType) => {
+  const sendMessage = async (agentType: ProjectAgentType) => {
     const currentState = agentStates[agentType];
     if (!currentState.inputValue.trim() && !currentState.files?.length) return;
 
@@ -1162,7 +1162,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
 
     if (agentType === 'product-owner' || agentType === 'scrum-master' || agentType === 'developer') {
       // Use real AI for Product Owner, Scrum Master, and Developer
-      const getApiEndpoint = (type: AgentType) => {
+      const getApiEndpoint = (type: ProjectAgentType) => {
         switch (type) {
           case 'product-owner': return '/api/chat/product-owner';
           case 'scrum-master': return '/api/chat/scrum-master';
@@ -1345,7 +1345,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent, agentType: AgentType) => {
+  const handleKeyPress = (e: React.KeyboardEvent, agentType: ProjectAgentType) => {
     if (e.key === 'Enter') {
       if (e.shiftKey) {
         // Allow line break with Shift + Enter
@@ -1360,7 +1360,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     }
   };
 
-  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>, agentType: AgentType) => {
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>, agentType: ProjectAgentType) => {
     const textarea = e.target;
     
     // Auto-resize textarea
@@ -1370,11 +1370,11 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     updateAgentState(agentType, { inputValue: textarea.value });
   };
 
-  const clearChatHistory = (agentType: AgentType) => {
+  const clearChatHistory = (agentType: ProjectAgentType) => {
     updateAgentState(agentType, { messages: [] });
   };
 
-  const exportChatHistory = (agentType: AgentType) => {
+  const exportChatHistory = (agentType: ProjectAgentType) => {
     const messages = agentStates[agentType].messages;
     const chatData = {
       projectId,
@@ -1552,7 +1552,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     return isBinaryQuestion && !hasExclusions;
   };
 
-  const handleConfirmation = async (agentType: AgentType, messageId: string, accepted: boolean) => {
+  const handleConfirmation = async (agentType: ProjectAgentType, messageId: string, accepted: boolean) => {
     const currentState = agentStates[agentType];
     
     // Mark this message as confirmed
@@ -1589,9 +1589,9 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     await sendConfirmationResponse(agentType, userMessage);
   };
 
-  const sendConfirmationResponse = async (agentType: AgentType, userMessage: ChatMessage) => {
+  const sendConfirmationResponse = async (agentType: ProjectAgentType, userMessage: ChatMessage) => {
     const currentState = agentStates[agentType];
-    const getApiEndpoint = (type: AgentType) => {
+    const getApiEndpoint = (type: ProjectAgentType) => {
       switch (type) {
         case 'product-owner': return '/api/chat/product-owner';
         case 'scrum-master': return '/api/chat/scrum-master';
@@ -1694,7 +1694,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     setEditingContent('');
   };
 
-  const saveEditedMessage = async (agentType: AgentType, messageId: string) => {
+  const saveEditedMessage = async (agentType: ProjectAgentType, messageId: string) => {
     if (!editingContent.trim()) return;
 
     const currentState = agentStates[agentType];
@@ -1728,8 +1728,8 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     await regenerateConversationFromMessage(agentType, updatedMessages, updatedMessage);
   };
 
-  const regenerateConversationFromMessage = async (agentType: AgentType, messages: ChatMessage[], editedMessage: ChatMessage) => {
-    const getApiEndpoint = (type: AgentType) => {
+  const regenerateConversationFromMessage = async (agentType: ProjectAgentType, messages: ChatMessage[], editedMessage: ChatMessage) => {
+    const getApiEndpoint = (type: ProjectAgentType) => {
       switch (type) {
         case 'product-owner': return '/api/chat/product-owner';
         case 'scrum-master': return '/api/chat/scrum-master';
@@ -2771,13 +2771,13 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                 </p>
                 <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-3 border-l-4 border-red-500">
                   <div className="flex items-center space-x-2 mb-1">
-                    <div className={`w-4 h-4 ${AGENTS[deleteConfirmModal.agentType as AgentType]?.color || 'bg-gray-500'} rounded`}></div>
+                    <div className={`w-4 h-4 ${AGENTS[deleteConfirmModal.agentType as ProjectAgentType]?.color || 'bg-gray-500'} rounded`}></div>
                     <span className="font-medium text-sm text-gray-900 dark:text-white">
                       {deleteConfirmModal.conversationTitle}
                     </span>
                   </div>
                   <p className="text-xs text-gray-600 dark:text-gray-400">
-                    {AGENTS[deleteConfirmModal.agentType as AgentType]?.name || deleteConfirmModal.agentType} conversation
+                    {AGENTS[deleteConfirmModal.agentType as ProjectAgentType]?.name || deleteConfirmModal.agentType} conversation
                   </p>
                 </div>
               </div>
