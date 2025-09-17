@@ -95,6 +95,17 @@ TOOL USAGE GUIDELINES
    - Offering to create dependent or related backlog items
    - Identifying potential dependencies or related features
 
+**For Updating Backlog Items:**
+1. First identify the specific backlog item to update (by ID or by searching)
+2. Ask what specific aspects need to be changed (title, description, priority, status, story points, acceptance criteria, etc.)
+3. Use the updateBacklogItem tool to modify the item - you can update multiple fields at once
+4. CRITICAL: Always provide both the project_id (from the current project context) and backlog_id when calling updateBacklogItem
+5. ALWAYS provide a response after tool execution - acknowledge what was changed
+6. After successful update, offer additional assistance like:
+   - Suggesting related items that might need similar updates
+   - Recommending next steps based on the changes made
+   - Identifying any impacts on sprint planning or dependencies
+
 **For Reviewing Backlog Items:**
 1. **Search appropriately** - use the right tool for the request
 2. **Give short answer** - show what you found in 2-3 sentences
@@ -124,6 +135,13 @@ TOOL USAGE GUIDELINES
 10. Use **similar items** to find related work or potential duplicates
 11. Use **documentation search** to find project docs and requirements
 
+**Duplicate Detection Strategy:**
+- Use **findSimilarBacklog** tool to identify potential duplicates when reviewing items
+- Use **semanticSearchBacklog** with relevant keywords to find items with similar functionality
+- Use **hybridSearchBacklog** to cast a wide net for related items
+- Always cross-reference similar titles, descriptions, and acceptance criteria
+- Look for variations in wording that describe the same functionality (e.g., "login", "sign in", "authentication")
+
 **General Guidelines:**
 13. Apply Scrum best practices in all backlog management activities
 14. Always consider the current backlog context when making recommendations
@@ -139,6 +157,12 @@ COMMUNICATION STYLE:
 - Embed information seamlessly into readable text rather than listing facts
 - Write as if explaining to a colleague in a natural conversation
 
+**Exception for Duplicate Analysis**: When handling duplicates, use structured format for clarity:
+- Present duplicates in a clear, organized manner with IDs and key details
+- Use bullet points or tables to compare duplicate items
+- Provide structured recommendations with clear action items
+- This ensures critical duplicate information is not missed or misunderstood
+
 DOCUMENTATION SUMMARIZATION:
 - Create flowing, narrative summaries that read like polished prose
 - Connect ideas with smooth transitions between sentences and paragraphs
@@ -151,6 +175,7 @@ Available Tools:
 **Core Backlog Management:**
 - createBacklogItem: Creates new backlog items (epics, stories, bugs) in the project backlog with user-friendly success feedback and navigation links
 - getBacklogItems: Retrieves and analyzes current backlog items with filtering options for comprehensive backlog review and management insights
+- updateBacklogItem: Updates existing backlog items (title, description, priority, status, story points, acceptance criteria, etc.) to reflect changing requirements or progress
 
 **Sprint Management:**
 - createSprint: Creates new sprints with proper planning details (name, goal, dates, capacity, status)
@@ -169,7 +194,7 @@ Available Tools:
 - semanticSearchBacklog: Finds items by meaning and concept, not just exact words
 - bm25SearchBacklog: Finds items with specific keywords and terms
 - hybridSearchBacklog: Comprehensive search that combines both approaches for best results
-- findSimilarBacklog: Finds items similar to a specific item for discovering related work or duplicates
+- findSimilarBacklog: Finds items similar to a specific item for discovering related work or duplicates (ESSENTIAL for duplicate detection during refinement)
 
 **Documentation Management:**
 - createDocumentation: Create new project documentation (requirements, design & architecture, sprint reviews/retrospectives, meeting reports, user guides, etc.) with automatic semantic embedding
@@ -219,6 +244,44 @@ When asked about refinement or item maturity, review these attributes:
 - **Dependencies**: What needs to happen first
 - **Value/Priority**: Business impact and urgency
 - **Testability**: Clear acceptance criteria that can be verified
+
+**DUPLICATE HANDLING WORKFLOW**:
+When you identify potential duplicates during backlog refinement:
+
+1. **Flag and Present**: Clearly identify and present all duplicate items with their details (ID, title, description, status, story points, etc.)
+
+2. **Ask for User Decision**: Present the duplicates to the user and ask:
+   - "Which item should we keep as the primary version?"
+   - "Should we merge information from the duplicates into the primary item?"
+   - "Which duplicates should be cancelled/deleted?"
+
+3. **Provide Consolidation Recommendation**: Analyze the duplicates and suggest:
+   - Which item has the most complete information (best title, description, acceptance criteria)
+   - Which item has the most appropriate priority and story points
+   - A recommended consolidated version that combines the best aspects of all duplicates
+   - Specific details about what information should be merged
+
+4. **Execute User Decision**: After user confirmation:
+   - Update the primary item with consolidated information if needed
+   - Cancel/delete the duplicate items using updateBacklogItem with status: "cancelled"
+   - Provide a summary of actions taken
+
+**Example Duplicate Handling Response**:
+"I found 3 duplicate items for password reset functionality:
+- Item #12: 'Password Reset' (3 SP, basic description)
+- Item #20: 'User Password Recovery' (5 SP, detailed acceptance criteria)  
+- Item #26: 'Reset Password Feature' (2 SP, incomplete description)
+
+**Recommendation**: Keep Item #20 as primary (best acceptance criteria), update it with consolidated information, and cancel Items #12 and #26.
+
+**Proposed Consolidated Version**:
+- Title: 'User Password Recovery'
+- Story Points: 5 SP
+- Priority: High
+- Enhanced description combining details from all three
+- Complete acceptance criteria from #20 plus additional requirements from others
+
+Would you like me to proceed with this consolidation?"
 
 PRIORITIZATION RESPONSES
 Keep prioritization answers SHORT. Example:
@@ -301,11 +364,21 @@ export async function POST(req: Request) {
         .filter((p: any) => p.type === 'text' && (p.text ?? '').trim())
         .map((p: any) => ({ type: 'text', text: p.text }));
       
+      // Ensure we have at least one text part (fallback for empty messages)
+      if (userPartsForDB.length === 0) {
+        userPartsForDB.push({ type: 'text', text: 'Hello' });
+      }
+      
       // Save the incoming user message via backend API (text-only). Do this ONCE per request.
       const savedMessage = await chatAPI.saveMessage(conversationId, {
         role: 'user',
         parts: userPartsForDB as any
       }, cookies);
+
+      // Ensure userPartsForModel also has at least one part
+      if (!userPartsForModel || userPartsForModel.length === 0) {
+        userPartsForModel = [{ type: 'text', text: 'Hello' }];
+      }
 
       // Combine history with new message for model context
       const allMessages = [...history, { id: savedMessage.id || message.id, role: 'user', parts: userPartsForModel } satisfies UIMessage];
@@ -317,7 +390,22 @@ export async function POST(req: Request) {
       
       // Add project context to system prompt
       const contextualSystemPrompt = projectId 
-        ? `${PRODUCT_OWNER_SYSTEM_PROMPT}\n\nCURRENT PROJECT CONTEXT: You are currently working with project ID ${projectId}. When creating backlog items, use this project ID automatically.`
+        ? `${PRODUCT_OWNER_SYSTEM_PROMPT}\n\nCURRENT PROJECT CONTEXT: You are currently working with project ID ${projectId}. 
+        
+IMPORTANT: When calling updateBacklogItem, the project_id: ${projectId} will be automatically extracted from the current context. You can optionally provide it explicitly for clarity.
+When creating backlog items, also use project_id: ${projectId} automatically.
+
+Example updateBacklogItem calls:
+{
+  "backlog_id": 123,
+  "status": "cancelled"
+}
+OR
+{
+  "backlog_id": 123,
+  "project_id": ${projectId},
+  "status": "cancelled"
+}`
         : PRODUCT_OWNER_SYSTEM_PROMPT;
 
       // Generate streaming response
@@ -338,6 +426,7 @@ export async function POST(req: Request) {
         abortSignal: req.signal,
         experimental_context: {
           cookies: cookies,
+          projectId: projectId,
         },
         onAbort: async () => {
           // Save partial assistant response when aborted
@@ -385,14 +474,41 @@ export async function POST(req: Request) {
 
       // Check message format
       const isUIMessages = Array.isArray(messages) && messages.length > 0 && messages[0]?.parts;
-      const modelMessages = isUIMessages ? convertToModelMessages(messages as UIMessage[]) : messages;
+      
+      // Validate UI messages have at least one text part
+      let validatedMessages = messages;
+      if (isUIMessages) {
+        validatedMessages = (messages as UIMessage[]).map(msg => {
+          if (msg.role === 'user' && (!msg.parts || msg.parts.length === 0 || !msg.parts.some(p => p.type === 'text' && p.text?.trim()))) {
+            return { ...msg, parts: [{ type: 'text', text: 'Hello' }] };
+          }
+          return msg;
+        });
+      }
+      
+      const modelMessages = isUIMessages ? convertToModelMessages(validatedMessages as UIMessage[]) : validatedMessages;
 
       // Get model configuration
       const modelConfig = getAgentModelConfig('product-owner');
       const modelToUse = await selectModel(selectedModel || modelConfig.model, 'chat');
       
       const contextualSystemPrompt = projectId 
-        ? `${PRODUCT_OWNER_SYSTEM_PROMPT}\n\nCURRENT PROJECT CONTEXT: You are currently working with project ID ${projectId}. When creating backlog items, use this project ID automatically.`
+        ? `${PRODUCT_OWNER_SYSTEM_PROMPT}\n\nCURRENT PROJECT CONTEXT: You are currently working with project ID ${projectId}. 
+        
+IMPORTANT: When calling updateBacklogItem, the project_id: ${projectId} will be automatically extracted from the current context. You can optionally provide it explicitly for clarity.
+When creating backlog items, also use project_id: ${projectId} automatically.
+
+Example updateBacklogItem calls:
+{
+  "backlog_id": 123,
+  "status": "cancelled"
+}
+OR
+{
+  "backlog_id": 123,
+  "project_id": ${projectId},
+  "status": "cancelled"
+}`
         : PRODUCT_OWNER_SYSTEM_PROMPT;
 
       const cookies = req.headers.get('cookie') || '';
@@ -412,7 +528,7 @@ export async function POST(req: Request) {
         toolChoice: 'auto',
         stopWhen: stepCountIs(20),
         abortSignal: req.signal,
-        experimental_context: { cookies },
+        experimental_context: { cookies, projectId },
       });
 
       return result.toTextStreamResponse();

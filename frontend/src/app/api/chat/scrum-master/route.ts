@@ -238,11 +238,21 @@ export async function POST(req: Request) {
         .filter((p: any) => p.type === 'text' && (p.text ?? '').trim())
         .map((p: any) => ({ type: 'text', text: p.text }));
       
+      // Ensure we have at least one text part (fallback for empty messages)
+      if (userPartsForDB.length === 0) {
+        userPartsForDB.push({ type: 'text', text: 'Hello' });
+      }
+      
       // Save the incoming user message via backend API (text-only). Do this ONCE per request.
       const savedMessage = await chatAPI.saveMessage(conversationId, {
         role: 'user',
         parts: userPartsForDB as any
       }, cookies);
+
+      // Ensure userPartsForModel also has at least one part
+      if (!userPartsForModel || userPartsForModel.length === 0) {
+        userPartsForModel = [{ type: 'text', text: 'Hello' }];
+      }
 
       // Combine history with new message for model context
       const allMessages = [...history, { id: savedMessage.id || message.id, role: 'user', parts: userPartsForModel } satisfies UIMessage];

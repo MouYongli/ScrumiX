@@ -39,11 +39,11 @@ const AGENTS: Record<ProjectAgentType, ProjectAgent> = {
   'product-owner': {
     id: 'product-owner',
     name: 'Product Owner',
-    description: 'Helps with backlog management, user stories, and product vision',
+    description: 'Helps with backlog management, user stories, product vision, and backlog item updates',
     icon: 'User',
     color: 'bg-emerald-500',
     accentColor: 'text-emerald-600 dark:text-emerald-400',
-    expertise: ['User Stories', 'Backlog Prioritization', 'Acceptance Criteria', 'Stakeholder Management'],
+    expertise: ['User Stories', 'Backlog Prioritization', 'Acceptance Criteria', 'Stakeholder Management', 'Backlog Updates'],
     defaultModel: getAgentModelConfig('product-owner').model
   },
   'scrum-master': {
@@ -1434,8 +1434,14 @@ const ChatWidget: React.FC = () => {
                               {/* Scrollable Chat List - Fixed height showing ~5 chats */}
                               <div className="max-h-[280px] overflow-y-auto scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent hover:scrollbar-thumb-gray-400 dark:hover:scrollbar-thumb-gray-500">
                                 <div className="divide-y divide-gray-100 dark:divide-gray-700">
-                                  {recentChats.map((chat) => (
-                                    <div key={chat.id} className="w-full p-3 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                                  {recentChats.map((chat) => {
+                                    const isSelected = chat.id === currentConversationId;
+                                    return (
+                                    <div key={chat.id} className={`w-full p-3 transition-colors ${
+                                      isSelected 
+                                        ? 'bg-blue-50 dark:bg-blue-900/30 border-l-4 border-l-blue-500 dark:border-l-blue-400' 
+                                        : 'hover:bg-gray-50 dark:hover:bg-gray-700'
+                                    }`}>
                                       {renamingChatId === chat.id ? (
                                         <div className="flex items-center space-x-2">
                                           <input
@@ -1495,7 +1501,8 @@ const ChatWidget: React.FC = () => {
                                         </div>
                                       )}
                                     </div>
-                                  ))}
+                                    );
+                                  })}
                                 </div>
                               </div>
                             </>

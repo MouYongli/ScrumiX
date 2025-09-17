@@ -49,11 +49,11 @@ const AGENTS: Record<ProjectAgentType, ProjectAgent> = {
   'product-owner': {
     id: 'product-owner',
     name: 'Product Owner',
-    description: 'Helps with backlog management, user stories, and product vision',
+    description: 'Helps with backlog management, user stories, product vision, and backlog item updates',
     icon: 'User',
     color: 'bg-emerald-500',
     accentColor: 'text-emerald-600 dark:text-emerald-400',
-    expertise: ['User Stories', 'Backlog Prioritization', 'Acceptance Criteria', 'Stakeholder Management'],
+    expertise: ['User Stories', 'Backlog Prioritization', 'Acceptance Criteria', 'Stakeholder Management', 'Backlog Updates'],
     defaultModel: getAgentModelConfig('product-owner').model
   },
   'scrum-master': {
