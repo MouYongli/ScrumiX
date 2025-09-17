@@ -903,60 +903,65 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
     }
   };
 
-  // Calculate velocity for completed sprints only (matching velocity page logic)
+  // Calculate velocity using backend API
   const calculateVelocity = async () => {
     try {
-      // Filter for completed sprints only
-      const completedSprints = sprints.filter(sprint => sprint.status === 'completed');
+      if (!projectId) return 0;
       
-      // Sort by completion date (end date)
-      completedSprints.sort((a, b) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime());
-      
-      let totalCompletedStoryPoints = 0;
-      let sprintCount = 0;
-      const sprintVelocities: number[] = [];
-      
-      // Fetch backlog items for each completed sprint to get actual story points
-      for (const sprint of completedSprints) {
-        try {
-          const backlogResponse = await api.sprints.getSprintBacklog(sprint.id);
-          if (backlogResponse.data) {
-            const backlogItems = backlogResponse.data;
-            // Calculate completed story points (only items with status 'done')
-            const completedItems = backlogItems.filter((item: any) => item.status === 'done');
-            const completedStoryPoints = completedItems.reduce((sum: number, item: any) => sum + (item.story_point || 0), 0);
-            totalCompletedStoryPoints += completedStoryPoints;
-            sprintVelocities.push(completedStoryPoints);
-            sprintCount++;
-          }
-        } catch (backlogError) {
-          console.error(`Error fetching backlog for sprint ${sprint.id}:`, backlogError);
-          // Skip this sprint if backlog fetch fails
-        }
+      // Use the backend velocity API to get velocity metrics
+      const velocityResponse = await api.velocity.getProjectVelocityMetrics(parseInt(projectId, 10));
+      if (velocityResponse.error) {
+        console.error('Error fetching velocity from API:', velocityResponse.error);
+        return 0;
       }
-      
-      // Calculate trend if we have at least 2 sprints
-      if (sprintVelocities.length >= 2) {
-        const recentVelocities = sprintVelocities.slice(-3); // Last 3 sprints
-        const firstHalf = recentVelocities.slice(0, Math.ceil(recentVelocities.length / 2));
-        const secondHalf = recentVelocities.slice(Math.ceil(recentVelocities.length / 2));
+
+      const metrics = velocityResponse.data;
+      if (!metrics) return 0;
+
+      // Set trend based on velocity trend from backend
+      if (metrics.velocity_trend && metrics.velocity_trend.length >= 2) {
+        // Use the most recent 3-5 sprints for trend analysis
+        const recentTrend = metrics.velocity_trend.slice(-Math.min(5, metrics.velocity_trend.length));
         
-        const firstAvg = firstHalf.reduce((a, b) => a + b, 0) / firstHalf.length;
-        const secondAvg = secondHalf.reduce((a, b) => a + b, 0) / secondHalf.length;
-        
-        const difference = secondAvg - firstAvg;
-        if (Math.abs(difference) < 2) {
-          setVelocityTrend('stable');
-        } else if (difference > 0) {
-          setVelocityTrend('improving');
+        if (recentTrend.length >= 3) {
+          // Compare first half vs second half of recent sprints
+          const midPoint = Math.ceil(recentTrend.length / 2);
+          const firstHalf = recentTrend.slice(0, midPoint);
+          const secondHalf = recentTrend.slice(midPoint);
+          
+          const firstAvg = firstHalf.reduce((sum, point) => sum + point.velocity_points, 0) / firstHalf.length;
+          const secondAvg = secondHalf.reduce((sum, point) => sum + point.velocity_points, 0) / secondHalf.length;
+          
+          const difference = secondAvg - firstAvg;
+          const changePercentage = Math.abs(difference) / firstAvg * 100;
+          
+          // Use percentage-based threshold for more meaningful trend detection
+          if (changePercentage < 15) { // Less than 15% change is considered stable
+            setVelocityTrend('stable');
+          } else if (difference > 0) {
+            setVelocityTrend('improving');
+          } else {
+            setVelocityTrend('declining');
+          }
         } else {
-          setVelocityTrend('declining');
+          // For 2 sprints, just compare the two values
+          const lastTwo = recentTrend.slice(-2);
+          const difference = lastTwo[1].velocity_points - lastTwo[0].velocity_points;
+          const changePercentage = Math.abs(difference) / lastTwo[0].velocity_points * 100;
+          
+          if (changePercentage < 15) {
+            setVelocityTrend('stable');
+          } else if (difference > 0) {
+            setVelocityTrend('improving');
+          } else {
+            setVelocityTrend('declining');
+          }
         }
       } else {
         setVelocityTrend(null);
       }
       
-      return sprintCount > 0 ? Math.round(totalCompletedStoryPoints / sprintCount) : 0;
+      return Math.round(metrics.average_velocity || 0);
     } catch (error) {
       console.error('Error calculating velocity:', error);
       return 0;

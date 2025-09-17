@@ -68,6 +68,7 @@ class BacklogResponse(BaseModel):
     assigned_to_id: Optional[int] = None
     created_at: datetime
     updated_at: datetime
+    completed_at: Optional[datetime] = None
     
     # Hierarchical data
     children: Optional[List["BacklogResponse"]] = None

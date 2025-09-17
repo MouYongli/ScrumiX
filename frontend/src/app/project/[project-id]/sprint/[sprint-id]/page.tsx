@@ -6,7 +6,7 @@ import {
   ArrowLeft, Calendar, Target, Users, Clock, TrendingUp, 
   CheckCircle, Play, Square, Edit2, Plus,
   FolderOpen, Zap, FileText, User, X, ChevronDown,
-  Search, ExternalLink, Archive, Trash2, Loader2, Info
+  Search, ExternalLink, Archive, Trash2, Loader2, Info, RefreshCw
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
 import { useDateFormat } from '@/hooks/useDateFormat';
@@ -82,6 +82,7 @@ interface BacklogItem {
   sprint_id?: number;
   created_at: string;
   updated_at: string;
+  completed_at?: string;
   acceptance_criteria?: AcceptanceCriteria[];
   tasks?: Task[];
 }
@@ -1495,84 +1496,244 @@ const getWorkingDaysBetween = (startDate: Date, endDate: Date): Date[] => {
   return workingDays;
 };
 
+// Generate all days (including weekends) for the sprint period
+const getAllDaysBetween = (startDate: Date, endDate: Date): Date[] => {
+  const allDays: Date[] = [];
+  const currentDate = new Date(startDate);
+  
+  while (currentDate <= endDate) {
+    allDays.push(new Date(currentDate));
+    currentDate.setDate(currentDate.getDate() + 1);
+  }
+  
+  return allDays;
+};
+
+// Helper function to add Day 0 anchor point to ideal data
+const addDayZeroToIdealData = (idealData: BurndownData[], totalStoryPoints: number): BurndownData[] => {
+  if (idealData.length === 0) {
+    return idealData;
+  }
+  
+  // Create Day 0 anchor point (day before sprint start)
+  const firstDay = new Date(idealData[0].date);
+  const dayZeroDate = new Date(firstDay);
+  dayZeroDate.setDate(dayZeroDate.getDate() - 1);
+  
+  const dayZeroDayOfWeek = dayZeroDate.getDay();
+  const dayZeroIsWorkingDay = dayZeroDayOfWeek !== 0 && dayZeroDayOfWeek !== 6;
+  const dayZeroDayOfWeekName = dayZeroDate.toLocaleDateString('en-US', { weekday: 'short' });
+  
+  const dayZeroPoint: BurndownData = {
+    day: 0,
+    date: dayZeroDate.toISOString().split('T')[0],
+    ideal: totalStoryPoints,
+    actual: totalStoryPoints,
+    workingDay: dayZeroIsWorkingDay,
+    dayOfWeek: dayZeroDayOfWeekName,
+    completedPoints: 0,
+    cumulativeCompleted: 0
+  };
+  
+  return [dayZeroPoint, ...idealData];
+};
+
+// Generate ideal burndown data with weekends consideration
+const generateIdealBurndownData = (
+  startDate: string, 
+  endDate: string, 
+  totalStoryPoints: number
+): BurndownData[] => {
+  const start = new Date(startDate);
+  const end = new Date(endDate);
+  const allDays = getAllDaysBetween(start, end);
+  const workingDays = getWorkingDaysBetween(start, end);
+  
+  if (allDays.length === 0) {
+    return [];
+  }
+  
+  const sprintDuration = workingDays.length;
+  let workingDayIndex = 0;
+  let lastIdealValue = totalStoryPoints;
+  
+  const sprintData = allDays.map((date, index) => {
+    const dateKey = date.toISOString().split('T')[0];
+    const currentDay = index + 1;
+    const isCurrentWorkingDay = isWorkingDay(date);
+    
+    let ideal: number;
+    
+    if (isCurrentWorkingDay) {
+      // On working days, decrease the ideal burndown linearly
+      workingDayIndex++;
+      // Calculate ideal points per working day
+      const pointsPerWorkingDay = totalStoryPoints / sprintDuration;
+      ideal = Math.max(0, totalStoryPoints - (pointsPerWorkingDay * workingDayIndex));
+      lastIdealValue = ideal;
+    } else {
+      // On weekends, keep the same ideal value as the previous day
+      ideal = lastIdealValue;
+    }
+    
+    return {
+      day: currentDay,
+      date: dateKey,
+      ideal: Math.round(ideal * 100) / 100,
+      actual: 0, // Will be filled by backend data
+      workingDay: isCurrentWorkingDay,
+      dayOfWeek: date.toLocaleDateString('en-US', { weekday: 'short' }),
+      completedPoints: 0, // Will be filled by backend data
+      cumulativeCompleted: 0 // Will be filled by backend data
+    };
+  });
+  
+  // Add Day 0 anchor point
+  return addDayZeroToIdealData(sprintData, totalStoryPoints);
+};
+
+// Generate burndown data using enhanced backend API
+const generateBurndownDataFromBackend = async (
+  sprintId: number,
+  startDate: string,
+  endDate: string,
+  totalStoryPoints: number
+): Promise<BurndownData[]> => {
+  try {
+    // Use the enhanced burndown chart API endpoint
+    const backendResponse = await api.velocity.getSprintBurndownChart(sprintId);
+    
+    if (backendResponse.error || !backendResponse.data) {
+      console.warn('No backend burndown chart data available, using ideal-only data');
+      return generateIdealBurndownData(startDate, endDate, totalStoryPoints);
+    }
+    
+    const chartData = backendResponse.data;
+    
+    // Create Day 0 anchor point (day before sprint start)
+    const sprintStartDate = new Date(chartData.dates[0]);
+    const dayZeroDate = new Date(sprintStartDate);
+    dayZeroDate.setDate(dayZeroDate.getDate() - 1);
+    
+    const dayZeroDayOfWeek = dayZeroDate.getDay();
+    const dayZeroIsWorkingDay = dayZeroDayOfWeek !== 0 && dayZeroDayOfWeek !== 6;
+    const dayZeroDayOfWeekName = dayZeroDate.toLocaleDateString('en-US', { weekday: 'short' });
+    
+    const dayZeroPoint: BurndownData = {
+      day: 0,
+      date: dayZeroDate.toISOString().split('T')[0],
+      ideal: chartData.initial_total_points,
+      actual: chartData.initial_total_points,
+      workingDay: dayZeroIsWorkingDay,
+      dayOfWeek: dayZeroDayOfWeekName,
+      completedPoints: 0, // No points completed yet
+      cumulativeCompleted: 0 // No cumulative completion yet
+    };
+    
+    // Convert the enhanced chart data to our BurndownData format for sprint days
+    const sprintDayData = chartData.dates.map((date, index) => {
+      // Calculate daily completed points (difference from previous day)
+      let dailyCompleted = 0;
+      if (index === 0) {
+        dailyCompleted = chartData.completed_points[index];
+      } else {
+        dailyCompleted = Math.max(0, chartData.completed_points[index] - chartData.completed_points[index - 1]);
+      }
+      
+      const dateObj = new Date(date);
+      const dayOfWeek = dateObj.getDay();
+      const isWorkingDay = dayOfWeek !== 0 && dayOfWeek !== 6; // Not Sunday or Saturday
+      const dayOfWeekName = dateObj.toLocaleDateString('en-US', { weekday: 'short' });
+      
+      // Calculate ideal burndown for this day (only decrease on working days)
+      const initialTotal = chartData.initial_total_points;
+      let idealRemaining = initialTotal;
+      
+      if (chartData.dates.length > 1 && initialTotal > 0) {
+        // Count total working days in the entire sprint
+        let totalWorkingDays = 0;
+        for (let i = 0; i < chartData.dates.length; i++) {
+          const dayDate = new Date(chartData.dates[i]);
+          const dayOfWeek = dayDate.getDay();
+          if (dayOfWeek !== 0 && dayOfWeek !== 6) { // Not weekend
+            totalWorkingDays++;
+          }
+        }
+        
+        if (totalWorkingDays > 0) {
+          if (isWorkingDay) {
+            // Working day: calculate how many working days have passed
+            let workingDaysElapsed = 0;
+            for (let i = 0; i <= index; i++) {
+              const dayDate = new Date(chartData.dates[i]);
+              const dayOfWeek = dayDate.getDay();
+              if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                workingDaysElapsed++;
+              }
+            }
+            
+            // Linear decrease based on working days - start decreasing immediately
+            const pointsPerWorkingDay = initialTotal / totalWorkingDays;
+            idealRemaining = Math.max(0, initialTotal - (pointsPerWorkingDay * workingDaysElapsed));
+          } else {
+            // Weekend: carry forward from the last working day
+            for (let i = index - 1; i >= 0; i--) {
+              const prevDate = new Date(chartData.dates[i]);
+              const prevDayOfWeek = prevDate.getDay();
+              if (prevDayOfWeek !== 0 && prevDayOfWeek !== 6) {
+                // Found the last working day, calculate its ideal value
+                let workingDaysElapsed = 0;
+                for (let j = 0; j <= i; j++) {
+                  const dayDate = new Date(chartData.dates[j]);
+                  const dayOfWeek = dayDate.getDay();
+                  if (dayOfWeek !== 0 && dayOfWeek !== 6) {
+                    workingDaysElapsed++;
+                  }
+                }
+                
+                // Use the same linear calculation for weekends
+                const pointsPerWorkingDay = initialTotal / totalWorkingDays;
+                idealRemaining = Math.max(0, initialTotal - (pointsPerWorkingDay * workingDaysElapsed));
+                break;
+              }
+            }
+          }
+        }
+      }
+    
+        return {
+        day: index + 1,
+        date: date,
+        ideal: Math.max(0, idealRemaining),
+        actual: chartData.remaining_points[index],
+        workingDay: isWorkingDay,
+        dayOfWeek: dayOfWeekName,
+        completedPoints: dailyCompleted,
+        cumulativeCompleted: chartData.completed_points[index]
+      };
+    });
+    
+    // Combine Day 0 anchor point with sprint days
+    return [dayZeroPoint, ...sprintDayData];
+    
+  } catch (error) {
+    console.error('Error fetching backend burndown chart data:', error);
+    // Fallback to ideal-only data with Day 0
+    const fallbackData = generateIdealBurndownData(startDate, endDate, totalStoryPoints);
+    return addDayZeroToIdealData(fallbackData, totalStoryPoints);
+  }
+};
+
+// Legacy function for backward compatibility (not used anymore)
 const generateBurndownData = (
   startDate: string, 
   endDate: string, 
   totalStoryPoints: number,
   stories: BacklogItem[] = []
 ): BurndownData[] => {
-  const start = new Date(startDate);
-  const end = new Date(endDate);
-  const workingDays = getWorkingDaysBetween(start, end);
-  
-  if (workingDays.length === 0) {
-    return [];
-  }
-  
-  // Calculate ideal burndown using the linear function from the image
-  // idealPoints = totalPoints - (totalPoints / (sprintDuration - 1)) * currentDay
-  const sprintDuration = workingDays.length;
-  
-  // Track story completion by day
-  const completionByDay: { [date: string]: number } = {};
-  
-  // Process each story to track when it was completed
-  stories.forEach(story => {
-    if (story.status === 'done') {
-      let completionDate: Date;
-      let dateKey: string;
-      
-      if (story.updated_at) {
-        completionDate = new Date(story.updated_at);
-        dateKey = completionDate.toISOString().split('T')[0];
-        
-        // Only count completions within the sprint period
-        if (completionDate >= start && completionDate <= end) {
-          const storyPoints = story.story_point || 0;
-          completionByDay[dateKey] = (completionByDay[dateKey] || 0) + storyPoints;
-        } else {
-          // If updated_at is outside sprint period but story is done, attribute to first day
-          const firstDay = start.toISOString().split('T')[0];
-          const storyPoints = story.story_point || 0;
-          completionByDay[firstDay] = (completionByDay[firstDay] || 0) + storyPoints;
-        }
-      } else {
-        // If no updated_at but story is done, attribute to first day as fallback
-        const firstDay = start.toISOString().split('T')[0];
-        const storyPoints = story.story_point || 0;
-        completionByDay[firstDay] = (completionByDay[firstDay] || 0) + storyPoints;
-      }
-    }
-  });
-  
-  let cumulativeCompleted = 0;
-  
-  return workingDays.map((date, index) => {
-    const dateKey = date.toISOString().split('T')[0];
-    const currentDay = index + 1;
-    
-    // Ideal burndown: linear decrease from total to 0
-    // Using the formula: idealPoints = totalPoints - (totalStoryPoints / (sprintDuration - 1)) * currentDay
-    const ideal = Math.max(0, totalStoryPoints - (totalStoryPoints / (sprintDuration - 1)) * (currentDay - 1));
-    
-    // Actual progress: track completed points for this specific day
-    const completedToday = completionByDay[dateKey] || 0;
-    cumulativeCompleted += completedToday;
-    
-    // Actual remaining points = total - cumulative completed
-    const actual = Math.max(0, totalStoryPoints - cumulativeCompleted);
-    
-    return {
-      day: currentDay,
-      date: dateKey,
-      ideal: Math.round(ideal * 100) / 100,
-      actual: Math.round(actual * 100) / 100,
-      workingDay: true,
-      dayOfWeek: date.toLocaleDateString('en-US', { weekday: 'short' }),
-      completedPoints: completedToday,
-      cumulativeCompleted: cumulativeCompleted
-    };
-  });
+  // This function is kept for backward compatibility but not used
+  // The new implementation uses generateBurndownDataFromBackend
+  return generateIdealBurndownData(startDate, endDate, totalStoryPoints);
 };
 
 const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
@@ -1627,6 +1788,7 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
   // Add state for velocity calculation
   const [teamVelocity, setTeamVelocity] = useState<number>(0);
   const [isCalculatingVelocity, setIsCalculatingVelocity] = useState<boolean>(false);
+  const [isRefreshingData, setIsRefreshingData] = useState<boolean>(false);
   
   // Task modal state
   const [isCreateTaskModalOpen, setIsCreateTaskModalOpen] = useState(false);
@@ -2027,18 +2189,33 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
     }
   }, [sprint]);
 
-  // Generate burndown data when sprint data changes
+  // Generate burndown data when sprint data changes - now using backend API
   useEffect(() => {
-    if (sprint && sprint.start_date && sprint.end_date && sprint.totalStoryPoints && sprint.stories) {
-      const newBurndownData = generateBurndownData(
+    const fetchBurndownData = async () => {
+      if (sprint && sprint.start_date && sprint.end_date && sprint.totalStoryPoints && sprintId) {
+        try {
+          const newBurndownData = await generateBurndownDataFromBackend(
+            parseInt(sprintId, 10),
         sprint.start_date,
         sprint.end_date,
-        sprint.totalStoryPoints,
-        sprint.stories
+            sprint.totalStoryPoints
       );
       setBurndownData(newBurndownData);
-    }
-  }, [sprint?.start_date, sprint?.end_date, sprint?.totalStoryPoints, sprint?.stories]);
+        } catch (error) {
+          console.error('Error generating burndown data:', error);
+          // Fallback to ideal-only data
+          const fallbackData = generateIdealBurndownData(
+            sprint.start_date,
+            sprint.end_date,
+            sprint.totalStoryPoints
+          );
+          setBurndownData(fallbackData);
+        }
+      }
+    };
+
+    fetchBurndownData();
+  }, [sprint?.start_date, sprint?.end_date, sprint?.totalStoryPoints, sprintId]);
 
   // Calculate team velocity when sprint data is loaded
   useEffect(() => {
@@ -2050,61 +2227,42 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
     }
   }, [sprint, projectId]);
 
-  // Calculate current sprint progress
+  // Calculate current sprint progress based on completed story points vs total story points
   const getCurrentSprintProgress = () => {
-    if (!sprint || !sprint.start_date || !sprint.end_date) return 0;
+    if (!sprint || !sprint.totalStoryPoints || sprint.totalStoryPoints === 0) return 0;
     
-    const start = new Date(sprint.start_date);
-    const end = new Date(sprint.end_date);
-    const today = new Date();
+    const completedPoints = sprint.completedStoryPoints || 0;
+    const totalPoints = sprint.totalStoryPoints;
     
-    if (today < start) return 0;
-    if (today > end) return 100;
-    
-    const totalDuration = end.getTime() - start.getTime();
-    const elapsed = today.getTime() - start.getTime();
-    return Math.round((elapsed / totalDuration) * 100);
+    return Math.round((completedPoints / totalPoints) * 100);
   };
 
-  // Calculate sprint velocity (average story points per sprint from completed sprints)
+  // Get story points completed today
+  const getTodayCompletedPoints = () => {
+    if (!burndownData.length) return 0;
+    
+    // Use local date instead of UTC date
+    const today = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD format in local timezone
+    const todayData = burndownData.find(data => data.date === today);
+    
+    return todayData ? (todayData.completedPoints || 0) : 0;
+  };
+
+  // Get current sprint's velocity points (not project average)
   const getSprintVelocity = async () => {
     try {
-      if (!sprint || !projectId) return 0;
+      if (!sprint || !sprintId) return 0;
       
-      // Fetch all sprints for this project
-      const sprintsResponse = await api.sprints.getByProject(parseInt(projectId, 10));
-      if (!sprintsResponse.data) return 0;
-      
-      // Filter for completed sprints only
-      const completedSprints = sprintsResponse.data.filter((s: any) => s.status === 'completed');
-      
-      // Sort by completion date (end date)
-      completedSprints.sort((a: any, b: any) => new Date(a.endDate).getTime() - new Date(b.endDate).getTime());
-      
-      let totalCompletedStoryPoints = 0;
-      let sprintCount = 0;
-      
-      // Fetch backlog items for each completed sprint to get actual story points
-      for (const completedSprint of completedSprints) {
-        try {
-          const backlogResponse = await api.sprints.getSprintBacklog(completedSprint.id);
-          if (backlogResponse.data) {
-            const backlogItems = backlogResponse.data;
-            // Calculate completed story points (only items with status 'done')
-            const completedItems = backlogItems.filter((item: any) => item.status === 'done');
-            const completedStoryPoints = completedItems.reduce((sum: number, item: any) => sum + (item.story_point || 0), 0);
-            totalCompletedStoryPoints += completedStoryPoints;
-            sprintCount++;
-          }
-        } catch (backlogError) {
-          console.error(`Error fetching backlog for sprint ${completedSprint.id}:`, backlogError);
-          // Skip this sprint if backlog fetch fails
-        }
+      // Use the backend velocity API to get current sprint's velocity
+      const velocityResponse = await api.velocity.getSprintVelocity(parseInt(sprintId, 10));
+      if (velocityResponse.error) {
+        console.error('Error fetching sprint velocity from API:', velocityResponse.error);
+        return 0;
       }
       
-      return sprintCount > 0 ? Math.round(totalCompletedStoryPoints / sprintCount) : 0;
+      return Math.round(velocityResponse.data?.velocity_points || 0);
     } catch (error) {
-      console.error('Error calculating velocity:', error);
+      console.error('Error calculating sprint velocity:', error);
       return 0;
     }
   };
@@ -2116,14 +2274,14 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
     }
     
     const totalPoints = sprint.totalStoryPoints;
-    const currentDay = getCurrentWorkingDay();
+    const currentDayIndex = getCurrentDayIndex();
     
-    if (currentDay === 0) {
+    if (currentDayIndex === 0) {
       return { status: 'neutral', text: 'Sprint not started', color: 'text-gray-500' };
     }
     
-    // Get the current day's data
-    const currentDayData = burndownData[currentDay - 1];
+    // Get the current day's data (currentDayIndex is now the direct array index)
+    const currentDayData = burndownData[currentDayIndex];
     if (!currentDayData) {
       return { status: 'neutral', text: 'No data', color: 'text-gray-500' };
     }
@@ -2144,7 +2302,32 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
     }
   };
 
-  // Get current working day in the sprint
+  // Get current day index in the sprint (includes all days, not just working days)
+  // Now accounts for Day 0 offset - returns array index for burndownData
+  const getCurrentDayIndex = () => {
+    if (!sprint || !sprint.start_date || !sprint.end_date) return 0;
+    
+    // Use string-based date comparison to avoid timezone issues
+    const startDateStr = sprint.start_date.split('T')[0]; // Get YYYY-MM-DD part
+    const endDateStr = sprint.end_date.split('T')[0];
+    const todayStr = new Date().toLocaleDateString('en-CA'); // Local date in YYYY-MM-DD format
+    
+    const startDate = new Date(startDateStr + 'T00:00:00'); // Parse as local date
+    const endDate = new Date(endDateStr + 'T00:00:00');
+    const todayDate = new Date(todayStr + 'T00:00:00');
+    
+    if (todayDate < startDate) return 0; // Before sprint start (Day 0)
+    
+    // Calculate total days elapsed (including weekends)
+    const daysDiff = Math.floor((todayDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24));
+    const totalSprintDays = Math.floor((endDate.getTime() - startDate.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+    
+    // Return the array index: Day 0 = index 0, Day 1 = index 1, etc.
+    // Add 1 to account for Day 0 being at index 0
+    return Math.min(daysDiff + 1, totalSprintDays);
+  };
+
+  // Get current working day in the sprint (only working days)
   const getCurrentWorkingDay = () => {
     if (!sprint || !sprint.start_date || !sprint.end_date || !burndownData.length) return 0;
     
@@ -2170,11 +2353,92 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
   const getCurrentDayRemainingPoints = () => {
     if (!burndownData.length) return 0;
     
-    const currentDay = getCurrentWorkingDay();
-    if (currentDay === 0) return sprint?.totalStoryPoints || 0;
+    const currentDayIndex = getCurrentDayIndex();
+    if (currentDayIndex === 0) return sprint?.totalStoryPoints || 0;
     
-    const currentDayData = burndownData[currentDay - 1];
+    const currentDayData = burndownData[currentDayIndex];
     return currentDayData ? currentDayData.actual : 0;
+  };
+
+  // Refresh backend data after status changes
+  const refreshBackendData = async () => {
+    try {
+      setIsRefreshingData(true);
+      console.log('🔄 Refreshing backend data after status change...');
+      
+      // Refresh burndown data
+      if (sprint && sprint.start_date && sprint.end_date && sprint.totalStoryPoints && sprintId) {
+        console.log('📊 Fetching updated burndown data...');
+        const newBurndownData = await generateBurndownDataFromBackend(
+          parseInt(sprintId, 10),
+          sprint.start_date,
+          sprint.end_date,
+          sprint.totalStoryPoints
+        );
+        console.log('📊 Burndown data received:', {
+          dataPoints: newBurndownData.length,
+          latestActual: newBurndownData[newBurndownData.length - 1]?.actual,
+          latestCompleted: newBurndownData[newBurndownData.length - 1]?.cumulativeCompleted
+        });
+        setBurndownData(newBurndownData);
+        console.log('✅ Burndown data refreshed');
+      }
+
+      // Refresh velocity data
+      if (sprint && projectId) {
+        console.log('⚡ Fetching updated velocity data...');
+        const newVelocity = await getSprintVelocity();
+        console.log('⚡ Velocity data received:', newVelocity);
+        setTeamVelocity(newVelocity);
+        console.log('✅ Velocity data refreshed');
+      }
+
+      // Refresh sprint data to update completed story points
+      if (sprintId) {
+        console.log('📋 Fetching updated sprint data...');
+        const sprintResponse = await api.sprints.getById(parseInt(sprintId, 10));
+        if (sprintResponse.data && !sprintResponse.error) {
+          const sprintData = sprintResponse.data;
+          
+          // Get updated backlog items for this sprint
+          const backlogResponse = await api.sprints.getSprintBacklog(parseInt(sprintId, 10), {
+            include_acceptance_criteria: true
+          });
+          
+          if (backlogResponse.data && !backlogResponse.error) {
+            const sprintStories = backlogResponse.data;
+            console.log('📋 Sprint stories received:', {
+              totalStories: sprintStories.length,
+              completedStories: sprintStories.filter(s => s.status === 'done').length,
+              totalPoints: sprintStories.reduce((sum, s) => sum + (s.story_point || 0), 0),
+              completedPoints: sprintStories.filter(s => s.status === 'done').reduce((sum, s) => sum + (s.story_point || 0), 0)
+            });
+            
+            // Update sprint with fresh data
+            setSprint(prevSprint => {
+              if (!prevSprint) return prevSprint;
+              return {
+                ...prevSprint,
+                stories: sprintStories,
+                totalStories: sprintStories.length,
+                totalStoryPoints: sprintStories.reduce((sum, s) => sum + (s.story_point || 0), 0),
+                completedStories: sprintStories.filter(s => s.status === 'done').length,
+                completedStoryPoints: sprintStories.filter(s => s.status === 'done').reduce((sum, s) => sum + (s.story_point || 0), 0)
+              };
+            });
+            console.log('✅ Sprint data refreshed');
+          }
+        }
+      }
+
+      console.log('🎉 Backend data refresh completed successfully');
+    } catch (error) {
+      console.error('❌ Error refreshing backend data:', error);
+      // Don't show error message to user as this is a background refresh
+      // The status change was still successful
+    } finally {
+      setIsRefreshingData(false);
+    }
   };
 
   // Calculate X-axis label step based on sprint length for scalability
@@ -2776,6 +3040,21 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
           'Status Updated',
           `Successfully updated "${story.title}" status to ${newStatus.replace('_', ' ').toUpperCase()}`
         );
+
+        // Auto-refresh backend data to ensure consistency
+        // Small delay to allow backend processing (increased for velocity/burndown updates)
+        const oldStatus = story.status;
+        console.log(`Status change: ${story.title} from ${oldStatus} to ${newStatus}`);
+        
+        // Only refresh if status actually changed (especially for DONE status changes)
+        if (oldStatus !== newStatus) {
+          const isDoneStatusChange = oldStatus === 'done' || newStatus === 'done';
+          console.log(`🔄 Status change detected${isDoneStatusChange ? ' (affects DONE status)' : ''} - scheduling refresh...`);
+          
+          setTimeout(async () => {
+            await refreshBackendData();
+          }, 1000);
+        }
       }
       
     } catch (error) {
@@ -3237,12 +3516,31 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
         {activeTab === 'burndown' && (
           <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-6">
             <div className="flex justify-between items-center mb-6">
+              <div className="flex items-center gap-3">
               <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Burndown Chart</h3>
+                {isRefreshingData && (
+                  <div className="flex items-center gap-2 text-sm text-blue-600">
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600"></div>
+                    <span>Updating...</span>
+                  </div>
+                )}
+              </div>
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={() => refreshBackendData()}
+                  disabled={isRefreshingData}
+                  className="flex items-center gap-2 px-3 py-1 text-sm text-blue-600 hover:text-blue-700 hover:bg-blue-50 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  title="Refresh burndown and velocity data"
+                >
+                  <RefreshCw className={`w-4 h-4 ${isRefreshingData ? 'animate-spin' : ''}`} />
+                  Refresh
+                </button>
               <div className="flex items-center gap-2">
                 <span className="text-sm text-gray-600 dark:text-gray-400">Status:</span>
                 <span className={`px-3 py-1 rounded-full text-sm font-medium ${getBurndownTrend().color} bg-opacity-10`}>
                   {getBurndownTrend().text}
                 </span>
+                </div>
               </div>
             </div>
             {sprint && sprint.stories && sprint.stories.length > 0 ? (
@@ -3254,15 +3552,15 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                   </div>
                   <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
                     <div className="text-2xl font-bold text-green-600">
-                      {burndownData.length > 0 ? (sprint.totalStoryPoints || 0) - getCurrentDayRemainingPoints() : 0}
+                      {sprint.completedStoryPoints || 0}
                     </div>
                     <div className="text-sm text-gray-600 dark:text-gray-400">Completed Points</div>
                   </div>
                   <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
                     <div className="text-2xl font-bold text-orange-600">
-                      {getCurrentDayRemainingPoints()}
+                      {getTodayCompletedPoints()}
                     </div>
-                    <div className="text-sm text-gray-600 dark:text-gray-400">Remaining Points</div>
+                    <div className="text-sm text-gray-600 dark:text-gray-400">Completed Points Today</div>
                   </div>
                   <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
                     <div className="text-2xl font-bold text-purple-600">{getCurrentSprintProgress()}%</div>
@@ -3270,7 +3568,7 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                   </div>
                   <div className="text-center p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
                     <div className="text-2xl font-bold text-indigo-600">
-                      {isCalculatingVelocity ? (
+                      {isCalculatingVelocity || isRefreshingData ? (
                         <span className="animate-spin rounded-full h-6 w-6 border-b-2 border-indigo-600 mx-auto"></span>
                       ) : (
                         teamVelocity
@@ -3360,17 +3658,17 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                               stroke="rgba(156, 163, 175, 0.5)"
                               strokeWidth="1"
                             />
-                            {/* Day number */}
-                            <text
-                              x={index * 50 + 105}
-                              y="420"
-                              fontSize="11"
-                              fill="rgba(156, 163, 175, 0.8)"
-                              textAnchor="middle"
-                              fontWeight="500"
-                            >
-                              Day {data.day}
-                            </text>
+                             {/* Day number */}
+                             <text
+                               x={index * 50 + 105}
+                               y="420"
+                               fontSize="11"
+                               fill="rgba(156, 163, 175, 0.8)"
+                               textAnchor="middle"
+                               fontWeight="500"
+                             >
+                               {data.day === 0 ? 'Start' : `Day ${data.day}`}
+                             </text>
                             {/* Date */}
                             <text
                               x={index * 50 + 105}
@@ -3412,10 +3710,10 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                       <polyline
                         points={burndownData
                           .filter((data, index) => {
-                            const currentDay = getCurrentWorkingDay();
-                            const today = new Date().toISOString().split('T')[0];
-                            // Show points for days up to today or days with actual completions
-                            return index < currentDay || data.date <= today || data.completedPoints > 0;
+                            const currentDayIndex = getCurrentDayIndex();
+                            const today = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD format in local timezone
+                            // Show points for days up to and including today or days with actual completions
+                            return index <= currentDayIndex || data.date <= today || data.completedPoints > 0;
                           })
                           .map((data, originalIndex) => {
                             const actualIndex = burndownData.findIndex(d => d.date === data.date);
@@ -3429,9 +3727,9 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                       
                       {/* Data points */}
                       {burndownData.map((data, index) => {
-                        const currentDay = getCurrentWorkingDay();
-                        const today = new Date().toISOString().split('T')[0];
-                        const shouldShowActualPoint = index < currentDay || data.date <= today || data.completedPoints > 0;
+                        const currentDayIndex = getCurrentDayIndex();
+                        const today = new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD format in local timezone
+                        const shouldShowActualPoint = index <= currentDayIndex || data.date <= today || data.completedPoints > 0;
                         
                         return (
                         <g key={`point-${index}`}>
@@ -3442,9 +3740,9 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                               r="4"
                               fill="#3B82F6"
                               className="cursor-pointer hover:r-5 transition-all"
-                            >
-                              <title>{`Day ${data.day}: Ideal: ${data.ideal} points`}</title>
-                            </circle>
+                             >
+                                <title>{data.day === 0 ? `Sprint Start: ${Math.round(data.ideal)} total points` : `Day ${data.day}: Ideal: ${Math.round(data.ideal)} points`}</title>
+                             </circle>
                             {/* Actual point - only show for past days or days with completions */}
                             {shouldShowActualPoint && (
                               <circle
@@ -3453,28 +3751,28 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                                 r="5"
                                 fill="#EF4444"
                                 className="cursor-pointer hover:r-5 transition-all"
-                              >
-                                <title>{`Day ${data.day}: ${data.actual} points remaining${data.completedPoints > 0 ? `, ${data.completedPoints} points completed today` : ''}`}</title>
-                              </circle>
+                               >
+                                 <title>{data.day === 0 ? `Sprint Start: ${data.actual} total points` : `Day ${data.day}: ${data.actual} points remaining${data.completedPoints > 0 ? `, ${data.completedPoints} points completed today` : ''}`}</title>
+                               </circle>
                             )}
                         </g>
                         );
                       })}
                       
                       {/* Current day indicator */}
-                      {getCurrentWorkingDay() > 0 && getCurrentWorkingDay() <= burndownData.length && (
+                      {getCurrentDayIndex() > 0 && (
                         <g>
                           <line
-                            x1={(getCurrentWorkingDay() - 1) * 50 + 105}
+                            x1={getCurrentDayIndex() * 50 + 105}
                             y1="50"
-                            x2={(getCurrentWorkingDay() - 1) * 50 + 105}
+                            x2={getCurrentDayIndex() * 50 + 105}
                             y2="400"
                             stroke="#10B981"
                             strokeWidth="2"
                             strokeDasharray="5,5"
                           />
                           <text
-                            x={(getCurrentWorkingDay() - 1) * 50 + 105}
+                            x={getCurrentDayIndex() * 50 + 105}
                             y="35"
                             fontSize="12"
                             fill="#10B981"
@@ -3510,24 +3808,102 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                 <div className="mt-6 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
                   <h4 className="text-sm font-medium text-gray-900 dark:text-white mb-3">Daily Progress Breakdown</h4>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-xs">
-                    {burndownData.filter(data => data.completedPoints > 0).map((data, index) => (
-                      <div key={index} className="text-center p-2 bg-white dark:bg-gray-700 rounded border">
-                        <div className="font-medium text-gray-900 dark:text-white">
-                          <FormattedDate date={new Date(data.date)} short={true} />
-                        </div>
-                        <div className="text-green-600 dark:text-green-400 font-bold">
-                          +{data.completedPoints} pts
-                        </div>
-                        <div className="text-gray-500 dark:text-gray-400">
-                          {data.dayOfWeek}
-                        </div>
-                      </div>
-                    ))}
-                    {burndownData.filter(data => data.completedPoints > 0).length === 0 && (
-                      <div className="col-span-full text-center text-gray-500 dark:text-gray-400 py-4">
-                        No story points completed yet
-                      </div>
-                    )}
+                    {(() => {
+                      // Use burndown data to create daily progress breakdown for each day of the sprint
+                      if (!burndownData || burndownData.length === 0) {
+                        return (
+                          <div className="col-span-full text-center text-gray-500 dark:text-gray-400 py-4">
+                            No sprint data available
+                          </div>
+                        );
+                      }
+
+                       // Use burndown data to create daily progress breakdown for each day of the sprint
+                       // This now uses the enhanced backend data that includes all sprint days
+                       const today = new Date().toLocaleDateString('en-CA'); // Get today's date in YYYY-MM-DD format in local timezone
+                       
+                       // Filter out future days - only show days up to today (but always include Day 0)
+                       const pastAndCurrentDays = burndownData.filter(dayData => dayData.day === 0 || dayData.date <= today);
+                      
+                      return pastAndCurrentDays.map((dayData, index) => {
+                        const dayDate = new Date(dayData.date);
+                        const isToday = dayData.date === today;
+                        const isWeekend = !dayData.workingDay; // Use the workingDay property from backend
+                        
+                        // Determine background classes
+                        let bgClasses = '';
+                        if (isToday) {
+                          // Current day gets a blue highlight
+                          bgClasses = 'bg-blue-100 dark:bg-blue-900 border-blue-300 dark:border-blue-600 ring-2 ring-blue-200 dark:ring-blue-700';
+                        } else if (isWeekend) {
+                          // Weekends get darker background
+                          bgClasses = 'bg-gray-100 dark:bg-gray-800 border-gray-300 dark:border-gray-600';
+                        } else {
+                          // Regular working days
+                          bgClasses = 'bg-white dark:bg-gray-700 border-gray-200 dark:border-gray-600';
+                        }
+                        
+                         // Special handling for Day 0
+                         if (dayData.day === 0) {
+                           return (
+                             <div key={index} className="text-center p-2 rounded border bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-600">
+                               <div className="font-medium text-green-900 dark:text-green-100">
+                                 <FormattedDate date={dayDate} short={true} />
+                                 <div className="text-xs text-green-600 dark:text-green-300 font-normal">
+                                   Sprint Start
+                                 </div>
+                               </div>
+                               <div className="font-bold text-green-600 dark:text-green-400">
+                                 {dayData.actual} pts
+                               </div>
+                               <div className="text-xs text-green-700 dark:text-green-300">
+                                 {dayDate.toLocaleDateString('en-US', { weekday: 'short' })}
+                               </div>
+                             </div>
+                           );
+                         }
+                         
+                         return (
+                           <div key={index} className={`text-center p-2 rounded border ${bgClasses} ${
+                             isToday ? 'shadow-md' : ''
+                           }`}>
+                             <div className={`font-medium ${
+                               isToday 
+                                 ? 'text-blue-900 dark:text-blue-100' 
+                                 : 'text-gray-900 dark:text-white'
+                             }`}>
+                               <FormattedDate date={dayDate} short={true} />
+                               {isToday && (
+                                 <div className="text-xs text-blue-600 dark:text-blue-300 font-normal">
+                                   Today
+                           </div>
+                               )}
+                           </div>
+                             <div className={`font-bold ${
+                               (dayData.completedPoints || 0) > 0 
+                                 ? 'text-green-600 dark:text-green-400' 
+                                 : isToday
+                                   ? 'text-blue-600 dark:text-blue-400'
+                                   : 'text-gray-500 dark:text-gray-400'
+                             }`}>
+                               {(dayData.completedPoints || 0) > 0 ? '+' : ''}{dayData.completedPoints || 0} pts
+                           </div>
+                             <div className={`text-xs ${
+                               isToday 
+                                 ? 'text-blue-700 dark:text-blue-300' 
+                                 : isWeekend
+                                   ? 'text-gray-600 dark:text-gray-300'
+                                   : 'text-gray-500 dark:text-gray-400'
+                             }`}>
+                               {dayDate.toLocaleDateString('en-US', { weekday: 'short' })}
+                               {isWeekend && (
+                                 <span className="ml-1 text-xs">🏠</span>
+                               )}
+                         </div>
+                         </div>
+                       );
+                      });
+                    })()}
                   </div>
                 </div>
                 
@@ -3536,7 +3912,12 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm">
                     <div className="text-center">
                       <div className="font-medium text-gray-900 dark:text-white">
-                        {burndownData.length} Working Days
+                        {(() => {
+                          if (!sprint || !sprint.start_date || !sprint.end_date) return 0;
+                          const start = new Date(sprint.start_date);
+                          const end = new Date(sprint.end_date);
+                          return Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+                        })()} Total Days
                       </div>
                       <div className="text-gray-600 dark:text-gray-400">Sprint Duration</div>
                     </div>
@@ -3554,7 +3935,12 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
                     </div>
                     <div className="text-center">
                       <div className="font-medium text-gray-900 dark:text-white">
-                        Day {getCurrentWorkingDay()} of {burndownData.length}
+                        Day {getCurrentDayIndex()} of {(() => {
+                          if (!sprint || !sprint.start_date || !sprint.end_date) return 0;
+                          const start = new Date(sprint.start_date);
+                          const end = new Date(sprint.end_date);
+                          return Math.floor((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)) + 1;
+                        })()}
                       </div>
                       <div className="text-gray-600 dark:text-gray-400">Current Progress</div>
                     </div>
@@ -3806,3 +4192,5 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
 };
 
 export default SprintDetail;
+
+

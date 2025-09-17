@@ -61,6 +61,7 @@ class Backlog(Base):
     # System timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+    completed_at = Column(DateTime(timezone=True), nullable=True, index=True, comment="Timestamp when item was marked as DONE")
     
     # Self-referential relationship for hierarchical structure
     parent = relationship("Backlog", remote_side=[id], foreign_keys=[parent_id], back_populates="children")

@@ -747,6 +747,149 @@ export const api = {
       jsonFetch<any>(`/api/v1/sprints/${sprintId}/project-users`),
   },
 
+  velocity: {
+    // Sprint-level endpoints
+    getSprintVelocity: (sprintId: number) => 
+      jsonFetch<{
+        sprint_id: number;
+        velocity_points: number;
+      }>(`/api/v1/velocity/sprint/${sprintId}/velocity`),
+
+    getSprintBurndownChart: (sprintId: number, startDate?: string, endDate?: string) => {
+      const params = new URLSearchParams();
+      if (startDate) params.append('start_date', startDate);
+      if (endDate) params.append('end_date', endDate);
+      const queryString = params.toString() ? `?${params.toString()}` : '';
+      
+      return jsonFetch<{
+        dates: string[];
+        remaining_points: number[];
+        completed_points: number[];
+        total_points: number[];
+        sprint_duration_days: number;
+        snapshots_with_data: number;
+        initial_total_points: number;
+      }>(`/api/v1/velocity/sprint/${sprintId}/burndown${queryString}`);
+    },
+
+    getSprintBurndownSnapshots: (sprintId: number, startDate?: string, endDate?: string) => {
+      const params = new URLSearchParams();
+      if (startDate) params.append('start_date', startDate);
+      if (endDate) params.append('end_date', endDate);
+      const queryString = params.toString() ? `?${params.toString()}` : '';
+      
+      return jsonFetch<Array<{
+        id: number;
+        sprint_id: number;
+        project_id: number;
+        date: string;
+        completed_story_point: number;
+        remaining_story_point: number;
+        created_at: string;
+        updated_at: string;
+      }>>(`/api/v1/velocity/sprint/${sprintId}/burndown/snapshots${queryString}`);
+    },
+
+    getSprintBurndownTrend: (sprintId: number) => 
+      jsonFetch<{
+        total_snapshots: number;
+        trend: string;
+        velocity: number;
+        projected_completion: string | null;
+        is_on_track: boolean;
+        current_remaining: number;
+        current_completed: number;
+      }>(`/api/v1/velocity/sprint/${sprintId}/burndown/trend`),
+
+    backfillSprintBurndownSnapshots: (sprintId: number, startDate?: string, endDate?: string) => {
+      const params = new URLSearchParams();
+      if (startDate) params.append('start_date', startDate);
+      if (endDate) params.append('end_date', endDate);
+      const queryString = params.toString() ? `?${params.toString()}` : '';
+      
+      return jsonFetch<{
+        message: string;
+        snapshots_created: number;
+      }>(`/api/v1/velocity/sprint/${sprintId}/burndown/backfill${queryString}`, {
+        method: 'POST'
+      });
+    },
+
+    // Project-level endpoints
+    getProjectAverageVelocity: (projectId: number, excludeSprintId?: number) => {
+      const params = new URLSearchParams();
+      if (excludeSprintId) params.append('exclude_sprint_id', excludeSprintId.toString());
+      const queryString = params.toString() ? `?${params.toString()}` : '';
+      
+      return jsonFetch<{
+        project_id: number;
+        average_velocity: number;
+      }>(`/api/v1/velocity/project/${projectId}/velocity/average${queryString}`);
+    },
+
+    getProjectVelocityTrend: (projectId: number, limit: number = 5) => 
+      jsonFetch<{
+        project_id: number;
+        velocity_trend: Array<{
+          sprint_id: number;
+          sprint_name: string;
+          velocity_points: number;
+          end_date: string | null;
+        }>;
+      }>(`/api/v1/velocity/project/${projectId}/velocity/trend?limit=${limit}`),
+
+    getProjectVelocityMetrics: (projectId: number) => 
+      jsonFetch<{
+        project_id: number;
+        total_completed_sprints: number;
+        average_velocity: number;
+        min_velocity: number;
+        max_velocity: number;
+        velocity_trend: Array<{
+          sprint_id: number;
+          sprint_name: string;
+          velocity_points: number;
+          end_date: string | null;
+        }>;
+        total_story_points: number;
+      }>(`/api/v1/velocity/project/${projectId}/velocity/metrics`),
+
+    getProjectBurndownSummary: (projectId: number, days: number = 30) => 
+      jsonFetch<{
+        total_snapshots: number;
+        active_sprints: number;
+        total_story_points: number;
+        completed_story_points: number;
+        remaining_story_points: number;
+        completion_percentage: number;
+      }>(`/api/v1/velocity/project/${projectId}/burndown/summary?days=${days}`),
+
+    getProjectBurndownSnapshots: (projectId: number, startDate?: string, endDate?: string) => {
+      const params = new URLSearchParams();
+      if (startDate) params.append('start_date', startDate);
+      if (endDate) params.append('end_date', endDate);
+      const queryString = params.toString() ? `?${params.toString()}` : '';
+      
+      return jsonFetch<Array<{
+        id: number;
+        sprint_id: number;
+        project_id: number;
+        date: string;
+        completed_story_point: number;
+        remaining_story_point: number;
+        created_at: string;
+        updated_at: string;
+      }>>(`/api/v1/velocity/project/${projectId}/burndown/snapshots${queryString}`);
+    },
+
+    // Health check
+    healthCheck: () => 
+      jsonFetch<{
+        status: string;
+        service: string;
+      }>('/api/v1/velocity/health'),
+  },
+
   backlogs: {
     getAll: (params?: { 
       status?: string;
