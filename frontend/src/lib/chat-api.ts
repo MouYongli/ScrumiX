@@ -151,6 +151,20 @@ class ChatAPI {
     }, cookies);
     return response.json();
   }
+
+  async updateMessage(messageId: string, content: string, cookies?: string): Promise<ChatMessage> {
+    const response = await this.fetchWithAuth(`${API_BASE_URL}/chat/messages/${messageId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ content }),
+    }, cookies);
+    return response.json();
+  }
+
+  async deleteMessagesAfter(conversationId: string, messageId: string, cookies?: string): Promise<void> {
+    await this.fetchWithAuth(`${API_BASE_URL}/chat/conversations/${conversationId}/messages/after/${messageId}`, {
+      method: 'DELETE',
+    }, cookies);
+  }
 }
 
 export const chatAPI = new ChatAPI();

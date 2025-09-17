@@ -274,3 +274,74 @@ async def delete_conversation_messages(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to delete conversation messages: {str(e)}"
         )
+
+
+@router.put("/messages/{message_id}", response_model=ChatMessageResponse)
+async def update_message(
+    message_id: str,
+    message_content: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update a message's content"""
+    try:
+        content = message_content.get("content", "")
+        if not content.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Message content cannot be empty"
+            )
+        
+        updated_message = chat_crud.update_message(
+            db=db,
+            message_id=message_id,
+            content=content.strip(),
+            user_id=current_user.id
+        )
+        
+        if not updated_message:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Message not found or access denied"
+            )
+        
+        return ChatMessageResponse.model_validate(updated_message)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update message: {str(e)}"
+        )
+
+
+@router.delete("/conversations/{conversation_id}/messages/after/{message_id}")
+async def delete_messages_after(
+    conversation_id: str,
+    message_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete all messages after a specific message in a conversation"""
+    try:
+        success = chat_crud.delete_messages_after(
+            db=db,
+            conversation_id=conversation_id,
+            after_message_id=message_id,
+            user_id=current_user.id
+        )
+        
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Conversation or message not found or access denied"
+            )
+        
+        return {"message": "Messages deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete messages: {str(e)}"
+        )

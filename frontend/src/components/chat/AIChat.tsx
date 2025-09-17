@@ -1956,30 +1956,51 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     
     if (messageIndex === -1) return;
 
-    // Create updated message
-    const updatedMessage: ChatMessage = {
-      ...currentState.messages[messageIndex],
-      content: editingContent.trim(),
-      timestamp: new Date().toISOString()
-    };
+    try {
+      // Get the conversation ID for this agent
+      const chatHistory = getChatHistory(agentType);
+      const conversationId = selectedConversationIds[agentType] || chatHistory.conversation.id;
 
-    // Remove all messages after the edited one (including agent responses)
-    const messagesUpToEdit = currentState.messages.slice(0, messageIndex);
-    const updatedMessages = [...messagesUpToEdit, updatedMessage];
+      // Update message in backend
+      await chatAPI.updateMessage(messageId, editingContent.trim());
 
-    // Update state with edited message and removed subsequent messages
-    updateAgentState(agentType, {
-      messages: updatedMessages,
-      isTyping: true,
-      loadingState: webSearchEnabled ? 'searching' : 'thinking'
-    });
+      // Delete all messages after this one in backend
+      await chatAPI.deleteMessagesAfter(conversationId, messageId);
 
-    // Clear editing state
-    setEditingMessageId(null);
-    setEditingContent('');
+      // Create updated message for UI
+      const updatedMessage: ChatMessage = {
+        ...currentState.messages[messageIndex],
+        content: editingContent.trim(),
+        timestamp: new Date().toISOString()
+      };
 
-    // Regenerate conversation from the edited message
-    await regenerateConversationFromMessage(agentType, updatedMessages, updatedMessage);
+      // Remove all messages after the edited one (including agent responses)
+      const messagesUpToEdit = currentState.messages.slice(0, messageIndex);
+      const updatedMessages = [...messagesUpToEdit, updatedMessage];
+
+      // Update state with edited message and removed subsequent messages
+      updateAgentState(agentType, {
+        messages: updatedMessages,
+        isTyping: true,
+        loadingState: webSearchEnabled ? 'searching' : 'thinking'
+      });
+
+      // Clear editing state
+      setEditingMessageId(null);
+      setEditingContent('');
+
+      // Regenerate conversation from the edited message
+      await regenerateConversationFromMessage(agentType, updatedMessages, updatedMessage);
+    } catch (error) {
+      console.error('Failed to save edited message:', error);
+      
+      // Clear editing state even on error
+      setEditingMessageId(null);
+      setEditingContent('');
+      
+      // Show error message to user
+      alert('Failed to save edited message. Please try again.');
+    }
   };
 
   const regenerateConversationFromMessage = async (agentType: ProjectAgentType, messages: ChatMessage[], editedMessage: ChatMessage) => {
@@ -2095,7 +2116,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
         
         aiResponse += chunk;
         
-        // Update the agent message in real-time
+        // Update the agent message in real-time during streaming
         const agentMessage: ChatMessage = {
           id: messageId,
           content: aiResponse,
@@ -2105,12 +2126,43 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
           model: currentState.selectedModel
         };
 
-        updateAgentState(agentType, {
-          messages: [...messages, agentMessage],
-          isTyping: false,
-          loadingState: undefined,
-          currentTool: undefined
+        // Update using functional state to avoid stale snapshots and dedupe by id/content
+        setAgentStates(prev => {
+          const prevState = prev[agentType];
+          const merged = upsertMessage([...messages, agentMessage] as EnhancedChatMessage[], agentMessage as EnhancedChatMessage);
+          return {
+            ...prev,
+            [agentType]: {
+              ...prevState,
+              messages: merged,
+              isTyping: true, // Keep typing true during streaming
+              loadingState: 'generating', // Keep generating state during streaming
+              currentTool: undefined
+            }
+          };
         });
+      }
+
+      // Final cleanup - ensure streaming state is properly cleared
+      updateAgentState(agentType, {
+        isTyping: false,
+        loadingState: undefined,
+        currentTool: undefined
+      });
+
+      // Save the final complete AI response to backend (outside the streaming loop)
+      try {
+        const chatHistory = getChatHistory(agentType);
+        const conversationId = selectedConversationIds[agentType] || chatHistory.conversation.id;
+        
+        await chatAPI.saveMessage(conversationId, {
+          id: messageId,
+          role: 'assistant',
+          parts: [{ type: 'text', text: aiResponse }]
+        });
+      } catch (saveError) {
+        console.error('Failed to save AI response to backend:', saveError);
+        // Don't show error to user for this, as the message is visible in UI
       }
     } catch (error) {
       console.error('Regenerate conversation error:', error);
