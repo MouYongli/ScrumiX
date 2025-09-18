@@ -2,8 +2,7 @@ import { streamText, stepCountIs, convertToModelMessages, type UIMessage } from 
 import { gateway, getAgentModelConfig } from '@/lib/ai-gateway';
 import { selectModel } from '@/lib/adaptive-models';
 import { scrumMasterTools } from '@/lib/tools/scrum-master';
-import { documentationTools } from '@/lib/tools/documentation';
-import { getWebSearchToolsForModel } from '@/lib/tools/web-search';
+import { getWebSearchToolsForModel } from '@/lib/tools/utils/web-search';
 import { chatAPI } from '@/lib/chat-api';
 
 // Scrum Master AI Agent System Prompt
@@ -274,20 +273,8 @@ export async function POST(req: Request) {
         system: contextualSystemPrompt,
         messages: modelMessages,
         tools: {
-          // Scrum Master Tools
-          getSprintInfo: scrumMasterTools.getSprintInfo,
-          analyzeSprintHealth: scrumMasterTools.analyzeSprintHealth,
-          scheduleEvent: scrumMasterTools.scheduleEvent,
-          manageMeetings: scrumMasterTools.manageMeetings,
-          analyzeVelocity: scrumMasterTools.analyzeVelocity,
-          analyzeBurndown: scrumMasterTools.analyzeBurndown,
-          analyzeCurrentSprintVelocity: scrumMasterTools.analyzeCurrentSprintVelocity,
-          analyzeRetrospectives: scrumMasterTools.analyzeRetrospectives,
-          checkScrumCompliance: scrumMasterTools.checkScrumCompliance,
-          manageMeetingAgenda: scrumMasterTools.manageMeetingAgenda,
-          manageMeetingActionItems: scrumMasterTools.manageMeetingActionItems,
-          // Process Documentation Tools
-          ...documentationTools,
+          // All Scrum Master tools from the new modular structure
+          ...scrumMasterTools,
           // Web Search Tools (native for OpenAI/Gemini)
           ...getWebSearchToolsForModel(modelToUse, webSearchEnabled),
         },
@@ -356,18 +343,8 @@ export async function POST(req: Request) {
         system: contextualSystemPrompt,
         messages: modelMessages,
         tools: {
-          getSprintInfo: scrumMasterTools.getSprintInfo,
-          analyzeSprintHealth: scrumMasterTools.analyzeSprintHealth,
-          scheduleEvent: scrumMasterTools.scheduleEvent,
-          manageMeetings: scrumMasterTools.manageMeetings,
-          analyzeVelocity: scrumMasterTools.analyzeVelocity,
-          analyzeBurndown: scrumMasterTools.analyzeBurndown,
-          analyzeCurrentSprintVelocity: scrumMasterTools.analyzeCurrentSprintVelocity,
-          analyzeRetrospectives: scrumMasterTools.analyzeRetrospectives,
-          checkScrumCompliance: scrumMasterTools.checkScrumCompliance,
-          manageMeetingAgenda: scrumMasterTools.manageMeetingAgenda,
-          manageMeetingActionItems: scrumMasterTools.manageMeetingActionItems,
-          ...documentationTools,
+          // All Scrum Master tools from the new modular structure
+          ...scrumMasterTools,
           ...getWebSearchToolsForModel(modelToUse, webSearchEnabled),
         },
         temperature: modelConfig.temperature,
