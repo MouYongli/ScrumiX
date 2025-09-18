@@ -32,6 +32,8 @@ export * from './compliance';
 
 // Semantic search schemas
 export * from './semantic-task';
+export * from './semantic-backlog';
+export * from './semantic-sprint';
 
 // Legacy scrum schemas (will be deprecated)
 export * from './scrum';

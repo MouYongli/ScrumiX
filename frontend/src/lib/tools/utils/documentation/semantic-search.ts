@@ -199,3 +199,4 @@ export function getSearchSuggestions(query: string): string[] {
   return suggestions.slice(0, 5); // Limit to 5 suggestions
 }
 
+

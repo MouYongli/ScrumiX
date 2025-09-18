@@ -7,24 +7,26 @@ import { z } from 'zod';
 
 /**
  * Schema for semantic search of sprints using AI embeddings
+ * Compatible with both PO agent and developer tools
  */
 export const semanticSearchSprintsSchema = z.object({
   query: z.string()
     .min(1, 'Search query cannot be empty')
-    .describe('Natural language search query to find relevant sprints'),
+    .max(500, 'Query must be 500 characters or less')
+    .describe('Natural language search query to find relevant sprints (describe the sprint concept, theme, or purpose)'),
   
   project_id: z.number()
     .int('Project ID must be a whole number')
     .positive('Project ID must be a positive integer')
     .optional()
-    .describe('Project ID to scope the search (auto-detected if not provided)'),
+    .describe('Project ID to scope the search (auto-detected if not provided, optional for developer tools)'),
   
   limit: z.number()
     .int('Limit must be a whole number')
     .min(1, 'Limit must be at least 1')
-    .max(20, 'Limit cannot exceed 20')
-    .default(5)
-    .describe('Maximum number of results to return (default: 5)')
+    .max(50, 'Limit cannot exceed 50')
+    .default(10)
+    .describe('Maximum number of results to return (default: 10 for developer tools, can be overridden)')
 });
 
 /**

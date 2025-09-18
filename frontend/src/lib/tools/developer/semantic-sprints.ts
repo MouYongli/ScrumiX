@@ -4,8 +4,8 @@
  */
 
 import { tool } from 'ai';
-import { z } from 'zod';
 import { requestWithAuth, AuthContext } from '../utils/http';
+import { semanticSearchSprintsSchema } from '../schemas/semantic-sprint';
 
 /**
  * Semantic search for sprints by name, goal, and metadata
@@ -13,25 +13,7 @@ import { requestWithAuth, AuthContext } from '../utils/http';
 export const semanticSearchSprints = tool({
   description: `Search sprints using semantic understanding of sprint names, goals, and metadata.
     Use this to find sprints by concept, purpose, or related themes across projects.`,
-  inputSchema: z.object({
-    query: z.string()
-      .min(1, 'Search query cannot be empty')
-      .max(500, 'Query must be 500 characters or less')
-      .describe('What you are looking for (describe the sprint concept, theme, or purpose)'),
-    
-    project_id: z.number()
-      .int('Project ID must be a whole number')
-      .positive('Project ID must be a positive integer')
-      .optional()
-      .describe('Filter by specific project ID (optional)'),
-    
-    limit: z.number()
-      .int('Limit must be a whole number')
-      .min(1, 'Limit must be at least 1')
-      .max(50, 'Limit cannot exceed 50')
-      .default(10)
-      .describe('Maximum number of results to return (default: 10)')
-  }),
+  inputSchema: semanticSearchSprintsSchema,
   execute: async (input, { experimental_context }) => {
     try {
       const validated = {
@@ -54,14 +36,14 @@ export const semanticSearchSprints = tool({
           method: 'POST',
           body: JSON.stringify(searchData),
         },
-        experimental_context
+        experimental_context as AuthContext
       );
 
       if (response.error) {
         return `Sprint search failed: ${response.error}`;
       }
 
-      const results = response.data || [];
+      const results = (response.data as any[]) || [];
 
       if (results.length === 0) {
         return `No sprints found related to "${validated.query}".`;
