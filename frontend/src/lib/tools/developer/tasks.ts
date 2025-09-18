@@ -4,12 +4,15 @@
  */
 
 import { tool } from 'ai';
-import { z } from 'zod';
 import { requestWithAuth, AuthContext } from '../utils/http';
-
-// Task Status and Priority enums (matching backend)
-const TaskStatus = z.enum(['todo', 'in_progress', 'done', 'cancelled']);
-const TaskPriority = z.enum(['low', 'medium', 'high', 'critical']);
+import {
+  TaskStatus,
+  TaskPriority,
+  createTaskForBacklogItemSchema,
+  getSprintTasksSchema,
+  updateTaskSchema,
+  deleteTaskSchema
+} from '../schemas/task';
 
 /**
  * Create a task for a backlog item in the current sprint
@@ -17,31 +20,7 @@ const TaskPriority = z.enum(['low', 'medium', 'high', 'critical']);
 export const createTaskForBacklogItem = tool({
   description: `Create a new task for a specific backlog item in the current sprint. Tasks break down backlog items into smaller, actionable work units.
     Use this tool to decompose user stories or bugs into specific tasks that developers can work on.`,
-  inputSchema: z.object({
-    project_id: z.number()
-      .int('Project ID must be a whole number')
-      .positive('Project ID must be a positive integer')
-      .describe('The ID of the project'),
-    backlog_id: z.number()
-      .int('Backlog ID must be a whole number')
-      .positive('Backlog ID must be a positive integer')
-      .describe('The ID of the backlog item to create a task for'),
-    title: z.string()
-      .min(1, 'Task title is required')
-      .max(200, 'Task title must be 200 characters or less')
-      .describe('Title of the task (specific, actionable work item)'),
-    description: z.string()
-      .optional()
-      .describe('Detailed description of the task (optional)'),
-    priority: TaskPriority
-      .default('medium')
-      .describe('Priority level of the task'),
-    sprint_id: z.number()
-      .int('Sprint ID must be a whole number')
-      .positive('Sprint ID must be a positive integer')
-      .optional()
-      .describe('Sprint ID (optional - will use active sprint if not provided)')
-  }),
+  inputSchema: createTaskForBacklogItemSchema,
   execute: async (input, { experimental_context }) => {
     try {
       console.log('Creating task for backlog item:', input);
@@ -53,14 +32,14 @@ export const createTaskForBacklogItem = tool({
         const sprintResponse = await requestWithAuth(
           `/sprints?project_id=${input.project_id}&status=active&limit=1`,
           { method: 'GET' },
-          experimental_context
+          experimental_context as AuthContext
         );
 
         if (sprintResponse.error) {
           return `Cannot create task: ${sprintResponse.error}`;
         }
 
-        const sprints = sprintResponse.data || [];
+        const sprints = sprintResponse.data as any[] || [];
         if (sprints.length === 0) {
           return `No active sprint found for project ${input.project_id}. Please activate a sprint first.`;
         }
@@ -82,7 +61,7 @@ export const createTaskForBacklogItem = tool({
           method: 'POST',
           body: JSON.stringify(taskData),
         },
-        experimental_context
+        experimental_context as AuthContext
       );
 
       if (response.error) {
@@ -97,7 +76,7 @@ export const createTaskForBacklogItem = tool({
 - **Status**: Todo (ready to work on)
 - **Backlog Item ID**: ${input.backlog_id}
 - **Sprint ID**: ${sprintId}
-- **Task ID**: ${response.data.task_id}
+- **Task ID**: ${(response.data as any).task_id}
 
 The task has been added to the sprint backlog and is ready for development work.`;
 
@@ -114,25 +93,7 @@ The task has been added to the sprint backlog and is ready for development work.
 export const getSprintTasks = tool({
   description: `Get all tasks for the current sprint, optionally filtered by backlog item or status.
     Use this to see what specific tasks are available and their current status.`,
-  inputSchema: z.object({
-    project_id: z.number()
-      .int('Project ID must be a whole number')
-      .positive('Project ID must be a positive integer')
-      .describe('The ID of the project'),
-    sprint_id: z.number()
-      .int('Sprint ID must be a whole number')
-      .positive('Sprint ID must be a positive integer')
-      .optional()
-      .describe('Sprint ID (optional - will use active sprint if not provided)'),
-    backlog_id: z.number()
-      .int('Backlog ID must be a whole number')
-      .positive('Backlog ID must be a positive integer')
-      .optional()
-      .describe('Filter tasks for a specific backlog item (optional)'),
-    status: TaskStatus
-      .optional()
-      .describe('Filter tasks by status (optional)')
-  }),
+  inputSchema: getSprintTasksSchema,
   execute: async (input, { experimental_context }) => {
     try {
       console.log('Getting sprint tasks:', input);
@@ -144,14 +105,14 @@ export const getSprintTasks = tool({
         const sprintResponse = await requestWithAuth(
           `/sprints?project_id=${input.project_id}&status=active&limit=1`,
           { method: 'GET' },
-          experimental_context
+          experimental_context as AuthContext
         );
 
         if (sprintResponse.error) {
           return `Cannot get tasks: ${sprintResponse.error}`;
         }
 
-        const sprints = sprintResponse.data || [];
+        const sprints = sprintResponse.data as any[] || [];
         if (sprints.length === 0) {
           return `No active sprint found for project ${input.project_id}.`;
         }
@@ -176,14 +137,14 @@ export const getSprintTasks = tool({
       const response = await requestWithAuth(
         `/tasks?${queryParams.toString()}`,
         { method: 'GET' },
-        experimental_context
+        experimental_context as AuthContext
       );
 
       if (response.error) {
         return `Failed to get tasks: ${response.error}`;
       }
 
-      const tasksData = response.data || {};
+      const tasksData = response.data as any || {};
       const tasks = tasksData.tasks || [];
 
       if (tasks.length === 0) {
@@ -242,35 +203,7 @@ export const getSprintTasks = tool({
 export const updateTask = tool({
   description: `Update a task's status, priority, title, or description. Use this to track progress and modify task details.
     Common workflow: todo → in_progress → done`,
-  inputSchema: z.object({
-    project_id: z.number()
-      .int('Project ID must be a whole number')
-      .positive('Project ID must be a positive integer')
-      .describe('The ID of the project'),
-    task_id: z.number()
-      .int('Task ID must be a whole number')
-      .positive('Task ID must be a positive integer')
-      .describe('The ID of the task to update'),
-    sprint_id: z.number()
-      .int('Sprint ID must be a whole number')
-      .positive('Sprint ID must be a positive integer')
-      .optional()
-      .describe('Sprint ID (optional - will use active sprint if not provided)'),
-    title: z.string()
-      .min(1, 'Task title is required')
-      .max(200, 'Task title must be 200 characters or less')
-      .optional()
-      .describe('New title for the task (optional)'),
-    description: z.string()
-      .optional()
-      .describe('New description for the task (optional)'),
-    status: TaskStatus
-      .optional()
-      .describe('New status for the task (optional)'),
-    priority: TaskPriority
-      .optional()
-      .describe('New priority for the task (optional)')
-  }),
+  inputSchema: updateTaskSchema,
   execute: async (input, { experimental_context }) => {
     try {
       console.log('Updating task:', input);
@@ -282,14 +215,14 @@ export const updateTask = tool({
         const sprintResponse = await requestWithAuth(
           `/sprints?project_id=${input.project_id}&status=active&limit=1`,
           { method: 'GET' },
-          experimental_context
+          experimental_context as AuthContext
         );
 
         if (sprintResponse.error) {
           return `Cannot update task: ${sprintResponse.error}`;
         }
 
-        const sprints = sprintResponse.data || [];
+        const sprints = sprintResponse.data as any[] || [];
         if (sprints.length === 0) {
           return `No active sprint found for project ${input.project_id}.`;
         }
@@ -314,7 +247,7 @@ export const updateTask = tool({
           method: 'PUT',
           body: JSON.stringify(updateData),
         },
-        experimental_context
+        experimental_context as AuthContext
       );
 
       if (response.error) {
@@ -348,21 +281,7 @@ The task changes have been saved to sprint ${sprintId}.`;
 export const deleteTask = tool({
   description: `Delete a task from the sprint. Use this when a task is no longer needed or was created by mistake.
     Note: This permanently removes the task and cannot be undone.`,
-  inputSchema: z.object({
-    project_id: z.number()
-      .int('Project ID must be a whole number')
-      .positive('Project ID must be a positive integer')
-      .describe('The ID of the project'),
-    task_id: z.number()
-      .int('Task ID must be a whole number')
-      .positive('Task ID must be a positive integer')
-      .describe('The ID of the task to delete'),
-    sprint_id: z.number()
-      .int('Sprint ID must be a whole number')
-      .positive('Sprint ID must be a positive integer')
-      .optional()
-      .describe('Sprint ID (optional - will use active sprint if not provided)')
-  }),
+  inputSchema: deleteTaskSchema,
   execute: async (input, { experimental_context }) => {
     try {
       console.log('Deleting task:', input);
@@ -374,14 +293,14 @@ export const deleteTask = tool({
         const sprintResponse = await requestWithAuth(
           `/sprints?project_id=${input.project_id}&status=active&limit=1`,
           { method: 'GET' },
-          experimental_context
+          experimental_context as AuthContext
         );
 
         if (sprintResponse.error) {
           return `Cannot delete task: ${sprintResponse.error}`;
         }
 
-        const sprints = sprintResponse.data || [];
+        const sprints = sprintResponse.data as any[] || [];
         if (sprints.length === 0) {
           return `No active sprint found for project ${input.project_id}.`;
         }
@@ -392,7 +311,7 @@ export const deleteTask = tool({
       const response = await requestWithAuth(
         `/sprints/${sprintId}/tasks/${input.task_id}`,
         { method: 'DELETE' },
-        experimental_context
+        experimental_context as AuthContext
       );
 
       if (response.error) {

@@ -12,6 +12,9 @@ export * from './sprint';
 // Sprint backlog schemas
 export * from './sprint-backlog';
 
+// Task management schemas
+export * from './task';
+
 // Meeting schemas
 export * from './meetings';
 
