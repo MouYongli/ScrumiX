@@ -121,7 +121,7 @@ export function useChatHistory(options: UseChatHistoryOptions) {
     webSearchEnabled?: boolean,
     files?: File[],
     abortSignal?: AbortSignal
-  ): Promise<ReadableStream<Uint8Array> | null> => {
+  ): Promise<{stream: ReadableStream<Uint8Array> | null, headers?: Headers}> => {
     const conversation = getCurrentConversation();
     setError(null);
 
@@ -180,14 +180,14 @@ export function useChatHistory(options: UseChatHistoryOptions) {
         throw new Error(`API Error: ${response.status}`);
       }
 
-      // Return the stream directly - let the caller handle message updates
-      return response.body;
+      // Return both the stream and headers for message ID synchronization
+      return { stream: response.body, headers: response.headers };
       
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : 'Unknown error';
       setError(errorMessage);
       console.error('Failed to send message:', err);
-      return null;
+      return { stream: null, headers: undefined };
     }
   }, [agentType, projectId, getCurrentConversation]);
 

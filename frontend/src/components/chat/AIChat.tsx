@@ -616,6 +616,9 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     const currentState = agentStates[agentType];
     if (!currentState.inputValue.trim() && !currentState.files?.length) return;
 
+    // Generate message ID early to avoid scoping issues
+    const userMessageId = `user-${Date.now()}`;
+    
     // Create abort controller for this request
     const abortController = new AbortController();
 
@@ -659,7 +662,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
 
     // Create user message with session data for files
     const userMessage: EnhancedChatMessage = {
-      id: `user-${Date.now()}`,
+      id: userMessageId,
       content: messageContent,
       timestamp: new Date().toISOString(),
       sender: 'user',
@@ -719,8 +722,8 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       if (currentConversationIds[agentType]) {
         // Send to API directly with the new conversation ID
         const apiEndpoint = getApiEndpoint(agentType);
-        const userMessage = {
-          id: `msg_${Date.now()}`,
+        const apiUserMessage = {
+          id: userMessageId, // Use the same ID as the UI message
           role: 'user' as const,
           parts: [{ type: 'text', text: messageContent }]
         };
@@ -733,7 +736,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
           },
           body: JSON.stringify({
             id: conversationId,
-            message: userMessage,
+            message: apiUserMessage,
             projectId: projectId ? parseInt(projectId, 10) : null,
             selectedModel: currentState.selectedModel,
             webSearchEnabled
@@ -749,13 +752,25 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
         const backendMessageId = response.headers.get('X-Message-ID');
         const originalMessageId = response.headers.get('X-Original-Message-ID');
         
+        console.log('AIChat - Message ID sync (new conversation):', {
+          backendMessageId,
+          originalMessageId,
+          userMessageId: apiUserMessage.id,
+          hasHeaders: !!backendMessageId && !!originalMessageId,
+          needsUpdate: backendMessageId && originalMessageId && backendMessageId !== originalMessageId
+        });
+        
         // Update the user message ID in state if we got a new ID from backend
         if (backendMessageId && originalMessageId && backendMessageId !== originalMessageId) {
+          console.log('AIChat - Updating message ID from', originalMessageId, 'to', backendMessageId);
+          
+          // Use functional update to ensure we have the latest state
           setAgentStates(prev => {
             const currentMessages = prev[agentType].messages;
             const updatedMessages = currentMessages.map(msg => 
               msg.id === originalMessageId ? { ...msg, id: backendMessageId } : msg
             );
+            console.log('AIChat - Updated messages after ID sync:', updatedMessages.map(m => ({ id: m.id, sender: m.sender, content: m.content?.substring(0, 30) + '...' })));
             return {
               ...prev,
               [agentType]: {
@@ -764,6 +779,9 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
               }
             };
           });
+          
+          // Also update the userMessage reference for consistency
+          userMessage.id = backendMessageId;
         }
 
         responseStream = response.body;
@@ -772,13 +790,49 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
         // Don't clear the currentConversationIds yet - we need it for subsequent messages
       } else {
         // Use existing chat history method for ongoing conversations
-        responseStream = await chatHistory.sendMessage(
+        const result = await chatHistory.sendMessage(
           messageContent,
           currentState.selectedModel,
           webSearchEnabled,
           messageFiles ? Array.from(messageFiles) : undefined,
           abortController.signal
         );
+        responseStream = result.stream;
+        
+        // Handle message ID synchronization for ongoing conversations
+        if (result.headers) {
+          const backendMessageId = result.headers.get('X-Message-ID');
+          const originalMessageId = result.headers.get('X-Original-Message-ID');
+          
+          console.log('AIChat - Message ID sync (ongoing conversation):', {
+            backendMessageId,
+            originalMessageId,
+            hasHeaders: !!backendMessageId && !!originalMessageId,
+            needsUpdate: backendMessageId && originalMessageId && backendMessageId !== originalMessageId
+          });
+          
+          if (backendMessageId && originalMessageId && backendMessageId !== originalMessageId) {
+            console.log('AIChat - Updating message ID from', originalMessageId, 'to', backendMessageId);
+            setAgentStates(prev => {
+              // Get the current messages (which includes the user message we just added)
+              const currentMessages = prev[agentType].messages;
+              const updatedMessages = currentMessages.map(msg => 
+                msg.id === originalMessageId ? { ...msg, id: backendMessageId } : msg
+              );
+              console.log('AIChat - Updated messages:', updatedMessages.map(m => ({ id: m.id, sender: m.sender, content: m.content?.substring(0, 30) + '...' })));
+              return {
+                ...prev,
+                [agentType]: {
+                  ...prev[agentType],
+                  messages: updatedMessages
+                }
+              };
+            });
+            
+            // Also update the userMessage reference for consistency
+            userMessage.id = backendMessageId;
+          }
+        }
       }
 
       if (!responseStream) {
@@ -1971,6 +2025,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   };
 
   const startEditingMessage = (messageId: string, content: string) => {
+    console.log('AIChat - Starting to edit message:', { messageId, content: content.substring(0, 50) + '...' });
     setEditingMessageId(messageId);
     setEditingContent(content);
     
@@ -2002,6 +2057,10 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       const chatHistory = getChatHistory(agentType);
       const conversationId = selectedConversationIds[agentType] || chatHistory.conversation.id;
 
+      console.log('AIChat - Attempting to update message with ID:', messageId);
+      console.log('AIChat - Message exists in state:', currentState.messages.some(m => m.id === messageId));
+      console.log('AIChat - All message IDs in state:', currentState.messages.map(m => ({ id: m.id, sender: m.sender })));
+      
       // Update the existing message in backend
       await chatAPI.updateMessage(messageId, editingContent.trim());
 
@@ -2035,12 +2094,28 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     } catch (error) {
       console.error('Failed to save edited message:', error);
       
-      // Clear editing state even on error
+      // Check if this is a 404 error (message not found)
+      if (error instanceof Error && error.message.includes('404')) {
+        console.warn('Message not found in backend, this might be due to ID synchronization issues');
+        console.log('Current message ID:', messageId);
+        console.log('Available message IDs:', currentState.messages.map(m => m.id));
+        
+        // Try to refresh the conversation to get the latest message IDs
+        try {
+          await refreshConversation(agentType);
+          alert('Message IDs were out of sync. Please try editing again.');
+        } catch (refreshError) {
+          console.error('Failed to refresh conversation:', refreshError);
+          alert('Failed to save edited message due to synchronization issues. Please refresh the page and try again.');
+        }
+      } else {
+        // Show generic error message for other errors
+        alert('Failed to save edited message. Please try again.');
+      }
+      
+      // Clear editing state
       setEditingMessageId(null);
       setEditingContent('');
-      
-      // Show error message to user
-      alert('Failed to save edited message. Please try again.');
     }
   };
 
@@ -3274,4 +3349,3 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
 };
 
 export default AIChat;
-

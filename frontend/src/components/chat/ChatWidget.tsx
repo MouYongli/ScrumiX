@@ -436,6 +436,10 @@ const ChatWidget: React.FC = () => {
     if (messageIndex === -1) return;
 
     try {
+      console.log('ChatWidget - Attempting to update message with ID:', messageId);
+      console.log('ChatWidget - Message exists in state:', currentState.messages.some(m => m.id === messageId));
+      console.log('ChatWidget - All message IDs in state:', currentState.messages.map(m => ({ id: m.id, sender: m.sender })));
+      
       // Update the existing message in backend
       await chatAPI.updateMessage(messageId, editingContent.trim());
 
@@ -470,8 +474,33 @@ const ChatWidget: React.FC = () => {
       await regenerateConversationFromMessage(updatedMessages, updatedMessage);
     } catch (error) {
       console.error('Failed to save edited message:', error);
-      // Show error to user but don't clear editing state
-      alert('Failed to save edited message. Please try again.');
+      
+      // Check if this is a 404 error (message not found)
+      if (error instanceof Error && error.message.includes('404')) {
+        console.warn('Message not found in backend, this might be due to ID synchronization issues');
+        console.log('Current message ID:', messageId);
+        console.log('Available message IDs:', currentState.messages.map(m => m.id));
+        
+        // Try to reload the conversation to get the latest message IDs
+        if (currentConversationId) {
+          try {
+            await loadConversation(currentConversationId);
+            alert('Message IDs were out of sync. Please try editing again.');
+          } catch (reloadError) {
+            console.error('Failed to reload conversation:', reloadError);
+            alert('Failed to save edited message due to synchronization issues. Please refresh the page and try again.');
+          }
+        } else {
+          alert('Failed to save edited message due to synchronization issues. Please refresh the page and try again.');
+        }
+      } else {
+        // Show generic error message for other errors
+        alert('Failed to save edited message. Please try again.');
+      }
+      
+      // Clear editing state
+      setEditingMessageId(null);
+      setEditingContent('');
     }
   };
 
@@ -1032,6 +1061,33 @@ const ChatWidget: React.FC = () => {
 
       if (!response.ok) {
         throw new Error(`API Error: ${response.status}`);
+      }
+
+      // Get the backend-generated message ID from response headers
+      const backendMessageId = response.headers.get('X-Message-ID');
+      const originalMessageId = response.headers.get('X-Original-Message-ID');
+      
+      console.log('ChatWidget - Message ID sync:', {
+        backendMessageId,
+        originalMessageId,
+        userMessageId: userUIMessage.id,
+        hasHeaders: !!backendMessageId && !!originalMessageId,
+        needsUpdate: backendMessageId && originalMessageId && backendMessageId !== originalMessageId
+      });
+      
+      // Update the user message ID in state if we got a new ID from backend
+      if (backendMessageId && originalMessageId && backendMessageId !== originalMessageId) {
+        console.log('ChatWidget - Updating message ID from', originalMessageId, 'to', backendMessageId);
+        // Get the current messages (which includes the user message we just added)
+        const currentMessages = agentStates[activeAgent].messages;
+        updateAgentState(activeAgent, {
+          messages: currentMessages.map(msg => 
+            msg.id === originalMessageId ? { ...msg, id: backendMessageId } : msg
+          )
+        });
+        
+        // Also update the userMessage reference for consistency
+        userMessage.id = backendMessageId;
       }
 
       // Process streaming response
