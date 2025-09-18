@@ -373,7 +373,6 @@ export async function POST(req: Request) {
         messages: modelMessages,
         temperature: modelConfig.temperature,
         tools: {
-          // All Developer tools from the new modular structure
           ...developerTools,
           ...getWebSearchToolsForModel(modelToUse, webSearchEnabled),
         },
