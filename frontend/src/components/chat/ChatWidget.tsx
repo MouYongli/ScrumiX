@@ -1585,7 +1585,13 @@ const ChatWidget: React.FC = () => {
                               {/* New Chat Button - Fixed at top */}
                               <button
                                 onClick={() => {
-                                  setCurrentConversationId('');
+                                  // Generate a unique conversation ID for the new chat
+                                  const timestamp = Date.now();
+                                  const randomSuffix = Math.random().toString(36).substr(2, 9);
+                                  const newConversationId = `${activeAgent}-new-${timestamp}-${randomSuffix}`;
+                                  
+                                  // Set the new conversation ID instead of clearing it
+                                  setCurrentConversationId(newConversationId);
                                   updateAgentState(activeAgent, { messages: [] });
                                   setShowChatDropdown(false);
                                 }}

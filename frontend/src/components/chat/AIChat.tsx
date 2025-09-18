@@ -393,10 +393,11 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       [activeAgent]: newConversationId
     }));
     
-    // Clear the selected conversation ID since this is a new chat
+    // Set the selected conversation ID to the new conversation ID
+    // This prevents the useChatHistory hook from falling back to the deterministic ID
     setSelectedConversationIds(prev => ({
       ...prev,
-      [activeAgent]: ''
+      [activeAgent]: newConversationId
     }));
     
     console.log(`Started new chat for ${activeAgent} with ID: ${newConversationId}`);
