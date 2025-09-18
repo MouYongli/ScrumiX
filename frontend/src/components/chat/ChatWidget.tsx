@@ -382,14 +382,24 @@ const ChatWidget: React.FC = () => {
 
   const stopGeneration = (agentType: ProjectAgentType) => {
     const currentState = agentStates[agentType];
+    console.log('ChatWidget stop generation requested for agent:', agentType);
+    
+    // Abort any ongoing request
     if (currentState.abortController) {
+      console.log('ChatWidget aborting ongoing request...');
       currentState.abortController.abort();
-      updateAgentState(agentType, {
-        isStreaming: false,
-        isTyping: false,
-        abortController: undefined
-      });
     }
+    
+    // Force clear all loading states regardless of abort controller existence
+    updateAgentState(agentType, {
+      isStreaming: false,
+      isTyping: false,
+      loadingState: undefined,
+      currentTool: undefined,
+      abortController: undefined
+    });
+    
+    console.log('ChatWidget generation stopped and states cleared for agent:', agentType);
   };
 
   const copyToClipboard = async (messageId: string, content: string) => {
@@ -634,6 +644,61 @@ const ChatWidget: React.FC = () => {
             loadingState: hasStartedGenerating ? 'generating' : (webSearchEnabled ? 'searching' : 'thinking')
           });
         }
+        
+        // Stream completed successfully - ensure final state cleanup for regeneration
+        console.log('ChatWidget regeneration stream completed, performing final cleanup');
+        
+        // Make sure we have a final message if we received any content
+        if (aiResponse.trim()) {
+          const finalMessage: ChatMessage = {
+            id: messageId,
+            content: aiResponse.trim(),
+            timestamp: new Date().toISOString(),
+            sender: 'agent',
+            agentType: activeAgent
+          };
+
+          const needsConfirmation = isConfirmationRequest(finalMessage.content);
+          const finalPendingConfirmations = needsConfirmation 
+            ? new Set([...(currentState.pendingConfirmations || new Set()), finalMessage.id])
+            : currentState.pendingConfirmations;
+
+          updateAgentState(activeAgent, {
+            messages: [...messages, finalMessage],
+            isTyping: false,
+            loadingState: undefined,
+            currentTool: undefined,
+            isStreaming: false,
+            abortController: undefined,
+            pendingConfirmations: finalPendingConfirmations
+          });
+          
+          // Save the final message to database
+          try {
+            await chatAPI.saveMessage(conversationId, {
+              id: messageId,
+              role: 'assistant',
+              parts: [{ type: 'text', text: finalMessage.content }]
+            });
+            console.log(`ChatWidget regeneration saved final AI response (${finalMessage.content.length} chars) to database`);
+          } catch (saveError) {
+            console.warn('Failed to save ChatWidget regeneration final AI message to database:', saveError);
+          }
+        } else {
+          // No content received, just clean up state
+          updateAgentState(activeAgent, {
+            messages: [...messages],
+            isTyping: false,
+            loadingState: undefined,
+            currentTool: undefined,
+            isStreaming: false,
+            abortController: undefined
+          });
+        }
+        
+        // Return early to avoid any potential duplicate processing
+        return;
+        
       } catch (streamError) {
         // Handle streaming errors (including aborts)
         if (streamError instanceof Error && streamError.name === 'AbortError') {
@@ -1179,6 +1244,58 @@ const ChatWidget: React.FC = () => {
             pendingConfirmations: newPendingConfirmations
           });
         }
+        
+        // Stream completed successfully - ensure final state cleanup
+        console.log('ChatWidget stream completed, performing final cleanup');
+        
+        // Make sure we have a final message if we received any content
+        if (aiResponse.trim()) {
+          const finalMessage: ChatMessage = {
+            id: messageId,
+            content: aiResponse.trim(),
+            timestamp: new Date().toISOString(),
+            sender: 'agent',
+            agentType: activeAgent
+          };
+
+          const needsConfirmation = isConfirmationRequest(finalMessage.content);
+          const finalPendingConfirmations = needsConfirmation 
+            ? new Set([...(currentState.pendingConfirmations || new Set()), finalMessage.id])
+            : currentState.pendingConfirmations;
+
+          updateAgentState(activeAgent, {
+            messages: [...currentState.messages, userMessage, finalMessage],
+            isTyping: false,
+            loadingState: undefined,
+            currentTool: undefined,
+            isStreaming: false,
+            abortController: undefined,
+            pendingConfirmations: finalPendingConfirmations
+          });
+          
+          // Save the final message to database
+          try {
+            await chatAPI.saveMessage(conversationId, {
+              id: messageId,
+              role: 'assistant',
+              parts: [{ type: 'text', text: finalMessage.content }]
+            });
+            console.log(`ChatWidget saved final AI response (${finalMessage.content.length} chars) to database`);
+          } catch (saveError) {
+            console.warn('Failed to save final AI message to database:', saveError);
+          }
+        } else {
+          // No content received, just clean up state
+          updateAgentState(activeAgent, {
+            messages: [...currentState.messages, userMessage],
+            isTyping: false,
+            loadingState: undefined,
+            currentTool: undefined,
+            isStreaming: false,
+            abortController: undefined
+          });
+        }
+        
       } catch (streamError) {
         // Handle streaming errors (including aborts)
         if (streamError instanceof Error && streamError.name === 'AbortError') {
@@ -1957,7 +2074,7 @@ const ChatWidget: React.FC = () => {
                     
                     {/* Send Button */}
                     {/* Send/Stop Button */}
-                    {currentState.isStreaming ? (
+                    {(currentState.isStreaming || currentState.isTyping || currentState.loadingState) ? (
                       <button
                         onClick={() => stopGeneration(activeAgent)}
                         className="p-2 m-1 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors flex items-center"

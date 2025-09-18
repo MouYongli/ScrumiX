@@ -1360,15 +1360,24 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
 
   const stopGeneration = (agentType: ProjectAgentType) => {
     const currentState = agentStates[agentType];
+    console.log('Stop generation requested for agent:', agentType);
+    
+    // Abort any ongoing request
     if (currentState.abortController) {
+      console.log('Aborting ongoing request...');
       currentState.abortController.abort();
-      updateAgentState(agentType, {
-        isStreaming: false,
-        isTyping: false,
-        loadingState: undefined,
-        abortController: undefined
-      });
     }
+    
+    // Force clear all loading states regardless of abort controller existence
+    updateAgentState(agentType, {
+      isStreaming: false,
+      isTyping: false,
+      loadingState: undefined,
+      currentTool: undefined,
+      abortController: undefined
+    });
+    
+    console.log('Generation stopped and states cleared for agent:', agentType);
   };
 
   const sendMessage = async (agentType: ProjectAgentType) => {
@@ -1581,6 +1590,63 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
               });
             }
           }
+        
+        // Stream completed successfully - ensure final state cleanup
+        console.log('Stream completed, performing final cleanup');
+        
+        // Get conversation ID for saving to database
+        const chatHistory = getChatHistory(agentType);
+        const conversationId = selectedConversationIds[agentType] || chatHistory.conversation.id;
+        
+        // Make sure we have a final message if we received any content
+        if (aiResponse.trim()) {
+          const finalMessage: ChatMessage = {
+            id: messageId,
+            content: aiResponse.trim(),
+            timestamp: new Date().toISOString(),
+            sender: 'agent',
+            agentType: agentType,
+            model: currentState.selectedModel
+          };
+
+          const needsConfirmation = isConfirmationRequest(finalMessage.content);
+          const finalPendingConfirmations = needsConfirmation 
+            ? new Set([...currentState.pendingConfirmations!, finalMessage.id])
+            : currentState.pendingConfirmations;
+
+          updateAgentState(agentType, {
+            messages: [...currentState.messages, userMessage, finalMessage],
+            isTyping: false,
+            loadingState: undefined,
+            currentTool: undefined,
+            isStreaming: false,
+            abortController: undefined,
+            pendingConfirmations: finalPendingConfirmations
+          });
+          
+          // Save the final message to database
+          try {
+            await chatAPI.saveMessage(conversationId, {
+              id: finalMessage.id,
+              role: 'assistant',
+              parts: [{ type: 'text', text: finalMessage.content }]
+            });
+            console.log(`Saved final AI response (${finalMessage.content.length} chars) to database`);
+          } catch (saveError) {
+            console.warn('Failed to save final AI message to database:', saveError);
+          }
+        } else {
+          // No content received, just clean up state
+          updateAgentState(agentType, {
+            messages: [...currentState.messages, userMessage],
+            isTyping: false,
+            loadingState: undefined,
+            currentTool: undefined,
+            isStreaming: false,
+            abortController: undefined
+          });
+        }
+        
         } catch (streamError) {
           // Handle streaming errors (including aborts)
           const isAbortError = streamError instanceof Error && (
@@ -2252,6 +2318,74 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
           };
         });
       }
+      
+      // Stream completed successfully - ensure final state cleanup for regeneration
+      console.log('Regeneration stream completed, performing final cleanup');
+      
+      // Get conversation ID for saving to database
+      const chatHistory = getChatHistory(agentType);
+      const conversationId = selectedConversationIds[agentType] || chatHistory.conversation.id;
+      
+      // Make sure we have a final message if we received any content
+      if (aiResponse.trim()) {
+        const finalMessage: ChatMessage = {
+          id: messageId,
+          content: aiResponse.trim(),
+          timestamp: new Date().toISOString(),
+          sender: 'agent',
+          agentType: agentType,
+          model: currentState.selectedModel
+        };
+
+        const needsConfirmation = isConfirmationRequest(finalMessage.content);
+        const finalPendingConfirmations = needsConfirmation 
+          ? new Set([...currentState.pendingConfirmations!, finalMessage.id])
+          : currentState.pendingConfirmations;
+
+        setAgentStates(prev => {
+          const prevState = prev[agentType];
+          const merged = upsertMessage([...messages, finalMessage] as EnhancedChatMessage[], finalMessage as EnhancedChatMessage);
+          return {
+            ...prev,
+            [agentType]: {
+              ...prevState,
+              messages: merged,
+              isTyping: false,
+              loadingState: undefined,
+              currentTool: undefined,
+              isStreaming: false,
+              abortController: undefined,
+              pendingConfirmations: finalPendingConfirmations
+            }
+          };
+        });
+        
+        // Save the final message to database
+        try {
+          await chatAPI.saveMessage(conversationId, {
+            id: finalMessage.id,
+            role: 'assistant',
+            parts: [{ type: 'text', text: finalMessage.content }]
+          });
+          console.log(`Regeneration saved final AI response (${finalMessage.content.length} chars) to database`);
+        } catch (saveError) {
+          console.warn('Failed to save regeneration final AI message to database:', saveError);
+        }
+      } else {
+        // No content received, just clean up state
+        updateAgentState(agentType, {
+          messages: messages,
+          isTyping: false,
+          loadingState: undefined,
+          currentTool: undefined,
+          isStreaming: false,
+          abortController: undefined
+        });
+      }
+      
+      // Return early to avoid duplicate cleanup
+      return;
+      
       } catch (streamError) {
         // Handle streaming errors (including aborts)
         const isAbortError = streamError instanceof Error && (
@@ -2325,30 +2459,6 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
           // Re-throw non-abort errors
           throw streamError;
         }
-      }
-
-      // Final cleanup - ensure streaming state is properly cleared
-      updateAgentState(agentType, {
-        isTyping: false,
-        loadingState: undefined,
-        currentTool: undefined,
-        isStreaming: false,
-        abortController: undefined
-      });
-
-      // Save the final complete AI response to backend (using legacy format requires manual save)
-      try {
-        const chatHistory = getChatHistory(agentType);
-        const conversationId = selectedConversationIds[agentType] || chatHistory.conversation.id;
-        
-        await chatAPI.saveMessage(conversationId, {
-          id: messageId,
-          role: 'assistant',
-          parts: [{ type: 'text', text: aiResponse }]
-        });
-      } catch (saveError) {
-        console.error('Failed to save AI response to backend:', saveError);
-        // Don't show error to user for this, as the message is visible in UI
       }
     } catch (error) {
       console.error('Regenerate conversation error:', error);
@@ -3247,7 +3357,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
               />
               
               {/* Send/Stop Button */}
-              {currentState.isStreaming ? (
+              {(currentState.isStreaming || currentState.isTyping || currentState.loadingState) ? (
                 <button
                   onClick={() => stopGeneration(activeAgent)}
                   className="p-2 m-1 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors flex items-center"
