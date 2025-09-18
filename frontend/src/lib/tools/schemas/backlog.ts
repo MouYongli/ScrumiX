@@ -29,11 +29,11 @@ export const createBacklogItemSchema = z.object({
     .describe('Type of backlog item: epic, story, or bug'),
   
   story_point: z.number()
-    .int()
+    .int('Story points must be a whole number')
     .min(0, 'Story points must be non-negative')
     .max(100, 'Story points must be 100 or less')
     .optional()
-    .describe('Estimation in story points (optional)'),
+    .describe('Estimation in story points using Fibonacci sequence (1,2,3,5,8,13,21). Epics: 13-21, Stories: 1-8, Bugs: 1-5. Always provide initial estimation.'),
   
   project_id: z.number()
     .int()
@@ -101,20 +101,134 @@ export const backlogItemSchema = z.object({
 });
 
 export const backlogRetrievalSchema = z.object({
-  project_id: z.number().int().positive().describe('Project ID'),
-  status: z.enum(['todo', 'in_progress', 'in_review', 'done', 'cancelled']).optional().describe('Filter by status'),
-  priority: z.enum(['critical', 'high', 'medium', 'low']).optional().describe('Filter by priority'),
-  item_type: z.enum(['epic', 'story', 'bug']).optional().describe('Filter by type'),
-  search: z.string().optional().describe('Search term across fields'),
-  label: z.string().optional().describe('Filter by label'),
-  assigned_to_id: z.number().int().positive().optional().describe('Filter by assignee'),
-  parent_id: z.number().int().positive().optional().describe('Filter by parent item'),
-  limit: z.number().int().min(1).max(100).default(50).describe('Max results'),
-  skip: z.number().int().min(0).default(0).describe('Offset'),
+  project_id: z.number()
+    .int('Project ID must be a whole number')
+    .positive('Project ID must be a positive integer')
+    .describe('The ID of the project to retrieve backlog items from'),
+  
+  status: z.enum(['todo', 'in_progress', 'in_review', 'done', 'cancelled'])
+    .optional()
+    .describe('Filter by status: todo, in_progress, in_review, done, or cancelled'),
+  
+  priority: z.enum(['critical', 'high', 'medium', 'low'])
+    .optional()
+    .describe('Filter by priority: critical, high, medium, or low'),
+  
+  item_type: z.enum(['epic', 'story', 'bug'])
+    .optional()
+    .describe('Filter by item type: epic, story, or bug'),
+  
+  search: z.string()
+    .optional()
+    .describe('Search term to find items by title, description, or acceptance criteria'),
+  
+  assigned_to_id: z.number()
+    .int('Assigned user ID must be a whole number')
+    .positive('Assigned user ID must be a positive integer')
+    .optional()
+    .describe('Filter by assigned user ID'),
+  
+  include_children: z.boolean()
+    .default(true)
+    .describe('Whether to include child items in hierarchical structures'),
+  
+  include_acceptance_criteria: z.boolean()
+    .default(true)
+    .describe('Whether to include acceptance criteria for each item'),
+  
+  limit: z.number()
+    .int('Limit must be a whole number')
+    .min(1, 'Limit must be at least 1')
+    .max(100, 'Limit cannot exceed 100')
+    .default(50)
+    .describe('Maximum number of items to return (default: 50, max: 100)'),
+  
+  skip: z.number()
+    .int('Skip must be a whole number')
+    .min(0, 'Skip must be non-negative')
+    .default(0)
+    .describe('Number of items to skip for pagination (default: 0)')
 });
 
-export const updateBacklogItemSchema = backlogItemSchema.partial().extend({
-  backlog_id: z.number().int().positive().describe('Backlog item ID to update'),
+export const updateBacklogItemSchema = z.object({
+  backlog_id: z.number()
+    .int('Backlog ID must be a whole number')
+    .positive('Backlog ID must be a positive integer')
+    .describe('The ID of the backlog item to update'),
+  
+  project_id: z.number()
+    .int('Project ID must be a whole number')
+    .positive('Project ID must be a positive integer')
+    .optional()
+    .describe('The ID of the project (for verification). If not provided, will be extracted from the current context.'),
+  
+  title: z.string()
+    .min(1, 'Title cannot be empty')
+    .max(200, 'Title must be 200 characters or less')
+    .optional()
+    .describe('Update the title of the backlog item'),
+  
+  description: z.string()
+    .max(2000, 'Description must be 2000 characters or less')
+    .optional()
+    .describe('Update the description of the backlog item'),
+  
+  priority: z.enum(['critical', 'high', 'medium', 'low'])
+    .optional()
+    .describe('Update the priority level: critical, high, medium, or low'),
+  
+  status: z.enum(['todo', 'in_progress', 'in_review', 'done', 'cancelled'])
+    .optional()
+    .describe('Update the current status: todo, in_progress, in_review, done, or cancelled'),
+  
+  item_type: z.enum(['epic', 'story', 'bug'])
+    .optional()
+    .describe('Update the type of backlog item: epic, story, or bug'),
+  
+  story_point: z.number()
+    .int('Story points must be a whole number')
+    .min(0, 'Story points must be non-negative')
+    .max(100, 'Story points must be 100 or less')
+    .optional()
+    .describe('Update the estimation in story points using Fibonacci sequence (1,2,3,5,8,13,21)'),
+  
+  assigned_to_id: z.number()
+    .int('Assigned user ID must be a whole number')
+    .positive('Assigned user ID must be a positive integer')
+    .optional()
+    .describe('Update the assigned user ID'),
+  
+  parent_id: z.number()
+    .int('Parent ID must be a whole number')
+    .positive('Parent ID must be a positive integer')
+    .optional()
+    .describe('Update the parent backlog item ID (for epic assignments)'),
+  
+  acceptance_criteria: z.array(z.string())
+    .optional()
+    .describe('Update the acceptance criteria list (will replace existing criteria)')
+});
+
+export const deleteBacklogItemSchema = z.object({
+  backlog_id: z.number()
+    .int('Backlog ID must be a whole number')
+    .positive('Backlog ID must be a positive integer')
+    .describe('The ID of the backlog item to delete'),
+  
+  project_id: z.number()
+    .int('Project ID must be a whole number')
+    .positive('Project ID must be a positive integer')
+    .optional()
+    .describe('The ID of the project (for verification). If not provided, will be extracted from the current context.'),
+  
+  force_delete: z.boolean()
+    .default(false)
+    .describe('Set to true to force permanent deletion. By default, the tool will suggest changing status to cancelled instead.'),
+  
+  reason: z.string()
+    .max(500, 'Reason must be 500 characters or less')
+    .optional()
+    .describe('Optional reason for deletion (recommended for audit purposes)')
 });
 
 // Export TypeScript types
@@ -123,5 +237,6 @@ export type BacklogCreationResponse = z.infer<typeof backlogCreationResponseSche
 export type BacklogItemInput = z.infer<typeof backlogItemSchema>;
 export type BacklogRetrievalInput = z.infer<typeof backlogRetrievalSchema>;
 export type UpdateBacklogItemInput = z.infer<typeof updateBacklogItemSchema>;
+export type DeleteBacklogItemInput = z.infer<typeof deleteBacklogItemSchema>;
 
 

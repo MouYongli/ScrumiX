@@ -7,124 +7,19 @@
 import { tool } from 'ai';
 import { z } from 'zod';
 import { requestWithAuth, type AuthContext } from '../../utils/http';
+import {
+  semanticSearchBacklogSchema,
+  bm25SearchBacklogSchema,
+  hybridSearchBacklogSchema,
+  findSimilarBacklogSchema
+} from '@/lib/tools/schemas/semantic-backlog';
 
-// Schema for semantic search of backlog items
-const semanticSearchBacklogSchema = z.object({
-  query: z.string()
-    .min(1, 'Search query is required')
-    .max(500, 'Query must be 500 characters or less')
-    .describe('Natural language search query to find relevant backlog items'),
-  
-  project_id: z.number()
-    .int('Project ID must be a whole number')
-    .positive('Project ID must be a positive integer')
-    .optional()
-    .describe('Optional project ID to limit search scope'),
-  
-  limit: z.number()
-    .int('Limit must be a whole number')
-    .min(1, 'Limit must be at least 1')
-    .max(50, 'Limit cannot exceed 50')
-    .default(10)
-    .describe('Maximum number of results to return (default: 10)'),
-  
-  similarity_threshold: z.number()
-    .min(0.0, 'Similarity threshold must be between 0 and 1')
-    .max(1.0, 'Similarity threshold must be between 0 and 1')
-    .default(0.7)
-    .describe('Minimum semantic similarity score (0-1, default: 0.7)')
-});
-
-// Schema for BM25 (keyword-based) search of backlog items
-const bm25SearchBacklogSchema = z.object({
-  query: z.string()
-    .min(1, 'Search query is required')
-    .max(500, 'Query must be 500 characters or less')
-    .describe('Keyword search query for precise term matching'),
-  
-  project_id: z.number()
-    .int('Project ID must be a whole number')
-    .positive('Project ID must be a positive integer')
-    .optional()
-    .describe('Optional project ID to limit search scope'),
-  
-  limit: z.number()
-    .int('Limit must be a whole number')
-    .min(1, 'Limit must be at least 1')
-    .max(50, 'Limit cannot exceed 50')
-    .default(10)
-    .describe('Maximum number of results to return (default: 10)')
-});
-
-// Schema for hybrid search combining semantic and keyword approaches
-const hybridSearchBacklogSchema = z.object({
-  query: z.string()
-    .min(1, 'Search query is required')
-    .max(500, 'Query must be 500 characters or less')
-    .describe('Search query combining both semantic meaning and keyword matching'),
-  
-  project_id: z.number()
-    .int('Project ID must be a whole number')
-    .positive('Project ID must be a positive integer')
-    .optional()
-    .describe('Optional project ID to limit search scope'),
-  
-  limit: z.number()
-    .int('Limit must be a whole number')
-    .min(1, 'Limit must be at least 1')
-    .max(50, 'Limit cannot exceed 50')
-    .default(15)
-    .describe('Maximum number of results to return (default: 15)'),
-  
-  semantic_weight: z.number()
-    .min(0.0, 'Semantic weight must be between 0 and 1')
-    .max(1.0, 'Semantic weight must be between 0 and 1')
-    .default(0.7)
-    .describe('Weight for semantic search (used in weighted mode, default: 0.7)'),
-  
-  keyword_weight: z.number()
-    .min(0.0, 'Keyword weight must be between 0 and 1')
-    .max(1.0, 'Keyword weight must be between 0 and 1')
-    .default(0.3)
-    .describe('Weight for BM25 keyword search (used in weighted mode, default: 0.3)'),
-  
-  similarity_threshold: z.number()
-    .min(0.0, 'Similarity threshold must be between 0 and 1')
-    .max(1.0, 'Similarity threshold must be between 0 and 1')
-    .default(0.5)
-    .describe('Minimum semantic similarity score (0-1, default: 0.5)'),
-  
-  use_rrf: z.boolean()
-    .default(true)
-    .describe('Use Reciprocal Rank Fusion (recommended) vs weighted scoring (default: true)')
-});
-
-// Schema for finding similar backlog items
-const findSimilarBacklogSchema = z.object({
-  backlog_id: z.number()
-    .int('Backlog ID must be a whole number')
-    .positive('Backlog ID must be a positive integer')
-    .describe('ID of the reference backlog item to find similar items for'),
-  
-  limit: z.number()
-    .int('Limit must be a whole number')
-    .min(1, 'Limit must be at least 1')
-    .max(20, 'Limit cannot exceed 20')
-    .default(5)
-    .describe('Maximum number of similar items to return (default: 5)'),
-  
-  similarity_threshold: z.number()
-    .min(0.0, 'Similarity threshold must be between 0 and 1')
-    .max(1.0, 'Similarity threshold must be between 0 and 1')
-    .default(0.6)
-    .describe('Minimum similarity score for related items (0-1, default: 0.6)')
-});
 
 /**
  * Tool for semantic search of backlog items
  * Uses AI embeddings to find contextually relevant items based on meaning
  */
-export const semanticSearchBacklogTool = tool({
+const semanticSearchBacklogTool = tool({
   description: `Perform intelligent semantic search on backlog items using AI embeddings. 
     This tool understands the meaning and context of your search query, not just keywords.
     Perfect for finding related user stories, similar features, or conceptually related work items.
@@ -195,7 +90,7 @@ ${results.map((result: any, index: number) => {
  * Tool for BM25 keyword-based search of backlog items
  * Uses traditional keyword matching with relevance scoring
  */
-export const bm25SearchBacklogTool = tool({
+const bm25SearchBacklogTool = tool({
   description: `Perform precise BM25 keyword search on backlog items using industry-standard ranking algorithm.
     Perfect for finding items with specific terms like "login", "payment", "API", "authentication".
     Uses BM25 scoring which handles term frequency, document length normalization, and inverse document frequency.
@@ -270,7 +165,7 @@ ${results.map((result: any, index: number) => {
  * Tool for hybrid search combining semantic and keyword approaches
  * Provides the best of both semantic understanding and keyword precision
  */
-export const hybridSearchBacklogTool = tool({
+const hybridSearchBacklogTool = tool({
   description: `Perform industry-standard hybrid search combining semantic AI with BM25 keyword search.
     
     Two modes available:
@@ -385,7 +280,7 @@ ${results.map((result: any, index: number) => {
  * Tool for finding similar backlog items based on an existing item
  * Uses semantic similarity to discover related or duplicate items
  */
-export const findSimilarBacklogTool = tool({
+const findSimilarBacklogTool = tool({
   description: `Find backlog items that are semantically similar to a specific item.
     Perfect for discovering related user stories, potential dependencies, or duplicate work.
     Uses AI embeddings to understand conceptual relationships between backlog items.
@@ -446,6 +341,14 @@ ${similarItems.map((result: any, index: number) => {
   }
 });
 
+// Export individual tools
+export {
+  semanticSearchBacklogTool,
+  bm25SearchBacklogTool,
+  hybridSearchBacklogTool,
+  findSimilarBacklogTool
+};
+
 /**
  * Enhanced semantic backlog management tools collection
  * These complement the existing backlog management tools with AI-powered capabilities
@@ -461,6 +364,4 @@ export const semanticBacklogManagementTools = {
  * Type definition for semantic tools
  */
 export type SemanticBacklogManagementTools = typeof semanticBacklogManagementTools;
-
-// Individual tools are already exported above with their declarations
 

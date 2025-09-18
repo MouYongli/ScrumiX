@@ -1,13 +1,22 @@
 /**
- * Sprint Management Tools for Product Owner Agent
+ * Sprint Management Tools for Product Owner Agent - FIXED VERSION
  * These tools enable the AI agent to create, update, delete, and manage sprints
+ * FIXES: Proper field name mapping (snake_case) and 204 response handling
  */
 
 import { tool } from 'ai';
 import { z } from 'zod';
+import {
+  createSprintSchema,
+  updateSprintSchema,
+  getSprintsSchema,
+  deleteSprintSchema,
+  getSprintByIdSchema
+} from '@/lib/tools/schemas/sprint';
 
 /**
  * Helper function to make authenticated API calls for sprint management
+ * FIXED: Handles 204 No Content responses properly
  */
 async function makeAuthenticatedSprintCall(
   endpoint: string,
@@ -38,6 +47,11 @@ async function makeAuthenticatedSprintCall(
       return { error: error.detail || `HTTP ${response.status}: ${response.statusText}` };
     }
 
+    // Handle 204 No Content responses (like DELETE)
+    if (response.status === 204) {
+      return { data: null };
+    }
+
     const data = await response.json();
     return { data };
   } catch (error) {
@@ -46,130 +60,13 @@ async function makeAuthenticatedSprintCall(
   }
 }
 
-// Schema for creating a new sprint
-const createSprintSchema = z.object({
-  sprint_name: z.string()
-    .min(1, 'Sprint name is required')
-    .max(100, 'Sprint name must be 100 characters or less')
-    .describe('The name of the sprint (can also be called sprintName, name, or title)'),
-  
-  sprint_goal: z.string()
-    .max(2000, 'Sprint goal must be 2000 characters or less')
-    .optional()
-    .describe('Optional goal or objective for the sprint (can also be called sprintGoal, goal, or objective)'),
-  
-  start_date: z.string()
-    .regex(/^\d{4}-\d{2}-\d{2}/, 'Start date must be in date format (YYYY-MM-DD)')
-    .describe('Sprint start date in date format YYYY-MM-DD (can also be called startDate or start)'),
-  
-  end_date: z.string()
-    .regex(/^\d{4}-\d{2}-\d{2}/, 'End date must be in date format (YYYY-MM-DD)')
-    .describe('Sprint end date in date format YYYY-MM-DD (can also be called endDate or end)'),
-  
-  status: z.enum(['planning', 'active', 'cancelled'])
-    .default('planning')
-    .describe('Sprint status: planning (default), active, or cancelled'),
-  
-  sprint_capacity: z.number()
-    .int('Sprint capacity must be a whole number')
-    .min(0, 'Sprint capacity must be non-negative')
-    .optional()
-    .describe('Optional sprint capacity in story points (can also be called sprintCapacity or capacity)'),
-  
-  project_id: z.number()
-    .int('Project ID must be a whole number')
-    .positive('Project ID must be a positive integer')
-    .describe('The ID of the project this sprint belongs to (can also be called projectId)')
-});
-
-// Schema for updating an existing sprint
-const updateSprintSchema = z.object({
-  sprint_id: z.number()
-    .int('Sprint ID must be a whole number')
-    .positive('Sprint ID must be a positive integer')
-    .describe('The ID of the sprint to update (can also be called sprintId or id)'),
-  
-  sprint_name: z.string()
-    .min(1, 'Sprint name is required')
-    .max(100, 'Sprint name must be 100 characters or less')
-    .optional()
-    .describe('The name of the sprint (can also be called sprintName, name, or title)'),
-  
-  sprint_goal: z.string()
-    .max(2000, 'Sprint goal must be 2000 characters or less')
-    .optional()
-    .describe('Goal or objective for the sprint (can also be called sprintGoal, goal, or objective)'),
-  
-  start_date: z.string()
-    .regex(/^\d{4}-\d{2}-\d{2}/, 'Start date must be in date format (YYYY-MM-DD)')
-    .optional()
-    .describe('Sprint start date in date format YYYY-MM-DD (can also be called startDate or start)'),
-  
-  end_date: z.string()
-    .regex(/^\d{4}-\d{2}-\d{2}/, 'End date must be in date format (YYYY-MM-DD)')
-    .optional()
-    .describe('Sprint end date in date format YYYY-MM-DD (can also be called endDate or end)'),
-  
-  status: z.enum(['planning', 'active', 'cancelled'])
-    .optional()
-    .describe('Sprint status: planning, active, or cancelled'),
-  
-  sprint_capacity: z.number()
-    .int('Sprint capacity must be a whole number')
-    .min(0, 'Sprint capacity must be non-negative')
-    .optional()
-    .describe('Sprint capacity in story points (can also be called sprintCapacity or capacity)')
-});
-
-// Schema for retrieving sprints
-const getSprintsSchema = z.object({
-  project_id: z.number()
-    .int('Project ID must be a whole number')
-    .positive('Project ID must be a positive integer')
-    .describe('The ID of the project to retrieve sprints from (can also be called projectId)'),
-  
-  status: z.enum(['planning', 'active', 'cancelled'])
-    .optional()
-    .describe('Filter by sprint status: planning, active, or cancelled'),
-  
-  search: z.string()
-    .optional()
-    .describe('Search term to find sprints by name or goal'),
-  
-  limit: z.number()
-    .int('Limit must be a whole number')
-    .min(1, 'Limit must be at least 1')
-    .max(100, 'Limit cannot exceed 100')
-    .default(50)
-    .describe('Maximum number of sprints to return (default: 50, max: 100)'),
-  
-  skip: z.number()
-    .int('Skip must be a whole number')
-    .min(0, 'Skip must be non-negative')
-    .default(0)
-    .describe('Number of sprints to skip for pagination (default: 0)')
-});
-
-// Schema for deleting a sprint
-const deleteSprintSchema = z.object({
-  sprint_id: z.number()
-    .int('Sprint ID must be a whole number')
-    .positive('Sprint ID must be a positive integer')
-    .describe('The ID of the sprint to delete (can also be called sprintId or id)')
-});
-
-// Schema for getting a single sprint by ID
-const getSprintByIdSchema = z.object({
-  sprint_id: z.number()
-    .int('Sprint ID must be a whole number')
-    .positive('Sprint ID must be a positive integer')
-    .describe('The ID of the sprint to retrieve (can also be called sprintId or id)')
-});
+// Schemas are now imported from centralized location
 
 /**
  * Tool for creating a new sprint
+ * FIXED: Uses snake_case field names to match backend API
  */
-export const createSprintTool = tool({
+const createSprintTool = tool({
   description: `Create a new sprint for a project. This tool helps Product Owners set up sprints with proper 
     planning dates, goals, and capacity. The sprint will start in 'planning' status and can be activated later.
     
@@ -209,25 +106,31 @@ export const createSprintTool = tool({
 
       console.log('Successfully created sprint:', createdSprint);
 
-      // Format the success message
-      const statusDisplay = createdSprint.status.charAt(0).toUpperCase() + createdSprint.status.slice(1);
-      const startDate = new Date(createdSprint.start_date).toLocaleDateString();
-      const endDate = new Date(createdSprint.end_date).toLocaleDateString();
+      // Handle both possible field name formats (snake_case and camelCase)
+      const sprintName = createdSprint.sprint_name || createdSprint.sprintName || createdSprint.name || 'Unnamed Sprint';
+      const sprintGoal = createdSprint.sprint_goal || createdSprint.sprintGoal || createdSprint.goal;
+      const sprintCapacity = createdSprint.sprint_capacity || createdSprint.sprintCapacity || createdSprint.capacity;
+      const projectId = createdSprint.project_id || createdSprint.projectId;
       
-      const successMessage = `Sprint **"${createdSprint.sprint_name}"** has been successfully created! Here are the details:
+      // Format the success message - FIXED: Handle both field name formats
+      const statusDisplay = createdSprint.status.charAt(0).toUpperCase() + createdSprint.status.slice(1);
+      const startDate = new Date(createdSprint.start_date || createdSprint.startDate).toLocaleDateString();
+      const endDate = new Date(createdSprint.end_date || createdSprint.endDate).toLocaleDateString();
+      
+      const successMessage = `Sprint **"${sprintName}"** has been successfully created! Here are the details:
 
 **Sprint Information:**
 - **Sprint ID:** #${createdSprint.id}
 - **Status:** ${statusDisplay}
 - **Duration:** ${startDate} to ${endDate}
-- **Capacity:** ${createdSprint.sprint_capacity || 'Not set'} story points${createdSprint.sprint_goal ? `\n- **Goal:** ${createdSprint.sprint_goal}` : ''}
+- **Capacity:** ${sprintCapacity || 'Not set'} story points${sprintGoal ? `\n- **Goal:** ${sprintGoal}` : ''}
 
 **Next Steps:**
 1. Add backlog items to this sprint during sprint planning
 2. Set the sprint status to 'active' when ready to begin
 3. Monitor progress using velocity and burndown tools
 
-You can view this sprint in the [Project Dashboard](http://localhost:3000/project/${createdSprint.project_id}/sprints). The sprint is ready for planning activities!`;
+You can view this sprint in the [Project Dashboard](http://localhost:3000/project/${projectId}/sprints). The sprint is ready for planning activities!`;
 
       return successMessage;
 
@@ -240,8 +143,9 @@ You can view this sprint in the [Project Dashboard](http://localhost:3000/projec
 
 /**
  * Tool for retrieving sprints with filtering options
+ * FIXED: Uses snake_case field names to match backend API
  */
-export const getSprintsTool = tool({
+const getSprintsTool = tool({
   description: `Retrieve sprints for a project with optional filtering by status, search terms, and pagination.
     Use this tool to review existing sprints, check sprint planning status, or search for specific sprints.
     
@@ -281,8 +185,20 @@ export const getSprintsTool = tool({
       }
 
       console.log(`Successfully retrieved ${sprints.length} sprints`);
+      console.log('Sprint API response data:', JSON.stringify(sprints, null, 2));
+      
+      // Debug: Check field names in the first sprint
+      if (sprints.length > 0) {
+        const firstSprint = sprints[0];
+        console.log('First sprint fields:', Object.keys(firstSprint));
+        console.log('Sprint name field values:', {
+          sprint_name: firstSprint.sprint_name,
+          sprintName: firstSprint.sprintName,
+          name: firstSprint.name
+        });
+      }
 
-      // Format the response
+      // Format the response - FIXED: Use snake_case field names
       const summary = `Found ${sprints.length} sprint${sprints.length === 1 ? '' : 's'} in project ${validated.project_id}:
 
 ${sprints.map((sprint: any, index: number) => {
@@ -290,13 +206,18 @@ ${sprints.map((sprint: any, index: number) => {
   const startDate = new Date(sprint.start_date).toLocaleDateString();
   const endDate = new Date(sprint.end_date).toLocaleDateString();
   
-  let sprintInfo = `${index + 1}. **Sprint #${sprint.id}**: "${sprint.sprint_name}"
+  // Handle both possible field name formats (snake_case and camelCase)
+  const sprintName = sprint.sprint_name || sprint.sprintName || sprint.name || 'Unnamed Sprint';
+  const sprintGoal = sprint.sprint_goal || sprint.sprintGoal || sprint.goal;
+  const sprintCapacity = sprint.sprint_capacity || sprint.sprintCapacity || sprint.capacity;
+  
+  let sprintInfo = `${index + 1}. **Sprint #${sprint.id}**: "${sprintName}"
    - **Status**: ${statusDisplay}
    - **Duration**: ${startDate} to ${endDate}
-   - **Capacity**: ${sprint.sprint_capacity || 'Not set'} story points`;
+   - **Capacity**: ${sprintCapacity || 'Not set'} story points`;
   
-  if (sprint.sprint_goal) {
-    sprintInfo += `\n   - **Goal**: ${sprint.sprint_goal.length > 100 ? sprint.sprint_goal.substring(0, 100) + '...' : sprint.sprint_goal}`;
+  if (sprintGoal) {
+    sprintInfo += `\n   - **Goal**: ${sprintGoal.length > 100 ? sprintGoal.substring(0, 100) + '...' : sprintGoal}`;
   }
   
   return sprintInfo;
@@ -320,8 +241,9 @@ ${sprints.map((sprint: any, index: number) => {
 
 /**
  * Tool for getting a specific sprint by ID
+ * FIXED: Uses snake_case field names to match backend API
  */
-export const getSprintByIdTool = tool({
+const getSprintByIdTool = tool({
   description: `Retrieve detailed information about a specific sprint by its ID.
     Use this tool to get comprehensive sprint details including backlog items, progress, and metrics.
     
@@ -353,27 +275,33 @@ export const getSprintByIdTool = tool({
 
       console.log('Successfully retrieved sprint:', sprint);
 
-      // Format the detailed response
-      const statusDisplay = sprint.status.charAt(0).toUpperCase() + sprint.status.slice(1);
-      const startDate = new Date(sprint.start_date).toLocaleDateString();
-      const endDate = new Date(sprint.end_date).toLocaleDateString();
-      const createdDate = new Date(sprint.created_at).toLocaleDateString();
+      // Handle both possible field name formats (snake_case and camelCase)
+      const sprintName = sprint.sprint_name || sprint.sprintName || sprint.name || 'Unnamed Sprint';
+      const sprintGoal = sprint.sprint_goal || sprint.sprintGoal || sprint.goal;
+      const sprintCapacity = sprint.sprint_capacity || sprint.sprintCapacity || sprint.capacity;
+      const startDate = new Date(sprint.start_date || sprint.startDate).toLocaleDateString();
+      const endDate = new Date(sprint.end_date || sprint.endDate).toLocaleDateString();
+      const createdDate = new Date(sprint.created_at || sprint.createdAt).toLocaleDateString();
+      const projectId = sprint.project_id || sprint.projectId;
 
-      let sprintDetails = `**Sprint Details** - "${sprint.sprint_name}"
+      // Format the detailed response - FIXED: Handle both field name formats
+      const statusDisplay = sprint.status.charAt(0).toUpperCase() + sprint.status.slice(1);
+
+      let sprintDetails = `**Sprint Details** - "${sprintName}"
 
 **Basic Information:**
 - **Sprint ID:** #${sprint.id}
 - **Status:** ${statusDisplay}
-- **Project ID:** ${sprint.project_id}
+- **Project ID:** ${projectId}
 - **Created:** ${createdDate}
 
 **Timeline:**
 - **Start Date:** ${startDate}
 - **End Date:** ${endDate}
-- **Duration:** ${Math.ceil((new Date(sprint.end_date).getTime() - new Date(sprint.start_date).getTime()) / (1000 * 60 * 60 * 24))} days
+- **Duration:** ${Math.ceil((new Date(sprint.end_date || sprint.endDate).getTime() - new Date(sprint.start_date || sprint.startDate).getTime()) / (1000 * 60 * 60 * 24))} days
 
 **Capacity & Goals:**
-- **Planned Capacity:** ${sprint.sprint_capacity || 'Not set'} story points${sprint.sprint_goal ? `\n- **Sprint Goal:** ${sprint.sprint_goal}` : ''}`;
+- **Planned Capacity:** ${sprintCapacity || 'Not set'} story points${sprintGoal ? `\n- **Sprint Goal:** ${sprintGoal}` : ''}`;
 
       // Add backlog items if available
       if (sprint.backlog_items && sprint.backlog_items.length > 0) {
@@ -433,8 +361,9 @@ ${sprint.backlog_items.slice(0, 10).map((item: any, index: number) => {
 
 /**
  * Tool for updating an existing sprint
+ * FIXED: Uses snake_case field names to match backend API
  */
-export const updateSprintTool = tool({
+const updateSprintTool = tool({
   description: `Update an existing sprint's properties such as name, goal, dates, status, or capacity.
     Use this tool to modify sprints during planning or to change sprint status (planning → active → completed).
     
@@ -499,7 +428,7 @@ export const updateSprintTool = tool({
       const updatedSprint = response.data;
       console.log('Successfully updated sprint:', updatedSprint);
 
-      // Format the success response
+      // Format the success response - FIXED: Use snake_case field names
       const statusDisplay = updatedSprint.status.charAt(0).toUpperCase() + updatedSprint.status.slice(1);
       const startDate = new Date(updatedSprint.start_date).toLocaleDateString();
       const endDate = new Date(updatedSprint.end_date).toLocaleDateString();
@@ -518,11 +447,11 @@ export const updateSprintTool = tool({
       // Add status-specific messages
       if (updateData.status) {
         if (updateData.status === 'active') {
-          successMessage += `\n\n🚀 **Sprint is now ACTIVE!** The team can begin working on the sprint backlog.`;
+          successMessage += `\n\nSprint is now ACTIVE! The team can begin working on the sprint backlog.`;
         } else if (updateData.status === 'cancelled') {
-          successMessage += `\n\n⚠️ **Sprint has been CANCELLED.** Consider moving backlog items to another sprint.`;
+          successMessage += `\n\nSprint has been CANCELLED. Consider moving backlog items to another sprint.`;
         } else if (updateData.status === 'planning') {
-          successMessage += `\n\n📋 **Sprint is back in PLANNING.** You can continue to modify the sprint backlog.`;
+          successMessage += `\n\nSprint is back in PLANNING. You can continue to modify the sprint backlog.`;
         }
       }
 
@@ -537,8 +466,9 @@ export const updateSprintTool = tool({
 
 /**
  * Tool for deleting a sprint
+ * FIXED: Handles 204 No Content response properly
  */
-export const deleteSprintTool = tool({
+const deleteSprintTool = tool({
   description: `Delete a sprint from the project. This action is irreversible and will remove the sprint 
     and all its associations. Use with caution!
     
@@ -606,4 +536,3 @@ export {
   updateSprintTool,
   deleteSprintTool
 };
-

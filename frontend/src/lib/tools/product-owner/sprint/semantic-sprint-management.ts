@@ -6,6 +6,10 @@
 
 import { tool } from 'ai';
 import { z } from 'zod';
+import {
+  semanticSearchSprintsSchema,
+  findSimilarSprintsSchema
+} from '@/lib/tools/schemas/semantic-sprint';
 
 /**
  * Helper function to make authenticated API calls to semantic search endpoints
@@ -47,46 +51,12 @@ async function makeAuthenticatedSemanticCall(
   }
 }
 
-// Schema for semantic search of sprints
-const semanticSearchSprintsSchema = z.object({
-  query: z.string()
-    .min(1, 'Search query cannot be empty')
-    .describe('Natural language search query to find relevant sprints'),
-  
-  project_id: z.number()
-    .int('Project ID must be a whole number')
-    .positive('Project ID must be a positive integer')
-    .optional()
-    .describe('Project ID to scope the search (auto-detected if not provided)'),
-  
-  limit: z.number()
-    .int('Limit must be a whole number')
-    .min(1, 'Limit must be at least 1')
-    .max(20, 'Limit cannot exceed 20')
-    .default(5)
-    .describe('Maximum number of results to return (default: 5)')
-});
-
-// Schema for finding similar sprints based on an existing sprint
-const findSimilarSprintsSchema = z.object({
-  sprint_id: z.number()
-    .int('Sprint ID must be a whole number')
-    .positive('Sprint ID must be a positive integer')
-    .describe('ID of the sprint to find similar sprints for'),
-  
-  limit: z.number()
-    .int('Limit must be a whole number')
-    .min(1, 'Limit must be at least 1')
-    .max(10, 'Limit cannot exceed 10')
-    .default(3)
-    .describe('Maximum number of similar sprints to return (default: 3)')
-});
 
 /**
  * Tool for semantic search of sprints
  * Uses AI embeddings to find contextually relevant sprints based on meaning
  */
-export const semanticSearchSprintsTool = tool({
+const semanticSearchSprintsTool = tool({
   description: `Search sprints using AI-powered semantic understanding. This tool finds sprints based on 
     meaning and context of sprint names, goals, and themes, not just keyword matching. Perfect for finding 
     sprints with similar objectives, themes, or focus areas.
@@ -105,7 +75,7 @@ export const semanticSearchSprintsTool = tool({
 
       // Call the semantic search API for sprints
       const response = await makeAuthenticatedSemanticCall(
-        '/semantic-search/sprints/search',
+        '/semantic-search/sprints',
         'POST',
         experimental_context,
         {
@@ -120,7 +90,7 @@ export const semanticSearchSprintsTool = tool({
         return `Failed to perform semantic sprint search: ${response.error}`;
       }
 
-      const results = response.data?.results || [];
+      const results = response.data || [];
       
       if (results.length === 0) {
         return `No sprints found matching the semantic query: "${validated.query}"`;
@@ -131,8 +101,9 @@ export const semanticSearchSprintsTool = tool({
       // Format the results with semantic relevance scores
       const formattedResults = `**Semantic Sprint Search Results** for "${validated.query}":
 
-${results.map((sprint: any, index: number) => {
-  const similarity = (sprint.similarity * 100).toFixed(1);
+${results.map((result: any, index: number) => {
+  const sprint = result.sprint;
+  const similarity = (result.similarity_score * 100).toFixed(1);
   const status = sprint.status.charAt(0).toUpperCase() + sprint.status.slice(1);
   const startDate = new Date(sprint.start_date).toLocaleDateString();
   const endDate = new Date(sprint.end_date).toLocaleDateString();
@@ -146,7 +117,7 @@ ${results.map((sprint: any, index: number) => {
 
 **Search Insights**:
 - **Total Matches**: ${results.length}
-- **Best Match**: ${(results[0].similarity * 100).toFixed(1)}% semantic similarity
+- **Best Match**: ${(results[0].similarity_score * 100).toFixed(1)}% semantic similarity
 - **Search Type**: AI-powered semantic understanding
 
 These results are ranked by semantic similarity, meaning they match the intent and context of your query based on sprint themes and objectives.`;
@@ -164,7 +135,7 @@ These results are ranked by semantic similarity, meaning they match the intent a
  * Tool for finding similar sprints based on an existing sprint
  * Uses semantic similarity to discover sprints with similar themes or objectives
  */
-export const findSimilarSprintsTool = tool({
+const findSimilarSprintsTool = tool({
   description: `Find sprints that are similar to a specific existing sprint. This tool uses AI to identify 
     sprints with similar goals, themes, or focus areas. Useful for:
     - Finding sprints with similar objectives for comparison
