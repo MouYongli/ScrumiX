@@ -30,7 +30,7 @@ import {
   semanticSearchSprints 
 } from './semantic-sprints';
 
-import { documentationTools } from '../documentation';
+import { documentationTools } from '../utils/documentation';
 
 // Export individual tools for direct access
 export {

@@ -15,7 +15,7 @@ import {
   toTitleCase, 
   formatStatus 
 } from './formatting';
-import { documentationUtils } from './documentation';
+import { documentationUtils, documentationTools } from './documentation';
 import { getCurrentProjectContext, getProjectById } from './project';
 import { getUserTimezoneAndFormatDatetime, simpleToISO } from './datetime';
 
@@ -35,8 +35,52 @@ export * from './types';
 // Web search utilities
 export * from './web-search';
 
-// Documentation utilities (shared across all agents)
-export * from './documentation';
+// Documentation utilities (shared across all agents) - Refactored
+export { 
+  documentationUtils, 
+  documentationTools,
+  // CRUD operations
+  createDocumentation,
+  getDocumentation,
+  getDocumentationById,
+  updateDocumentation,
+  deleteDocumentation,
+  formatDocumentationType,
+  createDocumentationSummary,
+  getDocumentationTypeOptions,
+  // User management
+  getCurrentUser,
+  getProjectUsers,
+  findUserByName,
+  findUsersByNames,
+  formatUserInfo,
+  formatUserList,
+  validateAuthorIds,
+  parseAuthorNames,
+  resolveAuthorNamesToIds,
+  createAuthorSuggestions,
+  // Semantic search
+  searchDocumentationByField,
+  searchDocumentationMultiField,
+  formatDocumentationSearchResults,
+  documentationSearchWithAuth,
+  getSearchSuggestions,
+  // AI Tools
+  createDocumentationTool,
+  getDocumentationTool,
+  getDocumentationByIdTool,
+  updateDocumentationTool,
+  deleteDocumentationTool,
+  searchDocumentationByFieldTool,
+  searchDocumentationMultiFieldTool,
+  getCurrentUserTool,
+  getProjectUsersTool,
+  // Tool collections
+  semanticDocumentationTools,
+  userManagementTools,
+  // Schema exports
+  DocumentationTypeEnum
+} from './documentation';
 
 // Project utilities
 export { getCurrentProjectContext, getProjectById } from './project';

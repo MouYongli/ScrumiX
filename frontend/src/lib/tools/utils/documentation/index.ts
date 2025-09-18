@@ -1,79 +1,161 @@
 /**
- * Main documentation tools export
- * Aggregates all documentation utilities and AI tools for easy import
+ * Documentation utilities and tools index
+ * Central export point for all refactored documentation functionality
+ * Uses centralized schemas from schemas/documentation.ts
  */
 
-// Import AI tools from the main documentation module
-import {
-  createDocumentationTool,
-  getDocumentationTool,
-  getDocumentationByIdTool,
-  updateDocumentationTool,
-  deleteDocumentationTool,
-  getProjectUsersTool,
-  getCurrentUserTool
-} from '../../documentation';
-
-// Import semantic search tools
-import { semanticDocumentationTools } from '../../semantic-documentation-search';
-
-// Export all functions from individual modules
-export * from './crud';
-export * from './user-management';
-export * from './semantic-search';
-
-// Import the actual utility functions
-import {
+// Import refactored utility functions and AI tools from modular files
+import { 
+  makeAuthenticatedDocumentationApiCall,
   createDocumentation,
   getDocumentation,
   getDocumentationById,
   updateDocumentation,
   deleteDocumentation,
   formatDocumentationType,
-  createDocumentationSummary
+  createDocumentationSummary,
+  getDocumentationTypeOptions,
+  // AI Tools
+  createDocumentationTool,
+  getDocumentationTool,
+  getDocumentationByIdTool,
+  updateDocumentationTool,
+  deleteDocumentationTool
 } from './crud';
+
+import {
+  documentationSearchWithAuth,
+  formatDocumentationSearchResults,
+  searchDocumentationByField,
+  searchDocumentationMultiField,
+  getSearchSuggestions,
+  // AI Tools
+  searchDocumentationByFieldTool,
+  searchDocumentationMultiFieldTool,
+  semanticDocumentationTools
+} from './semantic-search';
 
 import {
   getCurrentUser,
   getProjectUsers,
   findUserByName,
-  formatUserList
+  findUsersByNames,
+  formatUserInfo,
+  formatUserList,
+  validateAuthorIds,
+  parseAuthorNames,
+  resolveAuthorNamesToIds,
+  createAuthorSuggestions,
+  // AI Tools
+  getCurrentUserTool,
+  getProjectUsersTool,
+  userManagementTools
 } from './user-management';
 
-import {
+// Import centralized schemas
+import { DocumentationTypeEnum } from '../../schemas/documentation';
+
+// Export utility functions
+export {
+  // CRUD utilities
+  makeAuthenticatedDocumentationApiCall,
+  createDocumentation,
+  getDocumentation,
+  getDocumentationById,
+  updateDocumentation,
+  deleteDocumentation,
+  formatDocumentationType,
+  createDocumentationSummary,
+  getDocumentationTypeOptions,
+
+  // Semantic search utilities
+  documentationSearchWithAuth,
+  formatDocumentationSearchResults,
   searchDocumentationByField,
   searchDocumentationMultiField,
-  formatDocumentationSearchResults
-} from './semantic-search';
+  getSearchSuggestions,
 
-// Documentation utilities aggregate object for easy tool integration
+  // User management utilities
+  getCurrentUser,
+  getProjectUsers,
+  findUserByName,
+  findUsersByNames,
+  formatUserInfo,
+  formatUserList,
+  validateAuthorIds,
+  parseAuthorNames,
+  resolveAuthorNamesToIds,
+  createAuthorSuggestions,
+
+  // AI Tools
+  createDocumentationTool,
+  getDocumentationTool,
+  getDocumentationByIdTool,
+  updateDocumentationTool,
+  deleteDocumentationTool,
+  searchDocumentationByFieldTool,
+  searchDocumentationMultiFieldTool,
+  getCurrentUserTool,
+  getProjectUsersTool,
+
+  // Tool collections
+  semanticDocumentationTools,
+  userManagementTools,
+
+  // Schema exports
+  DocumentationTypeEnum
+};
+
+/**
+ * Organized utility functions collection
+ */
 export const documentationUtils = {
-  // CRUD
-  create: createDocumentation,
-  get: getDocumentation,
-  getById: getDocumentationById,
-  update: updateDocumentation,
-  delete: deleteDocumentation,
-  
+  // CRUD operations
+  crud: {
+    makeAuthenticatedDocumentationApiCall,
+    createDocumentation,
+    getDocumentation,
+    getDocumentationById,
+    updateDocumentation,
+    deleteDocumentation,
+    formatDocumentationType,
+    createDocumentationSummary,
+    getDocumentationTypeOptions
+  },
+
+  // Semantic search
+  semanticSearch: {
+    documentationSearchWithAuth,
+    formatDocumentationSearchResults,
+    searchDocumentationByField,
+    searchDocumentationMultiField,
+    getSearchSuggestions
+  },
+
   // User management
-  getCurrentUser: getCurrentUser,
-  getProjectUsers: getProjectUsers,
-  findUserByName: findUserByName,
-  
-  // Search
-  searchByField: searchDocumentationByField,
-  searchMultiField: searchDocumentationMultiField,
-  
-  // Formatting
-  formatType: formatDocumentationType,
-  formatSummary: createDocumentationSummary,
-  formatUserList: formatUserList,
-  formatSearchResults: formatDocumentationSearchResults
+  userManagement: {
+    getCurrentUser,
+    getProjectUsers,
+    findUserByName,
+    findUsersByNames,
+    formatUserInfo,
+    formatUserList,
+    validateAuthorIds,
+    parseAuthorNames,
+    resolveAuthorNamesToIds,
+    createAuthorSuggestions
+  },
+
+  // Constants and schemas
+  constants: {
+    DocumentationTypeEnum
+  }
 };
 
 /**
  * Complete documentation toolkit - AI tools for ALL agents
  * Every agent can create any type of documentation
+ * Refactored to use centralized schemas and modular architecture
  */
 export const documentationTools = {
   // CRUD Operations - Available to ALL agents
@@ -92,4 +174,14 @@ export const documentationTools = {
   searchDocumentationMultiField: semanticDocumentationTools.searchDocumentationMultiField
 };
 
+/**
+ * Type definition for the complete documentation tools collection
+ */
 export type DocumentationTools = typeof documentationTools;
+
+/**
+ * Legacy compatibility exports
+ * @deprecated Use the refactored functions and tools above
+ */
+export const legacyDocumentationUtils = documentationUtils;
+export const legacyDocumentationTools = documentationTools;

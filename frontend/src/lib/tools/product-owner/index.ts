@@ -69,15 +69,7 @@ export const productOwnerTools = {
   findSimilarSprints: semanticSprintManagementTools.findSimilarSprints,
 
   // Shared documentation tools (available to ALL agents)
-  createDocumentation: documentationTools.createDocumentation,
-  getDocumentation: documentationTools.getDocumentation,
-  getDocumentationById: documentationTools.getDocumentationById,
-  updateDocumentation: documentationTools.updateDocumentation,
-  deleteDocumentation: documentationTools.deleteDocumentation,
-  getProjectUsers: documentationTools.getProjectUsers,
-  getCurrentUser: documentationTools.getCurrentUser,
-  searchDocumentationByField: documentationTools.searchDocumentationByField,
-  searchDocumentationMultiField: documentationTools.searchDocumentationMultiField,
+  ...documentationTools,
 };
 
 /**

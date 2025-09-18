@@ -1,9 +1,17 @@
 /**
  * Semantic search utilities for documentation
+ * Refactored to use centralized schemas and provide comprehensive AI tools
  */
 
+import { tool } from 'ai';
 import { requestWithAuth, AuthContext } from '../http';
 import { formatSimilarityScore } from '../formatting';
+import {
+  searchDocumentationByFieldSchema,
+  searchDocumentationMultiFieldSchema,
+  type SearchDocumentationByFieldInput,
+  type SearchDocumentationMultiFieldInput
+} from '../../schemas/documentation';
 
 /**
  * Perform semantic search on documentation with authentication
@@ -22,7 +30,7 @@ export async function documentationSearchWithAuth(
 
   try {
     const response = await requestWithAuth(
-      `/documentations/${endpoint}`,
+      `/semantic-search/documentation/${endpoint}`,
       {
         method: 'POST',
         body: JSON.stringify(searchData),
@@ -114,28 +122,26 @@ export function formatDocumentationSearchResults(
  * Search documentation by specific field
  */
 export async function searchDocumentationByField(
-  query: string,
-  field: string,
-  similarityThreshold: number = 0.3,
-  limit: number = 10,
+  searchInput: SearchDocumentationByFieldInput,
   context: AuthContext
 ) {
   const searchData = {
-    query,
-    field,
-    similarity_threshold: similarityThreshold,
-    limit
+    query: searchInput.query,
+    field: searchInput.field,
+    project_id: searchInput.project_id,
+    type: searchInput.type,
+    limit: searchInput.limit
   };
 
-  const response = await documentationSearchWithAuth(searchData, 'search/field', context);
+  const response = await documentationSearchWithAuth(searchData, 'field-search', context);
   
   if (response.error) {
     return response;
   }
 
   const formattedResults = formatDocumentationSearchResults(
-    response.data || [], 
-    query, 
+    Array.isArray(response.data) ? response.data : [], 
+    searchInput.query, 
     'field'
   );
 
@@ -143,36 +149,97 @@ export async function searchDocumentationByField(
 }
 
 /**
+ * AI Tool for targeted semantic search in specific documentation fields
+ */
+export const searchDocumentationByFieldTool = tool({
+  description: `Search documentation in a specific field using semantic understanding.
+    Choose the field based on what you're looking for:
+    - 'title': Find documents by their titles and document types
+    - 'description': Search document summaries and overviews  
+    - 'content': Search within the full document content and details
+    This focused approach gives more precise results than searching all fields.`,
+  inputSchema: searchDocumentationByFieldSchema,
+  execute: async (input, { experimental_context }) => {
+    try {
+      const validated = searchDocumentationByFieldSchema.parse(input);
+      
+      console.log('Searching documentation by field:', validated);
+
+      const response = await searchDocumentationByField(validated, experimental_context as AuthContext);
+
+      if (response.error) {
+        console.error('Documentation field search failed:', response.error);
+        return `Documentation search failed: ${response.error}`;
+      }
+
+      return response.data;
+
+    } catch (error) {
+      console.error('Error in searchDocumentationByFieldTool:', error);
+      return `Failed to search documentation: ${error instanceof Error ? error.message : 'Unknown error occurred'}`;
+    }
+  }
+});
+
+/**
  * Search documentation across multiple fields
  */
 export async function searchDocumentationMultiField(
-  query: string,
-  fields: string[] = ['title', 'description', 'content'],
-  similarityThreshold: number = 0.3,
-  limit: number = 10,
+  searchInput: SearchDocumentationMultiFieldInput,
   context: AuthContext
 ) {
   const searchData = {
-    query,
-    fields,
-    similarity_threshold: similarityThreshold,
-    limit
+    query: searchInput.query,
+    project_id: searchInput.project_id,
+    type: searchInput.type,
+    limit: searchInput.limit
   };
 
-  const response = await documentationSearchWithAuth(searchData, 'search/multi-field', context);
+  const response = await documentationSearchWithAuth(searchData, 'multi-field-search', context);
   
   if (response.error) {
     return response;
   }
 
   const formattedResults = formatDocumentationSearchResults(
-    response.data || [], 
-    query, 
+    Array.isArray(response.data) ? response.data : [], 
+    searchInput.query, 
     'multi-field'
   );
 
   return { data: formattedResults };
 }
+
+/**
+ * AI Tool for comprehensive multi-field documentation search
+ */
+export const searchDocumentationMultiFieldTool = tool({
+  description: `Perform comprehensive semantic search across multiple documentation fields.
+    This tool searches across title, description, and content fields simultaneously,
+    providing detailed similarity scores for each field. Perfect for thorough documentation
+    discovery when you want to find all relevant documents regardless of where the information appears.`,
+  inputSchema: searchDocumentationMultiFieldSchema,
+  execute: async (input, { experimental_context }) => {
+    try {
+      const validated = searchDocumentationMultiFieldSchema.parse(input);
+      
+      console.log('Multi-field documentation search:', validated);
+
+      const response = await searchDocumentationMultiField(validated, experimental_context as AuthContext);
+
+      if (response.error) {
+        console.error('Multi-field documentation search failed:', response.error);
+        return `Multi-field documentation search failed: ${response.error}`;
+      }
+
+      return response.data;
+
+    } catch (error) {
+      console.error('Error in searchDocumentationMultiFieldTool:', error);
+      return `Failed to perform multi-field search: ${error instanceof Error ? error.message : 'Unknown error occurred'}`;
+    }
+  }
+});
 
 /**
  * Get search suggestions based on query
@@ -198,5 +265,18 @@ export function getSearchSuggestions(query: string): string[] {
   
   return suggestions.slice(0, 5); // Limit to 5 suggestions
 }
+
+/**
+ * Enhanced semantic documentation search tools collection
+ */
+export const semanticDocumentationTools = {
+  searchDocumentationByField: searchDocumentationByFieldTool,
+  searchDocumentationMultiField: searchDocumentationMultiFieldTool
+};
+
+/**
+ * Type definition for semantic documentation tools
+ */
+export type SemanticDocumentationTools = typeof semanticDocumentationTools;
 
 

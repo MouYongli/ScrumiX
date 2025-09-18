@@ -6,7 +6,18 @@ import {
   manageMeetingAgendaTool,
   manageMeetingActionItemsTool
 } from './meetings';
-import { documentationTools } from '../utils/documentation';
+import { 
+  documentationTools,
+  createDocumentationTool,
+  getDocumentationTool,
+  getDocumentationByIdTool,
+  updateDocumentationTool,
+  deleteDocumentationTool,
+  getCurrentUserTool,
+  getProjectUsersTool,
+  searchDocumentationByFieldTool,
+  searchDocumentationMultiFieldTool
+} from '../utils/documentation';
 
 // Create meeting management tools aggregate
 const meetingManagementTools = {
@@ -19,6 +30,7 @@ const meetingManagementTools = {
 // Export individual tools for direct access
 export { scrumMasterCoreTools } from './core';
 export { meetingManagementTools };
+export { documentationTools };
 
 // Export individual tools
 export { getSprintInfoTool, analyzeSprintHealthTool } from './core/sprints';
@@ -31,6 +43,7 @@ export { scheduleEventTool } from './meetings/schedule';
 export { manageMeetingAgendaTool } from './meetings/agenda';
 export { manageMeetingActionItemsTool } from './meetings/action-items';
 
+
 // Aggregate all scrum master tools including documentation tools
 export const scrumMasterTools = {
   // Core scrum analysis tools
@@ -39,8 +52,16 @@ export const scrumMasterTools = {
   // Meeting management tools
   ...meetingManagementTools,
   
-  // Shared documentation tools - available to ALL agents
-  ...documentationTools,
+  // Shared documentation tools - available to ALL agents (explicitly defined)
+  createDocumentation: createDocumentationTool,
+  getDocumentation: getDocumentationTool,
+  getDocumentationById: getDocumentationByIdTool,
+  updateDocumentation: updateDocumentationTool,
+  deleteDocumentation: deleteDocumentationTool,
+  getCurrentUser: getCurrentUserTool,
+  getProjectUsers: getProjectUsersTool,
+  searchDocumentationByField: searchDocumentationByFieldTool,
+  searchDocumentationMultiField: searchDocumentationMultiFieldTool,
 };
 
 export type ScrumMasterTools = typeof scrumMasterTools;

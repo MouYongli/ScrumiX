@@ -2,6 +2,7 @@ import { streamText, stepCountIs, convertToModelMessages, type UIMessage } from 
 import { gateway, getAgentModelConfig } from '@/lib/ai-gateway';
 import { selectModel } from '@/lib/adaptive-models';
 import { scrumMasterTools } from '@/lib/tools/scrum-master';
+import { documentationTools } from '@/lib/tools/utils/documentation';
 import { getWebSearchToolsForModel } from '@/lib/tools/utils/web-search';
 import { chatAPI } from '@/lib/chat-api';
 
@@ -287,6 +288,8 @@ export async function POST(req: Request) {
         tools: {
           // All Scrum Master tools from the new modular structure
           ...scrumMasterTools,
+          // Ensure documentation tools are always available
+          ...documentationTools,
           // Web Search Tools (native for OpenAI/Gemini)
           ...getWebSearchToolsForModel(modelToUse, webSearchEnabled),
         },
@@ -375,6 +378,8 @@ export async function POST(req: Request) {
         tools: {
           // All Scrum Master tools from the new modular structure
           ...scrumMasterTools,
+          // Ensure documentation tools are always available
+          ...documentationTools,
           ...getWebSearchToolsForModel(modelToUse, webSearchEnabled),
         },
         temperature: modelConfig.temperature,
