@@ -117,7 +117,8 @@ export const semanticSearchBacklogTool = tool({
           body: JSON.stringify({
             query: validated.query,
             project_id: validated.project_id,
-            limit: validated.limit
+            limit: validated.limit,
+            similarity_threshold: 0.7
           })
         },
         experimental_context as AuthContext
@@ -128,7 +129,7 @@ export const semanticSearchBacklogTool = tool({
         return `Failed to perform semantic search: ${response.error}`;
       }
 
-      const results = (response.data as any)?.results || [];
+      const results = (response.data as any) || [];
       
       if (results.length === 0) {
         return `No backlog items found matching the semantic query: "${validated.query}"`;
@@ -139,8 +140,9 @@ export const semanticSearchBacklogTool = tool({
       // Format the results with semantic relevance scores
       const formattedResults = `**Semantic Search Results** for "${validated.query}":
 
-${results.map((item: any, index: number) => {
-  const similarity = (item.similarity * 100).toFixed(1);
+${results.map((result: any, index: number) => {
+  const item = result.backlog;
+  const similarity = (result.similarity_score * 100).toFixed(1);
   const itemType = item.item_type.charAt(0).toUpperCase() + item.item_type.slice(1);
   const priority = item.priority.charAt(0).toUpperCase() + item.priority.slice(1);
   
@@ -153,7 +155,7 @@ ${results.map((item: any, index: number) => {
 
 **Search Insights**:
 - **Total Matches**: ${results.length}
-- **Best Match**: ${(results[0].similarity * 100).toFixed(1)}% semantic similarity
+- **Best Match**: ${(results[0].similarity_score * 100).toFixed(1)}% semantic similarity
 - **Search Type**: AI-powered semantic understanding
 
 These results are ranked by semantic similarity, meaning they match the intent and context of your query, not just keywords.`;
@@ -205,7 +207,7 @@ export const bm25SearchBacklogTool = tool({
         return `Failed to perform BM25 search: ${response.error}`;
       }
 
-      const results = (response.data as any)?.results || [];
+      const results = (response.data as any) || [];
       
       if (results.length === 0) {
         return `No backlog items found matching the keywords: "${validated.query}"`;
@@ -216,8 +218,9 @@ export const bm25SearchBacklogTool = tool({
       // Format the results with BM25 relevance scores
       const formattedResults = `**Keyword Search Results** for "${validated.query}":
 
-${results.map((item: any, index: number) => {
-  const score = item.score ? item.score.toFixed(2) : 'N/A';
+${results.map((result: any, index: number) => {
+  const item = result.backlog;
+  const score = result.similarity_score ? result.similarity_score.toFixed(2) : 'N/A';
   const itemType = item.item_type.charAt(0).toUpperCase() + item.item_type.slice(1);
   const priority = item.priority.charAt(0).toUpperCase() + item.priority.slice(1);
   
@@ -273,6 +276,9 @@ export const hybridSearchBacklogTool = tool({
             query: validated.query,
             project_id: validated.project_id,
             semantic_weight: validated.semantic_weight,
+            keyword_weight: 1 - validated.semantic_weight,
+            similarity_threshold: 0.5,
+            use_rrf: true,
             limit: validated.limit
           })
         },
@@ -284,7 +290,7 @@ export const hybridSearchBacklogTool = tool({
         return `Failed to perform hybrid search: ${response.error}`;
       }
 
-      const results = (response.data as any)?.results || [];
+      const results = (response.data as any) || [];
       
       if (results.length === 0) {
         return `No backlog items found matching the hybrid query: "${validated.query}"`;
@@ -299,8 +305,9 @@ export const hybridSearchBacklogTool = tool({
       const formattedResults = `**Hybrid Search Results** for "${validated.query}":
 *Semantic: ${semanticPercent}% | Keywords: ${keywordPercent}%*
 
-${results.map((item: any, index: number) => {
-  const score = item.combined_score ? item.combined_score.toFixed(3) : 'N/A';
+${results.map((result: any, index: number) => {
+  const item = result.backlog;
+  const score = result.similarity_score ? result.similarity_score.toFixed(3) : 'N/A';
   const itemType = item.item_type.charAt(0).toUpperCase() + item.item_type.slice(1);
   const priority = item.priority.charAt(0).toUpperCase() + item.priority.slice(1);
   
@@ -315,7 +322,7 @@ ${results.map((item: any, index: number) => {
 - **Total Matches**: ${results.length}
 - **Search Type**: Hybrid (Semantic + Keyword)
 - **Balance**: ${semanticPercent}% semantic understanding, ${keywordPercent}% keyword matching
-- **Best Combined Score**: ${results[0].combined_score ? results[0].combined_score.toFixed(3) : 'N/A'}
+- **Best Combined Score**: ${results[0].similarity_score ? results[0].similarity_score.toFixed(3) : 'N/A'}
 
 This hybrid approach finds items that are both contextually relevant and contain matching keywords, providing the most comprehensive results.`;
 
@@ -348,7 +355,7 @@ export const findSimilarBacklogTool = tool({
 
       // Call the similar items API
       const response = await requestWithAuth(
-        `/semantic-search/similar/${validated.backlog_id}`,
+        `/semantic-search/similar/${validated.backlog_id}?limit=${validated.limit}&similarity_threshold=0.6`,
         { method: 'GET' },
         experimental_context as AuthContext
       );
@@ -358,41 +365,29 @@ export const findSimilarBacklogTool = tool({
         return `Failed to find similar items: ${response.error}`;
       }
 
-      const data = response.data as any;
-      const sourceItem = data?.source_item;
-      const similarItems = data?.similar_items || [];
+      const similarItems = (response.data as any) || [];
       
-      if (!sourceItem) {
-        return `Backlog item #${validated.backlog_id} not found.`;
-      }
-
       if (similarItems.length === 0) {
-        return `No similar items found for backlog item #${validated.backlog_id}: "${sourceItem.title}"`;
+        return `No similar backlog items found for item #${validated.backlog_id}.`;
       }
 
       console.log(`Found ${similarItems.length} similar backlog items`);
 
       // Format the results
-      const sourceType = sourceItem.item_type.charAt(0).toUpperCase() + sourceItem.item_type.slice(1);
-      const sourcePriority = sourceItem.priority.charAt(0).toUpperCase() + sourceItem.priority.slice(1);
+      const formattedResults = `**Found ${similarItems.length} Similar Items** for #${validated.backlog_id}:
 
-      const formattedResults = `**Similar Items Analysis** for:
-**${sourceType} #${sourceItem.id}**: "${sourceItem.title}"
-- **Priority**: ${sourcePriority} | **Status**: ${sourceItem.status.replace('_', ' ')} | **Points**: ${sourceItem.story_point || 'Not estimated'}
-
-**Found ${similarItems.length} Similar Items**:
-
-${similarItems.map((item: any, index: number) => {
-  const similarity = (item.similarity * 100).toFixed(1);
+${similarItems.map((result: any, index: number) => {
+  const item = result.backlog;
+  const similarity = (result.similarity_score * 100).toFixed(1);
   const itemType = item.item_type.charAt(0).toUpperCase() + item.item_type.slice(1);
   const priority = item.priority.charAt(0).toUpperCase() + item.priority.slice(1);
   
   // Determine similarity level
   let similarityLevel = '';
-  if (item.similarity >= 0.9) similarityLevel = '🔴 Very High (Potential Duplicate)';
-  else if (item.similarity >= 0.8) similarityLevel = '🟠 High (Closely Related)';
-  else if (item.similarity >= 0.7) similarityLevel = '🟡 Medium (Related)';
-  else similarityLevel = '🟢 Low (Loosely Related)';
+  if (result.similarity_score >= 0.9) similarityLevel = 'Very High (Potential Duplicate)';
+  else if (result.similarity_score >= 0.8) similarityLevel = 'High (Closely Related)';
+  else if (result.similarity_score >= 0.7) similarityLevel = 'Medium (Related)';
+  else similarityLevel = 'Low (Loosely Related)';
   
   return `${index + 1}. **${itemType} #${item.id}** - ${similarity}% similar
    ${similarityLevel}
@@ -401,14 +396,14 @@ ${similarItems.map((item: any, index: number) => {
 }).join('\n\n')}
 
 **Analysis Summary**:
-- **High Similarity (≥80%)**: ${similarItems.filter((item: any) => item.similarity >= 0.8).length} items (potential duplicates or closely related)
-- **Medium Similarity (70-79%)**: ${similarItems.filter((item: any) => item.similarity >= 0.7 && item.similarity < 0.8).length} items (related features)
-- **Low Similarity (60-69%)**: ${similarItems.filter((item: any) => item.similarity >= 0.6 && item.similarity < 0.7).length} items (loosely related)
+- **High Similarity (≥80%)**: ${similarItems.filter((result: any) => result.similarity_score >= 0.8).length} items (potential duplicates or closely related)
+- **Medium Similarity (70-79%)**: ${similarItems.filter((result: any) => result.similarity_score >= 0.7 && result.similarity_score < 0.8).length} items (related features)
+- **Low Similarity (60-69%)**: ${similarItems.filter((result: any) => result.similarity_score >= 0.6 && result.similarity_score < 0.7).length} items (loosely related)
 
 **Recommendations**:
-${similarItems.some((item: any) => item.similarity >= 0.9) ? '⚠️  **Review for Duplicates**: Items with >90% similarity may be duplicates that should be merged.' : ''}
-${similarItems.some((item: any) => item.similarity >= 0.8 && item.similarity < 0.9) ? '📋 **Group Related Items**: Items with 80-90% similarity should be considered for epic grouping or sprint planning together.' : ''}
-${similarItems.length > 3 ? '🔍 **Consider Refactoring**: Many similar items suggest this area might benefit from consolidation or clearer requirements.' : ''}`;
+${similarItems.some((result: any) => result.similarity_score >= 0.9) ? 'Review for Duplicates: Items with >90% similarity may be duplicates that should be merged.' : ''}
+${similarItems.some((result: any) => result.similarity_score >= 0.8 && result.similarity_score < 0.9) ? 'Group Related Items: Items with 80-90% similarity should be considered for epic grouping or sprint planning together.' : ''}
+${similarItems.length > 3 ? 'Consider Refactoring: Many similar items suggest this area might benefit from consolidation or clearer requirements.' : ''}`;
 
       return formattedResults;
 

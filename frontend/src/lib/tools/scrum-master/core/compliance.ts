@@ -1,6 +1,6 @@
 import { tool } from 'ai';
 import { complianceCheckSchema } from '../../schemas/scrum';
-import { makeAuthenticatedRequest } from '../utils';
+import { requestWithAuth, type AuthContext } from '../../utils';
 
 /**
  * Tool for Scrum Guide compliance checking
@@ -19,17 +19,17 @@ export const checkScrumComplianceTool = tool({
       const startDate = new Date(endDate.getTime() - (validated.check_period_days * 24 * 60 * 60 * 1000));
 
       // Get project sprints in the period
-      const sprintsResponse = await makeAuthenticatedRequest(
+      const sprintsResponse = await requestWithAuth(
         `/sprints/?project_id=${validated.project_id}&limit=50`,
         { method: 'GET' },
-        experimental_context
+        experimental_context as AuthContext
       );
 
       if (sprintsResponse.error) {
         return `Failed to retrieve sprint data: ${sprintsResponse.error}`;
       }
 
-      const allSprints = sprintsResponse.data || [];
+      const allSprints = (sprintsResponse.data as any[]) || [];
       const recentSprints = allSprints.filter((sprint: any) => {
         const sprintStartDate = sprint.start_date || sprint.startDate;
         if (!sprintStartDate) return false;
@@ -38,13 +38,13 @@ export const checkScrumComplianceTool = tool({
       });
 
       // Get meetings for the period
-      const meetingsResponse = await makeAuthenticatedRequest(
+      const meetingsResponse = await requestWithAuth(
         `/meetings/?date_from=${startDate.toISOString()}&date_to=${endDate.toISOString()}&limit=200`,
         { method: 'GET' },
-        experimental_context
+        experimental_context as AuthContext
       );
 
-      const allMeetings = meetingsResponse.data?.meetings || [];
+      const allMeetings = (meetingsResponse.data as any)?.meetings || [];
       const projectMeetings = allMeetings.filter((meeting: any) => meeting.project_id === validated.project_id);
 
       // Analyze compliance areas
@@ -158,14 +158,14 @@ export const checkScrumComplianceTool = tool({
       let scopeCreepDetected = false;
       
       for (const sprint of activeSprints) {
-        const backlogResponse = await makeAuthenticatedRequest(
+        const backlogResponse = await requestWithAuth(
           `/sprints/${sprint.id}/backlog`,
           { method: 'GET' },
-          experimental_context
+          experimental_context as AuthContext
         );
 
         if (!backlogResponse.error) {
-          const backlogItems = backlogResponse.data || [];
+          const backlogItems = (backlogResponse.data as any[]) || [];
           const recentlyAdded = backlogItems.filter((item: any) => {
             const createdDate = new Date(item.created_at);
             const sprintStartDate = sprint.start_date || sprint.startDate;
@@ -261,3 +261,4 @@ ${complianceIssues.filter(i => i.severity === 'Medium').map(issue => `- ${issue.
     }
   }
 });
+

@@ -1,6 +1,6 @@
 import { tool } from 'ai';
 import { velocityAnalysisSchema, currentSprintVelocitySchema } from '../../schemas/scrum';
-import { makeAuthenticatedRequest, getCurrentProjectContext } from '../utils';
+import { requestWithAuth, getCurrentProjectContext, type AuthContext } from '../../utils';
 
 /**
  * Tool for velocity tracking and capacity planning with enhanced API integration
@@ -20,7 +20,7 @@ export const analyzeVelocityTool = tool({
     let projectName = '';
       
     if (!projectId) {
-      const projectContext = await getCurrentProjectContext(experimental_context);
+        const projectContext = await getCurrentProjectContext(experimental_context as AuthContext);
         if (!projectContext) {
           return `Unable to determine the current project context. Please provide a project_id or ensure you're working within a project.`;
         }
@@ -31,31 +31,31 @@ export const analyzeVelocityTool = tool({
       console.log('Analyzing velocity for project:', projectId);
 
       // Get project average velocity using dedicated API
-    const avgVelocityResponse = await makeAuthenticatedRequest(
+    const avgVelocityResponse = await requestWithAuth(
       `/velocity/project/${projectId}/velocity/average`,
       { method: 'GET' },
-      experimental_context
+      experimental_context as AuthContext
     );
 
       // Get project velocity metrics
-    const metricsResponse = await makeAuthenticatedRequest(
+    const metricsResponse = await requestWithAuth(
       `/velocity/project/${projectId}/velocity/metrics`,
       { method: 'GET' },
-      experimental_context
+      experimental_context as AuthContext
     );
 
       // Get recent completed sprints for detailed analysis
-    const sprintsResponse = await makeAuthenticatedRequest(
+    const sprintsResponse = await requestWithAuth(
       `/sprints/?project_id=${projectId}&status=completed&limit=${validated.sprint_count}`,
       { method: 'GET' },
-      experimental_context
+      experimental_context as AuthContext
     );
 
       if (sprintsResponse.error) {
         return `Failed to retrieve sprint data: ${sprintsResponse.error}`;
       }
 
-    const sprints = sprintsResponse.data || [];
+    const sprints = (sprintsResponse.data as any[]) || [];
       
       if (sprints.length === 0) {
         return `No completed sprints found for ${projectName || `project ${projectId}`}. Velocity analysis requires at least one completed sprint.`;
@@ -64,14 +64,14 @@ export const analyzeVelocityTool = tool({
       // Check if we might have more completed sprints available
       let additionalSprintsNote = '';
       if (sprints.length === validated.sprint_count && validated.sprint_count < 50) {
-        const allSprintsResponse = await makeAuthenticatedRequest(
+        const allSprintsResponse = await requestWithAuth(
           `/sprints/?project_id=${projectId}&status=completed&limit=50`,
           { method: 'GET' },
-          experimental_context
+          experimental_context as AuthContext
         );
         
-        if (!allSprintsResponse.error && allSprintsResponse.data && allSprintsResponse.data.length > validated.sprint_count) {
-          const totalCompleted = allSprintsResponse.data.length;
+        if (!allSprintsResponse.error && allSprintsResponse.data && (allSprintsResponse.data as any[]).length > validated.sprint_count) {
+          const totalCompleted = (allSprintsResponse.data as any[]).length;
           additionalSprintsNote = `\n\n**Note:** This analysis includes ${validated.sprint_count} of ${totalCompleted} total completed sprints. For more comprehensive historical analysis, you can increase the sprint_count parameter up to ${Math.min(50, totalCompleted)}.`;
         }
       }
@@ -79,20 +79,20 @@ export const analyzeVelocityTool = tool({
       // Get individual sprint velocity data
       const sprintVelocityData = await Promise.all(
         sprints.map(async (sprint: any) => {
-          const velocityResponse = await makeAuthenticatedRequest(
+          const velocityResponse = await requestWithAuth(
             `/velocity/sprint/${sprint.id}/velocity`,
             { method: 'GET' },
-            experimental_context
+            experimental_context as AuthContext
           );
           
-          const backlogResponse = await makeAuthenticatedRequest(
+          const backlogResponse = await requestWithAuth(
             `/sprints/${sprint.id}/backlog`,
             { method: 'GET' },
-            experimental_context
+            experimental_context as AuthContext
           );
 
-          const velocity = velocityResponse.data?.velocity_points || 0;
-          const backlogItems = backlogResponse.data || [];
+          const velocity = (velocityResponse.data as any)?.velocity_points || 0;
+          const backlogItems = (backlogResponse.data as any[]) || [];
           const completedItems = backlogItems.filter((item: any) => item.status === 'done');
           
           // Calculate actual completed story points (this is the correct velocity measure)
@@ -109,25 +109,25 @@ export const analyzeVelocityTool = tool({
       );
 
       // Calculate velocity metrics
-      const velocityByPoints = sprintVelocityData.map(data => data.velocityPoints);
-      const velocityByItems = sprintVelocityData.map(data => data.completedItems);
+      const velocityByPoints = sprintVelocityData.map((data: any) => data.velocityPoints);
+      const velocityByItems = sprintVelocityData.map((data: any) => data.completedItems);
       
-      const totalCompletedStoryPoints = velocityByPoints.reduce((sum, v) => sum + v, 0);
+      const totalCompletedStoryPoints = velocityByPoints.reduce((sum: number, v: number) => sum + v, 0);
       const avgVelocity = velocityByPoints.length > 0 ? totalCompletedStoryPoints / velocityByPoints.length : 0;
-      const avgVelocityItems = velocityByItems.length > 0 ? velocityByItems.reduce((sum, v) => sum + v, 0) / velocityByItems.length : 0;
+      const avgVelocityItems = velocityByItems.length > 0 ? velocityByItems.reduce((sum: number, v: number) => sum + v, 0) / velocityByItems.length : 0;
       
       const totalSprints = sprints.length;
 
       // Calculate velocity consistency (coefficient of variation)
-      const pointsVariance = velocityByPoints.reduce((sum, v) => sum + Math.pow(v - avgVelocity, 2), 0) / velocityByPoints.length;
+      const pointsVariance = velocityByPoints.reduce((sum: number, v: number) => sum + Math.pow(v - avgVelocity, 2), 0) / velocityByPoints.length;
       const pointsStdDev = Math.sqrt(pointsVariance);
       const consistencyScore = avgVelocity > 0 ? Math.max(0, 100 - (pointsStdDev / avgVelocity * 100)) : 0;
 
       // Identify trends
       const recentVelocity = velocityByPoints.slice(-3);
       const earlierVelocity = velocityByPoints.slice(0, -3);
-      const recentAvg = recentVelocity.reduce((sum, v) => sum + v, 0) / recentVelocity.length;
-      const earlierAvg = earlierVelocity.length > 0 ? earlierVelocity.reduce((sum, v) => sum + v, 0) / earlierVelocity.length : recentAvg;
+      const recentAvg = recentVelocity.reduce((sum: number, v: number) => sum + v, 0) / recentVelocity.length;
+      const earlierAvg = earlierVelocity.length > 0 ? earlierVelocity.reduce((sum: number, v: number) => sum + v, 0) / earlierVelocity.length : recentAvg;
       
       const trendDirection = recentAvg > earlierAvg * 1.1 ? 'Improving' : 
                             recentAvg < earlierAvg * 0.9 ? 'Declining' : 'Stable';
@@ -250,7 +250,7 @@ export const analyzeCurrentSprintVelocityTool = tool({
       let projectName = '';
       
     if (!projectId) {
-      const projectContext = await getCurrentProjectContext(experimental_context);
+        const projectContext = await getCurrentProjectContext(experimental_context as AuthContext);
         if (!projectContext) {
           return `Unable to determine the current project context. Please provide a project_id or ensure you're working within a project.`;
         }
@@ -263,23 +263,23 @@ export const analyzeCurrentSprintVelocityTool = tool({
       let sprint = null;
 
     if (!sprintId) {
-      const sprintsResponse = await makeAuthenticatedRequest(
+      const sprintsResponse = await requestWithAuth(
         `/sprints/?project_id=${projectId}&status=active&limit=1`,
         { method: 'GET' },
-        experimental_context
+        experimental_context as AuthContext
       );
 
-      if (sprintsResponse.error || !sprintsResponse.data || sprintsResponse.data.length === 0) {
+      if (sprintsResponse.error || !sprintsResponse.data || (sprintsResponse.data as any[]).length === 0) {
           return `No active sprint found for ${projectName || `project ${projectId}`}. Please specify a sprint_id or ensure there's an active sprint.`;
         }
 
-        sprint = sprintsResponse.data[0];
+        sprint = (sprintsResponse.data as any[])[0];
         sprintId = sprint.id;
       } else {
-        const sprintResponse = await makeAuthenticatedRequest(
+        const sprintResponse = await requestWithAuth(
           `/sprints/${sprintId}`,
           { method: 'GET' },
-          experimental_context
+          experimental_context as AuthContext
         );
 
         if (sprintResponse.error) {
@@ -290,26 +290,26 @@ export const analyzeCurrentSprintVelocityTool = tool({
       }
 
       // Get current sprint velocity
-    const currentVelocityResponse = await makeAuthenticatedRequest(
+    const currentVelocityResponse = await requestWithAuth(
       `/velocity/sprint/${sprintId}/velocity`,
       { method: 'GET' },
-      experimental_context
+      experimental_context as AuthContext
     );
 
       if (currentVelocityResponse.error) {
         return `Failed to retrieve current sprint velocity: ${currentVelocityResponse.error}`;
       }
 
-      const currentVelocity = currentVelocityResponse.data?.velocity_points || 0;
+      const currentVelocity = (currentVelocityResponse.data as any)?.velocity_points || 0;
 
       // Get current sprint backlog for additional insights
-      const backlogResponse = await makeAuthenticatedRequest(
+      const backlogResponse = await requestWithAuth(
         `/sprints/${sprintId}/backlog`,
         { method: 'GET' },
-        experimental_context
+        experimental_context as AuthContext
       );
 
-      const backlogItems = backlogResponse.data || [];
+      const backlogItems = (backlogResponse.data as any[]) || [];
       const completedItems = backlogItems.filter((item: any) => item.status === 'done');
       const inProgressItems = backlogItems.filter((item: any) => item.status === 'in_progress');
       const todoItems = backlogItems.filter((item: any) => item.status === 'todo');
@@ -322,15 +322,15 @@ export const analyzeCurrentSprintVelocityTool = tool({
       // Get team average velocity for comparison
       let averageComparison = '';
       if (validated.compare_with_average) {
-        const avgVelocityResponse = await makeAuthenticatedRequest(
+        const avgVelocityResponse = await requestWithAuth(
           `/velocity/project/${projectId}/velocity/average?exclude_sprint_id=${sprintId}`,
           { method: 'GET' },
-          experimental_context
+          experimental_context as AuthContext
         );
 
         if (!avgVelocityResponse.error && avgVelocityResponse.data) {
-          const avgVelocity = avgVelocityResponse.data.average_velocity;
-          const totalSprints = avgVelocityResponse.data.total_sprints;
+          const avgVelocity = (avgVelocityResponse.data as any).average_velocity;
+          const totalSprints = (avgVelocityResponse.data as any).total_sprints;
           const velocityDifference = currentVelocity - avgVelocity;
           const velocityPercentage = avgVelocity > 0 ? (velocityDifference / avgVelocity * 100).toFixed(1) : '0';
 

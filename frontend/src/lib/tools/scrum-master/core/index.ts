@@ -17,3 +17,4 @@ export const scrumMasterCoreTools = {
 };
 
 export type ScrumMasterCoreTools = typeof scrumMasterCoreTools;
+

@@ -228,3 +228,4 @@ export type ArtifactComplianceInput = z.infer<typeof artifactComplianceSchema>;
 export type ProcessComplianceInput = z.infer<typeof processComplianceSchema>;
 export type ComprehensiveComplianceInput = z.infer<typeof comprehensiveComplianceSchema>;
 export type ComplianceTrendInput = z.infer<typeof complianceTrendSchema>;
+

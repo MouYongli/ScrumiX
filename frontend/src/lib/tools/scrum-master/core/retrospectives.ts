@@ -1,6 +1,6 @@
 import { tool } from 'ai';
 import { retrospectiveAnalysisSchema } from '../../schemas/scrum';
-import { makeAuthenticatedRequest } from '../utils';
+import { requestWithAuth, type AuthContext } from '../../utils';
 
 /**
  * Tool for retrospective analysis and team coaching
@@ -16,17 +16,17 @@ export const analyzeRetrospectivesTool = tool({
       console.log('Analyzing retrospectives for project:', validated.project_id);
 
       // Get recent retrospective meetings
-      const meetingsResponse = await makeAuthenticatedRequest(
+      const meetingsResponse = await requestWithAuth(
         `/meetings/?meeting_type=sprint_retrospective&limit=${validated.lookback_sprints * 2}`,
         { method: 'GET' },
-        experimental_context
+        experimental_context as AuthContext
       );
 
       if (meetingsResponse.error) {
         return `Failed to retrieve retrospective meetings: ${meetingsResponse.error}`;
       }
 
-      const allMeetings = meetingsResponse.data?.meetings || [];
+      const allMeetings = (meetingsResponse.data as any)?.meetings || [];
       const retrospectives = allMeetings
         .filter((meeting: any) => meeting.project_id === validated.project_id)
         .slice(0, validated.lookback_sprints);
@@ -39,23 +39,23 @@ export const analyzeRetrospectivesTool = tool({
       const retrospectiveAnalyses = await Promise.all(
         retrospectives.map(async (meeting: any) => {
           // Get meeting notes
-          const notesResponse = await makeAuthenticatedRequest(
+          const notesResponse = await requestWithAuth(
             `/meeting-notes/?meeting_id=${meeting.id}`,
             { method: 'GET' },
-            experimental_context
+            experimental_context as AuthContext
           );
 
           // Get action items
-          const actionsResponse = await makeAuthenticatedRequest(
+          const actionsResponse = await requestWithAuth(
             `/meeting-action-items/?meeting_id=${meeting.id}`,
             { method: 'GET' },
-            experimental_context
+            experimental_context as AuthContext
           );
 
           return {
             meeting: meeting,
-            notes: notesResponse.data || [],
-            actionItems: actionsResponse.data || []
+            notes: (notesResponse.data as any[]) || [],
+            actionItems: (actionsResponse.data as any[]) || []
           };
         })
       );
@@ -176,3 +176,4 @@ ${recommendations.map(rec => `- ${rec}`).join('\n')}` : ''}
     }
   }
 });
+

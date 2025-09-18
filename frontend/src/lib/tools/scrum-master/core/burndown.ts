@@ -1,6 +1,6 @@
 import { tool } from 'ai';
 import { burndownAnalysisSchema } from '../../schemas/scrum';
-import { makeAuthenticatedRequest, getCurrentProjectContext } from '../utils';
+import { requestWithAuth, getCurrentProjectContext, type AuthContext } from '../../utils';
 
 /**
  * Tool for detailed burndown chart analysis and sprint progress monitoring
@@ -19,7 +19,7 @@ export const analyzeBurndownTool = tool({
     let projectName = '';
       
     if (!projectId) {
-      const projectContext = await getCurrentProjectContext(experimental_context);
+      const projectContext = await getCurrentProjectContext(experimental_context as AuthContext);
         if (!projectContext) {
           return `Unable to determine the current project context. Please provide a project_id or ensure you're working within a project.`;
         }
@@ -33,27 +33,27 @@ export const analyzeBurndownTool = tool({
 
       if (!sprintId) {
         // Try to find active sprint first
-    const activeSprintResponse = await makeAuthenticatedRequest(
+    const activeSprintResponse = await requestWithAuth(
       `/sprints/?project_id=${projectId}&status=active&limit=1`,
       { method: 'GET' },
-      experimental_context
+      experimental_context as AuthContext
     );
 
-        if (!activeSprintResponse.error && activeSprintResponse.data && activeSprintResponse.data.length > 0) {
-          sprint = activeSprintResponse.data[0];
+        if (!activeSprintResponse.error && activeSprintResponse.data && (activeSprintResponse.data as any[]).length > 0) {
+          sprint = (activeSprintResponse.data as any[])[0];
           sprintId = sprint.id;
           console.log('Auto-detected active sprint:', sprintId);
         } else {
           // No active sprint, check if sprint title was provided
           if (validated.sprint_title) {
-            const allSprintsResponse = await makeAuthenticatedRequest(
+            const allSprintsResponse = await requestWithAuth(
               `/sprints/?project_id=${projectId}&limit=20`,
               { method: 'GET' },
-              experimental_context
+              experimental_context as AuthContext
             );
 
             if (!allSprintsResponse.error && allSprintsResponse.data) {
-              const matchingSprint = allSprintsResponse.data.find((s: any) => 
+              const matchingSprint = (allSprintsResponse.data as any[]).find((s: any) => 
                 s.sprint_name?.toLowerCase().includes(validated.sprint_title!.toLowerCase()) ||
                 s.sprintName?.toLowerCase().includes(validated.sprint_title!.toLowerCase())
               );
@@ -67,14 +67,14 @@ export const analyzeBurndownTool = tool({
             }
           } else {
             // No active sprint and no title provided, ask user to specify
-            const allSprintsResponse = await makeAuthenticatedRequest(
+            const allSprintsResponse = await requestWithAuth(
               `/sprints/?project_id=${projectId}&limit=10`,
               { method: 'GET' },
-              experimental_context
+              experimental_context as AuthContext
             );
 
-            if (!allSprintsResponse.error && allSprintsResponse.data && allSprintsResponse.data.length > 0) {
-              const availableSprints = allSprintsResponse.data
+            if (!allSprintsResponse.error && allSprintsResponse.data && (allSprintsResponse.data as any[]).length > 0) {
+              const availableSprints = (allSprintsResponse.data as any[])
                 .filter((s: any) => s.status !== 'planning')
                 .map((s: any) => `- **${s.sprint_name || s.sprintName}** (Status: ${s.status})`)
                 .join('\n');
@@ -87,10 +87,10 @@ export const analyzeBurndownTool = tool({
         }
       } else {
         // Sprint ID provided, get sprint details
-        const sprintResponse = await makeAuthenticatedRequest(
+        const sprintResponse = await requestWithAuth(
           `/sprints/${sprintId}`,
           { method: 'GET' },
-          experimental_context
+          experimental_context as AuthContext
         );
 
         if (sprintResponse.error) {
@@ -108,10 +108,10 @@ export const analyzeBurndownTool = tool({
       if (validated.end_date) chartParams.append('end_date', validated.end_date);
       const queryString = chartParams.toString() ? `?${chartParams.toString()}` : '';
 
-    const burndownResponse = await makeAuthenticatedRequest(
+    const burndownResponse = await requestWithAuth(
         `/velocity/sprint/${sprintId}/burndown${queryString}`,
         { method: 'GET' },
-        experimental_context
+        experimental_context as AuthContext
       );
 
       if (burndownResponse.error) {
@@ -123,10 +123,10 @@ export const analyzeBurndownTool = tool({
       // Get trend analysis if requested
       let trendData = null;
       if (validated.include_trend_analysis) {
-        const trendResponse = await makeAuthenticatedRequest(
+        const trendResponse = await requestWithAuth(
           `/velocity/sprint/${sprintId}/burndown/trend`,
       { method: 'GET' },
-      experimental_context
+      experimental_context as AuthContext
     );
         
         if (!trendResponse.error) {
@@ -150,10 +150,11 @@ export const analyzeBurndownTool = tool({
       const progressPercentage = Math.min(100, Math.max(0, (elapsed / sprintDuration) * 100));
 
       // Analyze burndown data
-      const { dates, remaining_points, completed_points } = burndownData;
+      const burndownDataTyped = burndownData as any;
+      const { dates, remaining_points, completed_points } = burndownDataTyped;
       const currentRemaining = remaining_points[remaining_points.length - 1] || 0;
       const currentCompleted = completed_points[completed_points.length - 1] || 0;
-      const initialTotal = burndownData.initial_total_points || 0;
+      const initialTotal = burndownDataTyped.initial_total_points || 0;
 
       // Enhanced ideal vs actual comparison
       let idealComparison = '';
@@ -197,16 +198,17 @@ export const analyzeBurndownTool = tool({
       // Generate trend analysis
       let trendAnalysis = '';
       if (trendData && validated.include_trend_analysis) {
-        const projectedCompletion = trendData.projected_completion ? 
-          new Date(trendData.projected_completion).toLocaleDateString() : 'Unknown';
+        const trendDataTyped = trendData as any;
+        const projectedCompletion = trendDataTyped.projected_completion ? 
+          new Date(trendDataTyped.projected_completion).toLocaleDateString() : 'Unknown';
         
         trendAnalysis = `
 ### 📈 Trend Analysis
-- **Current Velocity:** ${trendData.velocity.toFixed(1)} story points per day
-- **Trend Direction:** ${trendData.trend}
-- **On Track:** ${trendData.is_on_track ? 'Yes ✅' : 'No ⚠️'}
+- **Current Velocity:** ${trendDataTyped.velocity?.toFixed(1) || 'N/A'} story points per day
+- **Trend Direction:** ${trendDataTyped.trend || 'Unknown'}
+- **On Track:** ${trendDataTyped.is_on_track ? 'Yes ✅' : 'No ⚠️'}
 - **Projected Completion:** ${projectedCompletion}
-- **Data Points:** ${trendData.total_snapshots} snapshots`;
+- **Data Points:** ${trendDataTyped.total_snapshots || 0} snapshots`;
       }
 
       // Calculate completion percentages
@@ -328,3 +330,4 @@ ${parseFloat(remainingPercentage) <= progressPercentage + 10 ?
     }
   }
 });
+

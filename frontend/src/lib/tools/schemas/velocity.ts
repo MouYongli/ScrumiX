@@ -114,3 +114,4 @@ export type VelocityAnalysisInput = z.infer<typeof velocityAnalysisSchema>;
 export type CurrentSprintVelocityInput = z.infer<typeof currentSprintVelocitySchema>;
 export type SprintHealthAnalysisInput = z.infer<typeof sprintHealthAnalysisSchema>;
 export type BurndownAnalysisInput = z.infer<typeof burndownAnalysisSchema>;
+

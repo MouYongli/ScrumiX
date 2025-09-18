@@ -66,3 +66,4 @@ export function formatWebSearchResults(results: any[]): string {
    ${snippet}`;
   }).join('\n\n');
 }
+

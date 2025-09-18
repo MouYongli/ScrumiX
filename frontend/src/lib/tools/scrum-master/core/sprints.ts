@@ -1,37 +1,54 @@
+/**
+ * Sprint information and health analysis tools for Scrum Master
+ */
+
 import { tool } from 'ai';
 import { z } from 'zod';
-import { sprintMetricsSchema } from '../../schemas/scrum';
-import { makeAuthenticatedRequest, getCurrentProjectContext } from '../utils';
 
-/**
- * Schema for sprint access and information retrieval
- */
+// Import shared schemas and utilities from parent scrum-master.ts
+// We'll need to import these from the main file temporarily until we can refactor schemas
 const sprintAccessSchema = z.object({
   project_id: z.number()
     .int('Project ID must be a whole number')
     .positive('Project ID must be a positive integer')
     .optional()
-    .describe('The ID of the project to query sprints for (auto-detected if not provided)'),
+    .describe('The ID of the project (auto-detected if not provided)'),
   
-  status: z.enum(['active', 'completed', 'planning', 'all'])
+  status: z.enum(['all', 'active', 'completed', 'planned'])
     .default('active')
-    .describe('Filter sprints by status - defaults to active sprints'),
+    .describe('Filter sprints by status'),
   
   limit: z.number()
     .int('Limit must be a whole number')
-    .positive('Limit must be positive')
-    .max(50)
+    .min(1, 'Limit must be at least 1')
+    .max(50, 'Limit cannot exceed 50')
     .default(10)
     .describe('Maximum number of sprints to return')
 });
 
+const sprintMetricsSchema = z.object({
+  sprint_id: z.number()
+    .int('Sprint ID must be a whole number')
+    .positive('Sprint ID must be a positive integer')
+    .describe('The ID of the sprint to analyze'),
+  
+  include_team_metrics: z.boolean()
+    .default(true)
+    .describe('Whether to include team performance metrics'),
+});
+
+// Import shared utilities
+import { requestWithAuth, getCurrentProjectContext, type AuthContext } from '../../utils';
+
 /**
- * Tool for accessing sprint information and automatically detecting active sprints
+ * Tool for accessing sprint information including current active sprint details
  */
 export const getSprintInfoTool = tool({
   description: `Access sprint information including current active sprint details. Automatically detects the active sprint 
     and provides sprint ID, name, dates, and status. Use this tool to get sprint context before performing other analyses.`,
+
   inputSchema: sprintAccessSchema,
+
   execute: async (input, { experimental_context }) => {
     try {
       const validated = sprintAccessSchema.parse(input);
@@ -41,7 +58,7 @@ export const getSprintInfoTool = tool({
       let projectName = '';
       
       if (!projectId) {
-        const projectContext = await getCurrentProjectContext(experimental_context);
+        const projectContext = await getCurrentProjectContext(experimental_context as AuthContext);
         if (!projectContext) {
           return `Unable to determine the current project context. Please provide a project_id or ensure you're working within a project.`;
         }
@@ -53,7 +70,7 @@ export const getSprintInfoTool = tool({
 
       // Build query parameters
       const queryParams = new URLSearchParams({
-        project_id: projectId.toString(),
+        project_id: projectId!.toString(),
         limit: validated.limit.toString()
       });
 
@@ -62,17 +79,17 @@ export const getSprintInfoTool = tool({
       }
 
       // Get sprints
-      const sprintsResponse = await makeAuthenticatedRequest(
+      const sprintsResponse = await requestWithAuth(
         `/sprints/?${queryParams.toString()}`,
         { method: 'GET' },
-        experimental_context
+        experimental_context as AuthContext
       );
 
       if (sprintsResponse.error) {
         return `Failed to retrieve sprint information: ${sprintsResponse.error}`;
       }
 
-      const sprints = sprintsResponse.data || [];
+      const sprints = (sprintsResponse.data as any[]) || [];
 
       if (sprints.length === 0) {
         return `No sprints found for ${projectName || `project ${projectId}`} with status: ${validated.status}`;
@@ -90,9 +107,9 @@ export const getSprintInfoTool = tool({
         const isActive = sprint.status === 'active' || sprint.status === 'in_progress';
         
         return `${isActive ? '🎯 **ACTIVE**' : '📋'} **${sprint.sprint_name || sprint.sprintName}** (ID: ${sprint.id || sprint.sprint_id})
-- Status: ${sprint.status}
-- Duration: ${startDate.toLocaleDateString()} - ${endDate.toLocaleDateString()}
-- Sprint Goal: ${sprint.sprint_goal || sprint.goal || 'Not specified'}`;
+-- Status: ${sprint.status}
+-- Duration: ${startDate.toLocaleDateString()} - ${endDate.toLocaleDateString()}
+-- Sprint Goal: ${sprint.sprint_goal || sprint.goal || 'Not specified'}`;
       }).join('\n\n');
 
       const report = `# Sprint Information - ${projectName || `Project ${projectId}`}
@@ -104,12 +121,12 @@ ${sprintInfo}
 
 ${activeSprint ? `
 ## Current Active Sprint Details
-- **Sprint ID:** ${activeSprint.id || activeSprint.sprint_id}
-- **Sprint Name:** ${activeSprint.sprint_name || activeSprint.sprintName}
-- **Status:** ${activeSprint.status}
-- **Start Date:** ${new Date(activeSprint.start_date || activeSprint.startDate).toLocaleDateString()}
-- **End Date:** ${new Date(activeSprint.end_date || activeSprint.endDate).toLocaleDateString()}
-- **Sprint Goal:** ${activeSprint.sprint_goal || activeSprint.goal || 'Not specified'}
+-- **Sprint ID:** ${activeSprint.id || activeSprint.sprint_id}
+-- **Sprint Name:** ${activeSprint.sprint_name || activeSprint.sprintName}
+-- **Status:** ${activeSprint.status}
+-- **Start Date:** ${new Date(activeSprint.start_date || activeSprint.startDate).toLocaleDateString()}
+-- **End Date:** ${new Date(activeSprint.end_date || activeSprint.endDate).toLocaleDateString()}
+-- **Sprint Goal:** ${activeSprint.sprint_goal || activeSprint.goal || 'Not specified'}
 
 *This active sprint will be used automatically for burndown analysis and velocity calculations.*
 ` : validated.status === 'active' ? '\n⚠️ **No active sprint found** - Create and start a sprint to enable automatic analysis.' : ''}
@@ -126,42 +143,44 @@ ${activeSprint ? `
 });
 
 /**
- * Tool for comprehensive sprint health analysis and monitoring
+ * Tool for analyzing current sprint health with comprehensive metrics
  */
 export const analyzeSprintHealthTool = tool({
   description: `Analyze current sprint health with comprehensive metrics including burndown data, velocity tracking, 
     and team performance indicators. Use this tool to assess sprint progress, detect anomalies, and provide 
     data-driven recommendations to the Scrum Master.`,
+
   inputSchema: sprintMetricsSchema,
+
   execute: async (input, { experimental_context }) => {
     try {
       const validated = sprintMetricsSchema.parse(input);
       console.log('Analyzing sprint health for sprint:', validated.sprint_id);
 
       // Get sprint details
-      const sprintResponse = await makeAuthenticatedRequest(
+      const sprintResponse = await requestWithAuth(
         `/sprints/${validated.sprint_id}`,
         { method: 'GET' },
-        experimental_context
+        experimental_context as AuthContext
       );
 
       if (sprintResponse.error) {
         return `Failed to retrieve sprint details: ${sprintResponse.error}`;
       }
 
-      const sprint = sprintResponse.data;
+      const sprint = sprintResponse.data as any;
 
       // Get sprint backlog and statistics
       const [backlogResponse, statsResponse] = await Promise.all([
-        makeAuthenticatedRequest(
+        requestWithAuth(
           `/sprints/${validated.sprint_id}/backlog`,
           { method: 'GET' },
-          experimental_context
+          experimental_context as AuthContext
         ),
-        makeAuthenticatedRequest(
+        requestWithAuth(
           `/sprints/${validated.sprint_id}/statistics`,
           { method: 'GET' },
-          experimental_context
+          experimental_context as AuthContext
         )
       ]);
 
@@ -169,8 +188,8 @@ export const analyzeSprintHealthTool = tool({
         return `Failed to retrieve sprint backlog: ${backlogResponse.error}`;
       }
 
-      const backlogItems = backlogResponse.data || [];
-      const stats = statsResponse.error ? {} : (statsResponse.data || {});
+      const backlogItems = (backlogResponse.data as any[]) || [];
+      const stats = statsResponse.error ? {} : (statsResponse.data as any) || {};
 
       // Calculate sprint progress metrics
       const totalItems = backlogItems.length;
@@ -183,7 +202,7 @@ export const analyzeSprintHealthTool = tool({
         .filter((item: any) => item.status === 'done')
         .reduce((sum: number, item: any) => sum + (item.story_point || 0), 0);
 
-      // Calculate sprint timeline - handle both field name formats
+      // Calculate sprint timeline
       const sprintStartDate = sprint.start_date || sprint.startDate;
       const sprintEndDate = sprint.end_date || sprint.endDate;
       
@@ -229,59 +248,35 @@ export const analyzeSprintHealthTool = tool({
       }
 
       // Generate comprehensive health report
-      const healthScore = Math.max(0, Math.min(100, 
-        (actualProgress * 0.4) + 
-        (Math.max(0, 100 + progressDelta) * 0.3) + 
-        (Math.max(0, 100 - (inProgressItems / totalItems * 100)) * 0.3)
-      ));
+      const healthReport = `# Sprint Health Analysis - ${sprint.sprint_name || sprint.sprintName}
 
-      const healthStatus = healthScore >= 80 ? 'Excellent' : 
-                          healthScore >= 60 ? 'Good' : 
-                          healthScore >= 40 ? 'At Risk' : 'Critical';
-
-      const report = `# Sprint Health Analysis - ${sprint.sprint_name}
-
-## Overall Health Score: ${healthScore.toFixed(1)}/100 (${healthStatus})
-
-### Sprint Overview
-- **Sprint Goal:** ${sprint.sprint_goal || 'Not specified'}
-${statsResponse.error ? '- **Note:** Advanced statistics temporarily unavailable' : ''}
-- **Duration:** ${sprintStart.toLocaleDateString()} - ${sprintEnd.toLocaleDateString()}
+## Sprint Overview
+- **Sprint ID:** ${sprint.id || sprint.sprint_id}
 - **Status:** ${sprint.status}
-- **Time Progress:** ${progressPercentage.toFixed(1)}% elapsed
+- **Duration:** ${sprintStart.toLocaleDateString()} - ${sprintEnd.toLocaleDateString()}
+- **Sprint Goal:** ${sprint.sprint_goal || sprint.goal || 'Not specified'}
+- **Time Progress:** ${progressPercentage.toFixed(1)}% complete
 
-### Progress Metrics
-- **Items Completed:** ${completedItems}/${totalItems} (${actualProgress.toFixed(1)}%)
-- **Story Points Completed:** ${completedStoryPoints}/${totalStoryPoints} (${storyPointProgress.toFixed(1)}%)
-- **Items In Progress:** ${inProgressItems}
-- **Items Remaining:** ${todoItems}
+## Progress Metrics
+- **Items:** ${completedItems}/${totalItems} completed (${actualProgress.toFixed(1)}%)
+- **Story Points:** ${completedStoryPoints}/${totalStoryPoints} completed (${storyPointProgress.toFixed(1)}%)
+- **Work Distribution:**
+  - ✅ Done: ${completedItems} items
+  - 🔄 In Progress: ${inProgressItems} items
+  - 📋 Todo: ${todoItems} items
 
-### Work Distribution
-${backlogItems.map((item: any, index: number) => {
-  const statusDisplay = item.status.replace('_', ' ').split(' ').map((word: string) => 
-    word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
-  ).join(' ');
-  const priorityDisplay = item.priority.charAt(0).toUpperCase() + item.priority.slice(1).toLowerCase();
-  
-  return `${index + 1}. **${item.title}** (${item.story_point || 0} pts)
-   - Status: ${statusDisplay} | Priority: ${priorityDisplay}`;
-}).join('\n')}
+## Health Assessment
+${issues.length > 0 ? `
+### ⚠️ Issues Detected
+${issues.map(issue => `- ${issue}`).join('\n')}
 
-${issues.length > 0 ? `### 🚨 Issues Detected
-${issues.map(issue => `- ${issue}`).join('\n')}` : '### ✅ No Critical Issues Detected'}
+### 💡 Recommendations
+${recommendations.map(rec => `- ${rec}`).join('\n')}
+` : '✅ Sprint appears to be on track with no major issues detected.'}
 
-${recommendations.length > 0 ? `### 💡 Recommendations
-${recommendations.map(rec => `- ${rec}`).join('\n')}` : ''}
+**Analysis Date:** ${new Date().toLocaleString()}`;
 
-### Next Actions
-- Review progress in next Daily Scrum
-- Address any impediments blocking in-progress items
-- Consider scope adjustment if timeline risk persists
-- Schedule retrospective items based on identified patterns
-
-**Last Updated:** ${now.toLocaleString()}`;
-
-      return report;
+      return healthReport;
 
     } catch (error) {
       console.error('Error in analyzeSprintHealthTool:', error);

@@ -16,6 +16,8 @@ import {
   formatStatus 
 } from './formatting';
 import { documentationUtils } from './documentation';
+import { getCurrentProjectContext, getProjectById } from './project';
+import { getUserTimezoneAndFormatDatetime, simpleToISO } from './datetime';
 
 // HTTP utilities
 export { requestWithAuth, getApiBaseUrl } from './http';
@@ -36,6 +38,12 @@ export * from './web-search';
 // Documentation utilities (shared across all agents)
 export * from './documentation';
 
+// Project utilities
+export { getCurrentProjectContext, getProjectById } from './project';
+
+// DateTime utilities
+export * from './datetime';
+
 // Aggregate utils object for easy access
 export const utils = {
   // HTTP
@@ -51,6 +59,14 @@ export const utils = {
   
   // Documentation
   documentation: documentationUtils,
+  
+  // Project
+  getCurrentProjectContext,
+  getProjectById,
+  
+  // DateTime
+  getUserTimezoneAndFormatDatetime,
+  simpleToISO,
   
   // Formatting helpers
   formatPercentage,

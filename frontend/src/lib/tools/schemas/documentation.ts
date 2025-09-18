@@ -243,3 +243,4 @@ export type SearchDocumentationByFieldInput = z.infer<typeof searchDocumentation
 export type SearchDocumentationMultiFieldInput = z.infer<typeof searchDocumentationMultiFieldSchema>;
 export type GetProjectUsersInput = z.infer<typeof getProjectUsersSchema>;
 export type GetCurrentUserInput = z.infer<typeof getCurrentUserSchema>;
+

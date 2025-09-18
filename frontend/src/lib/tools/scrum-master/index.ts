@@ -6,7 +6,7 @@ import {
   manageMeetingAgendaTool,
   manageMeetingActionItemsTool
 } from './meetings';
-import { documentationTools } from '../documentation';
+import { documentationTools } from '../utils/documentation';
 
 // Create meeting management tools aggregate
 const meetingManagementTools = {

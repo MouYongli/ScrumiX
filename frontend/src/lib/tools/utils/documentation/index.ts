@@ -1,19 +1,29 @@
 /**
  * Main documentation tools export
- * Aggregates all documentation utilities for easy import
+ * Aggregates all documentation utilities and AI tools for easy import
  */
 
-// CRUD operations
+// Import AI tools from the main documentation module
+import {
+  createDocumentationTool,
+  getDocumentationTool,
+  getDocumentationByIdTool,
+  updateDocumentationTool,
+  deleteDocumentationTool,
+  getProjectUsersTool,
+  getCurrentUserTool
+} from '../../documentation';
+
+// Import semantic search tools
+import { semanticDocumentationTools } from '../../semantic-documentation-search';
+
+// Export all functions from individual modules
 export * from './crud';
-
-// User management
 export * from './user-management';
-
-// Semantic search
 export * from './semantic-search';
 
-// Re-export commonly used functions
-export {
+// Import the actual utility functions
+import {
   createDocumentation,
   getDocumentation,
   getDocumentationById,
@@ -23,22 +33,17 @@ export {
   createDocumentationSummary
 } from './crud';
 
-export {
+import {
   getCurrentUser,
   getProjectUsers,
   findUserByName,
-  findUsersByNames,
-  formatUserInfo,
-  formatUserList,
-  validateAuthorIds
+  formatUserList
 } from './user-management';
 
-export {
-  documentationSearchWithAuth,
-  formatDocumentationSearchResults,
+import {
   searchDocumentationByField,
   searchDocumentationMultiField,
-  getSearchSuggestions
+  formatDocumentationSearchResults
 } from './semantic-search';
 
 // Documentation utilities aggregate object for easy tool integration
@@ -51,9 +56,9 @@ export const documentationUtils = {
   delete: deleteDocumentation,
   
   // User management
-  getCurrentUser,
-  getProjectUsers,
-  findUserByName,
+  getCurrentUser: getCurrentUser,
+  getProjectUsers: getProjectUsers,
+  findUserByName: findUserByName,
   
   // Search
   searchByField: searchDocumentationByField,
@@ -62,6 +67,29 @@ export const documentationUtils = {
   // Formatting
   formatType: formatDocumentationType,
   formatSummary: createDocumentationSummary,
-  formatUserList,
+  formatUserList: formatUserList,
   formatSearchResults: formatDocumentationSearchResults
 };
+
+/**
+ * Complete documentation toolkit - AI tools for ALL agents
+ * Every agent can create any type of documentation
+ */
+export const documentationTools = {
+  // CRUD Operations - Available to ALL agents
+  createDocumentation: createDocumentationTool,
+  getDocumentation: getDocumentationTool,
+  getDocumentationById: getDocumentationByIdTool,
+  updateDocumentation: updateDocumentationTool,
+  deleteDocumentation: deleteDocumentationTool,
+  
+  // User Management Operations - Available to ALL agents
+  getProjectUsers: getProjectUsersTool,
+  getCurrentUser: getCurrentUserTool,
+  
+  // Semantic Search Operations - Available to ALL agents
+  searchDocumentationByField: semanticDocumentationTools.searchDocumentationByField,
+  searchDocumentationMultiField: semanticDocumentationTools.searchDocumentationMultiField
+};
+
+export type DocumentationTools = typeof documentationTools;
