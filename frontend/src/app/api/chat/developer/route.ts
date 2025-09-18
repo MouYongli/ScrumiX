@@ -1,10 +1,8 @@
 import { streamText, stepCountIs, convertToModelMessages, type UIMessage } from 'ai';
 import { gateway, getAgentModelConfig } from '@/lib/ai-gateway';
 import { selectModel } from '@/lib/adaptive-models';
-import { semanticSprintTools } from '@/lib/tools/semantic-sprint-management';
-import { developerSprintTools } from '@/lib/tools/developer-sprint-management';
-import { documentationTools } from '@/lib/tools/documentation';
-import { getWebSearchToolsForModel } from '@/lib/tools/web-search';
+import { developerTools } from '@/lib/tools/developer';
+import { getWebSearchToolsForModel } from '@/lib/tools/utils/web-search';
 import { chatAPI } from '@/lib/chat-api';
 
 // Developer AI Agent System Prompt
@@ -300,34 +298,8 @@ export async function POST(req: Request) {
         messages: modelMessages,
         temperature: modelConfig.temperature,
         tools: {
-          // Core Developer Sprint Tools (CRUD Operations)
-          getProjectSprints: developerSprintTools.getProjectSprints,
-          getCurrentActiveSprint: developerSprintTools.getCurrentActiveSprint,
-          reviewSprintBacklog: developerSprintTools.reviewSprintBacklog,
-          createSprintBacklogItem: developerSprintTools.createSprintBacklogItem,
-          updateSprintBacklogItem: developerSprintTools.updateSprintBacklogItem,
-          deleteSprintBacklogItem: developerSprintTools.deleteSprintBacklogItem,
-          getBacklogItems: developerSprintTools.getBacklogItems,
-          semanticSearchSprints: developerSprintTools.semanticSearchSprints,
-          
-          // Semantic Search Tools for Sprint Management
-          semanticSearchSprint: semanticSprintTools.semanticSearchSprint,
-          keywordSearchSprint: semanticSprintTools.keywordSearchSprint,
-          hybridSearchSprint: semanticSprintTools.hybridSearchSprint,
-          semanticSearchAvailableItems: semanticSprintTools.semanticSearchAvailableItems,
-          
-          // Task Management Tools
-          createTaskForBacklogItem: developerSprintTools.createTaskForBacklogItem,
-          getSprintTasks: developerSprintTools.getSprintTasks,
-          updateTask: developerSprintTools.updateTask,
-          deleteTask: developerSprintTools.deleteTask,
-          
-          // Task Semantic Search Tools
-          semanticSearchTasks: developerSprintTools.semanticSearchTasks,
-          findSimilarTasks: developerSprintTools.findSimilarTasks,
-          
-          // Technical Documentation Tools
-          ...documentationTools,
+          // All Developer tools from the new modular structure
+          ...developerTools,
           // Web Search Tools (native for OpenAI/Gemini)
           ...getWebSearchToolsForModel(modelToUse, webSearchEnabled),
         },
@@ -401,25 +373,8 @@ export async function POST(req: Request) {
         messages: modelMessages,
         temperature: modelConfig.temperature,
         tools: {
-          getProjectSprints: developerSprintTools.getProjectSprints,
-          getCurrentActiveSprint: developerSprintTools.getCurrentActiveSprint,
-          reviewSprintBacklog: developerSprintTools.reviewSprintBacklog,
-          createSprintBacklogItem: developerSprintTools.createSprintBacklogItem,
-          updateSprintBacklogItem: developerSprintTools.updateSprintBacklogItem,
-          deleteSprintBacklogItem: developerSprintTools.deleteSprintBacklogItem,
-          getBacklogItems: developerSprintTools.getBacklogItems,
-          semanticSearchSprints: developerSprintTools.semanticSearchSprints,
-          semanticSearchSprint: semanticSprintTools.semanticSearchSprint,
-          keywordSearchSprint: semanticSprintTools.keywordSearchSprint,
-          hybridSearchSprint: semanticSprintTools.hybridSearchSprint,
-          semanticSearchAvailableItems: semanticSprintTools.semanticSearchAvailableItems,
-          createTaskForBacklogItem: developerSprintTools.createTaskForBacklogItem,
-          getSprintTasks: developerSprintTools.getSprintTasks,
-          updateTask: developerSprintTools.updateTask,
-          deleteTask: developerSprintTools.deleteTask,
-          semanticSearchTasks: developerSprintTools.semanticSearchTasks,
-          findSimilarTasks: developerSprintTools.findSimilarTasks,
-          ...documentationTools,
+          // All Developer tools from the new modular structure
+          ...developerTools,
           ...getWebSearchToolsForModel(modelToUse, webSearchEnabled),
         },
         toolChoice: 'auto',
