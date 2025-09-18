@@ -660,3 +660,133 @@ async def semantic_search_sprints(
     except Exception as e:
         logger.error(f"Error in sprint semantic search: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@router.get("/sprints/{sprint_id}/similar")
+async def find_similar_sprints(
+    sprint_id: int,
+    limit: int = Query(5, ge=1, le=10, description="Maximum number of similar sprints"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Find sprints similar to a given sprint based on semantic similarity.
+    Useful for AI agents to discover sprints with similar goals or themes.
+    """
+    try:
+        from ..models.sprint import Sprint
+        
+        # Get the source sprint
+        source_sprint = db.query(Sprint).filter(Sprint.id == sprint_id).first()
+        if not source_sprint:
+            raise HTTPException(status_code=404, detail="Sprint not found")
+        
+        # Check user access to the project
+        if not user_project_crud.check_user_access(db, user_id=current_user.id, project_id=source_sprint.project_id):
+            raise HTTPException(status_code=403, detail="Access denied to this project")
+        
+        # Get all other sprints from the same project (excluding the source sprint)
+        other_sprints = db.query(Sprint).filter(
+            Sprint.project_id == source_sprint.project_id,
+            Sprint.id != sprint_id
+        ).all()
+        
+        if not other_sprints:
+            return {
+                "source_sprint": {
+                    "id": source_sprint.id,
+                    "sprint_name": source_sprint.sprint_name,
+                    "sprint_goal": source_sprint.sprint_goal,
+                    "status": source_sprint.status.value,
+                    "start_date": source_sprint.start_date.isoformat(),
+                    "end_date": source_sprint.end_date.isoformat(),
+                    "sprint_capacity": source_sprint.sprint_capacity,
+                    "project_id": source_sprint.project_id
+                },
+                "similar_sprints": []
+            }
+        
+        # Prepare source sprint content for embedding
+        source_content = f"{source_sprint.sprint_name or ''} {source_sprint.sprint_goal or ''}".strip()
+        if not source_content:
+            return {
+                "source_sprint": {
+                    "id": source_sprint.id,
+                    "sprint_name": source_sprint.sprint_name,
+                    "sprint_goal": source_sprint.sprint_goal,
+                    "status": source_sprint.status.value,
+                    "start_date": source_sprint.start_date.isoformat(),
+                    "end_date": source_sprint.end_date.isoformat(),
+                    "sprint_capacity": source_sprint.sprint_capacity,
+                    "project_id": source_sprint.project_id
+                },
+                "similar_sprints": []
+            }
+        
+        # Generate source embedding
+        source_embedding = await embedding_service.generate_embedding(source_content)
+        if not source_embedding:
+            raise HTTPException(status_code=500, detail="Failed to generate source sprint embedding")
+        
+        # Calculate similarities with other sprints
+        similarities = []
+        for sprint in other_sprints:
+            # Prepare sprint content for embedding
+            content = f"{sprint.sprint_name or ''} {sprint.sprint_goal or ''}".strip()
+            if content:
+                # Generate content embedding
+                content_embedding = await embedding_service.generate_embedding(content)
+                if content_embedding:
+                    # Calculate cosine similarity
+                    similarity = embedding_service.calculate_cosine_similarity(source_embedding, content_embedding)
+                    if similarity >= 0.5:  # Minimum threshold for sprint similarity
+                        similarities.append({
+                            'sprint': sprint,
+                            'similarity': similarity
+                        })
+        
+        # Sort by similarity score
+        similarities.sort(key=lambda x: x['similarity'], reverse=True)
+        
+        # Limit results
+        similarities = similarities[:limit]
+        
+        # Format response
+        similar_sprints = []
+        for item in similarities:
+            sprint = item['sprint']
+            similar_sprints.append({
+                'id': sprint.id,
+                'sprint_name': sprint.sprint_name,
+                'sprint_goal': sprint.sprint_goal,
+                'status': sprint.status.value,
+                'start_date': sprint.start_date.isoformat(),
+                'end_date': sprint.end_date.isoformat(),
+                'sprint_capacity': sprint.sprint_capacity,
+                'project_id': sprint.project_id,
+                'created_at': sprint.created_at.isoformat(),
+                'updated_at': sprint.updated_at.isoformat(),
+                'similarity': item['similarity']
+            })
+        
+        return {
+            "source_sprint": {
+                "id": source_sprint.id,
+                "sprint_name": source_sprint.sprint_name,
+                "sprint_goal": source_sprint.sprint_goal,
+                "status": source_sprint.status.value,
+                "start_date": source_sprint.start_date.isoformat(),
+                "end_date": source_sprint.end_date.isoformat(),
+                "sprint_capacity": source_sprint.sprint_capacity,
+                "project_id": source_sprint.project_id,
+                "created_at": source_sprint.created_at.isoformat(),
+                "updated_at": source_sprint.updated_at.isoformat()
+            },
+            "similar_sprints": similar_sprints
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error finding similar sprints: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error")

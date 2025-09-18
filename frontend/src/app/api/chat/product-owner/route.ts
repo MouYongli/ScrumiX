@@ -1,11 +1,8 @@
 import { streamText, stepCountIs, convertToModelMessages, type UIMessage } from 'ai';
-import { backlogManagementTools } from '@/lib/tools/backlog-management';
-import { sprintManagementTools } from '@/lib/tools/sprint-management';
-import { velocityManagementTools } from '@/lib/tools/velocity-management';
-import { documentationTools } from '@/lib/tools/documentation';
+import { productOwnerTools } from '@/lib/tools/product-owner';
 import { gateway, getAgentModelConfig } from '@/lib/ai-gateway';
 import { selectModel } from '@/lib/adaptive-models';
-import { getWebSearchToolsForModel } from '@/lib/tools/web-search';
+import { getWebSearchToolsForModel } from '@/lib/tools/utils/web-search';
 import { chatAPI } from '@/lib/chat-api';
 
 // Product Owner AI Agent System Prompt
@@ -106,6 +103,17 @@ TOOL USAGE GUIDELINES
    - Recommending next steps based on the changes made
    - Identifying any impacts on sprint planning or dependencies
 
+**For Deleting Backlog Items:**
+1. **First Time Request**: When user asks to delete an item, confirm whether they want to delete it permanently or cancel it recommending canceling
+   - This will show Scrum best practice recommendation to cancel instead of delete
+   - Present both options: cancel (recommended) vs permanent delete
+2. **User Chooses "Cancel"**: Use updateBacklogItem to set status: "cancelled" 
+3. **User Chooses "Delete" or "Delete Permanently"**: RESPECT their decision and use deleteBacklogItem with force_delete: true
+   - Keywords that indicate permanent deletion intent: "delete", "delete it", "delete permanently", "remove permanently", "delete from database"
+   - Do NOT override the user's explicit choice - if they say delete, then delete
+4. **CRITICAL**: Always respect the user's final decision after presenting the options
+5. **Never** ignore explicit user instructions about deletion vs cancellation
+
 **For Reviewing Backlog Items:**
 1. **Search appropriately** - use the right tool for the request
 2. **Give short answer** - show what you found in 2-3 sentences
@@ -127,6 +135,11 @@ TOOL USAGE GUIDELINES
 4. **Capacity Recommendations**: Provide specific story point ranges based on team's historical performance
 5. **Context Awareness**: Factor in team changes, complexity, and external factors when interpreting velocity data
 6. **Evidence-Based**: Always explain the reasoning behind capacity recommendations using actual velocity metrics
+7. **Velocity Query Handling**: 
+   - If user asks "What's the velocity?" (general question): Provide BOTH average velocity and latest sprint velocity by default
+   - If user asks specifically "What was the velocity of Sprint X?": Answer only for that specific sprint
+   - If user asks for "project velocity" or "team velocity": Focus on average velocity across completed sprints
+   - Always explain what the velocity numbers mean for sprint planning
 
 **Search Strategy Guidelines:**
 7. Use **hybrid search** as default - it finds the most comprehensive results
@@ -146,6 +159,8 @@ TOOL USAGE GUIDELINES
 13. Apply Scrum best practices in all backlog management activities
 14. Always consider the current backlog context when making recommendations
 15. Use backlog review data to inform better backlog item creation decisions
+16. **CRITICAL**: Always respect explicit user decisions after presenting options - if user says "delete" after being shown the cancel vs delete choice, then delete with force_delete: true
+17. **User Authority**: The Product Owner has final authority over backlog decisions - never override their explicit choices
 
 IMPORTANT: You must ALWAYS generate a text response after using any tool. Never end the conversation after tool execution without providing feedback to the user.
 
@@ -232,6 +247,8 @@ BOUNDARIES
 - Provide recommendations, structured outputs, and reasoning, not mandates
 - You ask the User for confirmation before taking any action towards database changes
 - Always use tools when appropriate to take concrete actions
+- **RESPECT USER AUTHORITY**: When the Product Owner makes an explicit choice (e.g., "delete it" vs "cancel it"), execute their decision without overriding it
+- **NEVER** ignore direct user instructions after presenting them with options
 
 
 BACKLOG REFINEMENT
@@ -414,10 +431,8 @@ OR
         system: contextualSystemPrompt,
         messages: modelMessages,
         tools: {
-          ...backlogManagementTools,
-          ...sprintManagementTools,
-          ...velocityManagementTools,
-          ...documentationTools,
+          // All Product Owner tools from the new modular structure
+          ...productOwnerTools,
           ...getWebSearchToolsForModel(modelToUse, webSearchEnabled),
         },
         temperature: modelConfig.temperature,
@@ -439,7 +454,19 @@ OR
         onFinish: async (finishResult) => {
           // Save assistant response after streaming completes
           try {
-            const assistantText = finishResult.text ?? '';
+            let assistantText = finishResult.text ?? '';
+            
+            // IMPORTANT: If no text was generated but tools were called, provide a fallback response
+            // This prevents empty responses when the AI model only calls tools without generating text
+            if (!assistantText.trim() && finishResult.steps && finishResult.steps.length > 0) {
+              // Check if any steps had tool calls
+              const hasToolCalls = finishResult.steps.some(step => 'toolCalls' in step && step.toolCalls && step.toolCalls.length > 0);
+              
+              if (hasToolCalls) {
+                assistantText = "I've completed the requested action using the available tools. The operation has been processed successfully.";
+                console.log('Product Owner Agent - Generated fallback response due to empty text after tool execution');
+              }
+            }
             
             await chatAPI.saveMessage(conversationId, {
               role: 'assistant',
@@ -459,7 +486,12 @@ OR
         },
       });
 
-      return result.toTextStreamResponse();
+      return result.toTextStreamResponse({
+        headers: {
+          'X-Message-ID': savedMessage.id || message.id,
+          'X-Original-Message-ID': message.id
+        }
+      });
 
     } else {
       // Handle legacy format for backward compatibility
@@ -518,10 +550,8 @@ OR
         system: contextualSystemPrompt,
         messages: modelMessages,
         tools: {
-          ...backlogManagementTools,
-          ...sprintManagementTools,
-          ...velocityManagementTools,
-          ...documentationTools,
+          // All Product Owner tools from the new modular structure
+          ...productOwnerTools,
           ...getWebSearchToolsForModel(modelToUse, webSearchEnabled),
         },
         temperature: modelConfig.temperature,

@@ -1,85 +1,119 @@
 # ScrumiX AI Tools Documentation
 
-This directory contains AI tools that enable intelligent agents to interact with the ScrumiX backend API and provide advanced Scrum management capabilities.
+This directory contains AI tools that enable intelligent agents to interact with the ScrumiX backend API and provide advanced Scrum management capabilities using a **modular, agent-focused architecture**.
 
-## Architecture Overview
+## **New Modular Architecture**
 
-The tools are built using the Vercel AI SDK 5 and follow a consistent pattern:
+The tools are organized by agent role and functionality, built using the Vercel AI SDK 5:
 
-1. **Schema Definition**: Zod schemas for input validation and type safety
-2. **Authentication Handling**: Secure cookie forwarding for API calls
-3. **API Integration**: Direct calls to ScrumiX backend endpoints
-4. **Rich Response Formatting**: Markdown-formatted responses with actionable insights
+```
+frontend/src/lib/tools/
+├── product-owner/           # Product Owner specific tools
+│   ├── backlog/            # Backlog management & semantic search
+│   └── sprint/             # Sprint management & velocity tools
+├── developer/              # Developer specific tools
+│   ├── sprint-backlog.ts   # Sprint backlog management
+│   ├── tasks.ts           # Task management
+│   ├── semantic-tasks.ts  # Task semantic search & hybrid search
+│   └── semantic-sprints.ts # Sprint semantic search & hybrid search
+├── scrum-master/           # Scrum Master specific tools
+│   └── core/              # Sprint analysis, meetings, retrospectives
+├── utils/                  # Shared utilities across all agents
+│   ├── documentation/     # Documentation CRUD & semantic search
+│   └── web-search.ts     # Native web search capabilities
+└── schemas/               # Centralized Zod schema definitions
+```
 
-## Available Tools
+### **Key Architectural Principles**
 
-### 1. Backlog Management Tools (`backlog-management.ts`)
+1. **Agent-Centric Organization**: Tools grouped by AI agent responsibilities
+2. **Modular Design**: Each module focuses on specific functionality
+3. **Shared Utilities**: Common tools available to all agents
+4. **Centralized Schemas**: Consistent validation across the system
+5. **Semantic Search Integration**: AI-powered search with hybrid algorithms
 
-Tools for the Product Owner agent to manage product backlogs.
+## **AI Agent Tools Overview**
 
-#### `createBacklogItemTool`
-- **Purpose**: Create new backlog items (epics, stories, bugs)
-- **Key Features**:
-  - Full validation with Zod schemas
-  - Automatic acceptance criteria creation
-  - Rich markdown responses with links
-  - Support for hierarchical backlog items
+### **Product Owner Agent**
+**Location**: `product-owner/`
 
-#### `getBacklogItemsTool`
-- **Purpose**: Retrieve and analyze current backlog state
-- **Key Features**:
-  - Advanced filtering by status, priority, type
-  - Search functionality across titles and descriptions
-  - Comprehensive statistics and summaries
-  - Support for pagination and large datasets
+#### **Backlog Management** (`backlog/`)
+- **Core CRUD Operations**: Create, read, update, delete backlog items
+- **Semantic Search**: AI-powered backlog discovery with hybrid search
+  - Semantic search using embeddings
+  - BM25 keyword search
+  - Hybrid search with Reciprocal Rank Fusion (RRF)
+  - Duplicate detection and similarity matching
 
-### 2. Scrum Master Tools (`scrum-master.ts`)
+#### **Sprint & Velocity Management** (`sprint/`)
+- **Sprint CRUD**: Complete sprint lifecycle management
+- **Velocity Analysis**: Historical velocity tracking and forecasting
+- **Semantic Sprint Search**: Find sprints by concept and meaning
 
-Comprehensive tools for the Scrum Master agent to monitor and facilitate Scrum processes.
+### **Developer Agent**
+**Location**: `developer/`
 
-#### `analyzeSprintHealthTool`
-- **Purpose**: Comprehensive sprint health analysis and monitoring
-- **Key Features**:
-  - Real-time progress tracking vs. timeline
-  - Work distribution analysis (WIP limits)
-  - Story point completion tracking
-  - Automated issue detection and recommendations
-  - Health scoring with actionable insights
+#### **Sprint Backlog Management**
+- **Sprint Focus**: Get current active sprint and backlog items
+- **Backlog Review**: Analyze and update sprint backlog items
+- **Task Integration**: Create and manage tasks for backlog items
 
-#### `scheduleEventTool`
-- **Purpose**: Schedule Scrum events with proper ceremony structure
-- **Key Features**:
-  - Support for all Scrum events (Planning, Daily, Review, Retrospective)
-  - Event-specific defaults and guidance
-  - Automated participant notifications
-  - Preparation checklists for each event type
+#### **Task Management**
+- **CRUD Operations**: Full task lifecycle management
+- **Sprint Integration**: Task-to-sprint relationship management
 
-#### `analyzeVelocityTool`
-- **Purpose**: Team velocity tracking and capacity planning
-- **Key Features**:
-  - Historical velocity analysis across multiple sprints
-  - Consistency scoring and trend detection
-  - Capacity forecasting for upcoming sprints
-  - Sprint-by-sprint detailed breakdowns
-  - Visual trend charts in ASCII format
+#### **Advanced Semantic Search**
+- **Task Search**: Find tasks by meaning, technology, or functionality
+- **Sprint Search**: Discover sprints by themes and goals
+- **Hybrid Algorithms**: Industry-standard search combining semantic + keyword
+- **Similarity Detection**: Find related tasks and potential duplicates
 
-#### `analyzeRetrospectivesTool`
-- **Purpose**: Retrospective analysis and team coaching
-- **Key Features**:
-  - Action item tracking and completion rates
-  - Pattern recognition across retrospectives
-  - Team engagement assessment
-  - Facilitation tips and improvement suggestions
-  - Recurring theme identification
+### **Scrum Master Agent**
+**Location**: `scrum-master/`
 
-#### `checkScrumComplianceTool`
-- **Purpose**: Scrum Guide compliance checking and deviation detection
-- **Key Features**:
-  - Comprehensive compliance scoring
-  - Missing ceremony detection
-  - Scope creep analysis
-  - Sprint consistency validation
-  - Automated recommendations for improvement
+#### **Sprint Analysis & Health Monitoring**
+
+- **Sprint Health Analysis**: Real-time progress tracking and issue detection
+- **Velocity Analysis**: Historical velocity tracking and capacity planning
+- **Meeting Management**: Schedule and manage Scrum ceremonies
+- **Retrospective Analysis**: Pattern recognition and team coaching
+- **Compliance Checking**: Scrum Guide adherence monitoring
+
+### **Shared Utilities**
+**Location**: `utils/`
+
+#### **Documentation Management** (`documentation/`)
+- **CRUD Operations**: Create, read, update, delete documentation
+- **Semantic Search**: AI-powered documentation discovery
+  - Field-specific search (title, description, content)
+  - Multi-field search with similarity scores
+  - BM25 keyword search
+  - Hybrid search with RRF
+- **User Management**: Author assignment and project user handling
+- **Type Support**: Sprint reviews, retrospectives, requirements, user guides
+
+#### **Web Search Integration** (`web-search.ts`)
+- **Native Search**: OpenAI and Google/Gemini native search tools
+- **Model-Specific**: Automatic tool selection based on AI model
+- **Fallback Support**: Graceful degradation for unsupported models
+
+## **Advanced Semantic Search Features**
+
+### **Hybrid Search Algorithm**
+All semantic search implementations now include industry-standard hybrid search:
+
+#### **Three Search Modes**:
+1. **Semantic Search**: AI embeddings for meaning-based discovery
+2. **BM25 Keyword Search**: Traditional keyword matching with intelligent scoring
+3. **Hybrid Search**: Combines both approaches using:
+   - **Reciprocal Rank Fusion (RRF)**: Industry standard (default)
+   - **Weighted Scoring**: Configurable semantic/keyword weights
+
+#### **Key Features**:
+- **Duplicate Detection**: Intelligent similarity matching
+- **Comprehensive Scoring**: Multiple similarity metrics
+- **Flexible Thresholds**: Adjustable similarity requirements
+- **Rich Formatting**: Detailed results with match percentages
 
 ## Tool Integration Pattern
 
@@ -136,29 +170,43 @@ Tools return rich markdown responses with:
 - **Visual Elements**: ASCII charts and progress indicators
 - **Contextual Links**: Deep links back to relevant UI sections
 
-## Schema Validation (`schemas.ts`)
+## **Centralized Schema Validation**
 
-All tool inputs are validated using Zod schemas that provide:
+**Location**: `schemas/`
 
+All tool inputs are validated using centralized Zod schemas organized by domain:
+
+- **`documentation.ts`**: Documentation CRUD and search schemas
+- **`semantic-backlog.ts`**: Backlog semantic search schemas  
+- **`semantic-task.ts`**: Task semantic search schemas
+- **`semantic-sprint.ts`**: Sprint semantic search schemas
+
+### **Schema Benefits**:
 - **Type Safety**: Full TypeScript type inference
 - **Runtime Validation**: Input sanitization and validation
-- **Error Messages**: Clear validation error messages
-- **Documentation**: Schema descriptions for AI understanding
+- **Consistent Validation**: Shared schemas across agents
+- **Clear Documentation**: Schema descriptions for AI understanding
 
-Example schema pattern:
+### **Example Schema Pattern**:
 ```typescript
-export const sprintHealthAnalysisSchema = z.object({
-  sprint_id: z.number()
-    .int('Sprint ID must be a whole number')
-    .positive('Sprint ID must be a positive integer')
-    .describe('The ID of the sprint to analyze'),
+// schemas/semantic-backlog.ts
+export const hybridSearchBacklogSchema = z.object({
+  query: z.string()
+    .min(1, 'Search query is required')
+    .describe('Search query combining semantic meaning and keyword matching'),
   
-  include_burndown: z.boolean()
+  semantic_weight: z.number()
+    .min(0.0, 'Weight must be between 0 and 1')
+    .max(1.0, 'Weight must be between 0 and 1')
+    .default(0.7)
+    .describe('Weight for semantic search (default: 0.7)'),
+  
+  use_rrf: z.boolean()
     .default(true)
-    .describe('Whether to include burndown chart data'),
+    .describe('Use Reciprocal Rank Fusion vs weighted scoring')
 });
 
-export type SprintHealthAnalysisInput = z.infer<typeof sprintHealthAnalysisSchema>;
+export type HybridSearchBacklogInput = z.infer<typeof hybridSearchBacklogSchema>;
 ```
 
 ## API Integration
@@ -196,40 +244,62 @@ The tools integrate with the following ScrumiX backend endpoints:
 5. **Insight Generation**: Apply business logic and detect patterns
 6. **Response Formatting**: Generate rich markdown with recommendations
 
-## Usage in AI Agents
+## **Usage in AI Agents**
 
-### Product Owner Agent
+### **Product Owner Agent**
 ```typescript
-import { backlogManagementTools } from '@/lib/tools/backlog-management';
+import { productOwnerTools } from '@/lib/tools/product-owner';
+import { getWebSearchToolsForModel } from '@/lib/tools/utils/web-search';
 
-const tools = {
-  ...backlogManagementTools,
-  // other tools
-};
-
-// Use in generateText or streamText
-const result = await generateText({
-  model: openai('gpt-4'),
-  tools: tools,
+const result = await streamText({
+  model: gateway(modelToUse),
+  tools: {
+    ...productOwnerTools,
+    ...getWebSearchToolsForModel(modelToUse, webSearchEnabled),
+  },
   messages: messages,
 });
 ```
 
-### Scrum Master Agent
+### **Developer Agent**
 ```typescript
-import { scrumMasterTools } from '@/lib/tools/scrum-master';
+import { developerTools } from '@/lib/tools/developer';
+import { getWebSearchToolsForModel } from '@/lib/tools/utils/web-search';
 
-const tools = {
-  ...scrumMasterTools,
-  // other tools
-};
-
-// Use in generateText or streamText
-const result = await generateText({
-  model: openai('gpt-4'),
-  tools: tools,
+const result = await streamText({
+  model: gateway(modelToUse),
+  tools: {
+    ...developerTools,
+    ...getWebSearchToolsForModel(modelToUse, webSearchEnabled),
+  },
   messages: messages,
 });
+```
+
+### **Scrum Master Agent**
+```typescript
+import { scrumMasterTools } from '@/lib/tools/scrum-master';
+import { documentationTools } from '@/lib/tools/utils/documentation';
+import { getWebSearchToolsForModel } from '@/lib/tools/utils/web-search';
+
+const result = await streamText({
+  model: gateway(modelToUse),
+  tools: {
+    ...scrumMasterTools,
+    ...documentationTools,
+    ...getWebSearchToolsForModel(modelToUse, webSearchEnabled),
+  },
+  messages: messages,
+});
+```
+
+### **Individual Tool Collections**
+```typescript
+// Import specific tool collections
+import { backlogTools, semanticBacklogManagementTools } from '@/lib/tools/product-owner/backlog';
+import { sprintTools, velocityTools } from '@/lib/tools/product-owner/sprint';
+import { semanticSearchTools, taskManagementTools } from '@/lib/tools/developer';
+import { documentationTools } from '@/lib/tools/utils/documentation';
 ```
 
 ## Best Practices
@@ -252,28 +322,86 @@ const result = await generateText({
 3. **Actionable Content**: Always include next steps or recommendations
 4. **Context Links**: Deep links to relevant UI sections when possible
 
-## Extension Guidelines
+## **Extension Guidelines**
 
-When adding new tools:
+When adding new tools to the modular architecture:
 
-1. **Follow the Pattern**: Use the established authentication and error handling patterns
-2. **Validate Inputs**: Create comprehensive Zod schemas
-3. **Rich Responses**: Format responses with markdown and actionable insights
-4. **Test Thoroughly**: Ensure proper error handling and edge case coverage
-5. **Document Well**: Update this README with new tool capabilities
+### **1. Choose the Right Location**
+- **Agent-Specific**: Place in appropriate agent folder (`product-owner/`, `developer/`, `scrum-master/`)
+- **Shared Utilities**: Place in `utils/` if used by multiple agents
+- **Schemas**: Always define schemas in `schemas/` folder
 
-## Security Considerations
+### **2. Follow Established Patterns**
+```typescript
+// Use centralized schemas
+import { myToolSchema } from '../schemas/my-domain';
 
-1. **Authentication**: All API calls require valid session cookies
-2. **Input Validation**: Zod schemas prevent injection attacks
-3. **Error Handling**: Avoid exposing sensitive information in error messages
-4. **Rate Limiting**: Respect backend rate limits and implement retries if needed
+// Use shared utilities
+import { requestWithAuth } from '../utils/http';
 
-## Performance Optimization
+// Follow consistent tool structure
+export const myTool = tool({
+  description: 'Clear, detailed description for AI understanding',
+  inputSchema: myToolSchema,
+  execute: async (input, { experimental_context }) => {
+    // Implementation
+  }
+});
+```
 
-1. **Parallel Requests**: Use Promise.all() for independent API calls
-2. **Data Caching**: Consider caching frequently accessed data
-3. **Response Streaming**: Use streaming for long-running analysis
-4. **Pagination**: Handle large datasets with proper pagination
+### **3. Implement Semantic Search**
+For new domains requiring search capabilities:
+- Create schemas for semantic, BM25, and hybrid search
+- Implement all three search modes for consistency
+- Include duplicate detection and rich formatting
+- Follow the pattern from existing semantic search implementations
 
-This tool architecture enables powerful AI agents that can provide intelligent, context-aware assistance for Scrum teams while maintaining security and performance standards.
+### **4. Maintain Modular Exports**
+```typescript
+// Individual tool exports
+export { myTool };
+
+// Tool collection exports  
+export const myToolCollection = {
+  myTool,
+  // other related tools
+};
+
+// Type definitions
+export type MyToolCollection = typeof myToolCollection;
+```
+
+## **Security & Performance**
+
+### **Security Considerations**
+1. **Authentication**: All API calls require valid session cookies via `requestWithAuth`
+2. **Input Validation**: Centralized Zod schemas prevent injection attacks
+3. **Error Handling**: Sanitized error messages protect sensitive information
+4. **Schema Validation**: Runtime validation ensures data integrity
+
+### **Performance Optimization**
+1. **Modular Loading**: Tools load only when needed by specific agents
+2. **Parallel Requests**: Use Promise.all() for independent API calls
+3. **Efficient Search**: Hybrid search algorithms optimize relevance vs. performance
+4. **Response Streaming**: Long-running analysis uses streaming responses
+5. **Centralized Utilities**: Shared code reduces bundle size
+
+## **Migration from Legacy**
+
+The new modular architecture replaces legacy monolithic files:
+
+### **Legacy → New Mapping**
+- `backlog-management.ts` → `product-owner/backlog/`
+- `sprint-management.ts` → `product-owner/sprint/`
+- `scrum-master.ts` → `scrum-master/core/`
+- `documentation.ts` → `utils/documentation/`
+- `schemas.ts` → `schemas/` (domain-specific files)
+
+### **Benefits of New Architecture**
+- **Agent-Focused**: Tools organized by AI agent responsibilities
+- **Advanced Search**: Industry-standard hybrid search algorithms
+- **Modular**: Import only what you need
+- * Maintainable**: Clear separation of concerns
+- * Scalable**: Easy to extend with new capabilities
+
+This modular architecture enables powerful, specialized AI agents while maintaining code organization, security, and performance standards.

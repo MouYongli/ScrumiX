@@ -29,7 +29,7 @@ import { usePathname } from 'next/navigation';
 import { ProjectAgent, ProjectAgentType, ChatMessage, AgentChatState, UIMessage } from '@/types/chat';
 import { getAgentModelConfig, AI_MODELS } from '@/lib/ai-gateway';
 import { getPreferredModel, setPreferredModel } from '@/lib/model-preferences';
-import { hasNativeWebSearch } from '@/lib/tools/web-search';
+import { hasNativeWebSearch } from '@/lib/tools/legacy/web-search';
 import { chatAPI, ChatConversation } from '@/lib/chat-api';
 import { nanoid } from 'nanoid';
 import ModelSelector from './ModelSelector';
@@ -44,7 +44,7 @@ const AGENTS: Record<ProjectAgentType, ProjectAgent> = {
     color: 'bg-emerald-500',
     accentColor: 'text-emerald-600 dark:text-emerald-400',
     expertise: ['User Stories', 'Backlog Prioritization', 'Acceptance Criteria', 'Stakeholder Management', 'Backlog Updates'],
-    defaultModel: getAgentModelConfig('product-owner').model
+    defaultModel: AI_MODELS.GEMINI_FLASH
   },
   'scrum-master': {
     id: 'scrum-master',
@@ -54,7 +54,7 @@ const AGENTS: Record<ProjectAgentType, ProjectAgent> = {
     color: 'bg-blue-500',
     accentColor: 'text-blue-600 dark:text-blue-400',
     expertise: ['Sprint Planning', 'Daily Standups', 'Retrospectives', 'Impediment Resolution'],
-    defaultModel: getAgentModelConfig('scrum-master').model
+    defaultModel: AI_MODELS.GEMINI_FLASH
   },
   'developer': {
     id: 'developer',
@@ -64,7 +64,7 @@ const AGENTS: Record<ProjectAgentType, ProjectAgent> = {
     color: 'bg-purple-500',
     accentColor: 'text-purple-600 dark:text-purple-400',
     expertise: ['Code Review', 'Technical Debt', 'Architecture', 'Best Practices'],
-    defaultModel: getAgentModelConfig('developer').model
+    defaultModel: AI_MODELS.GEMINI_FLASH
   }
 };
 
@@ -102,7 +102,7 @@ const ChatWidget: React.FC = () => {
       messages: [], 
       isTyping: false, 
       inputValue: '', 
-      selectedModel: getPreferredModel('product-owner'),
+      selectedModel: AI_MODELS.GEMINI_FLASH,
       loadingState: undefined,
       currentTool: undefined,
       pendingConfirmations: new Set(),
@@ -112,7 +112,7 @@ const ChatWidget: React.FC = () => {
       messages: [], 
       isTyping: false, 
       inputValue: '', 
-      selectedModel: getPreferredModel('scrum-master'),
+      selectedModel: AI_MODELS.GEMINI_FLASH,
       loadingState: undefined,
       currentTool: undefined,
       pendingConfirmations: new Set(),
@@ -122,7 +122,7 @@ const ChatWidget: React.FC = () => {
       messages: [], 
       isTyping: false, 
       inputValue: '', 
-      selectedModel: getPreferredModel('developer'),
+      selectedModel: AI_MODELS.GEMINI_FLASH,
       loadingState: undefined,
       currentTool: undefined,
       pendingConfirmations: new Set(),
@@ -382,14 +382,24 @@ const ChatWidget: React.FC = () => {
 
   const stopGeneration = (agentType: ProjectAgentType) => {
     const currentState = agentStates[agentType];
+    console.log('ChatWidget stop generation requested for agent:', agentType);
+    
+    // Abort any ongoing request
     if (currentState.abortController) {
+      console.log('ChatWidget aborting ongoing request...');
       currentState.abortController.abort();
-      updateAgentState(agentType, {
-        isStreaming: false,
-        isTyping: false,
-        abortController: undefined
-      });
     }
+    
+    // Force clear all loading states regardless of abort controller existence
+    updateAgentState(agentType, {
+      isStreaming: false,
+      isTyping: false,
+      loadingState: undefined,
+      currentTool: undefined,
+      abortController: undefined
+    });
+    
+    console.log('ChatWidget generation stopped and states cleared for agent:', agentType);
   };
 
   const copyToClipboard = async (messageId: string, content: string) => {
@@ -436,6 +446,7 @@ const ChatWidget: React.FC = () => {
     if (messageIndex === -1) return;
 
     try {
+      
       // Update the existing message in backend
       await chatAPI.updateMessage(messageId, editingContent.trim());
 
@@ -470,8 +481,31 @@ const ChatWidget: React.FC = () => {
       await regenerateConversationFromMessage(updatedMessages, updatedMessage);
     } catch (error) {
       console.error('Failed to save edited message:', error);
-      // Show error to user but don't clear editing state
-      alert('Failed to save edited message. Please try again.');
+      
+      // Check if this is a 404 error (message not found)
+      if (error instanceof Error && error.message.includes('404')) {
+        console.warn('ChatWidget - Message ID sync issue detected for message:', messageId);
+        
+        // Try to reload the conversation to get the latest message IDs
+        if (currentConversationId) {
+          try {
+            await loadConversation(currentConversationId);
+            alert('Message IDs were out of sync. Please try editing again.');
+          } catch (reloadError) {
+            console.error('Failed to reload conversation:', reloadError);
+            alert('Failed to save edited message due to synchronization issues. Please refresh the page and try again.');
+          }
+        } else {
+          alert('Failed to save edited message due to synchronization issues. Please refresh the page and try again.');
+        }
+      } else {
+        // Show generic error message for other errors
+        alert('Failed to save edited message. Please try again.');
+      }
+      
+      // Clear editing state
+      setEditingMessageId(null);
+      setEditingContent('');
     }
   };
 
@@ -610,6 +644,61 @@ const ChatWidget: React.FC = () => {
             loadingState: hasStartedGenerating ? 'generating' : (webSearchEnabled ? 'searching' : 'thinking')
           });
         }
+        
+        // Stream completed successfully - ensure final state cleanup for regeneration
+        console.log('ChatWidget regeneration stream completed, performing final cleanup');
+        
+        // Make sure we have a final message if we received any content
+        if (aiResponse.trim()) {
+          const finalMessage: ChatMessage = {
+            id: messageId,
+            content: aiResponse.trim(),
+            timestamp: new Date().toISOString(),
+            sender: 'agent',
+            agentType: activeAgent
+          };
+
+          const needsConfirmation = isConfirmationRequest(finalMessage.content);
+          const finalPendingConfirmations = needsConfirmation 
+            ? new Set([...(currentState.pendingConfirmations || new Set()), finalMessage.id])
+            : currentState.pendingConfirmations;
+
+          updateAgentState(activeAgent, {
+            messages: [...messages, finalMessage],
+            isTyping: false,
+            loadingState: undefined,
+            currentTool: undefined,
+            isStreaming: false,
+            abortController: undefined,
+            pendingConfirmations: finalPendingConfirmations
+          });
+          
+          // Save the final message to database
+          try {
+            await chatAPI.saveMessage(conversationId, {
+              id: messageId,
+              role: 'assistant',
+              parts: [{ type: 'text', text: finalMessage.content }]
+            });
+            console.log(`ChatWidget regeneration saved final AI response (${finalMessage.content.length} chars) to database`);
+          } catch (saveError) {
+            console.warn('Failed to save ChatWidget regeneration final AI message to database:', saveError);
+          }
+        } else {
+          // No content received, just clean up state
+          updateAgentState(activeAgent, {
+            messages: [...messages],
+            isTyping: false,
+            loadingState: undefined,
+            currentTool: undefined,
+            isStreaming: false,
+            abortController: undefined
+          });
+        }
+        
+        // Return early to avoid any potential duplicate processing
+        return;
+        
       } catch (streamError) {
         // Handle streaming errors (including aborts)
         if (streamError instanceof Error && streamError.name === 'AbortError') {
@@ -1034,6 +1123,29 @@ const ChatWidget: React.FC = () => {
         throw new Error(`API Error: ${response.status}`);
       }
 
+      // Get the backend-generated message ID from response headers
+      const backendMessageId = response.headers.get('X-Message-ID');
+      const originalMessageId = response.headers.get('X-Original-Message-ID');
+      
+      // Keep minimal logging for production debugging if needed
+      if (backendMessageId && originalMessageId && backendMessageId !== originalMessageId) {
+        console.log('ChatWidget - Syncing message ID:', originalMessageId, '→', backendMessageId);
+      }
+      
+      // Update the user message ID in state if we got a new ID from backend
+      if (backendMessageId && originalMessageId && backendMessageId !== originalMessageId) {
+        // Get the current messages (which includes the user message we just added)
+        const currentMessages = agentStates[activeAgent].messages;
+        updateAgentState(activeAgent, {
+          messages: currentMessages.map(msg => 
+            msg.id === originalMessageId ? { ...msg, id: backendMessageId } : msg
+          )
+        });
+        
+        // Also update the userMessage reference for consistency
+        userMessage.id = backendMessageId;
+      }
+
       // Process streaming response
       const reader = response.body?.getReader();
       if (!reader) {
@@ -1132,6 +1244,58 @@ const ChatWidget: React.FC = () => {
             pendingConfirmations: newPendingConfirmations
           });
         }
+        
+        // Stream completed successfully - ensure final state cleanup
+        console.log('ChatWidget stream completed, performing final cleanup');
+        
+        // Make sure we have a final message if we received any content
+        if (aiResponse.trim()) {
+          const finalMessage: ChatMessage = {
+            id: messageId,
+            content: aiResponse.trim(),
+            timestamp: new Date().toISOString(),
+            sender: 'agent',
+            agentType: activeAgent
+          };
+
+          const needsConfirmation = isConfirmationRequest(finalMessage.content);
+          const finalPendingConfirmations = needsConfirmation 
+            ? new Set([...(currentState.pendingConfirmations || new Set()), finalMessage.id])
+            : currentState.pendingConfirmations;
+
+          updateAgentState(activeAgent, {
+            messages: [...currentState.messages, userMessage, finalMessage],
+            isTyping: false,
+            loadingState: undefined,
+            currentTool: undefined,
+            isStreaming: false,
+            abortController: undefined,
+            pendingConfirmations: finalPendingConfirmations
+          });
+          
+          // Save the final message to database
+          try {
+            await chatAPI.saveMessage(conversationId, {
+              id: messageId,
+              role: 'assistant',
+              parts: [{ type: 'text', text: finalMessage.content }]
+            });
+            console.log(`ChatWidget saved final AI response (${finalMessage.content.length} chars) to database`);
+          } catch (saveError) {
+            console.warn('Failed to save final AI message to database:', saveError);
+          }
+        } else {
+          // No content received, just clean up state
+          updateAgentState(activeAgent, {
+            messages: [...currentState.messages, userMessage],
+            isTyping: false,
+            loadingState: undefined,
+            currentTool: undefined,
+            isStreaming: false,
+            abortController: undefined
+          });
+        }
+        
       } catch (streamError) {
         // Handle streaming errors (including aborts)
         if (streamError instanceof Error && streamError.name === 'AbortError') {
@@ -1421,7 +1585,13 @@ const ChatWidget: React.FC = () => {
                               {/* New Chat Button - Fixed at top */}
                               <button
                                 onClick={() => {
-                                  setCurrentConversationId('');
+                                  // Generate a unique conversation ID for the new chat
+                                  const timestamp = Date.now();
+                                  const randomSuffix = Math.random().toString(36).substr(2, 9);
+                                  const newConversationId = `${activeAgent}-new-${timestamp}-${randomSuffix}`;
+                                  
+                                  // Set the new conversation ID instead of clearing it
+                                  setCurrentConversationId(newConversationId);
                                   updateAgentState(activeAgent, { messages: [] });
                                   setShowChatDropdown(false);
                                 }}
@@ -1910,7 +2080,7 @@ const ChatWidget: React.FC = () => {
                     
                     {/* Send Button */}
                     {/* Send/Stop Button */}
-                    {currentState.isStreaming ? (
+                    {(currentState.isStreaming || currentState.isTyping || currentState.loadingState) ? (
                       <button
                         onClick={() => stopGeneration(activeAgent)}
                         className="p-2 m-1 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors flex items-center"

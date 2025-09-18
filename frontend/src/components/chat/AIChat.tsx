@@ -38,7 +38,7 @@ import Image from 'next/image';
 import { ProjectAgent, ProjectAgentType, ChatMessage, AgentChatState, UIMessage, MessagePart } from '@/types/chat';
 import { getAgentModelConfig, AI_MODELS } from '@/lib/ai-gateway';
 import { getPreferredModel, setPreferredModel } from '@/lib/model-preferences';
-import { hasNativeWebSearch } from '@/lib/tools/web-search';
+import { hasNativeWebSearch } from '@/lib/tools/legacy/web-search';
 import { convertFilesToDataURLs, validateFile, formatFileSize, getFileCategory, handleDragOver, handleDragEnter, handleDragLeave, handleDrop, getSupportedFormatsString } from '@/utils/multimodal';
 import { useChatHistory } from '@/hooks/useChatHistory';
 import { chatAPI } from '@/lib/chat-api';
@@ -393,10 +393,11 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       [activeAgent]: newConversationId
     }));
     
-    // Clear the selected conversation ID since this is a new chat
+    // Set the selected conversation ID to the new conversation ID
+    // This prevents the useChatHistory hook from falling back to the deterministic ID
     setSelectedConversationIds(prev => ({
       ...prev,
-      [activeAgent]: ''
+      [activeAgent]: newConversationId
     }));
     
     console.log(`Started new chat for ${activeAgent} with ID: ${newConversationId}`);
@@ -616,6 +617,9 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     const currentState = agentStates[agentType];
     if (!currentState.inputValue.trim() && !currentState.files?.length) return;
 
+    // Generate message ID early to avoid scoping issues
+    const userMessageId = `user-${Date.now()}`;
+    
     // Create abort controller for this request
     const abortController = new AbortController();
 
@@ -659,7 +663,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
 
     // Create user message with session data for files
     const userMessage: EnhancedChatMessage = {
-      id: `user-${Date.now()}`,
+      id: userMessageId,
       content: messageContent,
       timestamp: new Date().toISOString(),
       sender: 'user',
@@ -719,8 +723,8 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       if (currentConversationIds[agentType]) {
         // Send to API directly with the new conversation ID
         const apiEndpoint = getApiEndpoint(agentType);
-        const userMessage = {
-          id: `msg_${Date.now()}`,
+        const apiUserMessage = {
+          id: userMessageId, // Use the same ID as the UI message
           role: 'user' as const,
           parts: [{ type: 'text', text: messageContent }]
         };
@@ -733,7 +737,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
           },
           body: JSON.stringify({
             id: conversationId,
-            message: userMessage,
+            message: apiUserMessage,
             projectId: projectId ? parseInt(projectId, 10) : null,
             selectedModel: currentState.selectedModel,
             webSearchEnabled
@@ -745,19 +749,78 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
           throw new Error(`API Error: ${response.status}`);
         }
 
+        // Get the backend-generated message ID from response headers
+        const backendMessageId = response.headers.get('X-Message-ID');
+        const originalMessageId = response.headers.get('X-Original-Message-ID');
+        
+        // Keep minimal logging for production debugging if needed
+        if (backendMessageId && originalMessageId && backendMessageId !== originalMessageId) {
+          console.log('AIChat - Syncing message ID:', originalMessageId, '→', backendMessageId);
+        }
+        
+        // Update the user message ID in state if we got a new ID from backend
+        if (backendMessageId && originalMessageId && backendMessageId !== originalMessageId) {
+          
+          // Use functional update to ensure we have the latest state
+          setAgentStates(prev => {
+            const currentMessages = prev[agentType].messages;
+            const updatedMessages = currentMessages.map(msg => 
+              msg.id === originalMessageId ? { ...msg, id: backendMessageId } : msg
+            );
+            return {
+              ...prev,
+              [agentType]: {
+                ...prev[agentType],
+                messages: updatedMessages
+              }
+            };
+          });
+          
+          // Also update the userMessage reference for consistency
+          userMessage.id = backendMessageId;
+        }
+
         responseStream = response.body;
         
         // Update the chat history to use this conversation ID for future messages
         // Don't clear the currentConversationIds yet - we need it for subsequent messages
       } else {
         // Use existing chat history method for ongoing conversations
-        responseStream = await chatHistory.sendMessage(
+        const result = await chatHistory.sendMessage(
           messageContent,
           currentState.selectedModel,
           webSearchEnabled,
           messageFiles ? Array.from(messageFiles) : undefined,
           abortController.signal
         );
+        responseStream = result.stream;
+        
+        // Handle message ID synchronization for ongoing conversations
+        if (result.headers) {
+          const backendMessageId = result.headers.get('X-Message-ID');
+          const originalMessageId = result.headers.get('X-Original-Message-ID');
+          
+          
+          if (backendMessageId && originalMessageId && backendMessageId !== originalMessageId) {
+            setAgentStates(prev => {
+              // Get the current messages (which includes the user message we just added)
+              const currentMessages = prev[agentType].messages;
+              const updatedMessages = currentMessages.map(msg => 
+                msg.id === originalMessageId ? { ...msg, id: backendMessageId } : msg
+              );
+              return {
+                ...prev,
+                [agentType]: {
+                  ...prev[agentType],
+                  messages: updatedMessages
+                }
+              };
+            });
+            
+            // Also update the userMessage reference for consistency
+            userMessage.id = backendMessageId;
+          }
+        }
       }
 
       if (!responseStream) {
@@ -1298,15 +1361,24 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
 
   const stopGeneration = (agentType: ProjectAgentType) => {
     const currentState = agentStates[agentType];
+    console.log('Stop generation requested for agent:', agentType);
+    
+    // Abort any ongoing request
     if (currentState.abortController) {
+      console.log('Aborting ongoing request...');
       currentState.abortController.abort();
-      updateAgentState(agentType, {
-        isStreaming: false,
-        isTyping: false,
-        loadingState: undefined,
-        abortController: undefined
-      });
     }
+    
+    // Force clear all loading states regardless of abort controller existence
+    updateAgentState(agentType, {
+      isStreaming: false,
+      isTyping: false,
+      loadingState: undefined,
+      currentTool: undefined,
+      abortController: undefined
+    });
+    
+    console.log('Generation stopped and states cleared for agent:', agentType);
   };
 
   const sendMessage = async (agentType: ProjectAgentType) => {
@@ -1519,6 +1591,63 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
               });
             }
           }
+        
+        // Stream completed successfully - ensure final state cleanup
+        console.log('Stream completed, performing final cleanup');
+        
+        // Get conversation ID for saving to database
+        const chatHistory = getChatHistory(agentType);
+        const conversationId = selectedConversationIds[agentType] || chatHistory.conversation.id;
+        
+        // Make sure we have a final message if we received any content
+        if (aiResponse.trim()) {
+          const finalMessage: ChatMessage = {
+            id: messageId,
+            content: aiResponse.trim(),
+            timestamp: new Date().toISOString(),
+            sender: 'agent',
+            agentType: agentType,
+            model: currentState.selectedModel
+          };
+
+          const needsConfirmation = isConfirmationRequest(finalMessage.content);
+          const finalPendingConfirmations = needsConfirmation 
+            ? new Set([...currentState.pendingConfirmations!, finalMessage.id])
+            : currentState.pendingConfirmations;
+
+          updateAgentState(agentType, {
+            messages: [...currentState.messages, userMessage, finalMessage],
+            isTyping: false,
+            loadingState: undefined,
+            currentTool: undefined,
+            isStreaming: false,
+            abortController: undefined,
+            pendingConfirmations: finalPendingConfirmations
+          });
+          
+          // Save the final message to database
+          try {
+            await chatAPI.saveMessage(conversationId, {
+              id: finalMessage.id,
+              role: 'assistant',
+              parts: [{ type: 'text', text: finalMessage.content }]
+            });
+            console.log(`Saved final AI response (${finalMessage.content.length} chars) to database`);
+          } catch (saveError) {
+            console.warn('Failed to save final AI message to database:', saveError);
+          }
+        } else {
+          // No content received, just clean up state
+          updateAgentState(agentType, {
+            messages: [...currentState.messages, userMessage],
+            isTyping: false,
+            loadingState: undefined,
+            currentTool: undefined,
+            isStreaming: false,
+            abortController: undefined
+          });
+        }
+        
         } catch (streamError) {
           // Handle streaming errors (including aborts)
           const isAbortError = streamError instanceof Error && (
@@ -1950,6 +2079,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   };
 
   const startEditingMessage = (messageId: string, content: string) => {
+    console.log('AIChat - Starting to edit message:', { messageId, content: content.substring(0, 50) + '...' });
     setEditingMessageId(messageId);
     setEditingContent(content);
     
@@ -1981,6 +2111,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       const chatHistory = getChatHistory(agentType);
       const conversationId = selectedConversationIds[agentType] || chatHistory.conversation.id;
 
+      
       // Update the existing message in backend
       await chatAPI.updateMessage(messageId, editingContent.trim());
 
@@ -2014,12 +2145,26 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     } catch (error) {
       console.error('Failed to save edited message:', error);
       
-      // Clear editing state even on error
+      // Check if this is a 404 error (message not found)
+      if (error instanceof Error && error.message.includes('404')) {
+        console.warn('AIChat - Message ID sync issue detected for message:', messageId);
+        
+        // Try to refresh the conversation to get the latest message IDs
+        try {
+          await refreshConversation(agentType);
+          alert('Message IDs were out of sync. Please try editing again.');
+        } catch (refreshError) {
+          console.error('Failed to refresh conversation:', refreshError);
+          alert('Failed to save edited message due to synchronization issues. Please refresh the page and try again.');
+        }
+      } else {
+        // Show generic error message for other errors
+        alert('Failed to save edited message. Please try again.');
+      }
+      
+      // Clear editing state
       setEditingMessageId(null);
       setEditingContent('');
-      
-      // Show error message to user
-      alert('Failed to save edited message. Please try again.');
     }
   };
 
@@ -2174,6 +2319,74 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
           };
         });
       }
+      
+      // Stream completed successfully - ensure final state cleanup for regeneration
+      console.log('Regeneration stream completed, performing final cleanup');
+      
+      // Get conversation ID for saving to database
+      const chatHistory = getChatHistory(agentType);
+      const conversationId = selectedConversationIds[agentType] || chatHistory.conversation.id;
+      
+      // Make sure we have a final message if we received any content
+      if (aiResponse.trim()) {
+        const finalMessage: ChatMessage = {
+          id: messageId,
+          content: aiResponse.trim(),
+          timestamp: new Date().toISOString(),
+          sender: 'agent',
+          agentType: agentType,
+          model: currentState.selectedModel
+        };
+
+        const needsConfirmation = isConfirmationRequest(finalMessage.content);
+        const finalPendingConfirmations = needsConfirmation 
+          ? new Set([...currentState.pendingConfirmations!, finalMessage.id])
+          : currentState.pendingConfirmations;
+
+        setAgentStates(prev => {
+          const prevState = prev[agentType];
+          const merged = upsertMessage([...messages, finalMessage] as EnhancedChatMessage[], finalMessage as EnhancedChatMessage);
+          return {
+            ...prev,
+            [agentType]: {
+              ...prevState,
+              messages: merged,
+              isTyping: false,
+              loadingState: undefined,
+              currentTool: undefined,
+              isStreaming: false,
+              abortController: undefined,
+              pendingConfirmations: finalPendingConfirmations
+            }
+          };
+        });
+        
+        // Save the final message to database
+        try {
+          await chatAPI.saveMessage(conversationId, {
+            id: finalMessage.id,
+            role: 'assistant',
+            parts: [{ type: 'text', text: finalMessage.content }]
+          });
+          console.log(`Regeneration saved final AI response (${finalMessage.content.length} chars) to database`);
+        } catch (saveError) {
+          console.warn('Failed to save regeneration final AI message to database:', saveError);
+        }
+      } else {
+        // No content received, just clean up state
+        updateAgentState(agentType, {
+          messages: messages,
+          isTyping: false,
+          loadingState: undefined,
+          currentTool: undefined,
+          isStreaming: false,
+          abortController: undefined
+        });
+      }
+      
+      // Return early to avoid duplicate cleanup
+      return;
+      
       } catch (streamError) {
         // Handle streaming errors (including aborts)
         const isAbortError = streamError instanceof Error && (
@@ -2247,30 +2460,6 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
           // Re-throw non-abort errors
           throw streamError;
         }
-      }
-
-      // Final cleanup - ensure streaming state is properly cleared
-      updateAgentState(agentType, {
-        isTyping: false,
-        loadingState: undefined,
-        currentTool: undefined,
-        isStreaming: false,
-        abortController: undefined
-      });
-
-      // Save the final complete AI response to backend (using legacy format requires manual save)
-      try {
-        const chatHistory = getChatHistory(agentType);
-        const conversationId = selectedConversationIds[agentType] || chatHistory.conversation.id;
-        
-        await chatAPI.saveMessage(conversationId, {
-          id: messageId,
-          role: 'assistant',
-          parts: [{ type: 'text', text: aiResponse }]
-        });
-      } catch (saveError) {
-        console.error('Failed to save AI response to backend:', saveError);
-        // Don't show error to user for this, as the message is visible in UI
       }
     } catch (error) {
       console.error('Regenerate conversation error:', error);
@@ -3169,7 +3358,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
               />
               
               {/* Send/Stop Button */}
-              {currentState.isStreaming ? (
+              {(currentState.isStreaming || currentState.isTyping || currentState.loadingState) ? (
                 <button
                   onClick={() => stopGeneration(activeAgent)}
                   className="p-2 m-1 bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors flex items-center"
@@ -3253,4 +3442,3 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
 };
 
 export default AIChat;
-
