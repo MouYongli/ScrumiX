@@ -42,6 +42,7 @@ export const productOwnerTools = {
   createBacklogItem: coreBacklogTools.createBacklogItem,
   getBacklogItems: coreBacklogTools.getBacklogItems,
   updateBacklogItem: coreBacklogTools.updateBacklogItem,
+  deleteBacklogItem: coreBacklogTools.deleteBacklogItem,
   getCurrentProjectContext: coreBacklogTools.getCurrentProjectContext,
 
   // Semantic backlog search and discovery

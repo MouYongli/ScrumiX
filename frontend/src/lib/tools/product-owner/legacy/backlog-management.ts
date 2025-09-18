@@ -29,17 +29,10 @@ export {
 
 // Legacy export for backward compatibility - the original collection
 export const backlogManagementTools = {
-  // Core backlog management
-  createBacklogItem: createBacklogItemTool,
-  getBacklogItems: getBacklogItemsTool,
-  updateBacklogItem: updateBacklogItemTool,
-  
-  // Debug helper
-  getCurrentProjectContext: getCurrentProjectContextTool,
-  
-  // Semantic backlog search and discovery (re-exported from new structure)
+  // Re-export all tools from the new structure
   ...backlogTools
 };
 
 // Legacy type export
 export type BacklogManagementTools = typeof backlogManagementTools;
+

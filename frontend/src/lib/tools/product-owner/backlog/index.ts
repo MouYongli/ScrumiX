@@ -8,6 +8,7 @@ import {
   createBacklogItemTool,
   getBacklogItemsTool,
   updateBacklogItemTool,
+  deleteBacklogItemTool,
   getCurrentProjectContextTool
 } from './backlog-management';
 
@@ -26,6 +27,7 @@ export {
   createBacklogItemTool,
   getBacklogItemsTool,
   updateBacklogItemTool,
+  deleteBacklogItemTool,
   getCurrentProjectContextTool,
   
   // Semantic backlog management
@@ -40,6 +42,7 @@ export const coreBacklogTools = {
   createBacklogItem: createBacklogItemTool,
   getBacklogItems: getBacklogItemsTool,
   updateBacklogItem: updateBacklogItemTool,
+  deleteBacklogItem: deleteBacklogItemTool,
   getCurrentProjectContext: getCurrentProjectContextTool,
 };
 
@@ -58,3 +61,4 @@ export const backlogTools = {
 // Export types
 export type CoreBacklogTools = typeof coreBacklogTools;
 export type BacklogTools = typeof backlogTools;
+

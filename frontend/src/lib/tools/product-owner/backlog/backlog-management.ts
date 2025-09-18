@@ -82,6 +82,40 @@ async function createAcceptanceCriteriaWithAuth(backlogId: number, criteriaList:
 }
 
 /**
+ * Helper function to delete backlog items with authentication context
+ */
+async function deleteBacklogWithAuth(backlogId: number, context: any) {
+  const cookies = context?.cookies;
+  
+  if (!cookies) {
+    console.warn('No authentication context provided to tool');
+    return { error: 'Authentication context missing' };
+  }
+
+  try {
+    // Make direct API call to backend with cookies
+    const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
+    const response = await fetch(`${baseUrl}/backlogs/${backlogId}`, {
+      method: 'DELETE',
+      headers: {
+        'Cookie': cookies, // Forward the cookies for authentication
+      },
+    });
+
+    if (!response.ok) {
+      const error = await response.json().catch(() => ({ detail: 'Request failed' }));
+      return { error: error.detail || `HTTP ${response.status}: ${response.statusText}` };
+    }
+
+    // DELETE endpoints typically return empty response or confirmation
+    return { data: { success: true, deleted_id: backlogId } };
+  } catch (error) {
+    console.error('Error in deleteBacklogWithAuth:', error);
+    return { error: error instanceof Error ? error.message : 'Unknown error occurred' };
+  }
+}
+
+/**
  * Helper function to update backlog items with authentication context
  */
 async function updateBacklogWithAuth(backlogId: number, updateData: any, context: any) {
@@ -331,6 +365,31 @@ const backlogRetrievalSchema = z.object({
 });
 
 /**
+ * Zod schema for backlog item deletion
+ */
+const deleteBacklogItemSchema = z.object({
+  backlog_id: z.number()
+    .int('Backlog ID must be a whole number')
+    .positive('Backlog ID must be a positive integer')
+    .describe('The ID of the backlog item to delete'),
+  
+  project_id: z.number()
+    .int('Project ID must be a whole number')
+    .positive('Project ID must be a positive integer')
+    .optional()
+    .describe('The ID of the project (for verification). If not provided, will be extracted from the current context.'),
+  
+  force_delete: z.boolean()
+    .default(false)
+    .describe('Set to true to force permanent deletion. By default, the tool will suggest changing status to cancelled instead.'),
+  
+  reason: z.string()
+    .max(500, 'Reason must be 500 characters or less')
+    .optional()
+    .describe('Optional reason for deletion (recommended for audit purposes)')
+});
+
+/**
  * Zod schema for backlog item updates
  */
 const updateBacklogItemSchema = z.object({
@@ -396,7 +455,7 @@ const updateBacklogItemSchema = z.object({
  * Tool for creating a new backlog item
  * This tool validates input data and creates backlog items via the frontend API layer
  */
-export const createBacklogItemTool = tool({
+const createBacklogItemTool = tool({
   description: `Create a new backlog item (epic, story, or bug) in the project backlog with proper story point estimation. 
     Use this tool when users request to add new features, user stories, epics, or bug reports to the backlog.
     ALWAYS include story point estimation using Fibonacci sequence (1,2,3,5,8,13,21):
@@ -500,7 +559,7 @@ You can view this ${createdBacklog.item_type} in the [Project Backlog](http://lo
 /**
  * Tool for retrieving and reviewing current backlog items
  */
-export const getBacklogItemsTool = tool({
+const getBacklogItemsTool = tool({
   description: `Retrieve and review current backlog items from the project. 
     Use this tool to analyze the current backlog state, review existing items, 
     check priorities and statuses, or search for specific items.
@@ -581,7 +640,7 @@ ${backlogItems.map((item: any, index: number) => {
 /**
  * Tool for updating an existing backlog item
  */
-export const updateBacklogItemTool = tool({
+const updateBacklogItemTool = tool({
   description: `Update an existing backlog item's properties such as title, description, priority, status, story points, etc.
     Use this tool to modify backlog items based on user feedback, changing requirements, or progress updates.
     You can update any combination of fields - only provide the fields you want to change.
@@ -769,9 +828,142 @@ export const updateBacklogItemTool = tool({
 });
 
 /**
+ * Tool for deleting a backlog item with Scrum best practices
+ * First encourages cancellation, but allows permanent deletion if PO insists
+ */
+const deleteBacklogItemTool = tool({
+  description: `Delete or cancel a backlog item following Scrum best practices. 
+    By default, this tool recommends changing the status to 'cancelled' instead of permanent deletion 
+    to maintain audit trails and historical data. However, if the Product Owner insists on permanent 
+    deletion (force_delete: true), the item will be permanently removed from the database.
+    
+    Use this tool when:
+    - Requirements have changed and an item is no longer needed
+    - Duplicate items need to be removed
+    - Items are fundamentally flawed or obsolete
+    
+    IMPORTANT: Permanent deletion cannot be undone and will affect sprint planning if the item is assigned to a sprint.`,
+  inputSchema: deleteBacklogItemSchema,
+  execute: async (input, { experimental_context }) => {
+    try {
+      // Parse/validate input with Zod
+      const validated = deleteBacklogItemSchema.parse(input);
+
+      // Use project_id from context if not provided
+      const contextProjectId = (experimental_context as any)?.projectId;
+      const finalProjectId = validated.project_id || contextProjectId;
+      
+      if (!finalProjectId) {
+        return `Project ID is required but not provided. Please specify the project_id parameter.`;
+      }
+
+      // First, get the current item to verify it exists and get its details
+      const currentItemResponse = await getBacklogItemWithAuth(validated.backlog_id, experimental_context);
+      
+      if (currentItemResponse.error) {
+        return `Failed to find backlog item #${validated.backlog_id}: ${currentItemResponse.error}`;
+      }
+
+      const currentItem = currentItemResponse.data;
+      
+      // Verify project ownership
+      if (currentItem.project_id && currentItem.project_id !== finalProjectId) {
+        return `Backlog item #${validated.backlog_id} belongs to project ${currentItem.project_id}, not project ${finalProjectId}.`;
+      }
+
+      const itemTypeDisplay = currentItem.item_type.charAt(0).toUpperCase() + currentItem.item_type.slice(1);
+      const statusDisplay = currentItem.status.replace('_', ' ').split(' ').map((word: string) => 
+        word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+      ).join(' ');
+
+      // Check if item is already cancelled
+      if (currentItem.status === 'cancelled') {
+        if (!validated.force_delete) {
+          return `${itemTypeDisplay} #${validated.backlog_id} "${currentItem.title}" is already cancelled. If you want to permanently delete it from the database, use force_delete: true.`;
+        }
+      }
+      
+      // Check if item is in a sprint
+      let sprintWarning = '';
+      if (currentItem.sprint_id) {
+        sprintWarning = `\n\n⚠️  **IMPORTANT**: This item is currently assigned to Sprint ${currentItem.sprint_id}. Deleting it will affect sprint planning and capacity.`;
+      }
+
+      // If not forcing deletion, recommend cancellation instead (Scrum best practice)
+      if (!validated.force_delete) {
+        const recommendationMessage = `## 🛡️ Scrum Best Practice Recommendation
+
+Instead of permanently deleting **${itemTypeDisplay} #${validated.backlog_id}** "${currentItem.title}", I recommend changing its status to **'cancelled'** for the following reasons:
+
+### Why Cancel Instead of Delete?
+1. **Audit Trail**: Maintains historical record of decisions and requirements evolution
+2. **Sprint Impact**: Preserves sprint planning history and velocity calculations
+3. **Learning**: Keeps data for retrospectives and process improvement
+4. **Reversibility**: Can be reactivated if requirements change
+5. **Compliance**: Follows Scrum transparency principles
+
+### Current Item Details:
+- **Status**: ${statusDisplay}
+- **Priority**: ${currentItem.priority}
+- **Story Points**: ${currentItem.story_point || 'Not estimated'}${sprintWarning}
+
+### Options:
+1. **Recommended**: Update status to 'cancelled' (maintains history)
+2. **If you insist**: Use \`force_delete: true\` for permanent deletion
+
+Would you like me to cancel this item instead? This follows Scrum best practices and maintains your project's audit trail.`;
+
+        return recommendationMessage;
+      }
+
+      // If we reach here, force_delete is true - proceed with permanent deletion
+      console.log(`Permanently deleting backlog item #${validated.backlog_id} as requested by Product Owner`);
+      
+      const deleteResponse = await deleteBacklogWithAuth(validated.backlog_id, experimental_context);
+      
+      if (deleteResponse.error) {
+        return `Failed to permanently delete backlog item #${validated.backlog_id}: ${deleteResponse.error}`;
+      }
+
+      // Create detailed success message
+      let successMessage = `## ✅ Backlog Item Permanently Deleted
+
+**${itemTypeDisplay} #${validated.backlog_id}** "${currentItem.title}" has been **permanently deleted** from the database.
+
+### Deleted Item Details:
+- **Type**: ${itemTypeDisplay}
+- **Priority**: ${currentItem.priority}
+- **Status**: ${statusDisplay}
+- **Story Points**: ${currentItem.story_point || 'Not estimated'}`;
+
+      if (validated.reason) {
+        successMessage += `\n- **Deletion Reason**: ${validated.reason}`;
+      }
+
+      if (currentItem.sprint_id) {
+        successMessage += `\n- **Sprint Impact**: Item was removed from Sprint ${currentItem.sprint_id}`;
+      }
+
+      successMessage += `\n\n### Important Notes:
+- This action **cannot be undone**
+- Historical data has been permanently removed
+- Sprint velocity calculations may be affected
+- Consider documenting this decision in your project notes`;
+
+      console.log(`Successfully deleted backlog item #${validated.backlog_id}`);
+      return successMessage;
+
+    } catch (error) {
+      console.error('Error in deleteBacklogItemTool:', error);
+      return `Failed to delete backlog item: ${error instanceof Error ? error.message : 'Unknown error occurred'}`;
+    }
+  }
+});
+
+/**
  * Helper tool to get current project context for debugging
  */
-export const getCurrentProjectContextTool = tool({
+const getCurrentProjectContextTool = tool({
   description: 'Get the current project context to help with project_id determination',
   inputSchema: z.object({}),
   execute: async (input, { experimental_context }) => {
@@ -795,5 +987,7 @@ export {
   createBacklogItemTool,
   getBacklogItemsTool,
   updateBacklogItemTool,
+  deleteBacklogItemTool,
   getCurrentProjectContextTool
 };
+

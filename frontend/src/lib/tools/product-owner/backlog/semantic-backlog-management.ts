@@ -6,46 +6,7 @@
 
 import { tool } from 'ai';
 import { z } from 'zod';
-
-/**
- * Helper function to make authenticated API calls to semantic search endpoints
- */
-async function makeAuthenticatedSemanticCall(
-  endpoint: string,
-  method: 'GET' | 'POST',
-  context: any,
-  body?: any
-) {
-  const cookies = context?.cookies;
-  
-  if (!cookies) {
-    console.warn('No authentication context provided to semantic search tool');
-    return { error: 'Authentication context missing' };
-  }
-
-  try {
-    const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
-    const response = await fetch(`${baseUrl}${endpoint}`, {
-      method,
-      headers: {
-        'Content-Type': 'application/json',
-        'Cookie': cookies,
-      },
-      body: body ? JSON.stringify(body) : undefined,
-    });
-
-    if (!response.ok) {
-      const error = await response.json().catch(() => ({ detail: 'Request failed' }));
-      return { error: error.detail || `HTTP ${response.status}: ${response.statusText}` };
-    }
-
-    const data = await response.json();
-    return { data };
-  } catch (error) {
-    console.error('Error in makeAuthenticatedSemanticCall:', error);
-    return { error: error instanceof Error ? error.message : 'Unknown error occurred' };
-  }
-}
+import { requestWithAuth, type AuthContext } from '../../utils/http';
 
 // Schema for semantic search of backlog items
 const semanticSearchBacklogSchema = z.object({
@@ -149,15 +110,17 @@ export const semanticSearchBacklogTool = tool({
       console.log('Performing semantic search for backlog items:', validated);
 
       // Call the semantic search API
-      const response = await makeAuthenticatedSemanticCall(
+      const response = await requestWithAuth(
         '/semantic-search/semantic-search',
-        'POST',
-        experimental_context,
-        {
-          query: validated.query,
-          project_id: validated.project_id,
-          limit: validated.limit
-        }
+        { 
+          method: 'POST', 
+          body: JSON.stringify({
+            query: validated.query,
+            project_id: validated.project_id,
+            limit: validated.limit
+          })
+        },
+        experimental_context as AuthContext
       );
 
       if (response.error) {
@@ -165,7 +128,7 @@ export const semanticSearchBacklogTool = tool({
         return `Failed to perform semantic search: ${response.error}`;
       }
 
-      const results = response.data?.results || [];
+      const results = (response.data as any)?.results || [];
       
       if (results.length === 0) {
         return `No backlog items found matching the semantic query: "${validated.query}"`;
@@ -224,15 +187,17 @@ export const bm25SearchBacklogTool = tool({
       console.log('Performing BM25 search for backlog items:', validated);
 
       // Call the BM25 search API
-      const response = await makeAuthenticatedSemanticCall(
+      const response = await requestWithAuth(
         '/semantic-search/bm25-search',
-        'POST',
-        experimental_context,
-        {
-          query: validated.query,
-          project_id: validated.project_id,
-          limit: validated.limit
-        }
+        { 
+          method: 'POST', 
+          body: JSON.stringify({
+            query: validated.query,
+            project_id: validated.project_id,
+            limit: validated.limit
+          })
+        },
+        experimental_context as AuthContext
       );
 
       if (response.error) {
@@ -240,7 +205,7 @@ export const bm25SearchBacklogTool = tool({
         return `Failed to perform BM25 search: ${response.error}`;
       }
 
-      const results = response.data?.results || [];
+      const results = (response.data as any)?.results || [];
       
       if (results.length === 0) {
         return `No backlog items found matching the keywords: "${validated.query}"`;
@@ -300,16 +265,18 @@ export const hybridSearchBacklogTool = tool({
       console.log('Performing hybrid search for backlog items:', validated);
 
       // Call the hybrid search API
-      const response = await makeAuthenticatedSemanticCall(
+      const response = await requestWithAuth(
         '/semantic-search/hybrid-search',
-        'POST',
-        experimental_context,
-        {
-          query: validated.query,
-          project_id: validated.project_id,
-          semantic_weight: validated.semantic_weight,
-          limit: validated.limit
-        }
+        { 
+          method: 'POST', 
+          body: JSON.stringify({
+            query: validated.query,
+            project_id: validated.project_id,
+            semantic_weight: validated.semantic_weight,
+            limit: validated.limit
+          })
+        },
+        experimental_context as AuthContext
       );
 
       if (response.error) {
@@ -317,7 +284,7 @@ export const hybridSearchBacklogTool = tool({
         return `Failed to perform hybrid search: ${response.error}`;
       }
 
-      const results = response.data?.results || [];
+      const results = (response.data as any)?.results || [];
       
       if (results.length === 0) {
         return `No backlog items found matching the hybrid query: "${validated.query}"`;
@@ -380,10 +347,10 @@ export const findSimilarBacklogTool = tool({
       console.log('Finding similar backlog items for:', validated.backlog_id);
 
       // Call the similar items API
-      const response = await makeAuthenticatedSemanticCall(
+      const response = await requestWithAuth(
         `/semantic-search/similar/${validated.backlog_id}`,
-        'GET',
-        experimental_context
+        { method: 'GET' },
+        experimental_context as AuthContext
       );
 
       if (response.error) {
@@ -391,7 +358,7 @@ export const findSimilarBacklogTool = tool({
         return `Failed to find similar items: ${response.error}`;
       }
 
-      const data = response.data;
+      const data = response.data as any;
       const sourceItem = data?.source_item;
       const similarItems = data?.similar_items || [];
       
@@ -468,10 +435,5 @@ export const semanticBacklogManagementTools = {
  */
 export type SemanticBacklogManagementTools = typeof semanticBacklogManagementTools;
 
-// Export individual tools
-export {
-  semanticSearchBacklogTool,
-  bm25SearchBacklogTool,
-  hybridSearchBacklogTool,
-  findSimilarBacklogTool
-};
+// Individual tools are already exported above with their declarations
+
