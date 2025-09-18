@@ -46,17 +46,22 @@ class ChatCRUD:
         user_id: Optional[int] = None
     ) -> ChatConversation:
         """Create or update a conversation"""
-        existing = self.get_conversation(db, conversation_data.id)
-        if existing:
-            # Update last_message_at
-            existing.last_message_at = datetime.now()
-            if conversation_data.title and not existing.title:
-                existing.title = conversation_data.title
-            db.commit()
-            db.refresh(existing)
-            return existing
-        else:
-            return self.create_conversation(db, conversation_data, user_id)
+        try:
+            existing = self.get_conversation(db, conversation_data.id)
+            if existing:
+                # Update last_message_at
+                existing.last_message_at = datetime.now()
+                if conversation_data.title and not existing.title:
+                    existing.title = conversation_data.title
+                db.commit()
+                db.refresh(existing)
+                return existing
+            else:
+                return self.create_conversation(db, conversation_data, user_id)
+        except Exception as e:
+            db.rollback()
+            print(f"Error in upsert_conversation for agent_type '{conversation_data.agent_type}': {str(e)}")
+            raise e
 
     def create_message(
         self,
