@@ -9,6 +9,9 @@ export * from './backlog';
 // Sprint schemas  
 export * from './sprint';
 
+// Sprint backlog schemas
+export * from './sprint-backlog';
+
 // Meeting schemas
 export * from './meetings';
 

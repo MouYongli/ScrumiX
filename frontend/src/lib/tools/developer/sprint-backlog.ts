@@ -4,8 +4,16 @@
  */
 
 import { tool } from 'ai';
-import { z } from 'zod';
 import { requestWithAuth, AuthContext } from '../utils/http';
+import {
+  getProjectSprintsSchema,
+  getCurrentActiveSprintSchema,
+  getBacklogItemsSchema,
+  reviewSprintBacklogSchema,
+  createSprintBacklogItemSchema,
+  updateSprintBacklogItemSchema,
+  deleteSprintBacklogItemSchema
+} from '../schemas/sprint-backlog';
 
 /**
  * Get sprints by project with filtering and search capabilities
@@ -13,27 +21,7 @@ import { requestWithAuth, AuthContext } from '../utils/http';
 export const getProjectSprints = tool({
   description: `Get sprints for a project with filtering options. 
     Use this to access sprint metadata, find sprints by status, or search sprint names and goals.`,
-  inputSchema: z.object({
-    project_id: z.number()
-      .int('Project ID must be a whole number')
-      .positive('Project ID must be a positive integer')
-      .describe('The ID of the project to get sprints from'),
-    
-    status: z.enum(['planning', 'active', 'completed', 'cancelled'])
-      .optional()
-      .describe('Filter sprints by status'),
-    
-    search: z.string()
-      .optional()
-      .describe('Search in sprint names and goals'),
-    
-    limit: z.number()
-      .int('Limit must be a whole number')
-      .min(1, 'Limit must be at least 1')
-      .max(100, 'Limit cannot exceed 100')
-      .default(20)
-      .describe('Maximum number of sprints to return (default: 20)')
-  }),
+  inputSchema: getProjectSprintsSchema,
   execute: async (input, { experimental_context }) => {
     try {
       console.log('Getting project sprints:', input);
@@ -50,14 +38,14 @@ export const getProjectSprints = tool({
       const response = await requestWithAuth(
         `/sprints?${params.toString()}`,
         { method: 'GET' },
-        experimental_context
+        experimental_context as AuthContext
       );
 
       if (response.error) {
         return `Failed to get project sprints: ${response.error}`;
       }
 
-      const sprints = response.data || [];
+      const sprints = response.data as any[] || [];
       
       if (sprints.length === 0) {
         return `No sprints found for project ${input.project_id}${input.status ? ` with status '${input.status}'` : ''}${input.search ? ` matching '${input.search}'` : ''}.`;
@@ -111,12 +99,7 @@ export const getProjectSprints = tool({
 export const getCurrentActiveSprint = tool({
   description: `Get the current active sprint for a project. This automatically identifies the active sprint context.
     Use this tool to find the active sprint before performing sprint operations.`,
-  inputSchema: z.object({
-    project_id: z.number()
-      .int('Project ID must be a whole number')
-      .positive('Project ID must be a positive integer')
-      .describe('The ID of the project to get active sprint for'),
-  }),
+  inputSchema: getCurrentActiveSprintSchema,
   execute: async (input, { experimental_context }) => {
     try {
       console.log('Getting active sprint for project:', input.project_id);
@@ -124,14 +107,14 @@ export const getCurrentActiveSprint = tool({
       const response = await requestWithAuth(
         `/sprints?project_id=${input.project_id}&status=active&limit=1`,
         { method: 'GET' },
-        experimental_context
+        experimental_context as AuthContext
       );
 
       if (response.error) {
         return `Failed to get active sprint: ${response.error}`;
       }
 
-      const sprints = response.data || [];
+      const sprints = response.data as any[] || [];
       
       if (sprints.length === 0) {
         return `No active sprint found for project ${input.project_id}. Please create and activate a sprint first before managing sprint backlog items.`;
@@ -167,35 +150,7 @@ export const getBacklogItems = tool({
   description: `Get backlog items from the product backlog (read-only access). 
     Use this to review available stories and bugs that can be added to sprints.
     Developer agent can only VIEW backlog items, not create, update, or delete them.`,
-  inputSchema: z.object({
-    project_id: z.number()
-      .int('Project ID must be a whole number')
-      .positive('Project ID must be a positive integer')
-      .describe('The ID of the project to get backlog items from'),
-    
-    item_type: z.enum(['story', 'bug', 'epic'])
-      .optional()
-      .describe('Filter by item type (stories and bugs can be added to sprints)'),
-    
-    status: z.enum(['todo', 'in_progress', 'in_review', 'done', 'cancelled'])
-      .optional()
-      .describe('Filter by status'),
-    
-    priority: z.enum(['critical', 'high', 'medium', 'low'])
-      .optional()
-      .describe('Filter by priority'),
-    
-    search: z.string()
-      .optional()
-      .describe('Search term to filter items'),
-    
-    limit: z.number()
-      .int('Limit must be a whole number')
-      .min(1, 'Limit must be at least 1')
-      .max(100, 'Limit cannot exceed 100')
-      .default(20)
-      .describe('Maximum number of items to return (default: 20)')
-  }),
+  inputSchema: getBacklogItemsSchema,
   execute: async (input, { experimental_context }) => {
     try {
       console.log('Getting backlog items:', input);
@@ -214,14 +169,14 @@ export const getBacklogItems = tool({
       const response = await requestWithAuth(
         `/backlogs?${params.toString()}`,
         { method: 'GET' },
-        experimental_context
+        experimental_context as AuthContext
       );
 
       if (response.error) {
         return `Failed to get backlog items: ${response.error}`;
       }
 
-      const backlogItems = response.data || [];
+      const backlogItems = response.data as any[] || [];
       
       if (backlogItems.length === 0) {
         return `No backlog items found for the specified criteria.`;
@@ -297,18 +252,7 @@ export const getBacklogItems = tool({
 export const reviewSprintBacklog = tool({
   description: `Review current sprint backlog items with detailed progress tracking and analysis.
     Use this to get comprehensive overview of sprint work and progress.`,
-  inputSchema: z.object({
-    project_id: z.number()
-      .int('Project ID must be a whole number')
-      .positive('Project ID must be a positive integer')
-      .describe('The ID of the project'),
-    
-    sprint_id: z.number()
-      .int('Sprint ID must be a whole number')
-      .positive('Sprint ID must be a positive integer')
-      .optional()
-      .describe('Specific sprint ID to review (if not provided, will use active sprint)'),
-  }),
+  inputSchema: reviewSprintBacklogSchema,
   execute: async (input, { experimental_context }) => {
     try {
       console.log('Reviewing sprint backlog:', input);
@@ -320,14 +264,14 @@ export const reviewSprintBacklog = tool({
         const sprintResponse = await requestWithAuth(
           `/sprints?project_id=${input.project_id}&status=active&limit=1`,
           { method: 'GET' },
-          experimental_context
+          experimental_context as AuthContext
         );
 
         if (sprintResponse.error) {
           return `Failed to get active sprint: ${sprintResponse.error}`;
         }
 
-        const sprints = sprintResponse.data || [];
+        const sprints = sprintResponse.data as any[] || [];
         if (sprints.length === 0) {
           return `No active sprint found for project ${input.project_id}. Please specify a sprint ID or create an active sprint.`;
         }
@@ -339,14 +283,14 @@ export const reviewSprintBacklog = tool({
       const response = await requestWithAuth(
         `/sprints/${sprintId}/backlog?limit=1000`,
         { method: 'GET' },
-        experimental_context
+        experimental_context as AuthContext
       );
 
       if (response.error) {
         return `Failed to get sprint backlog: ${response.error}`;
       }
 
-      const backlogItems = response.data || [];
+      const backlogItems = response.data as any[] || [];
       
       if (backlogItems.length === 0) {
         return `Sprint ${sprintId} backlog is empty. No items to review.`;
@@ -440,40 +384,7 @@ export const createSprintBacklogItem = tool({
   description: `Create a new sprint backlog item (story or bug) and automatically add it to the active sprint.
     Use this to create new work items during sprint planning or when new requirements emerge.
     Only stories and bugs can be created - epics should be created by the Product Owner.`,
-  inputSchema: z.object({
-    project_id: z.number()
-      .int('Project ID must be a whole number')
-      .positive('Project ID must be a positive integer')
-      .describe('The ID of the project to create the item in'),
-    
-    title: z.string()
-      .min(1, 'Title cannot be empty')
-      .max(200, 'Title must be 200 characters or less')
-      .describe('The title of the backlog item'),
-    
-    description: z.string()
-      .max(2000, 'Description must be 2000 characters or less')
-      .optional()
-      .describe('Detailed description of the backlog item'),
-    
-    item_type: z.enum(['story', 'bug'])
-      .describe('Type of backlog item (only stories and bugs allowed for Developer agent)'),
-    
-    priority: z.enum(['critical', 'high', 'medium', 'low'])
-      .default('medium')
-      .describe('Priority level of the item'),
-    
-    story_point: z.number()
-      .int('Story points must be a whole number')
-      .min(0, 'Story points must be non-negative')
-      .max(100, 'Story points must be 100 or less')
-      .optional()
-      .describe('Story point estimation for the item'),
-    
-    acceptance_criteria: z.array(z.string())
-      .optional()
-      .describe('List of acceptance criteria for the item'),
-  }),
+  inputSchema: createSprintBacklogItemSchema,
   execute: async (input, { experimental_context }) => {
     try {
       console.log('Creating sprint backlog item:', input);
@@ -482,14 +393,14 @@ export const createSprintBacklogItem = tool({
       const sprintResponse = await requestWithAuth(
         `/sprints?project_id=${input.project_id}&status=active&limit=1`,
         { method: 'GET' },
-        experimental_context
+        experimental_context as AuthContext
       );
 
       if (sprintResponse.error) {
         return `Cannot create sprint backlog item: ${sprintResponse.error}`;
       }
 
-      const sprints = sprintResponse.data || [];
+      const sprints = sprintResponse.data as any[] || [];
       if (sprints.length === 0) {
         return `Cannot create sprint backlog item: No active sprint found for project ${input.project_id}. Please create and activate a sprint first.`;
       }
@@ -513,14 +424,14 @@ export const createSprintBacklogItem = tool({
           method: 'POST',
           body: JSON.stringify(backlogData),
         },
-        experimental_context
+        experimental_context as AuthContext
       );
 
       if (createResponse.error) {
         return `Failed to create backlog item: ${createResponse.error}`;
       }
 
-      const newItem = createResponse.data;
+      const newItem = createResponse.data as any;
 
       // Add acceptance criteria if provided
       if (input.acceptance_criteria && input.acceptance_criteria.length > 0) {
@@ -534,7 +445,7 @@ export const createSprintBacklogItem = tool({
                 backlog_id: newItem.id
               }),
             },
-            experimental_context
+            experimental_context as AuthContext
           );
         }
       }
@@ -543,7 +454,7 @@ export const createSprintBacklogItem = tool({
       const addToSprintResponse = await requestWithAuth(
         `/sprints/${activeSprint.id}/backlog/${newItem.id}`,
         { method: 'POST' },
-        experimental_context
+        experimental_context as AuthContext
       );
 
       if (addToSprintResponse.error) {
@@ -578,43 +489,7 @@ The item is now ready for development in the current sprint. You can view it in 
 export const updateSprintBacklogItem = tool({
   description: `Update a sprint backlog item's details (status, priority, story points, etc.).
     Use this to track progress and modify item details during development.`,
-  inputSchema: z.object({
-    project_id: z.number()
-      .int('Project ID must be a whole number')
-      .positive('Project ID must be a positive integer')
-      .describe('The ID of the project'),
-    
-    backlog_id: z.number()
-      .int('Backlog ID must be a whole number')
-      .positive('Backlog ID must be a positive integer')
-      .describe('The ID of the backlog item to update'),
-    
-    status: z.enum(['todo', 'in_progress', 'in_review', 'done', 'cancelled'])
-      .optional()
-      .describe('Update the status of the backlog item'),
-    
-    priority: z.enum(['critical', 'high', 'medium', 'low'])
-      .optional()
-      .describe('Update the priority of the backlog item'),
-    
-    story_point: z.number()
-      .int('Story points must be a whole number')
-      .min(0, 'Story points must be non-negative')
-      .max(100, 'Story points must be 100 or less')
-      .optional()
-      .describe('Update the story point estimation'),
-    
-    title: z.string()
-      .min(1, 'Title cannot be empty')
-      .max(200, 'Title must be 200 characters or less')
-      .optional()
-      .describe('Update the title of the backlog item'),
-    
-    description: z.string()
-      .max(2000, 'Description must be 2000 characters or less')
-      .optional()
-      .describe('Update the description of the backlog item'),
-  }),
+  inputSchema: updateSprintBacklogItemSchema,
   execute: async (input, { experimental_context }) => {
     try {
       console.log('Updating sprint backlog item:', input);
@@ -623,14 +498,14 @@ export const updateSprintBacklogItem = tool({
       const itemResponse = await requestWithAuth(
         `/backlogs/${input.backlog_id}`,
         { method: 'GET' },
-        experimental_context
+        experimental_context as AuthContext
       );
 
       if (itemResponse.error) {
         return `Failed to get backlog item: ${itemResponse.error}`;
       }
 
-      const currentItem = itemResponse.data;
+      const currentItem = itemResponse.data as any;
 
       // Verify item is in a sprint and in the correct project
       if (!currentItem.sprint_id) {
@@ -645,10 +520,10 @@ export const updateSprintBacklogItem = tool({
       const sprintResponse = await requestWithAuth(
         `/sprints/${currentItem.sprint_id}`,
         { method: 'GET' },
-        experimental_context
+        experimental_context as AuthContext
       );
 
-      if (sprintResponse.data?.status === 'completed' || sprintResponse.data?.status === 'closed') {
+      if ((sprintResponse.data as any)?.status === 'completed' || (sprintResponse.data as any)?.status === 'closed') {
         return `Cannot update item #${input.backlog_id} because Sprint ${currentItem.sprint_id} is already completed.`;
       }
 
@@ -671,14 +546,14 @@ export const updateSprintBacklogItem = tool({
           method: 'PUT',
           body: JSON.stringify(updateData),
         },
-        experimental_context
+        experimental_context as AuthContext
       );
 
       if (response.error) {
         return `Failed to update backlog item: ${response.error}`;
       }
 
-      const updatedItem = response.data;
+      const updatedItem = response.data as any;
       const itemTypeDisplay = updatedItem.item_type.charAt(0).toUpperCase() + updatedItem.item_type.slice(1);
       
       // Build update summary
@@ -729,27 +604,7 @@ You can view the updated item in the [Sprint Board](/project/${input.project_id}
 export const deleteSprintBacklogItem = tool({
   description: `Remove a backlog item from the sprint and optionally delete it completely.
     Use this when items need to be removed from sprint scope or when work is no longer needed.`,
-  inputSchema: z.object({
-    project_id: z.number()
-      .int('Project ID must be a whole number')
-      .positive('Project ID must be a positive integer')
-      .describe('The ID of the project'),
-    
-    backlog_id: z.number()
-      .int('Backlog ID must be a whole number')
-      .positive('Backlog ID must be a positive integer')
-      .describe('The ID of the backlog item to remove/delete'),
-    
-    action: z.enum(['remove_from_sprint', 'delete_completely'])
-      .default('remove_from_sprint')
-      .describe('Whether to just remove from sprint (move back to backlog) or delete completely'),
-    
-    reason: z.string()
-      .min(1, 'Reason cannot be empty')
-      .max(500, 'Reason must be 500 characters or less')
-      .optional()
-      .describe('Reason for removing/deleting the item'),
-  }),
+  inputSchema: deleteSprintBacklogItemSchema,
   execute: async (input, { experimental_context }) => {
     try {
       console.log('Removing/deleting sprint backlog item:', input);
@@ -758,14 +613,14 @@ export const deleteSprintBacklogItem = tool({
       const itemResponse = await requestWithAuth(
         `/backlogs/${input.backlog_id}`,
         { method: 'GET' },
-        experimental_context
+        experimental_context as AuthContext
       );
 
       if (itemResponse.error) {
         return `Failed to get backlog item: ${itemResponse.error}`;
       }
 
-      const backlogItem = itemResponse.data;
+      const backlogItem = itemResponse.data as any;
 
       // Verify item is in the correct project
       if (backlogItem.project_id !== input.project_id) {
@@ -780,10 +635,10 @@ export const deleteSprintBacklogItem = tool({
       const sprintResponse = await requestWithAuth(
         `/sprints/${backlogItem.sprint_id}`,
         { method: 'GET' },
-        experimental_context
+        experimental_context as AuthContext
       );
 
-      if (sprintResponse.data?.status === 'completed' || sprintResponse.data?.status === 'closed') {
+      if ((sprintResponse.data as any)?.status === 'completed' || (sprintResponse.data as any)?.status === 'closed') {
         return `Cannot remove item #${input.backlog_id} because Sprint ${backlogItem.sprint_id} is already completed.`;
       }
 
@@ -794,7 +649,7 @@ export const deleteSprintBacklogItem = tool({
         const removeResponse = await requestWithAuth(
           `/sprints/${backlogItem.sprint_id}/backlog/${input.backlog_id}`,
           { method: 'DELETE' },
-          experimental_context
+          experimental_context as AuthContext
         );
 
         if (removeResponse.error) {
@@ -821,7 +676,7 @@ export const deleteSprintBacklogItem = tool({
         const deleteResponse = await requestWithAuth(
           `/backlogs/${input.backlog_id}`,
           { method: 'DELETE' },
-          experimental_context
+          experimental_context as AuthContext
         );
 
         if (deleteResponse.error) {
