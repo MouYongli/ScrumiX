@@ -44,7 +44,7 @@ const AGENTS: Record<ProjectAgentType, ProjectAgent> = {
     color: 'bg-emerald-500',
     accentColor: 'text-emerald-600 dark:text-emerald-400',
     expertise: ['User Stories', 'Backlog Prioritization', 'Acceptance Criteria', 'Stakeholder Management', 'Backlog Updates'],
-    defaultModel: getAgentModelConfig('product-owner').model
+    defaultModel: AI_MODELS.GEMINI_FLASH
   },
   'scrum-master': {
     id: 'scrum-master',
@@ -54,7 +54,7 @@ const AGENTS: Record<ProjectAgentType, ProjectAgent> = {
     color: 'bg-blue-500',
     accentColor: 'text-blue-600 dark:text-blue-400',
     expertise: ['Sprint Planning', 'Daily Standups', 'Retrospectives', 'Impediment Resolution'],
-    defaultModel: getAgentModelConfig('scrum-master').model
+    defaultModel: AI_MODELS.GEMINI_FLASH
   },
   'developer': {
     id: 'developer',
@@ -64,7 +64,7 @@ const AGENTS: Record<ProjectAgentType, ProjectAgent> = {
     color: 'bg-purple-500',
     accentColor: 'text-purple-600 dark:text-purple-400',
     expertise: ['Code Review', 'Technical Debt', 'Architecture', 'Best Practices'],
-    defaultModel: getAgentModelConfig('developer').model
+    defaultModel: AI_MODELS.GEMINI_FLASH
   }
 };
 
@@ -102,7 +102,7 @@ const ChatWidget: React.FC = () => {
       messages: [], 
       isTyping: false, 
       inputValue: '', 
-      selectedModel: getPreferredModel('product-owner'),
+      selectedModel: AI_MODELS.GEMINI_FLASH,
       loadingState: undefined,
       currentTool: undefined,
       pendingConfirmations: new Set(),
@@ -112,7 +112,7 @@ const ChatWidget: React.FC = () => {
       messages: [], 
       isTyping: false, 
       inputValue: '', 
-      selectedModel: getPreferredModel('scrum-master'),
+      selectedModel: AI_MODELS.GEMINI_FLASH,
       loadingState: undefined,
       currentTool: undefined,
       pendingConfirmations: new Set(),
@@ -122,7 +122,7 @@ const ChatWidget: React.FC = () => {
       messages: [], 
       isTyping: false, 
       inputValue: '', 
-      selectedModel: getPreferredModel('developer'),
+      selectedModel: AI_MODELS.GEMINI_FLASH,
       loadingState: undefined,
       currentTool: undefined,
       pendingConfirmations: new Set(),
