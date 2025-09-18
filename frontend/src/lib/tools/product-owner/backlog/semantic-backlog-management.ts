@@ -11,34 +11,42 @@ import { requestWithAuth, type AuthContext } from '../../utils/http';
 // Schema for semantic search of backlog items
 const semanticSearchBacklogSchema = z.object({
   query: z.string()
-    .min(1, 'Search query cannot be empty')
+    .min(1, 'Search query is required')
+    .max(500, 'Query must be 500 characters or less')
     .describe('Natural language search query to find relevant backlog items'),
   
   project_id: z.number()
     .int('Project ID must be a whole number')
     .positive('Project ID must be a positive integer')
     .optional()
-    .describe('Project ID to scope the search (auto-detected if not provided)'),
+    .describe('Optional project ID to limit search scope'),
   
   limit: z.number()
     .int('Limit must be a whole number')
     .min(1, 'Limit must be at least 1')
     .max(50, 'Limit cannot exceed 50')
     .default(10)
-    .describe('Maximum number of results to return (default: 10)')
+    .describe('Maximum number of results to return (default: 10)'),
+  
+  similarity_threshold: z.number()
+    .min(0.0, 'Similarity threshold must be between 0 and 1')
+    .max(1.0, 'Similarity threshold must be between 0 and 1')
+    .default(0.7)
+    .describe('Minimum semantic similarity score (0-1, default: 0.7)')
 });
 
 // Schema for BM25 (keyword-based) search of backlog items
 const bm25SearchBacklogSchema = z.object({
   query: z.string()
-    .min(1, 'Search query cannot be empty')
-    .describe('Keyword-based search query to find relevant backlog items'),
+    .min(1, 'Search query is required')
+    .max(500, 'Query must be 500 characters or less')
+    .describe('Keyword search query for precise term matching'),
   
   project_id: z.number()
     .int('Project ID must be a whole number')
     .positive('Project ID must be a positive integer')
     .optional()
-    .describe('Project ID to scope the search (auto-detected if not provided)'),
+    .describe('Optional project ID to limit search scope'),
   
   limit: z.number()
     .int('Limit must be a whole number')
@@ -51,27 +59,44 @@ const bm25SearchBacklogSchema = z.object({
 // Schema for hybrid search combining semantic and keyword approaches
 const hybridSearchBacklogSchema = z.object({
   query: z.string()
-    .min(1, 'Search query cannot be empty')
-    .describe('Search query combining semantic and keyword matching'),
+    .min(1, 'Search query is required')
+    .max(500, 'Query must be 500 characters or less')
+    .describe('Search query combining both semantic meaning and keyword matching'),
   
   project_id: z.number()
     .int('Project ID must be a whole number')
     .positive('Project ID must be a positive integer')
     .optional()
-    .describe('Project ID to scope the search (auto-detected if not provided)'),
-  
-  semantic_weight: z.number()
-    .min(0, 'Semantic weight must be non-negative')
-    .max(1, 'Semantic weight must not exceed 1')
-    .default(0.7)
-    .describe('Weight for semantic search (0.0-1.0, default: 0.7)'),
+    .describe('Optional project ID to limit search scope'),
   
   limit: z.number()
     .int('Limit must be a whole number')
     .min(1, 'Limit must be at least 1')
     .max(50, 'Limit cannot exceed 50')
-    .default(10)
-    .describe('Maximum number of results to return (default: 10)')
+    .default(15)
+    .describe('Maximum number of results to return (default: 15)'),
+  
+  semantic_weight: z.number()
+    .min(0.0, 'Semantic weight must be between 0 and 1')
+    .max(1.0, 'Semantic weight must be between 0 and 1')
+    .default(0.7)
+    .describe('Weight for semantic search (used in weighted mode, default: 0.7)'),
+  
+  keyword_weight: z.number()
+    .min(0.0, 'Keyword weight must be between 0 and 1')
+    .max(1.0, 'Keyword weight must be between 0 and 1')
+    .default(0.3)
+    .describe('Weight for BM25 keyword search (used in weighted mode, default: 0.3)'),
+  
+  similarity_threshold: z.number()
+    .min(0.0, 'Similarity threshold must be between 0 and 1')
+    .max(1.0, 'Similarity threshold must be between 0 and 1')
+    .default(0.5)
+    .describe('Minimum semantic similarity score (0-1, default: 0.5)'),
+  
+  use_rrf: z.boolean()
+    .default(true)
+    .describe('Use Reciprocal Rank Fusion (recommended) vs weighted scoring (default: true)')
 });
 
 // Schema for finding similar backlog items
@@ -79,14 +104,20 @@ const findSimilarBacklogSchema = z.object({
   backlog_id: z.number()
     .int('Backlog ID must be a whole number')
     .positive('Backlog ID must be a positive integer')
-    .describe('ID of the backlog item to find similar items for'),
+    .describe('ID of the reference backlog item to find similar items for'),
   
   limit: z.number()
     .int('Limit must be a whole number')
     .min(1, 'Limit must be at least 1')
     .max(20, 'Limit cannot exceed 20')
     .default(5)
-    .describe('Maximum number of similar items to return (default: 5)')
+    .describe('Maximum number of similar items to return (default: 5)'),
+  
+  similarity_threshold: z.number()
+    .min(0.0, 'Similarity threshold must be between 0 and 1')
+    .max(1.0, 'Similarity threshold must be between 0 and 1')
+    .default(0.6)
+    .describe('Minimum similarity score for related items (0-1, default: 0.6)')
 });
 
 /**
@@ -94,14 +125,10 @@ const findSimilarBacklogSchema = z.object({
  * Uses AI embeddings to find contextually relevant items based on meaning
  */
 export const semanticSearchBacklogTool = tool({
-  description: `Search backlog items using AI-powered semantic understanding. This tool finds items based on 
-    meaning and context, not just keyword matching. Perfect for finding related features, similar requirements, 
-    or items that address comparable user needs.
-    
-    Examples:
-    - "user authentication features" → finds login, signup, password reset items
-    - "payment processing" → finds checkout, billing, subscription items
-    - "mobile responsive design" → finds UI/UX items for mobile compatibility`,
+  description: `Perform intelligent semantic search on backlog items using AI embeddings. 
+    This tool understands the meaning and context of your search query, not just keywords.
+    Perfect for finding related user stories, similar features, or conceptually related work items.
+    Use this when you need to find items by concept, intent, or meaning rather than exact text matches.`,
   inputSchema: semanticSearchBacklogSchema,
   execute: async (input, { experimental_context }) => {
     try {
@@ -118,7 +145,7 @@ export const semanticSearchBacklogTool = tool({
             query: validated.query,
             project_id: validated.project_id,
             limit: validated.limit,
-            similarity_threshold: 0.7
+            similarity_threshold: validated.similarity_threshold
           })
         },
         experimental_context as AuthContext
@@ -132,33 +159,28 @@ export const semanticSearchBacklogTool = tool({
       const results = (response.data as any) || [];
       
       if (results.length === 0) {
-        return `No backlog items found matching the semantic query: "${validated.query}"`;
+        return `No semantically similar backlog items found for "${validated.query}" with similarity threshold ${validated.similarity_threshold}.
+        
+Try:
+- Lowering the similarity threshold (e.g., 0.5 or 0.6)
+- Using different keywords or phrases
+- Broadening your search terms`;
       }
 
       console.log(`Found ${results.length} semantically similar backlog items`);
 
-      // Format the results with semantic relevance scores
-      const formattedResults = `**Semantic Search Results** for "${validated.query}":
+      // Format results in a concise, conversational way
+      const formattedResults = `Found ${results.length} item${results.length === 1 ? '' : 's'} related to "${validated.query}":
 
 ${results.map((result: any, index: number) => {
   const item = result.backlog;
-  const similarity = (result.similarity_score * 100).toFixed(1);
-  const itemType = item.item_type.charAt(0).toUpperCase() + item.item_type.slice(1);
-  const priority = item.priority.charAt(0).toUpperCase() + item.priority.slice(1);
+  const itemTypeDisplay = item.item_type.charAt(0).toUpperCase() + item.item_type.slice(1);
+  const statusDisplay = item.status.replace('_', ' ').split(' ').map((word: string) => 
+    word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+  ).join(' ');
   
-  return `${index + 1}. **${itemType} #${item.id}** (${similarity}% match)
-   **"${item.title}"**
-   - **Priority**: ${priority}
-   - **Status**: ${item.status.replace('_', ' ')}
-   - **Story Points**: ${item.story_point || 'Not estimated'}${item.description ? `\n   - **Description**: ${item.description.length > 100 ? item.description.substring(0, 100) + '...' : item.description}` : ''}`;
-}).join('\n\n')}
-
-**Search Insights**:
-- **Total Matches**: ${results.length}
-- **Best Match**: ${(results[0].similarity_score * 100).toFixed(1)}% semantic similarity
-- **Search Type**: AI-powered semantic understanding
-
-These results are ranked by semantic similarity, meaning they match the intent and context of your query, not just keywords.`;
+  return `${itemTypeDisplay} #${item.id} — ${item.title} (${statusDisplay})`;
+}).join('\n\n')}`;
 
       return formattedResults;
 
@@ -174,13 +196,10 @@ These results are ranked by semantic similarity, meaning they match the intent a
  * Uses traditional keyword matching with relevance scoring
  */
 export const bm25SearchBacklogTool = tool({
-  description: `Search backlog items using keyword-based BM25 algorithm. This tool finds items based on 
-    exact keyword matches with relevance scoring. Best for finding items with specific terms or technical keywords.
-    
-    Examples:
-    - "login API endpoint" → finds items with these exact terms
-    - "database migration" → finds items mentioning database and migration
-    - "React component" → finds items specifically about React components`,
+  description: `Perform precise BM25 keyword search on backlog items using industry-standard ranking algorithm.
+    Perfect for finding items with specific terms like "login", "payment", "API", "authentication".
+    Uses BM25 scoring which handles term frequency, document length normalization, and inverse document frequency.
+    This solves the problem where semantic search might miss exact keyword matches.`,
   inputSchema: bm25SearchBacklogSchema,
   execute: async (input, { experimental_context }) => {
     try {
@@ -210,33 +229,33 @@ export const bm25SearchBacklogTool = tool({
       const results = (response.data as any) || [];
       
       if (results.length === 0) {
-        return `No backlog items found matching the keywords: "${validated.query}"`;
+        return `No backlog items found with BM25 keyword search for "${validated.query}".
+        
+BM25 search looks for exact keyword matches with intelligent scoring based on:
+- Term frequency in documents
+- Document length normalization  
+- Inverse document frequency across corpus
+
+Try:
+- Using different or broader keywords
+- Checking spelling of search terms
+- Using the hybrid search tool for combined semantic + keyword approach`;
       }
 
       console.log(`Found ${results.length} keyword-matching backlog items`);
 
-      // Format the results with BM25 relevance scores
-      const formattedResults = `**Keyword Search Results** for "${validated.query}":
+      // Format results concisely
+      const formattedResults = `Found ${results.length} item${results.length === 1 ? '' : 's'} with keywords "${validated.query}":
 
 ${results.map((result: any, index: number) => {
   const item = result.backlog;
-  const score = result.similarity_score ? result.similarity_score.toFixed(2) : 'N/A';
-  const itemType = item.item_type.charAt(0).toUpperCase() + item.item_type.slice(1);
-  const priority = item.priority.charAt(0).toUpperCase() + item.priority.slice(1);
+  const itemTypeDisplay = item.item_type.charAt(0).toUpperCase() + item.item_type.slice(1);
+  const statusDisplay = item.status.replace('_', ' ').split(' ').map((word: string) => 
+    word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+  ).join(' ');
   
-  return `${index + 1}. **${itemType} #${item.id}** (Score: ${score})
-   **"${item.title}"**
-   - **Priority**: ${priority}
-   - **Status**: ${item.status.replace('_', ' ')}
-   - **Story Points**: ${item.story_point || 'Not estimated'}${item.description ? `\n   - **Description**: ${item.description.length > 100 ? item.description.substring(0, 100) + '...' : item.description}` : ''}`;
-}).join('\n\n')}
-
-**Search Insights**:
-- **Total Matches**: ${results.length}
-- **Search Type**: Keyword-based BM25 relevance scoring
-- **Keywords**: Exact term matching with frequency weighting
-
-These results are ranked by keyword relevance, prioritizing items with exact matches and term frequency.`;
+  return `${itemTypeDisplay} #${item.id} — ${item.title} (${statusDisplay})`;
+}).join('\n\n')}`;
 
       return formattedResults;
 
@@ -252,18 +271,28 @@ These results are ranked by keyword relevance, prioritizing items with exact mat
  * Provides the best of both semantic understanding and keyword precision
  */
 export const hybridSearchBacklogTool = tool({
-  description: `Search backlog items using a hybrid approach that combines AI semantic understanding with 
-    keyword matching. This provides the most comprehensive search results by balancing contextual relevance 
-    with exact term matches.
+  description: `Perform industry-standard hybrid search combining semantic AI with BM25 keyword search.
     
-    The semantic_weight parameter controls the balance:
-    - 0.8-1.0: Prioritize semantic understanding (find similar concepts)
-    - 0.5-0.7: Balanced approach (default 0.7)
-    - 0.0-0.4: Prioritize keyword matching (find exact terms)`,
+    Two modes available:
+    1. **RRF (Reciprocal Rank Fusion)** - Recommended production approach that combines rankings
+    2. **Weighted Scoring** - Legacy mode with configurable semantic/keyword weights
+    
+    RRF solves the "authentication" vs "login" problem by combining semantic understanding 
+    with precise keyword matching using the formula: RRF = Σ(1/(k + rank_i))
+    
+    This is the industry standard used by ElasticSearch, OpenSearch, and Pinecone.`,
   inputSchema: hybridSearchBacklogSchema,
   execute: async (input, { experimental_context }) => {
     try {
       const validated = hybridSearchBacklogSchema.parse(input);
+      
+      // Validate weights sum to 1.0 only in weighted mode
+      if (!validated.use_rrf) {
+        const totalWeight = validated.semantic_weight + validated.keyword_weight;
+        if (Math.abs(totalWeight - 1.0) > 0.001) {
+          return `Error: When using weighted scoring (use_rrf=false), semantic weight (${validated.semantic_weight}) and keyword weight (${validated.keyword_weight}) must sum to 1.0. Current total: ${totalWeight}`;
+        }
+      }
       
       console.log('Performing hybrid search for backlog items:', validated);
 
@@ -276,9 +305,9 @@ export const hybridSearchBacklogTool = tool({
             query: validated.query,
             project_id: validated.project_id,
             semantic_weight: validated.semantic_weight,
-            keyword_weight: 1 - validated.semantic_weight,
-            similarity_threshold: 0.5,
-            use_rrf: true,
+            keyword_weight: validated.keyword_weight,
+            similarity_threshold: validated.similarity_threshold,
+            use_rrf: validated.use_rrf,
             limit: validated.limit
           })
         },
@@ -293,38 +322,55 @@ export const hybridSearchBacklogTool = tool({
       const results = (response.data as any) || [];
       
       if (results.length === 0) {
-        return `No backlog items found matching the hybrid query: "${validated.query}"`;
+        return `No backlog items found for "${validated.query}" using hybrid search.
+        
+The search combined:
+- **Semantic search** (${(validated.semantic_weight * 100).toFixed(0)}% weight): AI understanding of meaning
+- **Keyword search** (${(validated.keyword_weight * 100).toFixed(0)}% weight): Traditional text matching
+
+Try adjusting the search approach or using different terms.`;
       }
 
       console.log(`Found ${results.length} hybrid-matching backlog items`);
 
-      // Format the results with hybrid scores
-      const semanticPercent = (validated.semantic_weight * 100).toFixed(0);
-      const keywordPercent = ((1 - validated.semantic_weight) * 100).toFixed(0);
+      // Detect potential duplicates by similar titles
+      const duplicates = [];
+      
+      for (let i = 0; i < results.length; i++) {
+        const item1 = results[i].backlog;
+        const words1 = new Set(item1.title.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3));
+        
+        for (let j = i + 1; j < results.length; j++) {
+          const item2 = results[j].backlog;
+          const words2 = new Set(item2.title.toLowerCase().split(/\s+/).filter((w: string) => w.length > 3));
+          
+          // Check for significant word overlap
+          const intersection = new Set([...words1].filter(x => words2.has(x)));
+          const similarity = intersection.size / Math.min(words1.size, words2.size);
+          
+          if (similarity > 0.6 && intersection.size >= 2) {
+            duplicates.push([item1, item2]);
+          }
+        }
+      }
 
-      const formattedResults = `**Hybrid Search Results** for "${validated.query}":
-*Semantic: ${semanticPercent}% | Keywords: ${keywordPercent}%*
+      // Format results concisely with duplicate detection
+      let formattedResults = `Found ${results.length} item${results.length === 1 ? '' : 's'} related to "${validated.query}":
 
 ${results.map((result: any, index: number) => {
   const item = result.backlog;
-  const score = result.similarity_score ? result.similarity_score.toFixed(3) : 'N/A';
-  const itemType = item.item_type.charAt(0).toUpperCase() + item.item_type.slice(1);
-  const priority = item.priority.charAt(0).toUpperCase() + item.priority.slice(1);
+  const itemTypeDisplay = item.item_type.charAt(0).toUpperCase() + item.item_type.slice(1);
+  const statusDisplay = item.status.replace('_', ' ').split(' ').map((word: string) => 
+    word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+  ).join(' ');
   
-  return `${index + 1}. **${itemType} #${item.id}** (Combined Score: ${score})
-   **"${item.title}"**
-   - **Priority**: ${priority}
-   - **Status**: ${item.status.replace('_', ' ')}
-   - **Story Points**: ${item.story_point || 'Not estimated'}${item.description ? `\n   - **Description**: ${item.description.length > 100 ? item.description.substring(0, 100) + '...' : item.description}` : ''}`;
-}).join('\n\n')}
+  return `${itemTypeDisplay} #${item.id} — ${item.title} (${statusDisplay})`;
+}).join('\n\n')}`;
 
-**Search Insights**:
-- **Total Matches**: ${results.length}
-- **Search Type**: Hybrid (Semantic + Keyword)
-- **Balance**: ${semanticPercent}% semantic understanding, ${keywordPercent}% keyword matching
-- **Best Combined Score**: ${results[0].similarity_score ? results[0].similarity_score.toFixed(3) : 'N/A'}
-
-This hybrid approach finds items that are both contextually relevant and contain matching keywords, providing the most comprehensive results.`;
+      // Add duplicate detection note if found
+      if (duplicates.length > 0) {
+        formattedResults += `\n\n👉 **Note**: #${duplicates[0][0].id} and #${duplicates[0][1].id} look similar and might be duplicates.`;
+      }
 
       return formattedResults;
 
@@ -340,12 +386,10 @@ This hybrid approach finds items that are both contextually relevant and contain
  * Uses semantic similarity to discover related or duplicate items
  */
 export const findSimilarBacklogTool = tool({
-  description: `Find backlog items that are similar to a specific existing item. This tool uses AI to identify 
-    items with similar requirements, functionality, or context. Useful for:
-    - Identifying potential duplicates
-    - Finding related features that should be grouped
-    - Discovering items that might conflict or overlap
-    - Finding items that could be combined or split`,
+  description: `Find backlog items that are semantically similar to a specific item.
+    Perfect for discovering related user stories, potential dependencies, or duplicate work.
+    Uses AI embeddings to understand conceptual relationships between backlog items.
+    Helpful for backlog organization, sprint planning, and avoiding duplicate efforts.`,
   inputSchema: findSimilarBacklogSchema,
   execute: async (input, { experimental_context }) => {
     try {
@@ -355,7 +399,7 @@ export const findSimilarBacklogTool = tool({
 
       // Call the similar items API
       const response = await requestWithAuth(
-        `/semantic-search/similar/${validated.backlog_id}?limit=${validated.limit}&similarity_threshold=0.6`,
+        `/semantic-search/similar/${validated.backlog_id}?limit=${validated.limit}&similarity_threshold=${validated.similarity_threshold}`,
         { method: 'GET' },
         experimental_context as AuthContext
       );
@@ -368,42 +412,30 @@ export const findSimilarBacklogTool = tool({
       const similarItems = (response.data as any) || [];
       
       if (similarItems.length === 0) {
-        return `No similar backlog items found for item #${validated.backlog_id}.`;
+        return `No similar backlog items found for item #${validated.backlog_id} with similarity threshold ${validated.similarity_threshold}.
+        
+This could mean:
+- The item is unique in its project
+- The similarity threshold is too high (try 0.4 or 0.5)
+- The item doesn't have sufficient content for comparison
+
+Try lowering the similarity threshold to find more loosely related items.`;
       }
 
       console.log(`Found ${similarItems.length} similar backlog items`);
 
-      // Format the results
-      const formattedResults = `**Found ${similarItems.length} Similar Items** for #${validated.backlog_id}:
+      // Format results concisely
+      const formattedResults = `Found ${similarItems.length} item${similarItems.length === 1 ? '' : 's'} similar to #${validated.backlog_id}:
 
 ${similarItems.map((result: any, index: number) => {
   const item = result.backlog;
-  const similarity = (result.similarity_score * 100).toFixed(1);
-  const itemType = item.item_type.charAt(0).toUpperCase() + item.item_type.slice(1);
-  const priority = item.priority.charAt(0).toUpperCase() + item.priority.slice(1);
+  const itemTypeDisplay = item.item_type.charAt(0).toUpperCase() + item.item_type.slice(1);
+  const statusDisplay = item.status.replace('_', ' ').split(' ').map((word: string) => 
+    word.charAt(0).toUpperCase() + word.slice(1).toLowerCase()
+  ).join(' ');
   
-  // Determine similarity level
-  let similarityLevel = '';
-  if (result.similarity_score >= 0.9) similarityLevel = 'Very High (Potential Duplicate)';
-  else if (result.similarity_score >= 0.8) similarityLevel = 'High (Closely Related)';
-  else if (result.similarity_score >= 0.7) similarityLevel = 'Medium (Related)';
-  else similarityLevel = 'Low (Loosely Related)';
-  
-  return `${index + 1}. **${itemType} #${item.id}** - ${similarity}% similar
-   ${similarityLevel}
-   **"${item.title}"**
-   - **Priority**: ${priority} | **Status**: ${item.status.replace('_', ' ')} | **Points**: ${item.story_point || 'Not estimated'}${item.description ? `\n   - **Description**: ${item.description.length > 80 ? item.description.substring(0, 80) + '...' : item.description}` : ''}`;
-}).join('\n\n')}
-
-**Analysis Summary**:
-- **High Similarity (≥80%)**: ${similarItems.filter((result: any) => result.similarity_score >= 0.8).length} items (potential duplicates or closely related)
-- **Medium Similarity (70-79%)**: ${similarItems.filter((result: any) => result.similarity_score >= 0.7 && result.similarity_score < 0.8).length} items (related features)
-- **Low Similarity (60-69%)**: ${similarItems.filter((result: any) => result.similarity_score >= 0.6 && result.similarity_score < 0.7).length} items (loosely related)
-
-**Recommendations**:
-${similarItems.some((result: any) => result.similarity_score >= 0.9) ? 'Review for Duplicates: Items with >90% similarity may be duplicates that should be merged.' : ''}
-${similarItems.some((result: any) => result.similarity_score >= 0.8 && result.similarity_score < 0.9) ? 'Group Related Items: Items with 80-90% similarity should be considered for epic grouping or sprint planning together.' : ''}
-${similarItems.length > 3 ? 'Consider Refactoring: Many similar items suggest this area might benefit from consolidation or clearer requirements.' : ''}`;
+  return `${itemTypeDisplay} #${item.id} — ${item.title} (${statusDisplay})`;
+}).join('\n\n')}`;
 
       return formattedResults;
 
