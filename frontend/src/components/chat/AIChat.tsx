@@ -38,7 +38,7 @@ import Image from 'next/image';
 import { ProjectAgent, ProjectAgentType, ChatMessage, AgentChatState, UIMessage, MessagePart } from '@/types/chat';
 import { getAgentModelConfig, AI_MODELS } from '@/lib/ai-gateway';
 import { getPreferredModel, setPreferredModel } from '@/lib/model-preferences';
-import { hasNativeWebSearch } from '@/lib/tools/web-search';
+import { hasNativeWebSearch } from '@/lib/tools/legacy/web-search';
 import { convertFilesToDataURLs, validateFile, formatFileSize, getFileCategory, handleDragOver, handleDragEnter, handleDragLeave, handleDrop, getSupportedFormatsString } from '@/utils/multimodal';
 import { useChatHistory } from '@/hooks/useChatHistory';
 import { chatAPI } from '@/lib/chat-api';

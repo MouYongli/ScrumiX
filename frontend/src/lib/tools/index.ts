@@ -14,14 +14,14 @@ export { scrumMasterTools } from './scrum-master';
 export type { ScrumMasterTools } from './scrum-master';
 
 // Shared utilities and documentation tools
-export { documentationTools } from './documentation';
-export type { DocumentationTools } from './documentation';
+export { documentationTools } from './utils/documentation';
+export type { DocumentationTools } from './utils/documentation';
 
 export { utils } from './utils';
 export { getWebSearchToolsForModel, hasNativeWebSearch } from './utils/web-search';
 
 // Schema exports
-export * as ToolSchemas from './schemas';
+export * as ToolSchemas from './legacy/schemas';
 
 // Legacy compatibility exports for backward compatibility
 export { backlogManagementTools } from './product-owner/legacy/backlog-management';
@@ -42,13 +42,13 @@ export type { SemanticSprintManagementTools as SemanticSprintTools } from './pro
 export { developerSprintTools } from './developer/legacy/developer-sprint-management';
 export type { DeveloperSprintTools } from './developer/legacy/developer-sprint-management';
 
-export { semanticDocumentationTools } from './semantic-documentation-search';
-export type { SemanticDocumentationTools } from './semantic-documentation-search';
+export { semanticDocumentationTools } from './legacy/semantic-documentation-search';
+export type { SemanticDocumentationTools } from './legacy/semantic-documentation-search';
 
 // Import tools for legacy collections
 import { productOwnerTools } from './product-owner';
 import { developerTools } from './developer';
-import { scrumMasterTools } from './scrum-master';
+import { scrumMasterTools } from './legacy/scrum-master';
 
 // Legacy tool collections (deprecated - use modular imports instead)
 /**

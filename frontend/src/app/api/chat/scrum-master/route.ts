@@ -1,7 +1,7 @@
 import { streamText, stepCountIs, convertToModelMessages, type UIMessage } from 'ai';
 import { gateway, getAgentModelConfig } from '@/lib/ai-gateway';
 import { selectModel } from '@/lib/adaptive-models';
-import { scrumMasterTools } from '@/lib/tools/scrum-master';
+import { scrumMasterTools } from '@/lib/tools/legacy/scrum-master';
 import { documentationTools } from '@/lib/tools/utils/documentation';
 import { getWebSearchToolsForModel } from '@/lib/tools/utils/web-search';
 import { chatAPI } from '@/lib/chat-api';

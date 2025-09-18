@@ -1,8 +1,7 @@
 import { streamText, stepCountIs, convertToModelMessages, type UIMessage } from 'ai';
 import { gateway, getAgentModelConfig } from '@/lib/ai-gateway';
 import { selectModel } from '@/lib/adaptive-models';
-import { getWebSearchToolsForModel } from '@/lib/tools/web-search';
-import { documentationTools } from '@/lib/tools/utils/documentation';
+import { getWebSearchToolsForModel } from '@/lib/tools/utils/web-search';
 import { chatAPI } from '@/lib/chat-api';
 
 // Support AI Agent System Prompt
@@ -50,18 +49,12 @@ Goal: Provide foundational Scrum knowledge
 - Provide guidance on Scrum best practices
 - Connect Scrum theory to ScrumiX implementation
 
-5. Documentation Management & Support
-Goal: Help users access and manage project documentation
-- Create and maintain platform documentation, user guides, and help articles
-- Search existing documentation to find relevant information for user questions
-- Update documentation to reflect platform changes and user feedback
-- Assist users in finding and understanding project-specific documentation
-
-Documentation Guidelines:
-- When users ask questions, proactively search existing documentation first
-- Create new documentation for frequently asked questions or platform updates
-- Always verify information is current before providing guidance
-- Use semantic search to find relevant information even with different wording
+5. GENERAL GUIDANCE & ASSISTANCE
+Goal: Provide comprehensive platform support
+- Answer questions about ScrumiX features and functionality
+- Help users troubleshoot common issues and workflows
+- Provide up-to-date information using web search when needed
+- Connect users with appropriate resources and specialized agents
 
 COMMUNICATION STYLE:
 - Keep responses concise and actionable (2-3 sentences when possible)
@@ -116,8 +109,6 @@ export async function POST(req: Request) {
       system: SUPPORT_SYSTEM_PROMPT,
       messages: messages,
       tools: {
-        // Documentation tools for creating and managing platform documentation
-        ...documentationTools,
         // Support agent can use web search for up-to-date information
         ...getWebSearchToolsForModel(modelToUse, webSearchEnabled),
       },

@@ -29,7 +29,7 @@ import { usePathname } from 'next/navigation';
 import { ProjectAgent, ProjectAgentType, ChatMessage, AgentChatState, UIMessage } from '@/types/chat';
 import { getAgentModelConfig, AI_MODELS } from '@/lib/ai-gateway';
 import { getPreferredModel, setPreferredModel } from '@/lib/model-preferences';
-import { hasNativeWebSearch } from '@/lib/tools/web-search';
+import { hasNativeWebSearch } from '@/lib/tools/legacy/web-search';
 import { chatAPI, ChatConversation } from '@/lib/chat-api';
 import { nanoid } from 'nanoid';
 import ModelSelector from './ModelSelector';
