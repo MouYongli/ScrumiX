@@ -469,7 +469,12 @@ OR
         },
       });
 
-      return result.toTextStreamResponse();
+      return result.toTextStreamResponse({
+        headers: {
+          'X-Message-ID': savedMessage.id || message.id,
+          'X-Original-Message-ID': message.id
+        }
+      });
 
     } else {
       // Handle legacy format for backward compatibility

@@ -745,6 +745,27 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
           throw new Error(`API Error: ${response.status}`);
         }
 
+        // Get the backend-generated message ID from response headers
+        const backendMessageId = response.headers.get('X-Message-ID');
+        const originalMessageId = response.headers.get('X-Original-Message-ID');
+        
+        // Update the user message ID in state if we got a new ID from backend
+        if (backendMessageId && originalMessageId && backendMessageId !== originalMessageId) {
+          setAgentStates(prev => {
+            const currentMessages = prev[agentType].messages;
+            const updatedMessages = currentMessages.map(msg => 
+              msg.id === originalMessageId ? { ...msg, id: backendMessageId } : msg
+            );
+            return {
+              ...prev,
+              [agentType]: {
+                ...prev[agentType],
+                messages: updatedMessages
+              }
+            };
+          });
+        }
+
         responseStream = response.body;
         
         // Update the chat history to use this conversation ID for future messages
