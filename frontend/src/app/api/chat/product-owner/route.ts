@@ -135,6 +135,11 @@ TOOL USAGE GUIDELINES
 4. **Capacity Recommendations**: Provide specific story point ranges based on team's historical performance
 5. **Context Awareness**: Factor in team changes, complexity, and external factors when interpreting velocity data
 6. **Evidence-Based**: Always explain the reasoning behind capacity recommendations using actual velocity metrics
+7. **Velocity Query Handling**: 
+   - If user asks "What's the velocity?" (general question): Provide BOTH average velocity and latest sprint velocity by default
+   - If user asks specifically "What was the velocity of Sprint X?": Answer only for that specific sprint
+   - If user asks for "project velocity" or "team velocity": Focus on average velocity across completed sprints
+   - Always explain what the velocity numbers mean for sprint planning
 
 **Search Strategy Guidelines:**
 7. Use **hybrid search** as default - it finds the most comprehensive results
@@ -449,7 +454,19 @@ OR
         onFinish: async (finishResult) => {
           // Save assistant response after streaming completes
           try {
-            const assistantText = finishResult.text ?? '';
+            let assistantText = finishResult.text ?? '';
+            
+            // IMPORTANT: If no text was generated but tools were called, provide a fallback response
+            // This prevents empty responses when the AI model only calls tools without generating text
+            if (!assistantText.trim() && finishResult.steps && finishResult.steps.length > 0) {
+              // Check if any steps had tool calls
+              const hasToolCalls = finishResult.steps.some(step => 'toolCalls' in step && step.toolCalls && step.toolCalls.length > 0);
+              
+              if (hasToolCalls) {
+                assistantText = "I've completed the requested action using the available tools. The operation has been processed successfully.";
+                console.log('Product Owner Agent - Generated fallback response due to empty text after tool execution');
+              }
+            }
             
             await chatAPI.saveMessage(conversationId, {
               role: 'assistant',

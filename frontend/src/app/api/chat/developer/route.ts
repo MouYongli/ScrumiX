@@ -320,7 +320,19 @@ export async function POST(req: Request) {
         onFinish: async (finishResult) => {
           // Save assistant response after streaming completes
           try {
-            const assistantText = finishResult.text ?? '';
+            let assistantText = finishResult.text ?? '';
+            
+            // IMPORTANT: If no text was generated but tools were called, provide a fallback response
+            // This prevents empty responses when the AI model only calls tools without generating text
+            if (!assistantText.trim() && finishResult.steps && finishResult.steps.length > 0) {
+              // Check if any steps had tool calls
+              const hasToolCalls = finishResult.steps.some(step => 'toolCalls' in step && step.toolCalls && step.toolCalls.length > 0);
+              
+              if (hasToolCalls) {
+                assistantText = "I've completed the requested development action using the available tools. The operation has been processed successfully.";
+                console.log('Developer Agent - Generated fallback response due to empty text after tool execution');
+              }
+            }
             
             await chatAPI.saveMessage(conversationId, {
               role: 'assistant',

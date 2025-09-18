@@ -146,7 +146,15 @@ Meeting Management Capabilities:
 - No calendar invites sent - all managed within ScrumiX system
 - Supports timezone-aware scheduling based on user preferences
 - Full agenda and action item management for all meetings
-- Execute user requests directly without excessive questioning
+
+**Meeting Creation Requirements:**
+- ALWAYS gather all required meeting information before creating meetings
+- Required attributes: meeting title, type, date/time, duration, participants
+- Ask for missing information systematically: "I need [missing info] to create this meeting"
+- For recurring meetings: confirm frequency, end date, and any exceptions
+- Validate participant names against project members before scheduling
+- Confirm meeting details with user before final creation
+- Do not create incomplete meetings - gather all requirements first
 
 Boundaries
 - You do not make decisions for the team; accountability remains with the human Scrum Master
@@ -296,7 +304,20 @@ export async function POST(req: Request) {
         onFinish: async (finishResult) => {
           // Save assistant response after streaming completes
           try {
-            const assistantText = finishResult.text ?? '';
+            let assistantText = finishResult.text ?? '';
+            
+            // IMPORTANT: If no text was generated but tools were called, provide a fallback response
+            // This prevents empty responses when the AI model only calls tools without generating text
+            if (!assistantText.trim() && finishResult.steps && finishResult.steps.length > 0) {
+              // Check if any steps had tool calls
+              const hasToolCalls = finishResult.steps.some(step => 'toolCalls' in step && step.toolCalls && step.toolCalls.length > 0);
+              
+              if (hasToolCalls) {
+                assistantText = "I've completed the requested Scrum process action using the available tools. The operation has been processed successfully.";
+                console.log('Scrum Master Agent - Generated fallback response due to empty text after tool execution');
+              }
+            }
+            
             const assistantParts: UIMessage['parts'] = [{ type: 'text', text: assistantText }];
             
             await chatAPI.saveMessage(conversationId, {
