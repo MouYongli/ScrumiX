@@ -4,7 +4,12 @@
  */
 
 import { tool } from 'ai';
-import { z } from 'zod';
+import {
+  getSprintVelocitySchema,
+  getProjectAverageVelocitySchema,
+  getProjectVelocityMetricsSchema,
+  getProjectVelocityTrendSchema
+} from '@/lib/tools/schemas/velocity';
 
 /**
  * Helper function to make authenticated API calls for velocity management
@@ -46,55 +51,11 @@ async function makeAuthenticatedVelocityCall(
   }
 }
 
-// Define the Zod schema for sprint velocity retrieval
-const getSprintVelocitySchema = z.object({
-  sprint_id: z.number()
-    .int('Sprint ID must be a whole number')
-    .positive('Sprint ID must be a positive integer')
-    .describe('The ID of the sprint to get velocity for (can also be called sprintId or id)')
-});
-
-// Define the Zod schema for project average velocity
-const getProjectAverageVelocitySchema = z.object({
-  project_id: z.number()
-    .int('Project ID must be a whole number')
-    .positive('Project ID must be a positive integer')
-    .describe('The ID of the project to calculate average velocity for (can also be called projectId)'),
-  
-  exclude_sprint_id: z.number()
-    .int('Sprint ID must be a whole number')
-    .positive('Sprint ID must be a positive integer')
-    .optional()
-    .describe('Optional sprint ID to exclude from the average calculation (can also be called excludeSprintId)')
-});
-
-// Define the Zod schema for project velocity metrics
-const getProjectVelocityMetricsSchema = z.object({
-  project_id: z.number()
-    .int('Project ID must be a whole number')
-    .positive('Project ID must be a positive integer')
-    .describe('The ID of the project to get comprehensive velocity metrics for (can also be called projectId)')
-});
-
-// Define the Zod schema for project velocity trend
-const getProjectVelocityTrendSchema = z.object({
-  project_id: z.number()
-    .int('Project ID must be a whole number')
-    .positive('Project ID must be a positive integer')
-    .describe('The ID of the project to get velocity trend for (can also be called projectId)'),
-  
-  limit: z.number()
-    .int('Limit must be a whole number')
-    .min(1, 'Limit must be at least 1')
-    .max(20, 'Limit cannot exceed 20')
-    .default(5)
-    .describe('Number of recent sprints to include in the trend (default: 5, max: 20)')
-});
 
 /**
  * Tool for getting velocity points of a specific sprint
  */
-export const getSprintVelocityTool = tool({
+const getSprintVelocityTool = tool({
   description: `Get the velocity points (completed story points) for a specific sprint. 
     This shows how many story points were actually completed during the sprint.
     Velocity is automatically calculated based on completed user stories and bugs.
@@ -159,7 +120,7 @@ You can use this velocity data to help plan future sprint capacities and estimat
 /**
  * Tool for calculating average velocity across completed sprints in a project
  */
-export const getProjectAverageVelocityTool = tool({
+const getProjectAverageVelocityTool = tool({
   description: `Calculate the average velocity across all completed sprints in a project. 
     This is extremely useful for sprint capacity planning as it provides data-driven insights 
     based on the team's historical performance. You can optionally exclude a specific sprint 
@@ -242,7 +203,7 @@ This data-driven approach helps ensure realistic sprint goals and better predict
 /**
  * Tool for getting comprehensive velocity metrics for a project
  */
-export const getProjectVelocityMetricsTool = tool({
+const getProjectVelocityMetricsTool = tool({
   description: `Get comprehensive velocity metrics for a project including average velocity, min/max velocity, 
     velocity trends, and total completed sprints. This provides a complete picture of team performance 
     and helps with advanced sprint planning and capacity management.
@@ -299,7 +260,7 @@ export const getProjectVelocityMetricsTool = tool({
       // Add velocity trend analysis if available
       if (metrics.velocity_trend && metrics.velocity_trend.length > 0) {
         metricsMessage += `**Recent Velocity Trend (Last ${metrics.velocity_trend.length} Sprints):**
-${metrics.velocity_trend.map((trend, index) => {
+${metrics.velocity_trend.map((trend: any, index: number) => {
   const trendIcon = index === 0 ? '📊' : 
                    trend.velocity_points > metrics.velocity_trend[index - 1].velocity_points ? '📈' :
                    trend.velocity_points < metrics.velocity_trend[index - 1].velocity_points ? '📉' : '➡️';
@@ -345,7 +306,7 @@ ${metrics.average_velocity >= 20 ? '🚀 High-performing team with strong delive
 /**
  * Tool for getting velocity trend for a project
  */
-export const getProjectVelocityTrendTool = tool({
+const getProjectVelocityTrendTool = tool({
   description: `Get velocity trend data for a project showing recent sprint performance. 
     This helps identify patterns, improvements, or declines in team velocity over time.
     Useful for understanding team performance trends and making informed capacity decisions.
@@ -388,10 +349,10 @@ export const getProjectVelocityTrendTool = tool({
       let trendAnalysis = '';
       if (trends.length >= 3) {
         const recent = trends.slice(-3);
-        const isIncreasing = recent.every((sprint, index) => 
+        const isIncreasing = recent.every((sprint: any, index: number) => 
           index === 0 || sprint.velocity_points >= recent[index - 1].velocity_points
         );
-        const isDecreasing = recent.every((sprint, index) => 
+        const isDecreasing = recent.every((sprint: any, index: number) => 
           index === 0 || sprint.velocity_points <= recent[index - 1].velocity_points
         );
         
@@ -411,7 +372,7 @@ export const getProjectVelocityTrendTool = tool({
 **Recent Sprints Analyzed:** ${trends.length}
 
 **Velocity Trend (Chronological Order):**
-${trends.map((trend, index) => {
+${trends.map((trend: any, index: number) => {
   const position = index + 1;
   const trendIcon = index === 0 ? '📊' : 
                    trend.velocity_points > trends[index - 1].velocity_points ? '📈' :
@@ -422,9 +383,9 @@ ${trends.map((trend, index) => {
 ${trendAnalysis}
 
 **Trend Insights:**
-- **Highest Velocity:** ${Math.max(...trends.map(t => t.velocity_points))} story points
-- **Lowest Velocity:** ${Math.min(...trends.map(t => t.velocity_points))} story points
-- **Average (Recent ${trends.length} Sprints):** ${Math.round(trends.reduce((sum, t) => sum + t.velocity_points, 0) / trends.length)} story points
+- **Highest Velocity:** ${Math.max(...trends.map((t: any) => t.velocity_points))} story points
+- **Lowest Velocity:** ${Math.min(...trends.map((t: any) => t.velocity_points))} story points
+- **Average (Recent ${trends.length} Sprints):** ${Math.round(trends.reduce((sum: number, t: any) => sum + t.velocity_points, 0) / trends.length)} story points
 
 **Planning Recommendations:**
 ${trends.length >= 2 ? `

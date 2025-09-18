@@ -5,7 +5,6 @@
  */
 
 import { tool } from 'ai';
-import { z } from 'zod';
 import { requestWithAuth, type AuthContext } from '../../utils/http';
 import {
   semanticSearchBacklogSchema,
