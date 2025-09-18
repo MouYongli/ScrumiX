@@ -1,11 +1,8 @@
 import { streamText, stepCountIs, convertToModelMessages, type UIMessage } from 'ai';
-import { backlogManagementTools } from '@/lib/tools/backlog-management';
-import { sprintManagementTools } from '@/lib/tools/sprint-management';
-import { velocityManagementTools } from '@/lib/tools/velocity-management';
-import { documentationTools } from '@/lib/tools/documentation';
+import { productOwnerTools } from '@/lib/tools/product-owner';
 import { gateway, getAgentModelConfig } from '@/lib/ai-gateway';
 import { selectModel } from '@/lib/adaptive-models';
-import { getWebSearchToolsForModel } from '@/lib/tools/web-search';
+import { getWebSearchToolsForModel } from '@/lib/tools/utils/web-search';
 import { chatAPI } from '@/lib/chat-api';
 
 // Product Owner AI Agent System Prompt
@@ -414,10 +411,8 @@ OR
         system: contextualSystemPrompt,
         messages: modelMessages,
         tools: {
-          ...backlogManagementTools,
-          ...sprintManagementTools,
-          ...velocityManagementTools,
-          ...documentationTools,
+          // All Product Owner tools from the new modular structure
+          ...productOwnerTools,
           ...getWebSearchToolsForModel(modelToUse, webSearchEnabled),
         },
         temperature: modelConfig.temperature,
@@ -518,10 +513,8 @@ OR
         system: contextualSystemPrompt,
         messages: modelMessages,
         tools: {
-          ...backlogManagementTools,
-          ...sprintManagementTools,
-          ...velocityManagementTools,
-          ...documentationTools,
+          // All Product Owner tools from the new modular structure
+          ...productOwnerTools,
           ...getWebSearchToolsForModel(modelToUse, webSearchEnabled),
         },
         temperature: modelConfig.temperature,
