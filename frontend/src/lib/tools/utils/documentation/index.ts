@@ -28,10 +28,14 @@ import {
   formatDocumentationSearchResults,
   searchDocumentationByField,
   searchDocumentationMultiField,
+  bm25SearchDocumentation,
+  hybridSearchDocumentation,
   getSearchSuggestions,
   // AI Tools
   searchDocumentationByFieldTool,
   searchDocumentationMultiFieldTool,
+  bm25SearchDocumentationTool,
+  hybridSearchDocumentationTool,
   semanticDocumentationTools
 } from './semantic-search';
 
@@ -73,6 +77,8 @@ export {
   formatDocumentationSearchResults,
   searchDocumentationByField,
   searchDocumentationMultiField,
+  bm25SearchDocumentation,
+  hybridSearchDocumentation,
   getSearchSuggestions,
 
   // User management utilities
@@ -95,6 +101,8 @@ export {
   deleteDocumentationTool,
   searchDocumentationByFieldTool,
   searchDocumentationMultiFieldTool,
+  bm25SearchDocumentationTool,
+  hybridSearchDocumentationTool,
   getCurrentUserTool,
   getProjectUsersTool,
 
@@ -171,7 +179,9 @@ export const documentationTools = {
   
   // Semantic Search Operations - Available to ALL agents
   searchDocumentationByField: semanticDocumentationTools.searchDocumentationByField,
-  searchDocumentationMultiField: semanticDocumentationTools.searchDocumentationMultiField
+  searchDocumentationMultiField: semanticDocumentationTools.searchDocumentationMultiField,
+  bm25SearchDocumentation: semanticDocumentationTools.bm25SearchDocumentation,
+  hybridSearchDocumentation: semanticDocumentationTools.hybridSearchDocumentation
 };
 
 /**

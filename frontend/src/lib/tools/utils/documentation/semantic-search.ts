@@ -9,8 +9,12 @@ import { formatSimilarityScore } from '../formatting';
 import {
   searchDocumentationByFieldSchema,
   searchDocumentationMultiFieldSchema,
+  bm25SearchDocumentationSchema,
+  hybridSearchDocumentationSchema,
   type SearchDocumentationByFieldInput,
-  type SearchDocumentationMultiFieldInput
+  type SearchDocumentationMultiFieldInput,
+  type BM25SearchDocumentationInput,
+  type HybridSearchDocumentationInput
 } from '../../schemas/documentation';
 
 /**
@@ -267,11 +271,150 @@ export function getSearchSuggestions(query: string): string[] {
 }
 
 /**
+ * BM25 keyword search for documentation
+ */
+export async function bm25SearchDocumentation(
+  searchInput: BM25SearchDocumentationInput,
+  context: AuthContext
+) {
+  const searchData = {
+    query: searchInput.query,
+    project_id: searchInput.project_id,
+    type: searchInput.type,
+    limit: searchInput.limit
+  };
+
+  const response = await documentationSearchWithAuth(searchData, 'bm25-search', context);
+  
+  if (response.error) {
+    return response;
+  }
+
+  const formattedResults = formatDocumentationSearchResults(
+    Array.isArray(response.data) ? response.data : [], 
+    searchInput.query, 
+    'field'
+  );
+
+  return { data: formattedResults };
+}
+
+/**
+ * AI Tool for BM25 keyword search in documentation
+ */
+export const bm25SearchDocumentationTool = tool({
+  description: `Perform precise BM25 keyword search on documentation using industry-standard ranking algorithm.
+    Perfect for finding documents with specific terms like "authentication", "API", "requirements", "architecture".
+    Uses BM25 scoring which handles term frequency, document length normalization, and inverse document frequency.`,
+  inputSchema: bm25SearchDocumentationSchema,
+  execute: async (input, { experimental_context }) => {
+    try {
+      const validated = bm25SearchDocumentationSchema.parse(input);
+      
+      console.log('BM25 documentation search:', validated);
+
+      const response = await bm25SearchDocumentation(validated, experimental_context as AuthContext);
+
+      if (response.error) {
+        console.error('BM25 documentation search failed:', response.error);
+        return `BM25 documentation search failed: ${response.error}`;
+      }
+
+      return response.data;
+
+    } catch (error) {
+      console.error('Error in bm25SearchDocumentationTool:', error);
+      return `Failed to perform BM25 search: ${error instanceof Error ? error.message : 'Unknown error occurred'}`;
+    }
+  }
+});
+
+/**
+ * Hybrid search for documentation combining semantic and keyword approaches
+ */
+export async function hybridSearchDocumentation(
+  searchInput: HybridSearchDocumentationInput,
+  context: AuthContext
+) {
+  const searchData = {
+    query: searchInput.query,
+    project_id: searchInput.project_id,
+    type: searchInput.type,
+    semantic_weight: searchInput.semantic_weight,
+    keyword_weight: searchInput.keyword_weight,
+    similarity_threshold: searchInput.similarity_threshold,
+    use_rrf: searchInput.use_rrf,
+    limit: searchInput.limit
+  };
+
+  const response = await documentationSearchWithAuth(searchData, 'hybrid-search', context);
+  
+  if (response.error) {
+    return response;
+  }
+
+  const formattedResults = formatDocumentationSearchResults(
+    Array.isArray(response.data) ? response.data : [], 
+    searchInput.query, 
+    'multi-field'
+  );
+
+  return { data: formattedResults };
+}
+
+/**
+ * AI Tool for hybrid documentation search
+ */
+export const hybridSearchDocumentationTool = tool({
+  description: `Perform industry-standard hybrid search combining semantic AI with BM25 keyword search for documentation.
+    
+    Two modes available:
+    1. **RRF (Reciprocal Rank Fusion)** - Recommended production approach that combines rankings
+    2. **Weighted Scoring** - Legacy mode with configurable semantic/keyword weights
+    
+    RRF solves the "authentication" vs "login" problem by combining semantic understanding 
+    with precise keyword matching using the formula: RRF = Σ(1/(k + rank_i))
+    
+    This is the industry standard used by ElasticSearch, OpenSearch, and Pinecone.`,
+  inputSchema: hybridSearchDocumentationSchema,
+  execute: async (input, { experimental_context }) => {
+    try {
+      const validated = hybridSearchDocumentationSchema.parse(input);
+      
+      // Validate weights sum to 1.0 only in weighted mode
+      if (!validated.use_rrf) {
+        const totalWeight = validated.semantic_weight + validated.keyword_weight;
+        if (Math.abs(totalWeight - 1.0) > 0.001) {
+          return `Error: When using weighted scoring (use_rrf=false), semantic weight (${validated.semantic_weight}) and keyword weight (${validated.keyword_weight}) must sum to 1.0. Current total: ${totalWeight}`;
+        }
+      }
+      
+      console.log('Hybrid documentation search:', validated);
+
+      const response = await hybridSearchDocumentation(validated, experimental_context as AuthContext);
+
+      if (response.error) {
+        console.error('Hybrid documentation search failed:', response.error);
+        return `Hybrid documentation search failed: ${response.error}`;
+      }
+
+      return response.data;
+
+    } catch (error) {
+      console.error('Error in hybridSearchDocumentationTool:', error);
+      return `Failed to perform hybrid search: ${error instanceof Error ? error.message : 'Unknown error occurred'}`;
+    }
+  }
+});
+
+/**
  * Enhanced semantic documentation search tools collection
  */
 export const semanticDocumentationTools = {
   searchDocumentationByField: searchDocumentationByFieldTool,
-  searchDocumentationMultiField: searchDocumentationMultiFieldTool
+  searchDocumentationMultiField: searchDocumentationMultiFieldTool,
+  bm25SearchDocumentation: bm25SearchDocumentationTool,
+  hybridSearchDocumentation: hybridSearchDocumentationTool
 };
 
 /**

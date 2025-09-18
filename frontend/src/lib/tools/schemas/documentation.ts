@@ -210,6 +210,80 @@ export const searchDocumentationMultiFieldSchema = z.object({
 });
 
 /**
+ * Schema for BM25 (keyword-based) search of documentation
+ */
+export const bm25SearchDocumentationSchema = z.object({
+  query: z.string()
+    .min(1, 'Query cannot be empty')
+    .describe('Keyword search query for precise term matching in documentation'),
+  
+  project_id: z.number()
+    .int('Project ID must be a whole number')
+    .positive('Project ID must be a positive integer')
+    .optional()
+    .describe('Filter by project ID (auto-detected if not provided)'),
+  
+  type: DocumentationTypeEnum
+    .optional()
+    .describe('Filter by documentation type'),
+  
+  limit: z.number()
+    .int('Limit must be a whole number')
+    .min(1, 'Limit must be at least 1')
+    .max(50, 'Limit cannot exceed 50')
+    .default(10)
+    .describe('Maximum number of results to return')
+});
+
+/**
+ * Schema for hybrid search combining semantic and keyword approaches for documentation
+ */
+export const hybridSearchDocumentationSchema = z.object({
+  query: z.string()
+    .min(1, 'Query cannot be empty')
+    .describe('Search query combining both semantic meaning and keyword matching'),
+  
+  project_id: z.number()
+    .int('Project ID must be a whole number')
+    .positive('Project ID must be a positive integer')
+    .optional()
+    .describe('Filter by project ID (auto-detected if not provided)'),
+  
+  type: DocumentationTypeEnum
+    .optional()
+    .describe('Filter by documentation type'),
+  
+  limit: z.number()
+    .int('Limit must be a whole number')
+    .min(1, 'Limit must be at least 1')
+    .max(50, 'Limit cannot exceed 50')
+    .default(15)
+    .describe('Maximum number of results to return'),
+  
+  semantic_weight: z.number()
+    .min(0.0, 'Semantic weight must be between 0 and 1')
+    .max(1.0, 'Semantic weight must be between 0 and 1')
+    .default(0.7)
+    .describe('Weight for semantic search (used in weighted mode, default: 0.7)'),
+  
+  keyword_weight: z.number()
+    .min(0.0, 'Keyword weight must be between 0 and 1')
+    .max(1.0, 'Keyword weight must be between 0 and 1')
+    .default(0.3)
+    .describe('Weight for BM25 keyword search (used in weighted mode, default: 0.3)'),
+  
+  similarity_threshold: z.number()
+    .min(0.0, 'Similarity threshold must be between 0 and 1')
+    .max(1.0, 'Similarity threshold must be between 0 and 1')
+    .default(0.5)
+    .describe('Minimum semantic similarity score (0-1, default: 0.5)'),
+  
+  use_rrf: z.boolean()
+    .default(true)
+    .describe('Use Reciprocal Rank Fusion (recommended) vs weighted scoring (default: true)')
+});
+
+/**
  * Schema for getting project users
  * Used for author management in documentation
  */
@@ -241,6 +315,8 @@ export type UpdateDocumentationInput = z.infer<typeof updateDocumentationSchema>
 export type DeleteDocumentationInput = z.infer<typeof deleteDocumentationSchema>;
 export type SearchDocumentationByFieldInput = z.infer<typeof searchDocumentationByFieldSchema>;
 export type SearchDocumentationMultiFieldInput = z.infer<typeof searchDocumentationMultiFieldSchema>;
+export type BM25SearchDocumentationInput = z.infer<typeof bm25SearchDocumentationSchema>;
+export type HybridSearchDocumentationInput = z.infer<typeof hybridSearchDocumentationSchema>;
 export type GetProjectUsersInput = z.infer<typeof getProjectUsersSchema>;
 export type GetCurrentUserInput = z.infer<typeof getCurrentUserSchema>;
 
