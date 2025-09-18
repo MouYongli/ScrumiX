@@ -436,9 +436,6 @@ const ChatWidget: React.FC = () => {
     if (messageIndex === -1) return;
 
     try {
-      console.log('ChatWidget - Attempting to update message with ID:', messageId);
-      console.log('ChatWidget - Message exists in state:', currentState.messages.some(m => m.id === messageId));
-      console.log('ChatWidget - All message IDs in state:', currentState.messages.map(m => ({ id: m.id, sender: m.sender })));
       
       // Update the existing message in backend
       await chatAPI.updateMessage(messageId, editingContent.trim());
@@ -477,9 +474,7 @@ const ChatWidget: React.FC = () => {
       
       // Check if this is a 404 error (message not found)
       if (error instanceof Error && error.message.includes('404')) {
-        console.warn('Message not found in backend, this might be due to ID synchronization issues');
-        console.log('Current message ID:', messageId);
-        console.log('Available message IDs:', currentState.messages.map(m => m.id));
+        console.warn('ChatWidget - Message ID sync issue detected for message:', messageId);
         
         // Try to reload the conversation to get the latest message IDs
         if (currentConversationId) {
@@ -1067,17 +1062,13 @@ const ChatWidget: React.FC = () => {
       const backendMessageId = response.headers.get('X-Message-ID');
       const originalMessageId = response.headers.get('X-Original-Message-ID');
       
-      console.log('ChatWidget - Message ID sync:', {
-        backendMessageId,
-        originalMessageId,
-        userMessageId: userUIMessage.id,
-        hasHeaders: !!backendMessageId && !!originalMessageId,
-        needsUpdate: backendMessageId && originalMessageId && backendMessageId !== originalMessageId
-      });
+      // Keep minimal logging for production debugging if needed
+      if (backendMessageId && originalMessageId && backendMessageId !== originalMessageId) {
+        console.log('ChatWidget - Syncing message ID:', originalMessageId, '→', backendMessageId);
+      }
       
       // Update the user message ID in state if we got a new ID from backend
       if (backendMessageId && originalMessageId && backendMessageId !== originalMessageId) {
-        console.log('ChatWidget - Updating message ID from', originalMessageId, 'to', backendMessageId);
         // Get the current messages (which includes the user message we just added)
         const currentMessages = agentStates[activeAgent].messages;
         updateAgentState(activeAgent, {

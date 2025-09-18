@@ -752,17 +752,13 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
         const backendMessageId = response.headers.get('X-Message-ID');
         const originalMessageId = response.headers.get('X-Original-Message-ID');
         
-        console.log('AIChat - Message ID sync (new conversation):', {
-          backendMessageId,
-          originalMessageId,
-          userMessageId: apiUserMessage.id,
-          hasHeaders: !!backendMessageId && !!originalMessageId,
-          needsUpdate: backendMessageId && originalMessageId && backendMessageId !== originalMessageId
-        });
+        // Keep minimal logging for production debugging if needed
+        if (backendMessageId && originalMessageId && backendMessageId !== originalMessageId) {
+          console.log('AIChat - Syncing message ID:', originalMessageId, '→', backendMessageId);
+        }
         
         // Update the user message ID in state if we got a new ID from backend
         if (backendMessageId && originalMessageId && backendMessageId !== originalMessageId) {
-          console.log('AIChat - Updating message ID from', originalMessageId, 'to', backendMessageId);
           
           // Use functional update to ensure we have the latest state
           setAgentStates(prev => {
@@ -770,7 +766,6 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
             const updatedMessages = currentMessages.map(msg => 
               msg.id === originalMessageId ? { ...msg, id: backendMessageId } : msg
             );
-            console.log('AIChat - Updated messages after ID sync:', updatedMessages.map(m => ({ id: m.id, sender: m.sender, content: m.content?.substring(0, 30) + '...' })));
             return {
               ...prev,
               [agentType]: {
@@ -804,22 +799,14 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
           const backendMessageId = result.headers.get('X-Message-ID');
           const originalMessageId = result.headers.get('X-Original-Message-ID');
           
-          console.log('AIChat - Message ID sync (ongoing conversation):', {
-            backendMessageId,
-            originalMessageId,
-            hasHeaders: !!backendMessageId && !!originalMessageId,
-            needsUpdate: backendMessageId && originalMessageId && backendMessageId !== originalMessageId
-          });
           
           if (backendMessageId && originalMessageId && backendMessageId !== originalMessageId) {
-            console.log('AIChat - Updating message ID from', originalMessageId, 'to', backendMessageId);
             setAgentStates(prev => {
               // Get the current messages (which includes the user message we just added)
               const currentMessages = prev[agentType].messages;
               const updatedMessages = currentMessages.map(msg => 
                 msg.id === originalMessageId ? { ...msg, id: backendMessageId } : msg
               );
-              console.log('AIChat - Updated messages:', updatedMessages.map(m => ({ id: m.id, sender: m.sender, content: m.content?.substring(0, 30) + '...' })));
               return {
                 ...prev,
                 [agentType]: {
@@ -2057,9 +2044,6 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       const chatHistory = getChatHistory(agentType);
       const conversationId = selectedConversationIds[agentType] || chatHistory.conversation.id;
 
-      console.log('AIChat - Attempting to update message with ID:', messageId);
-      console.log('AIChat - Message exists in state:', currentState.messages.some(m => m.id === messageId));
-      console.log('AIChat - All message IDs in state:', currentState.messages.map(m => ({ id: m.id, sender: m.sender })));
       
       // Update the existing message in backend
       await chatAPI.updateMessage(messageId, editingContent.trim());
@@ -2096,9 +2080,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       
       // Check if this is a 404 error (message not found)
       if (error instanceof Error && error.message.includes('404')) {
-        console.warn('Message not found in backend, this might be due to ID synchronization issues');
-        console.log('Current message ID:', messageId);
-        console.log('Available message IDs:', currentState.messages.map(m => m.id));
+        console.warn('AIChat - Message ID sync issue detected for message:', messageId);
         
         // Try to refresh the conversation to get the latest message IDs
         try {
