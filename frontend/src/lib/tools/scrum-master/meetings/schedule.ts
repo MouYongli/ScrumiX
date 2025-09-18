@@ -10,12 +10,12 @@ export const scheduleEventTool = tool({
     let projectId = validated.project_id;
     let projectName = '';
     if (!projectId) {
-      const projectContext = await getCurrentProjectContext(experimental_context);
+      const projectContext = await getCurrentProjectContext(experimental_context as AuthContext);
       if (!projectContext) return `Unable to determine the current project context. Please provide a project_id.`;
       projectId = projectContext.project_id;
       projectName = projectContext.project_name;
     }
-    const tz = await getUserTimezoneAndFormatDatetime(validated.start_datetime, experimental_context);
+    const tz = await getUserTimezoneAndFormatDatetime(validated.start_datetime, experimental_context as AuthContext);
     const res = await requestWithAuth('/meetings/', { method: 'POST', body: JSON.stringify({
       title: validated.event_type,
       meeting_type: validated.event_type,

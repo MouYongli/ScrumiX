@@ -10,7 +10,7 @@ export const manageMeetingsTool = tool({
     let projectId = validated.project_id;
     let projectName = '';
     if (!projectId && ['create', 'list'].includes(validated.operation)) {
-      const projectContext = await getCurrentProjectContext(experimental_context);
+      const projectContext = await getCurrentProjectContext(experimental_context as AuthContext);
       if (projectContext) { projectId = projectContext.project_id; projectName = projectContext.project_name; }
     }
     switch (validated.operation) {
