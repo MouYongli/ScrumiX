@@ -24,6 +24,9 @@ export * from './retrospectives';
 // Compliance schemas
 export * from './compliance';
 
+// Semantic search schemas
+export * from './semantic-task';
+
 // Legacy scrum schemas (will be deprecated)
 export * from './scrum';
 
