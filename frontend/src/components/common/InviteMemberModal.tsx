@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { X, Search, UserPlus, Crown, Shield, Code } from 'lucide-react';
+import { X, Search, UserPlus, Crown, Shield, Code, Clipboard } from 'lucide-react';
 import { api } from '@/utils/api';
 import { ApiUser, ScrumRole } from '@/types/api';
 
@@ -111,8 +111,8 @@ export default function InviteMemberModal({ isOpen, onClose, projectId, onMember
 
   const getRoleIcon = (role: ScrumRole) => {
     switch (role) {
-      case ScrumRole.PRODUCT_OWNER: return <Crown className="w-4 h-4" />;
-      case ScrumRole.SCRUM_MASTER: return <Shield className="w-4 h-4" />;
+      case ScrumRole.PRODUCT_OWNER: return <Clipboard className="w-4 h-4" />;
+      case ScrumRole.SCRUM_MASTER: return <Crown className="w-4 h-4" />;
       case ScrumRole.DEVELOPER: return <Code className="w-4 h-4" />;
       default: return <Code className="w-4 h-4" />;
     }

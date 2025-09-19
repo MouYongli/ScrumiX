@@ -142,8 +142,13 @@ async def create_project(
                 detail="Project name already exists"
             )
         
-        # Create project with current user as owner
-        project = project_crud.create_project(db, project_create, creator_id=current_user.id)
+        # Create project with current user as owner and specified role
+        project = project_crud.create_project(
+            db, 
+            project_create, 
+            creator_id=current_user.id,
+            creator_role=project_create.creator_role
+        )
         
         # Schedule embedding generation in background
         schedule_embedding_update(background_tasks, project.id, db)
@@ -158,7 +163,7 @@ async def create_project(
             members=project_stats["members_count"],
             tasks_completed=project_stats["backlog_completed"],
             tasks_total=project_stats["backlog_total"],
-            user_role=ScrumRole.SCRUM_MASTER
+            user_role=project_create.creator_role
         )
         
         return project_response

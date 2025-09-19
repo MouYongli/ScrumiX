@@ -4,8 +4,8 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { 
   Plus, Search, Filter, Mail, Phone, MapPin, Edit2, Trash2, 
-  FolderOpen, Users, Crown, Shield, Code, Settings, MoreHorizontal,
-  Calendar, Clock, CheckCircle2, UserPlus, MessageSquare, Star
+  FolderOpen, Users, Crown, Code, Settings, MoreHorizontal,
+  Calendar, Clock, CheckCircle2, UserPlus, MessageSquare, Star, Clipboard
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
 import InviteMemberModal from '@/components/common/InviteMemberModal';
@@ -91,6 +91,7 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
   const [selectedMember, setSelectedMember] = useState<ProjectMemberResponse | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
+  const [isCurrentUserOwner, setIsCurrentUserOwner] = useState<boolean>(false);
 
   // Breadcrumb navigation
   const breadcrumbItems = [
@@ -105,6 +106,10 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
         setLoading(true);
         setError(null);
         
+        // Fetch current user info
+        const currentUserResponse = await api.auth.getCurrentUser();
+        const currentUserId = currentUserResponse.data?.id;
+        
         // Fetch project details to get the name
         const projectResponse = await api.projects.getById(parseInt(projectId));
         if (projectResponse.data) {
@@ -118,6 +123,12 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
           setError(membersResponse.error);
         } else if (membersResponse.data) {
           setTeamMembers(membersResponse.data);
+          
+          // Check if current user is owner by finding them in the members list
+          if (currentUserId) {
+            const currentUserMember = membersResponse.data.find(member => member.id === currentUserId);
+            setIsCurrentUserOwner(currentUserMember?.is_owner || false);
+          }
         }
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to fetch data');
@@ -182,8 +193,8 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
 
   const getRoleIcon = (role: string) => {
     switch (role) {
-      case 'product_owner': return <Crown className="w-4 h-4" />;
-      case 'scrum_master': return <Shield className="w-4 h-4" />;
+      case 'product_owner': return <Clipboard className="w-4 h-4" />;
+      case 'scrum_master': return <Crown className="w-4 h-4" />;
       case 'developer': return <Code className="w-4 h-4" />;
       default: return <Users className="w-4 h-4" />;
     }
@@ -231,7 +242,7 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
           </p>
         </div>
         <div className="flex gap-3">
-          {(currentUserRole === 'product_owner' || currentUserRole === 'scrum_master') && (
+          {isCurrentUserOwner && (
             <button 
               onClick={() => setIsInviteModalOpen(true)}
               className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
@@ -375,19 +386,19 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
                   <div className="flex items-start justify-between mb-4">
                     <div className="flex items-center gap-3">
                       <div className="relative">
-                                            {member.avatar_url ? (
-                      <img
-                        src={member.avatar_url}
-                        alt={member.full_name || member.username || member.email}
-                        className="w-12 h-12 rounded-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-12 h-12 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
-                        <span className="text-gray-500 dark:text-gray-400 text-lg font-semibold">
-                          {(member.full_name || member.username || member.email).charAt(0).toUpperCase()}
-                        </span>
-                      </div>
-                    )}
+                        {member.avatar_url ? (
+                          <img
+                            src={member.avatar_url}
+                            alt={member.full_name || member.username || member.email}
+                            className="w-12 h-12 rounded-full object-cover"
+                          />
+                        ) : (
+                          <div className="w-12 h-12 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center">
+                            <span className="text-gray-500 dark:text-gray-400 text-lg font-semibold">
+                              {(member.full_name || member.username || member.email).charAt(0).toUpperCase()}
+                            </span>
+                          </div>
+                        )}
                       </div>
                       <div>
                         <h3 className="font-semibold text-gray-900 dark:text-white">
@@ -399,9 +410,13 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
                         </div>
                       </div>
                     </div>
-                    {member.is_admin && (
-                      <Crown className="w-4 h-4 text-yellow-500" aria-label="Admin" />
-                    )}
+                    <div className="flex items-center gap-1">
+                      {member.is_owner && (
+                        <span className="px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400 font-medium">
+                          Project Owner
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   <div className="space-y-2 mb-4">
@@ -416,7 +431,7 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
                   </div>
 
                   <div className="flex gap-2">
-                    {(currentUserRole === 'product_owner' || currentUserRole === 'scrum_master') && (
+                    {isCurrentUserOwner && (
                       <>
                         <button 
                           onClick={() => openEditModal(member)}
@@ -477,7 +492,11 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
                             <div className="font-medium text-gray-900 dark:text-white">
                               {member.full_name || member.username || member.email}
                             </div>
-                            {member.is_admin && <Crown className="w-3 h-3 text-yellow-500" />}
+                            {member.is_owner && (
+                              <span className="px-2 py-1 text-xs rounded-full bg-yellow-100 text-yellow-800 dark:bg-yellow-900/20 dark:text-yellow-400 font-medium">
+                                Project Owner
+                              </span>
+                            )}
                           </div>
                           <div className="text-sm text-gray-600 dark:text-gray-400">{member.email}</div>
                         </div>
@@ -490,7 +509,7 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
                       </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
-                      {(currentUserRole === 'product_owner' || currentUserRole === 'scrum_master') && (
+                      {isCurrentUserOwner && (
                         <div className="flex gap-2">
                           <button 
                             onClick={() => openEditModal(member)}

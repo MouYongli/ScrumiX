@@ -134,9 +134,10 @@ class ProjectCRUD(CRUDBase[Project, ProjectCreate, ProjectUpdate]):
         self, 
         db: Session, 
         project_create: ProjectCreate,
-        creator_id: int
+        creator_id: int,
+        creator_role: ScrumRole = ScrumRole.SCRUM_MASTER
     ) -> Project:
-        """Create a new project and set creator as Scrum Master"""
+        """Create a new project and set creator with specified role"""
         # Validate dates
         if project_create.start_date and project_create.end_date and project_create.start_date >= project_create.end_date:
             raise ValueError("End date must be after start date")
@@ -156,12 +157,12 @@ class ProjectCRUD(CRUDBase[Project, ProjectCreate, ProjectUpdate]):
         db.commit()
         db.refresh(db_project)
 
-        # Add creator as Scrum Master and project owner
+        # Add creator with specified role and project owner
         user_project_crud.add_user_to_project(
             db=db,
             user_id=creator_id,
             project_id=db_project.id,
-            role=ScrumRole.SCRUM_MASTER,
+            role=creator_role,
             is_owner=True
         )
         

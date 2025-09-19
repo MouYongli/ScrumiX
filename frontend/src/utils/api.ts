@@ -205,6 +205,7 @@ export const api = {
       start_date: string;
       end_date: string;
       color: string;
+      creator_role?: ScrumRole;
       members?: { user_id: number; role: ScrumRole }[];
     }) => jsonFetch<ApiProject>('/api/v1/projects/', {
       method: 'POST',

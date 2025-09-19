@@ -92,6 +92,35 @@ class UserProjectCRUD(CRUDBase[UserProject, dict, dict]):
             # Update role and ownership if different
             updated = False
             if existing.role != role:
+                # Check role constraints before updating
+                if role == ScrumRole.SCRUM_MASTER:
+                    existing_sm = db.query(UserProject).filter(
+                        and_(
+                            UserProject.project_id == project_id,
+                            UserProject.role == ScrumRole.SCRUM_MASTER,
+                            UserProject.user_id != user_id
+                        )
+                    ).first()
+                    if existing_sm:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Project already has a Scrum Master"
+                        )
+                        
+                elif role == ScrumRole.PRODUCT_OWNER:
+                    existing_po = db.query(UserProject).filter(
+                        and_(
+                            UserProject.project_id == project_id,
+                            UserProject.role == ScrumRole.PRODUCT_OWNER,
+                            UserProject.user_id != user_id
+                        )
+                    ).first()
+                    if existing_po:
+                        raise HTTPException(
+                            status_code=status.HTTP_400_BAD_REQUEST,
+                            detail="Project already has a Product Owner"
+                        )
+                
                 existing.role = role
                 updated = True
             if existing.is_owner != is_owner:
@@ -184,13 +213,47 @@ class UserProjectCRUD(CRUDBase[UserProject, dict, dict]):
                 )
             ).first()
             
-            if user_project:
-                user_project.role = new_role
-                db.commit()
-                db.refresh(user_project)
+            if not user_project:
+                return None
+            
+            # Check role constraints before updating
+            if new_role == ScrumRole.SCRUM_MASTER:
+                existing_sm = db.query(UserProject).filter(
+                    and_(
+                        UserProject.project_id == project_id,
+                        UserProject.role == ScrumRole.SCRUM_MASTER,
+                        UserProject.user_id != user_id
+                    )
+                ).first()
+                if existing_sm:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Project already has a Scrum Master"
+                    )
+                    
+            elif new_role == ScrumRole.PRODUCT_OWNER:
+                existing_po = db.query(UserProject).filter(
+                    and_(
+                        UserProject.project_id == project_id,
+                        UserProject.role == ScrumRole.PRODUCT_OWNER,
+                        UserProject.user_id != user_id
+                    )
+                ).first()
+                if existing_po:
+                    raise HTTPException(
+                        status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Project already has a Product Owner"
+                    )
+            
+            user_project.role = new_role
+            db.commit()
+            db.refresh(user_project)
                 
             return user_project
             
+        except HTTPException:
+            db.rollback()
+            raise
         except Exception:
             db.rollback()
             raise
