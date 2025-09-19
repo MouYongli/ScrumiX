@@ -1,6 +1,6 @@
 # ScrumiX Docker Deployment Guide
 
-This guide provides instructions for deploying ScrumiX using Docker in a production environment.
+This guide provides comprehensive instructions for deploying ScrumiX using Docker in both development and production environments.
 
 ## Prerequisites
 
@@ -8,12 +8,35 @@ This guide provides instructions for deploying ScrumiX using Docker in a product
 - Docker Compose 2.0+
 - At least 4GB RAM
 - 20GB+ available disk space
+- Git (for cloning the repository)
 
 ## Quick Start
 
+### Development Environment
+
 1. **Clone the repository and navigate to docker directory:**
    ```bash
-   cd docker
+   git clone https://github.com/MouYongli/ScrumiX.git
+   cd ScrumiX/docker
+   ```
+
+2. **Start development environment:**
+   ```bash
+   docker-compose -f docker-compose.local.yaml up -d
+   ```
+
+3. **Access the application:**
+   - Frontend: http://localhost:3000
+   - Backend API: http://localhost:8000
+   - Keycloak: http://localhost:8080
+   - API Documentation: http://localhost:8000/docs
+
+### Production Environment
+
+1. **Clone the repository and navigate to docker directory:**
+   ```bash
+   git clone https://github.com/MouYongli/ScrumiX.git
+   cd ScrumiX/docker
    ```
 
 2. **Copy and configure environment file:**
@@ -28,6 +51,26 @@ This guide provides instructions for deploying ScrumiX using Docker in a product
    ./deploy.sh start
    ```
 
+## Environment Configurations
+
+### Development (docker-compose.local.yaml)
+
+The local development setup includes:
+- **PostgreSQL with pgvector**: Database with vector extension for AI features
+- **FastAPI Backend**: Development server with hot reload
+- **Keycloak**: Authentication server for OAuth2/OIDC
+- **Source code mounting**: Live code changes without rebuilding
+
+### Production (docker-compose.prod.yaml)
+
+The production setup includes:
+- **PostgreSQL**: Optimized database with SSL support
+- **Redis**: Caching and session storage
+- **FastAPI Backend**: Production-ready API server
+- **Next.js Frontend**: Optimized React application
+- **Keycloak**: Production authentication server
+- **Nginx**: Reverse proxy with SSL termination
+
 ## Configuration
 
 ### Environment Variables
@@ -38,7 +81,6 @@ Copy `env.template` to `.env` and configure the following critical variables:
 # Security (REQUIRED)
 SECRET_KEY=your-super-secret-key-here
 POSTGRES_PASSWORD=strong-database-password
-REDIS_PASSWORD=strong-redis-password
 KEYCLOAK_ADMIN_PASSWORD=strong-admin-password
 KEYCLOAK_CLIENT_SECRET=keycloak-client-secret
 
@@ -46,6 +88,16 @@ KEYCLOAK_CLIENT_SECRET=keycloak-client-secret
 BACKEND_URL=https://api.yourdomain.com
 FRONTEND_URL=https://yourdomain.com
 KEYCLOAK_HOSTNAME=auth.yourdomain.com
+
+# Database Configuration
+POSTGRES_USER=scrumix_user
+POSTGRES_DB=scrumix
+POSTGRES_PORT=5432
+
+# Keycloak Configuration
+KEYCLOAK_REALM=scrumix-app
+KEYCLOAK_CLIENT_ID=scrumix-client
+KEYCLOAK_DB_PASSWORD=keycloak-db-password
 ```
 
 ### SSL/TLS Setup
@@ -68,22 +120,46 @@ For production deployment with HTTPS:
    ENABLE_SSL=true
    ```
 
-## Services
+## Services Overview
 
-The deployment includes the following services:
+### Development Services
 
 | Service | Port | Description |
 |---------|------|-------------|
-| Frontend | 3000 | Next.js web application |
-| Backend | 8000 | FastAPI REST API |
-| Postgres | 5432 | Primary database |
-| Redis | 6379 | Caching and sessions |
+| Frontend | 3000 | Next.js development server |
+| Backend | 8000 | FastAPI with hot reload |
+| PostgreSQL | 5433 | Database with pgvector extension |
+| Keycloak | 8080 | Authentication server |
+
+### Production Services
+
+| Service | Port | Description |
+|---------|------|-------------|
+| Frontend | 3000 | Next.js production build |
+| Backend | 8000 | FastAPI production server |
+| PostgreSQL | 5432 | Primary database with pgvector |
 | Keycloak | 8080 | Authentication service |
 | Nginx | 80/443 | Reverse proxy |
 
 ## Deployment Commands
 
-### Basic Operations
+### Development Commands
+
+```bash
+# Start development environment
+docker-compose -f docker-compose.local.yaml up -d
+
+# Stop development environment
+docker-compose -f docker-compose.local.yaml down
+
+# View logs
+docker-compose -f docker-compose.local.yaml logs -f
+
+# Rebuild and restart
+docker-compose -f docker-compose.local.yaml up -d --build
+```
+
+### Production Commands
 
 ```bash
 # Start all services
@@ -116,6 +192,38 @@ The deployment includes the following services:
 
 # Restore from backup
 ./deploy.sh restore backups/scrumix_backup_20240101_120000.sql
+
+# Setup environment
+./deploy.sh setup
+```
+
+## Database Management
+
+### PostgreSQL with pgvector
+
+The production setup uses PostgreSQL with the pgvector extension for AI embeddings:
+
+```bash
+# Connect to database
+docker-compose -f docker-compose.prod.yaml exec postgres psql -U scrumix_user -d scrumix
+
+# Run migrations
+docker-compose -f docker-compose.prod.yaml exec backend python -m alembic upgrade head
+
+# Create backup
+docker-compose -f docker-compose.prod.yaml exec postgres pg_dump -U scrumix_user scrumix > backup.sql
+```
+
+### PostgreSQL with pgvector
+
+PostgreSQL with pgvector extension is used for AI embeddings and vector operations:
+
+```bash
+# Connect to database
+docker-compose -f docker-compose.prod.yaml exec postgres psql -U scrumix_user -d scrumix
+
+# Check pgvector extension
+docker-compose -f docker-compose.prod.yaml exec postgres psql -U scrumix_user -d scrumix -c "SELECT * FROM pg_extension WHERE extname = 'vector';"
 ```
 
 ## Monitoring and Health Checks
@@ -136,6 +244,9 @@ docker-compose -f docker-compose.prod.yaml logs -f
 
 # Specific service
 docker-compose -f docker-compose.prod.yaml logs -f backend
+
+# Using deploy script
+./deploy.sh logs backend
 ```
 
 ### Resource Monitoring
@@ -146,6 +257,9 @@ docker stats
 
 # Check disk usage
 docker system df
+
+# Check service health
+./deploy.sh status
 ```
 
 ## Security Considerations
@@ -164,6 +278,13 @@ docker system df
 - Only necessary ports are exposed to host
 - Nginx reverse proxy handles all external traffic
 - Rate limiting configured for API endpoints
+
+### Keycloak Security
+
+- Separate database for Keycloak
+- Strong admin passwords required
+- Client secrets must be generated securely
+- SSL/TLS recommended for production
 
 ## Backup and Recovery
 
@@ -264,6 +385,15 @@ services:
    # Change ports in .env file
    ```
 
+5. **Keycloak setup issues:**
+   ```bash
+   # Check Keycloak logs
+   ./deploy.sh logs keycloak
+   
+   # Verify Keycloak configuration
+   docker-compose -f docker-compose.prod.yaml exec keycloak /opt/keycloak/bin/kc.sh show-config
+   ```
+
 ### Performance Issues
 
 1. **High memory usage:**
@@ -316,6 +446,73 @@ services:
 ./deploy.sh status
 ```
 
+## Development Workflow
+
+### Local Development
+
+1. **Start development environment:**
+   ```bash
+   docker-compose -f docker-compose.local.yaml up -d
+   ```
+
+2. **Make code changes** in the mounted source directories
+
+3. **View logs** for debugging:
+   ```bash
+   docker-compose -f docker-compose.local.yaml logs -f backend
+   ```
+
+4. **Run tests** (if available):
+   ```bash
+   docker-compose -f docker-compose.local.yaml exec backend pytest
+   ```
+
+### Building for Production
+
+1. **Build production images:**
+   ```bash
+   docker-compose -f docker-compose.prod.yaml build
+   ```
+
+2. **Test production setup locally:**
+   ```bash
+   docker-compose -f docker-compose.prod.yaml up -d
+   ```
+
+## File Structure
+
+```
+docker/
+├── deploy.sh                    # Production deployment script
+├── docker-compose.local.yaml    # Development compose file
+├── docker-compose.prod.yaml     # Production compose file
+├── env.template                 # Environment template
+├── init-db.sh                   # Database initialization script
+├── Makefile                     # Build commands
+├── start-production.sh          # Production start script
+├── start-production.bat         # Windows production start script
+├── test-keycloak-setup.sh       # Keycloak test script
+├── test-keycloak-setup.bat      # Windows Keycloak test script
+├── nginx/                       # Nginx configuration
+│   ├── nginx.conf
+│   └── conf.d/
+│       └── scrumix.conf
+├── postgres/                    # PostgreSQL configuration
+│   ├── dev-postgresql.conf
+│   ├── prod-postgresql.conf
+│   └── init/
+│       ├── 01-enable-pgvector.sql
+│       └── 02-create-keycloak-db.sql
+├── keycloak/                    # Keycloak documentation
+│   ├── README.md
+│   └── SETUP_GUIDE.md
+├── ssl/                         # SSL certificates (create manually)
+│   └── README.md
+├── backups/                     # Database backups
+├── POSTGRESQL_DEPLOYMENT_GUIDE.md
+└── README.md                    # This file
+```
+
 ## Support
 
 For issues and questions:
@@ -323,20 +520,9 @@ For issues and questions:
 1. Check the troubleshooting section above
 2. Review service logs for error messages
 3. Consult the main project documentation
-4. Open an issue on the GitHub repository
+4. Check the Keycloak setup guide in `keycloak/SETUP_GUIDE.md`
+5. Open an issue on the GitHub repository
 
-## File Structure
+## License
 
-```
-docker/
-├── deploy.sh                    # Deployment script
-├── docker-compose.prod.yaml     # Production compose file
-├── env.template                 # Environment template
-├── nginx/                       # Nginx configuration
-│   ├── nginx.conf
-│   └── conf.d/
-│       └── scrumix.conf
-├── ssl/                         # SSL certificates (create manually)
-├── backups/                     # Database backups
-└── README.md                    # This file
-```
+This project is licensed under the Apache License 2.0. See the [LICENSE](../LICENSE) file for details.
