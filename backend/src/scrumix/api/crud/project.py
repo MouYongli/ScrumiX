@@ -156,12 +156,13 @@ class ProjectCRUD(CRUDBase[Project, ProjectCreate, ProjectUpdate]):
         db.commit()
         db.refresh(db_project)
 
-        # Add creator as Scrum Master
+        # Add creator as Scrum Master and project owner
         user_project_crud.add_user_to_project(
             db=db,
             user_id=creator_id,
             project_id=db_project.id,
-            role=ScrumRole.SCRUM_MASTER
+            role=ScrumRole.SCRUM_MASTER,
+            is_owner=True
         )
         
         return db_project
