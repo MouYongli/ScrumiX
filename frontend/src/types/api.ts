@@ -135,7 +135,7 @@ export interface ProjectMemberResponse {
   avatar_url?: string;
   role: ScrumRole;
   joined_at: string;
-  is_admin: boolean;
+  is_owner: boolean;
 }
 
 export interface ApiProject {

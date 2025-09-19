@@ -14,7 +14,7 @@ from scrumix.api.utils.notification_helpers import notification_helper
 from scrumix.api.models.project import ProjectStatus
 from scrumix.api.models.user_project import ScrumRole
 from scrumix.api.schemas.project import ProjectCreate, ProjectUpdate, ProjectResponse
-from scrumix.api.schemas.user_project import ProjectMemberResponse, UserProjectCreate, UserProjectUpdate
+from scrumix.api.schemas.user_project import ProjectMemberResponse, UserProjectCreate, UserProjectUpdate, OwnershipTransferRequest, RoleAssignmentRequest
 from scrumix.api.schemas.meeting import MeetingResponse
 from scrumix.api.core.embedding_service import embedding_service
 
@@ -142,8 +142,13 @@ async def create_project(
                 detail="Project name already exists"
             )
         
-        # Create project with current user as owner
-        project = project_crud.create_project(db, project_create, creator_id=current_user.id)
+        # Create project with current user as owner and specified role
+        project = project_crud.create_project(
+            db, 
+            project_create, 
+            creator_id=current_user.id,
+            creator_role=project_create.creator_role
+        )
         
         # Schedule embedding generation in background
         schedule_embedding_update(background_tasks, project.id, db)
@@ -158,7 +163,7 @@ async def create_project(
             members=project_stats["members_count"],
             tasks_completed=project_stats["backlog_completed"],
             tasks_total=project_stats["backlog_total"],
-            user_role=ScrumRole.SCRUM_MASTER
+            user_role=project_create.creator_role
         )
         
         return project_response
@@ -451,6 +456,7 @@ async def get_project_members(
         for member_data in members_data:
             user = member_data["user"]
             role = member_data["role"]
+            is_owner = member_data["is_owner"]
             
             # Check if user is admin (superuser or project creator)
             is_admin = user.is_superuser or (
@@ -465,7 +471,8 @@ async def get_project_members(
                 avatar_url=user.avatar_url,
                 role=role,
                 joined_at=user.created_at,  # Using user creation date as joined date
-                is_admin=is_admin
+                is_admin=is_admin,
+                is_owner=is_owner
             )
             members_response.append(member_response)
         
@@ -518,7 +525,8 @@ async def invite_project_member(
             db, 
             member_data.user_id, 
             project_id, 
-            member_data.role
+            member_data.role,
+            member_data.is_owner
         )
         
         # Get project details for notification
@@ -884,6 +892,167 @@ async def find_similar_projects(
             detail=f"Similar projects search failed: {str(e)}"
         )
 
+
+@router.post("/{project_id}/transfer-ownership")
+async def transfer_project_ownership(
+    project_id: int,
+    transfer_request: OwnershipTransferRequest,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Transfer project ownership to another user (only current owner can do this)"""
+    try:
+        # Verify current user is the project owner
+        if not user_project_crud.is_user_project_owner(db, current_user.id, project_id):
+            raise HTTPException(
+                status_code=fastapi_status.HTTP_403_FORBIDDEN,
+                detail="Only the project owner can transfer ownership"
+            )
+        
+        # Transfer ownership
+        success = user_project_crud.transfer_ownership(
+            db=db,
+            current_owner_id=current_user.id,
+            new_owner_id=transfer_request.new_owner_id,
+            project_id=project_id
+        )
+        
+        if success:
+            # Get project and new owner details for notification
+            project = project_crud.get(db, project_id)
+            from scrumix.api.crud.user import user_crud
+            new_owner = user_crud.get(db, transfer_request.new_owner_id)
+            
+            # Send notification to new owner
+            try:
+                await notification_helper.send_notification(
+                    db=db,
+                    user_id=transfer_request.new_owner_id,
+                    title="Project Ownership Transferred",
+                    message=f"You are now the owner of project '{project.name if project else 'Unknown Project'}'",
+                    notification_type="project_ownership",
+                    related_id=project_id
+                )
+            except Exception as e:
+                print(f"Failed to send ownership transfer notification: {e}")
+            
+            return {
+                "message": "Ownership transferred successfully",
+                "project_id": project_id,
+                "new_owner_id": transfer_request.new_owner_id
+            }
+        else:
+            raise HTTPException(
+                status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to transfer ownership"
+            )
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+@router.post("/{project_id}/assign-role")
+async def assign_scrum_role(
+    project_id: int,
+    role_request: RoleAssignmentRequest,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Assign or update Scrum role for a project member (only project owner can do this)"""
+    try:
+        # Use the new CRUD method that checks ownership permissions
+        user_project = user_project_crud.assign_scrum_role(
+            db=db,
+            assigner_id=current_user.id,
+            target_user_id=role_request.user_id,
+            project_id=project_id,
+            new_role=role_request.role
+        )
+        
+        # Get user details for response and notification
+        from scrumix.api.crud.user import user_crud
+        user = user_crud.get(db, role_request.user_id)
+        project = project_crud.get(db, project_id)
+        
+        # Send notification to the user whose role was changed
+        try:
+            await notification_helper.send_notification(
+                db=db,
+                user_id=role_request.user_id,
+                title="Role Assignment Updated",
+                message=f"Your role in project '{project.name if project else 'Unknown Project'}' has been changed to {role_request.role.value.replace('_', ' ').title()}",
+                notification_type="role_assignment",
+                related_id=project_id
+            )
+        except Exception as e:
+            print(f"Failed to send role assignment notification: {e}")
+        
+        return {
+            "message": "Role assigned successfully",
+            "project_id": project_id,
+            "user_id": role_request.user_id,
+            "new_role": role_request.role,
+            "user_email": user.email if user else None
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
+
+@router.get("/{project_id}/owner", response_model=ProjectMemberResponse)
+async def get_project_owner(
+    project_id: int,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get the owner of a project"""
+    try:
+        # Check if user has access to the project
+        user_role = user_project_crud.get_user_role(db, current_user.id, project_id)
+        if not user_role:
+            raise HTTPException(
+                status_code=fastapi_status.HTTP_403_FORBIDDEN,
+                detail="Access denied to this project"
+            )
+        
+        # Get project owner
+        owner = user_project_crud.get_project_owner(db, project_id)
+        if not owner:
+            raise HTTPException(
+                status_code=fastapi_status.HTTP_404_NOT_FOUND,
+                detail="Project owner not found"
+            )
+        
+        # Get owner's role in the project
+        owner_role = user_project_crud.get_user_role(db, owner.id, project_id)
+        
+        return ProjectMemberResponse(
+            id=owner.id,
+            email=owner.email,
+            username=owner.username,
+            full_name=owner.full_name,
+            avatar_url=owner.avatar_url,
+            role=owner_role,
+            joined_at=owner.created_at,
+            is_admin=True,  # Owner is always admin
+            is_owner=True
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=str(e)
+        )
 
 @router.post("/{project_id}/update-embeddings")
 async def update_project_embeddings(

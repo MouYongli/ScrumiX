@@ -5,7 +5,8 @@ import Link from 'next/link';
 import { api } from '@/utils/api';
 import {
   FolderOpen, Plus, Search, MoreVertical, Users, Calendar,
-  BarChart3, CheckCircle2, AlertCircle, Clock, Star, X
+  BarChart3, CheckCircle2, AlertCircle, Clock, X,
+  Crown, Code, Clipboard
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
 import { useDateFormat } from '@/hooks/useDateFormat';
@@ -71,7 +72,7 @@ const CreateProjectModal = ({
 }: {
   isOpen: boolean;
   onClose: () => void;
-  onSubmit: (project: Omit<Project, 'id' | 'progress' | 'tasks' | 'lastActivity' | 'members'>) => void;
+  onSubmit: (project: Omit<Project, 'id' | 'progress' | 'tasks' | 'lastActivity' | 'members'> & { selectedRole: ScrumRole }) => void;
 }) => {
   const [formData, setFormData] = useState({
     name: '',
@@ -83,6 +84,8 @@ const CreateProjectModal = ({
   });
 
   const [errors, setErrors] = useState<Record<string, string>>({});
+
+  const [selectedRole, setSelectedRole] = useState<ScrumRole>(ScrumRole.DEVELOPER);
 
   const colorOptions = [
     { value: 'bg-blue-500', label: 'Blue' },
@@ -135,7 +138,7 @@ const CreateProjectModal = ({
     e.preventDefault();
     
     if (validateForm()) {
-      onSubmit(formData);
+      onSubmit({ ...formData, selectedRole });
       // Reset form
       setFormData({
         name: '',
@@ -145,6 +148,7 @@ const CreateProjectModal = ({
         endDate: '',
         color: 'bg-blue-500'
       });
+      setSelectedRole(ScrumRole.DEVELOPER);
       setErrors({});
       onClose();
     }
@@ -186,6 +190,30 @@ const CreateProjectModal = ({
 
         {/* Modal Body */}
         <form onSubmit={handleSubmit} className="p-6 space-y-6">
+          {/* Your Scrum Role */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Your Scrum Role
+            </label>
+            <div className="flex gap-3">
+              <button type="button" onClick={() => setSelectedRole(ScrumRole.PRODUCT_OWNER)}
+                className={`px-3 py-2 rounded-md border text-sm transition-colors inline-flex items-center gap-2 ${selectedRole === ScrumRole.PRODUCT_OWNER ? 'bg-blue-600 text-white border-blue-600' : 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white border-gray-300 dark:border-gray-600'}`}>
+                <Clipboard className="w-4 h-4" />
+                Product Owner
+              </button>
+              <button type="button" onClick={() => setSelectedRole(ScrumRole.SCRUM_MASTER)}
+                className={`px-3 py-2 rounded-md border text-sm transition-colors inline-flex items-center gap-2 ${selectedRole === ScrumRole.SCRUM_MASTER ? 'bg-blue-600 text-white border-blue-600' : 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white border-gray-300 dark:border-gray-600'}`}>
+                <Crown className="w-4 h-4" />
+                Scrum Master
+              </button>
+              <button type="button" onClick={() => setSelectedRole(ScrumRole.DEVELOPER)}
+                className={`px-3 py-2 rounded-md border text-sm transition-colors inline-flex items-center gap-2 ${selectedRole === ScrumRole.DEVELOPER ? 'bg-blue-600 text-white border-blue-600' : 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white border-gray-300 dark:border-gray-600'}`}>
+                <Code className="w-4 h-4" />
+                Developer
+              </button>
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">You can change roles later if you transfer ownership.</p>
+          </div>
           {/* Project Name */}
           <div>
             <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
@@ -453,7 +481,7 @@ const ProjectsPage = () => {
     }
   };
 
-  const handleCreateProject = async (newProjectData: Omit<Project, 'id' | 'progress' | 'tasks' | 'lastActivity' | 'members'>) => {
+  const handleCreateProject = async (newProjectData: Omit<Project, 'id' | 'progress' | 'tasks' | 'lastActivity' | 'members'> & { selectedRole?: ScrumRole }) => {
     try {
       const { data, error } = await api.projects.create({
         name: newProjectData.name,
@@ -461,7 +489,8 @@ const ProjectsPage = () => {
         status: newProjectData.status as ProjectStatus,
         start_date: newProjectData.startDate || new Date().toISOString(),
         end_date: newProjectData.endDate || new Date().toISOString(),
-        color: newProjectData.color || 'bg-blue-500'
+        color: newProjectData.color || 'bg-blue-500',
+        creator_role: newProjectData.selectedRole || ScrumRole.SCRUM_MASTER
       });
 
       if (error || !data) throw new Error(error || 'Failed to create project');
@@ -618,8 +647,23 @@ const ProjectsPage = () => {
                           {statusInfo.icon} {statusInfo.label}
                         </span>
                         {project.user_role && (
-                          <span className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300">
-                            {project.user_role === ScrumRole.SCRUM_MASTER ? '👑' : project.user_role === ScrumRole.PRODUCT_OWNER ? '📋' : '👤'} {project.user_role}
+                          <span className="px-2 py-1 text-xs rounded-full bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300 inline-flex items-center gap-1">
+                            {project.user_role === ScrumRole.SCRUM_MASTER ? (
+                              <>
+                                <Crown className="w-3 h-3" />
+                                Scrum Master
+                              </>
+                            ) : project.user_role === ScrumRole.PRODUCT_OWNER ? (
+                              <>
+                                <Clipboard className="w-3 h-3" />
+                                Product Owner
+                              </>
+                            ) : (
+                              <>
+                                <Code className="w-3 h-3" />
+                                Developer
+                              </>
+                            )}
                           </span>
                         )}
                       </div>

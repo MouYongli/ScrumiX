@@ -20,6 +20,8 @@ class ProjectBase(BaseModel):
 class ProjectCreate(ProjectBase):
     """Create project schema"""
     model_config = ConfigDict(populate_by_name=True)
+    
+    creator_role: ScrumRole = Field(ScrumRole.SCRUM_MASTER, description="Creator's Scrum role in the project")
 
 class ProjectUpdate(BaseModel):
     """Update project information schema"""

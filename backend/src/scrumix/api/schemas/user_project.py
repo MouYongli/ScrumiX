@@ -18,12 +18,14 @@ class ProjectMemberResponse(BaseModel):
     avatar_url: Optional[str] = None
     role: ScrumRole
     joined_at: datetime
-    is_admin: bool = False
+    is_admin: bool = False  # Keep for backward compatibility
+    is_owner: bool = False  # New field for project ownership
 
 class UserProjectCreate(BaseModel):
     """Add user to project schema"""
     user_id: int
     role: ScrumRole = ScrumRole.DEVELOPER
+    is_owner: bool = False
 
 class UserProjectUpdate(BaseModel):
     """Update user role in project schema"""
@@ -37,5 +39,15 @@ class UserProjectResponse(BaseModel):
     user_id: int
     project_id: int
     role: ScrumRole
+    is_owner: bool
     created_at: datetime
     updated_at: datetime
+
+class OwnershipTransferRequest(BaseModel):
+    """Transfer project ownership schema"""
+    new_owner_id: int
+
+class RoleAssignmentRequest(BaseModel):
+    """Assign Scrum role schema"""
+    user_id: int
+    role: ScrumRole

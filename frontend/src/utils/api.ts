@@ -205,6 +205,7 @@ export const api = {
       start_date: string;
       end_date: string;
       color: string;
+      creator_role?: ScrumRole;
       members?: { user_id: number; role: ScrumRole }[];
     }) => jsonFetch<ApiProject>('/api/v1/projects/', {
       method: 'POST',
@@ -240,6 +241,15 @@ export const api = {
     }),
     removeMember: (projectId: number, userId: number) => jsonFetch<void>(`/api/v1/projects/${projectId}/members/${userId}`, {
       method: 'DELETE',
+    }),
+    transferOwnership: (projectId: number, newOwnerId: number) => jsonFetch<{
+      message: string;
+      project_id: number;
+      new_owner_id: number;
+    }>(`/api/v1/projects/${projectId}/transfer-ownership`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ new_owner_id: newOwnerId }),
     }),
   },
   
