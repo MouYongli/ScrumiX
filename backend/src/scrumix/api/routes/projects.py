@@ -495,12 +495,11 @@ async def invite_project_member(
 ):
     """Invite a new member to the project"""
     try:
-        # Check if current user has permission to invite members
-        current_user_role = user_project_crud.get_user_role(db, current_user.id, project_id)
-        if not current_user_role or current_user_role not in [ScrumRole.PRODUCT_OWNER, ScrumRole.SCRUM_MASTER]:
+        # Check if current user is the project owner
+        if not user_project_crud.is_user_project_owner(db, current_user.id, project_id):
             raise HTTPException(
                 status_code=fastapi_status.HTTP_403_FORBIDDEN,
-                detail="Only Product Owners and Scrum Masters can invite members"
+                detail="Only project owner can invite members"
             )
         
         # Check if user exists
@@ -629,12 +628,11 @@ async def update_project_member(
 ):
     """Update a project member's role"""
     try:
-        # Check if current user has permission to update members
-        current_user_role = user_project_crud.get_user_role(db, current_user.id, project_id)
-        if not current_user_role or current_user_role not in [ScrumRole.PRODUCT_OWNER, ScrumRole.SCRUM_MASTER]:
+        # Check if current user is the project owner
+        if not user_project_crud.is_user_project_owner(db, current_user.id, project_id):
             raise HTTPException(
                 status_code=fastapi_status.HTTP_403_FORBIDDEN,
-                detail="Only Product Owners and Scrum Masters can update member roles"
+                detail="Only project owner can update member roles"
             )
         
         # Check if target user is a member of the project
@@ -645,12 +643,8 @@ async def update_project_member(
                 detail="User is not a member of this project"
             )
         
-        # Prevent users from changing their own role (except Product Owners)
-        if user_id == current_user.id and current_user_role != ScrumRole.PRODUCT_OWNER:
-            raise HTTPException(
-                status_code=fastapi_status.HTTP_403_FORBIDDEN,
-                detail="You cannot change your own role"
-            )
+        # Note: Project owners can change anyone's role, including their own
+        # This is allowed since ownership transfer should be done via separate endpoint
         
         # Update the user's role
         user_project = user_project_crud.update_user_role(
@@ -695,12 +689,11 @@ async def remove_project_member(
 ):
     """Remove a member from the project"""
     try:
-        # Check if current user has permission to remove members
-        current_user_role = user_project_crud.get_user_role(db, current_user.id, project_id)
-        if not current_user_role or current_user_role not in [ScrumRole.PRODUCT_OWNER, ScrumRole.SCRUM_MASTER]:
+        # Check if current user is the project owner
+        if not user_project_crud.is_user_project_owner(db, current_user.id, project_id):
             raise HTTPException(
                 status_code=fastapi_status.HTTP_403_FORBIDDEN,
-                detail="Only Product Owners and Scrum Masters can remove members"
+                detail="Only project owner can remove members"
             )
         
         # Check if target user is a member of the project
