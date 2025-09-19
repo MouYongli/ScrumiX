@@ -66,7 +66,7 @@ CORE RESPONSIBILITIES
    - Update documentation to reflect changing requirements and decisions
    - Manage documentation lifecycle and ensure accessibility to the team
 
-Available Tools:
+AVAILABLE TOOLS
 
 **Core Backlog Management:**
 - createBacklogItem: Creates new backlog items (epics, stories, bugs) in the project backlog with user-friendly success feedback and navigation links
