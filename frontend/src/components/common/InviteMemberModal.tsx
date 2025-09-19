@@ -10,6 +10,7 @@ interface InviteMemberModalProps {
   onClose: () => void;
   projectId: string;
   onMemberInvited: (member: any) => void;
+  isCurrentUserOwner?: boolean;
 }
 
 interface UserOption {
@@ -20,12 +21,13 @@ interface UserOption {
   avatar_url?: string;
 }
 
-export default function InviteMemberModal({ isOpen, onClose, projectId, onMemberInvited }: InviteMemberModalProps) {
+export default function InviteMemberModal({ isOpen, onClose, projectId, onMemberInvited, isCurrentUserOwner = false }: InviteMemberModalProps) {
   const [searchTerm, setSearchTerm] = useState('');
   const [users, setUsers] = useState<UserOption[]>([]);
   const [filteredUsers, setFilteredUsers] = useState<UserOption[]>([]);
   const [selectedUser, setSelectedUser] = useState<UserOption | null>(null);
   const [selectedRole, setSelectedRole] = useState<ScrumRole>(ScrumRole.DEVELOPER);
+  const [transferOwnership, setTransferOwnership] = useState(false);
   const [loading, setLoading] = useState(false);
   const [inviting, setInviting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -85,11 +87,34 @@ export default function InviteMemberModal({ isOpen, onClose, projectId, onMember
 
       if (response.error) {
         setError(response.error);
-      } else if (response.data) {
-        onMemberInvited(response.data);
-        onClose();
-        resetForm();
+        return;
+      } 
+      
+      if (!response.data) {
+        setError('Failed to invite member');
+        return;
       }
+
+      // If ownership transfer is requested, transfer ownership after successful invitation
+      if (transferOwnership) {
+        const transferResponse = await api.projects.transferOwnership(parseInt(projectId), selectedUser.id);
+        if (transferResponse.error) {
+          setError(`Member invited but ownership transfer failed: ${transferResponse.error}`);
+          onMemberInvited(response.data);
+          onClose();
+          resetForm();
+          return;
+        }
+        
+        // Update the invited member data to reflect ownership
+        const updatedMemberData = { ...response.data, is_owner: true };
+        onMemberInvited(updatedMemberData);
+      } else {
+        onMemberInvited(response.data);
+      }
+      
+      onClose();
+      resetForm();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to invite member');
     } finally {
@@ -101,6 +126,7 @@ export default function InviteMemberModal({ isOpen, onClose, projectId, onMember
     setSearchTerm('');
     setSelectedUser(null);
     setSelectedRole(ScrumRole.DEVELOPER);
+    setTransferOwnership(false);
     setError(null);
   };
 
@@ -223,6 +249,30 @@ export default function InviteMemberModal({ isOpen, onClose, projectId, onMember
             </div>
           </div>
 
+          {/* Ownership Transfer */}
+          {isCurrentUserOwner && selectedUser && (
+            <div className="border border-yellow-200 dark:border-yellow-800 bg-yellow-50 dark:bg-yellow-900/20 rounded-lg p-4">
+              <div className="flex items-start space-x-3">
+                <input
+                  id="transfer-ownership"
+                  type="checkbox"
+                  checked={transferOwnership}
+                  onChange={(e) => setTransferOwnership(e.target.checked)}
+                  className="mt-1 h-4 w-4 text-yellow-600 focus:ring-yellow-500 border-yellow-300 rounded"
+                />
+                <div className="flex-1">
+                  <label htmlFor="transfer-ownership" className="text-sm font-medium text-yellow-800 dark:text-yellow-300 cursor-pointer">
+                    Transfer project ownership to this member
+                  </label>
+                  <p className="text-xs text-yellow-700 dark:text-yellow-400 mt-1">
+                    Warning: This will transfer full project ownership to {selectedUser.full_name || selectedUser.username || selectedUser.email}. 
+                    You will lose owner privileges and cannot undo this action.
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Error Message */}
           {error && (
             <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-3">
@@ -242,10 +292,17 @@ export default function InviteMemberModal({ isOpen, onClose, projectId, onMember
           <button
             onClick={handleInvite}
             disabled={!selectedUser || inviting}
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            className={`inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white focus:outline-none focus:ring-2 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed ${
+              transferOwnership 
+                ? 'bg-yellow-600 hover:bg-yellow-700 focus:ring-yellow-500' 
+                : 'bg-blue-600 hover:bg-blue-700 focus:ring-blue-500'
+            }`}
           >
-            <UserPlus className="w-4 h-4 mr-2" />
-            {inviting ? 'Inviting...' : 'Invite Member'}
+            {transferOwnership ? <Crown className="w-4 h-4 mr-2" /> : <UserPlus className="w-4 h-4 mr-2" />}
+            {inviting 
+              ? (transferOwnership ? 'Inviting & Transferring...' : 'Inviting...') 
+              : (transferOwnership ? 'Invite & Transfer Ownership' : 'Invite Member')
+            }
           </button>
         </div>
       </div>

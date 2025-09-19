@@ -144,7 +144,14 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
 
   const handleMemberInvited = (newMember: ProjectMemberResponse) => {
     setTeamMembers(prev => [...prev, newMember]);
-    setSuccessMessage(`${newMember.full_name || newMember.username || newMember.email} has been invited to the project!`);
+    
+    // If the new member is now the owner, update current user's owner status
+    if (newMember.is_owner) {
+      setIsCurrentUserOwner(false);
+      setSuccessMessage(`${newMember.full_name || newMember.username || newMember.email} has been invited and is now the project owner!`);
+    } else {
+      setSuccessMessage(`${newMember.full_name || newMember.username || newMember.email} has been invited to the project!`);
+    }
     
     // Clear success message after 5 seconds
     setTimeout(() => setSuccessMessage(null), 5000);
@@ -154,7 +161,14 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
     setTeamMembers(prev => prev.map(member => 
       member.id === updatedMember.id ? updatedMember : member
     ));
-    setSuccessMessage(`${updatedMember.full_name || updatedMember.username || updatedMember.email}'s role has been updated!`);
+    
+    // If the updated member is now the owner, update current user's owner status
+    if (updatedMember.is_owner) {
+      setIsCurrentUserOwner(false);
+      setSuccessMessage(`${updatedMember.full_name || updatedMember.username || updatedMember.email} is now the project owner!`);
+    } else {
+      setSuccessMessage(`${updatedMember.full_name || updatedMember.username || updatedMember.email}'s role has been updated!`);
+    }
     
     // Clear success message after 5 seconds
     setTimeout(() => setSuccessMessage(null), 5000);
@@ -552,6 +566,7 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
         onClose={() => setIsInviteModalOpen(false)}
         projectId={projectId}
         onMemberInvited={handleMemberInvited}
+        isCurrentUserOwner={isCurrentUserOwner}
       />
 
       {/* Edit Member Modal */}
@@ -562,6 +577,7 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
           projectId={projectId}
           member={selectedMember}
           onMemberUpdated={handleMemberUpdated}
+          isCurrentUserOwner={isCurrentUserOwner}
         />
       )}
 
