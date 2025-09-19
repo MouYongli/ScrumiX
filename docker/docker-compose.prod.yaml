@@ -41,23 +41,6 @@ services:
           memory: 512M
           cpus: '0.5'
 
-  # Redis for Caching
-  redis:
-    image: redis:7-alpine
-    container_name: scrumix-redis
-    restart: unless-stopped
-    command: redis-server --requirepass ${REDIS_PASSWORD}
-    volumes:
-      - redis_data:/data
-    ports:
-      - "${REDIS_PORT:-6379}:6379"
-    networks:
-      - scrumix-network
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
 
   # Backend API
   backend:
@@ -89,16 +72,12 @@ services:
       KEYCLOAK_CLIENT_ID: ${KEYCLOAK_CLIENT_ID:-scrumix-client}
       KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET}
       
-      # Redis
-      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379/0
     ports:
       - "${BACKEND_PORT:-8000}:8000"
     volumes:
       - backend_logs:/app/logs
     depends_on:
       postgres:
-        condition: service_healthy
-      redis:
         condition: service_healthy
     networks:
       - scrumix-network
@@ -191,8 +170,6 @@ networks:
 
 volumes:
   postgres_data:
-    driver: local
-  redis_data:
     driver: local
   keycloak_data:
     driver: local

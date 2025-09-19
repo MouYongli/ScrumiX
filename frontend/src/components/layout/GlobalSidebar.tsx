@@ -27,14 +27,6 @@ const GlobalSidebar: React.FC<GlobalSidebarProps> = ({ isCollapsed, onToggle }) 
     },
   ];
 
-  const quickActions = [
-    {
-      name: 'Create Project',
-      href: '/projects/new',
-      icon: Plus,
-    },
-  ];
-
   const userItems = [
     {
       name: 'Profile',
@@ -116,17 +108,6 @@ const GlobalSidebar: React.FC<GlobalSidebarProps> = ({ isCollapsed, onToggle }) 
               </Link>
             );
           })}
-        </div>
-
-        {/* Quick actions */}
-        <div className="space-y-1 mb-6">
-          {!isCollapsed && (
-            <div className="px-3 py-2">
-              <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                Quick Actions
-              </h3>
-            </div>
-          )}
         </div>
       </nav>
 

@@ -16,7 +16,35 @@ interface NotificationCenterProps {
 const NotificationCenter: React.FC<NotificationCenterProps> = ({ className = '' }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [notifications, setNotifications] = useState<UserNotification[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [unreadCount, setUnreadCount] = useState(() => {
+    // Try to restore from localStorage on initial load
+    if (typeof window !== 'undefined') {
+      try {
+        const saved = localStorage.getItem('scrumix_unread_count');
+        const parsed = saved ? parseInt(saved, 10) : 0;
+        return isNaN(parsed) ? 0 : parsed;
+      } catch (error) {
+        console.warn('Failed to load unread count from localStorage:', error);
+        return 0;
+      }
+    }
+    return 0;
+  });
+  const [lastKnownUnreadCount, setLastKnownUnreadCount] = useState(0);
+
+  // Save unread count to localStorage whenever it changes
+  const updateUnreadCount = useCallback((count: number | undefined) => {
+    const validCount = typeof count === 'number' && !isNaN(count) ? count : 0;
+    setUnreadCount(validCount);
+    setLastKnownUnreadCount(validCount);
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('scrumix_unread_count', validCount.toString());
+      } catch (error) {
+        console.warn('Failed to save unread count to localStorage:', error);
+      }
+    }
+  }, []);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
@@ -39,7 +67,7 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ className = '' 
           setLoading(false);
           setError('Request timed out');
           setNotifications([]);
-          setUnreadCount(0);
+          // Don't reset unread count on timeout - keep the existing count
         }, 10000); // 10 second timeout
 
         try {
@@ -54,7 +82,10 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ className = '' 
             if (response.error.includes('Authentication failed') || response.error.includes('Could not validate credentials')) {
               setError('Please log in to view notifications');
               setNotifications([]);
-              setUnreadCount(0);
+              // Only reset unread count for auth errors if we haven't loaded any count yet
+              if (unreadCount === 0) {
+                setUnreadCount(0);
+              }
               return;
             }
             throw new Error(response.error);
@@ -63,21 +94,31 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ className = '' 
           if (response.data) {
             const feedData = response.data;
             setNotifications(prev => reset ? feedData.notifications : [...prev, ...feedData.notifications]);
-            setUnreadCount(feedData.unreadCount);
+            updateUnreadCount(feedData.unreadCount ?? 0);
             setTotalCount(feedData.total);
             setHasMore(feedData.hasNext);
             setPage(pageNum);
           } else {
             // Handle case where data is null/undefined
             setNotifications([]);
-            setUnreadCount(0);
+            // Restore last known unread count if we have one
+            if (lastKnownUnreadCount > 0) {
+              setUnreadCount(lastKnownUnreadCount);
+            }
             setError('No notifications available');
           }
         } catch (err) {
           const errorMessage = err instanceof Error ? err.message : 'Failed to load notifications';
           setError(errorMessage);
           setNotifications([]);
-          setUnreadCount(0);
+          // Don't reset unread count on general errors - only on auth errors
+          if (errorMessage.includes('Authentication failed') || errorMessage.includes('Could not validate credentials')) {
+            setUnreadCount(0);
+            setLastKnownUnreadCount(0);
+          } else if (lastKnownUnreadCount > 0) {
+            // Restore last known count for non-auth errors
+            setUnreadCount(lastKnownUnreadCount);
+          }
           console.error('Failed to fetch notifications:', err);
         } finally {
           clearTimeout(timeoutId);
@@ -101,13 +142,13 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ className = '' 
         return;
       }
       if (response.data) {
-        setUnreadCount(response.data.unread_count);
+        updateUnreadCount(response.data.unread_count ?? 0);
       }
     } catch (err) {
       // Silently fail for unread count - this shouldn't disrupt the UI
       console.error('Failed to fetch unread count:', err);
     }
-  }, []);
+  }, [updateUnreadCount]);
 
   // Load notifications when opening
   useEffect(() => {
@@ -117,8 +158,15 @@ const NotificationCenter: React.FC<NotificationCenterProps> = ({ className = '' 
     }
     if (!isOpen) {
       hasLoadedRef.current = false;
+      // When closing, ensure we preserve the unread count if we have notifications
+      if (notifications.length > 0) {
+        const currentUnreadCount = notifications.filter(n => n.status === 'unread').length;
+        if (currentUnreadCount > 0 && currentUnreadCount !== unreadCount) {
+          updateUnreadCount(currentUnreadCount);
+        }
+      }
     }
-  }, [isOpen, notifications.length]);
+  }, [isOpen, notifications.length, notifications, unreadCount, updateUnreadCount]);
 
   // Periodically fetch unread count
   useEffect(() => {

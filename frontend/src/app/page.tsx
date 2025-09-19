@@ -50,7 +50,7 @@ export default function Home() {
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white dark:from-gray-900 dark:to-gray-800">
+    <div className="min-h-screen bg-gradient-to-b from-blue-50 to-white dark:from-gray-900 dark:to-gray-800 flex flex-col">
       {/* Header - consistent with post-login interface */}
       <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-50">
         <div className="px-4 sm:px-6 lg:px-8">
@@ -123,7 +123,9 @@ export default function Home() {
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
+      {/* Main content with flex-grow to push footer to bottom */}
+      <main className="flex-grow">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
         {/* Hero Section */}
         <div className="text-center">
           <h1 className="text-4xl md:text-6xl font-bold text-gray-900 dark:text-white mb-6">
@@ -199,7 +201,8 @@ export default function Home() {
             Get Started for Free
           </Link>
         </div>
-      </div>
+        </div>
+      </main>
       
       {/* Footer - consistent with post-login interface */}
       <footer className="bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700">

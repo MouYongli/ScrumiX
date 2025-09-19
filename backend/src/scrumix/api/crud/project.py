@@ -77,11 +77,11 @@ class ProjectCRUD(CRUDBase[Project, ProjectCreate, ProjectUpdate]):
                 detail="User does not have access to this project"
             )
         
-        # Only Scrum Master and Product Owner can update projects
-        if user_role not in [ScrumRole.SCRUM_MASTER, ScrumRole.PRODUCT_OWNER]:
+        # Only project owner can update projects
+        if not user_project_crud.is_user_project_owner(db, user_id, project_id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Insufficient permissions to update project"
+                detail="Only project owner can update project"
             )
         
         project = self.get_by_id(db, project_id)
