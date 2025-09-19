@@ -98,7 +98,7 @@ export default function RootLayout({
         <ThemeProvider>
           {isPublicPage ? (
             // Public page layout - no navigation (home and auth pages)
-            <div className="min-h-screen">
+            <div className="min-h-screen flex flex-col">
               {children}
             </div>
           ) : (
