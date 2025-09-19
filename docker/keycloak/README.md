@@ -1,92 +1,135 @@
-# Keycloak 配置指南（不使用docker-compose的情况下单独配置）
+# ScrumiX Keycloak Integration
 
-## 1. 安装 Keycloak
-你可以选择本地安装 Keycloak 或使用 Docker 运行。
-使用 Docker 运行 Keycloak（推荐）：
-```bash
-docker run -d --name keycloak \
-  -p 8080:8080 \
-  -e KEYCLOAK_ADMIN=admin \
-  -e KEYCLOAK_ADMIN_PASSWORD=admin \
-  quay.io/keycloak/keycloak:latest start-dev
+This directory contains the Keycloak integration for ScrumiX, providing OAuth2/OpenID Connect authentication.
+
+## Quick Start
+
+1. **Start the services**:
+   ```bash
+   cd docker
+   docker-compose -f docker-compose.local.yaml up -d
+   ```
+
+2. **Follow the setup guide**: See [SETUP_GUIDE.md](SETUP_GUIDE.md) for detailed configuration steps.
+
+3. **Test the setup**:
+   ```bash
+   # On Windows
+   docker/test-keycloak-setup.bat
+   
+   # On Linux/Mac
+   docker/test-keycloak-setup.sh
+   ```
+
+## Architecture
+
+- **Database Separation**: Keycloak uses its own PostgreSQL database (`keycloak`) while your app uses `scrumix_dev`
+- **Network**: All services communicate via the `scrumix-local` Docker network
+- **Authentication Flow**: Standard OAuth2 Authorization Code flow with PKCE support
+
+## Configuration
+
+### Docker Services
+
+- **Keycloak**: Runs on port 8080, connects to PostgreSQL
+- **PostgreSQL**: Shared server with separate databases for app and Keycloak
+- **Backend**: FastAPI with Keycloak OAuth2 integration
+
+### Environment Variables
+
+The backend service uses these Keycloak-related environment variables:
+
+```yaml
+KEYCLOAK_SERVER_URL: http://keycloak:8080
+KEYCLOAK_REALM: scrumix-app
+KEYCLOAK_CLIENT_ID: scrumix-client
+KEYCLOAK_CLIENT_SECRET: ""  # Set after client creation
+KEYCLOAK_REDIRECT_URI: http://localhost:3000/auth/callback
 ```
-然后，你可以通过 http://localhost:8080 访问 Keycloak 管理界面。
 
-## 2. 创建 Realm
-默认情况下，Keycloak 只有一个 master realm，我们需要创建一个新的 Realm：
-1. 访问 http://localhost:8080/admin
-2. 使用 admin/admin 登录
-3. 点击 Create Realm
-4. 输入 Realm Name（如 scrumix-app）并点击 Create
+## User Linking Strategy
 
-## 3. 创建 Client（用于 OAuth2 认证）
-1. 进入 scrumix-app Realm
-2. 在左侧菜单选择 Clients
-3. 点击 Create Client
-4. Client ID: scrumix-client
-5. Client Type: OpenID Connect
-6. Root URL: http://localhost:3000（Next.js 前端地址）
-7. 点击 Next
-8. Client authentication: ON（后端 FastAPI 需要）
-9. Authentication flow: Standard Flow（用于授权码模式）
-10. Valid redirect URIs: http://localhost:8000/api/auth/callback/keycloak
-11. Web origins: http://localhost:3000
-12. 点击 Save
+When a user authenticates via Keycloak:
 
-## 4. 配置 Client 的权限
-1. 在 scrumix-client 的 Settings 选项卡
-2. Access Type: confidential
-3. Service Accounts Enabled: ON
-4. Authorization Enabled: ON
-5. Save 之后，转到 Credentials 选项卡
-6. 记住 Client Secret（用于 FastAPI 服务器端验证）
+1. **Existing User**: If a `user_oauth` record exists with `provider='keycloak'` and matching `provider_user_id`, the user is logged in
+2. **New User**: A new `users` record is created along with a `user_oauth` link record
 
-## 5. 创建用户
-1. 在左侧菜单选择 Users
-2. 点击 Add User
-3. 填写：
-   - Username: alice
-   - Email: alice@scrumix.ai
-   - First Name: Alice
-   - Last Name: Abernathy
-4. Save
-5. 进入 Credentials 选项卡，设置密码：
-6. New Password: testpassword
-7. Temporary: OFF
-8. Set Password
+## Database Schema
 
-## 6. 获取 OAuth2 端点
-你可以在以下 API 端点找到 OpenID Connect 认证信息：
+The integration uses existing tables:
+
+- `users`: Main user profiles
+- `user_oauth`: Links external OAuth accounts to local users
+  - `provider`: Set to `'keycloak'`
+  - `provider_user_id`: Keycloak user's `sub` claim
+  - `access_token`: Keycloak access token (optional)
+  - `refresh_token`: Keycloak refresh token (optional)
+
+## API Endpoints
+
+- `GET /api/v1/auth/oauth/keycloak/authorize`: Initiate OAuth flow
+- `POST /api/v1/auth/oauth/keycloak/callback`: Handle OAuth callback
+- `POST /api/v1/auth/oauth/keycloak/refresh`: Refresh tokens
+
+## Testing
+
+### Manual Testing
+
+1. Visit: http://localhost:8000/api/v1/auth/oauth/keycloak/authorize
+2. Complete login in Keycloak
+3. Verify user creation in database
+
+### Automated Testing
+
+The test scripts check:
+- Service health and connectivity
+- Database setup
+- OAuth endpoint availability
+- Keycloak realm configuration
+
+## Troubleshooting
+
+### Common Issues
+
+1. **Services not starting**: Check Docker logs and ensure ports are available
+2. **Database connection errors**: Verify PostgreSQL init scripts ran correctly
+3. **OAuth flow failures**: Ensure client configuration matches environment variables
+4. **Token validation errors**: Check client secret and realm configuration
+
+### Useful Commands
 
 ```bash
-http://localhost:8080/realms/scrumix-app/.well-known/openid-configuration
-```
-这个端点会返回 JSON 配置，包括：
-- authorization_endpoint: http://localhost:8080/realms/scrumix-app/protocol/openid-connect/auth
-- token_endpoint: http://localhost:8080/realms/scrumix-app/protocol/openid-connect/token
-- userinfo_endpoint: http://localhost:8080/realms/scrumix-app/protocol/openid-connect/userinfo
-- jwks_uri: http://localhost:8080/realms/scrumix-app/protocol/openid-connect/certs
+# Check service status
+docker-compose -f docker-compose.local.yaml ps
 
-## 7. 配置角色（可选）
-如果你的应用需要角色权限：
+# View logs
+docker-compose -f docker-compose.local.yaml logs keycloak
+docker-compose -f docker-compose.local.yaml logs backend
 
-1. 在左侧菜单选择 Roles 
-2. 点击 Add Role
-3. Role Name: admin
-4. 点击 Save
-5. 进入 Users > alice > Role Mappings
-6. 在 Available Roles 选择 admin
-7. 点击 Add Selected
-8. 测试 Keycloak
-9.  你可以使用 Postman 或 curl 测试 Keycloak：
-10. 
-```bash
-curl -X POST "http://localhost:8080/realms/scrumix-app/protocol/openid-connect/token" \
-     -H "Content-Type: application/x-www-form-urlencoded" \
-     -d "grant_type=password" \
-     -d "client_id=scrumix-client" \
-     -d "client_secret=YOUR_CLIENT_SECRET" \
-     -d "username=testuser" \
-     -d "password=testpassword"
+# Connect to database
+docker-compose -f docker-compose.local.yaml exec db psql -U postgres -d scrumix_dev
+
+# Check Keycloak health
+curl http://localhost:8080/health/ready
 ```
-如果成功，你会得到一个 access_token，它可以用于 FastAPI 认证。
+
+## Security Considerations
+
+- **Development Only**: Current setup is for development with relaxed security settings
+- **Client Secret**: Store securely and rotate regularly in production
+- **HTTPS**: Enable HTTPS for production deployments
+- **Token Storage**: Consider token encryption for sensitive environments
+
+## Next Steps
+
+1. **Frontend Integration**: Implement OAuth flow in your frontend application
+2. **Role Management**: Configure Keycloak roles and map to application permissions
+3. **Production Setup**: Harden configuration for production deployment
+4. **Multi-Realm Support**: Extend for multiple client realms if needed
+
+## Files
+
+- `SETUP_GUIDE.md`: Detailed setup instructions
+- `../docker-compose.local.yaml`: Docker Compose configuration
+- `../postgres/init/02-create-keycloak-db.sql`: Database initialization
+- `../test-keycloak-setup.*`: Setup verification scripts

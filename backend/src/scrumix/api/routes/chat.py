@@ -1,0 +1,347 @@
+"""
+Chat history API routes
+"""
+from typing import List, Optional
+from datetime import datetime
+from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.orm import Session
+
+from ..core.security import get_current_user
+from ..db.database import get_db
+from ..crud.chat import chat_crud
+from ..schemas.chat import (
+    ChatConversationCreate, ChatConversationResponse, ChatConversationUpdate,
+    ChatMessageCreate, ChatMessageResponse,
+    ChatHistoryResponse, SaveMessageRequest
+)
+from ..models.user import User
+
+router = APIRouter()
+
+
+@router.post("/conversations", response_model=ChatConversationResponse)
+async def create_conversation(
+    conversation_data: ChatConversationCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a new chat conversation"""
+    try:
+        conversation = chat_crud.create_conversation(
+            db=db,
+            conversation_data=conversation_data,
+            user_id=current_user.id
+        )
+        return ChatConversationResponse.model_validate(conversation)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create conversation: {str(e)}"
+        )
+
+
+@router.get("/conversations/{conversation_id}", response_model=ChatHistoryResponse)
+async def get_conversation_history(
+    conversation_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get chat conversation history"""
+    try:
+        # Get conversation - if it doesn't exist, return empty history
+        conversation = chat_crud.get_conversation(db, conversation_id)
+        if not conversation:
+            # Return empty conversation structure for non-existent conversations
+            return ChatHistoryResponse(
+                conversation=ChatConversationResponse(
+                    id=conversation_id,
+                    user_id=None,
+                    project_id=None,
+                    agent_type="unknown",
+                    title=None,
+                    created_at=datetime.now(),
+                    updated_at=datetime.now(),
+                    last_message_at=datetime.now(),
+                    summary=None
+                ),
+                messages=[]
+            )
+        
+        # Enforce ownership: only the owner can access this conversation
+        if conversation.user_id is not None and conversation.user_id != current_user.id:
+            # Return 404 to avoid leaking existence
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Conversation not found"
+            )
+        
+        # Get messages
+        messages = chat_crud.get_conversation_messages(db, conversation_id)
+        
+        return ChatHistoryResponse(
+            conversation=ChatConversationResponse.model_validate(conversation),
+            messages=[ChatMessageResponse.model_validate(msg) for msg in messages]
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get conversation history: {str(e)}"
+        )
+
+
+@router.post("/conversations/{conversation_id}/messages", response_model=ChatMessageResponse)
+async def save_message(
+    conversation_id: str,
+    message_data: ChatMessageCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Save a message to a conversation"""
+    try:
+        # Verify conversation exists
+        conversation = chat_crud.get_conversation(db, conversation_id)
+        if not conversation:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Conversation not found"
+            )
+        
+        # Enforce ownership before allowing writes
+        if conversation.user_id is not None and conversation.user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Conversation not found"
+            )
+
+        # Create message (text-only parts are persisted in CRUD)
+        message = chat_crud.create_message(
+            db=db,
+            conversation_id=conversation_id,
+            message_data=message_data
+        )
+        
+        return ChatMessageResponse.model_validate(message)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to save message: {str(e)}"
+        )
+
+
+@router.post("/conversations/upsert", response_model=ChatConversationResponse)
+async def upsert_conversation(
+    conversation_data: ChatConversationCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create or update a chat conversation"""
+    try:
+        # If conversation exists and is owned by another user, deny upsert
+        existing = chat_crud.get_conversation(db, conversation_data.id)
+        if existing and existing.user_id is not None and existing.user_id != current_user.id:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied"
+            )
+
+        conversation = chat_crud.upsert_conversation(
+            db=db,
+            conversation_data=conversation_data,
+            user_id=current_user.id
+        )
+        return ChatConversationResponse.model_validate(conversation)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upsert conversation: {str(e)}"
+        )
+
+
+@router.get("/conversations", response_model=List[ChatConversationResponse])
+async def get_user_conversations(
+    agent_type: Optional[str] = None,
+    limit: int = 50,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get conversations for the current user"""
+    try:
+        conversations = chat_crud.get_user_conversations(
+            db=db,
+            user_id=current_user.id,
+            agent_type=agent_type,
+            limit=limit
+        )
+        return [ChatConversationResponse.model_validate(conv) for conv in conversations]
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to get conversations: {str(e)}"
+        )
+
+
+@router.put("/conversations/{conversation_id}", response_model=ChatConversationResponse)
+async def update_conversation(
+    conversation_id: str,
+    conversation_update: ChatConversationUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update a chat conversation (e.g., rename title)"""
+    try:
+        updated_conversation = chat_crud.update_conversation(
+            db=db,
+            conversation_id=conversation_id,
+            conversation_update=conversation_update,
+            user_id=current_user.id
+        )
+        
+        if not updated_conversation:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Conversation not found or access denied"
+            )
+        
+        return ChatConversationResponse.model_validate(updated_conversation)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update conversation: {str(e)}"
+        )
+
+
+@router.delete("/conversations/{conversation_id}")
+async def delete_conversation(
+    conversation_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete a conversation and all its messages"""
+    try:
+        success = chat_crud.delete_conversation(
+            db=db,
+            conversation_id=conversation_id,
+            user_id=current_user.id
+        )
+        
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Conversation not found or access denied"
+            )
+        
+        return {"message": "Conversation deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete conversation: {str(e)}"
+        )
+
+
+@router.delete("/conversations/{conversation_id}/messages")
+async def delete_conversation_messages(
+    conversation_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete all messages from a conversation but keep the conversation"""
+    try:
+        success = chat_crud.delete_conversation_messages(
+            db=db,
+            conversation_id=conversation_id,
+            user_id=current_user.id
+        )
+        
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Conversation not found or access denied"
+            )
+        
+        return {"message": "Conversation messages deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete conversation messages: {str(e)}"
+        )
+
+
+@router.put("/messages/{message_id}", response_model=ChatMessageResponse)
+async def update_message(
+    message_id: str,
+    message_content: dict,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Update a message's content"""
+    try:
+        content = message_content.get("content", "")
+        if not content.strip():
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Message content cannot be empty"
+            )
+        
+        updated_message = chat_crud.update_message(
+            db=db,
+            message_id=message_id,
+            content=content.strip(),
+            user_id=current_user.id
+        )
+        
+        if not updated_message:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Message not found or access denied"
+            )
+        
+        return ChatMessageResponse.model_validate(updated_message)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to update message: {str(e)}"
+        )
+
+
+@router.delete("/conversations/{conversation_id}/messages/after/{message_id}")
+async def delete_messages_after(
+    conversation_id: str,
+    message_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Delete all messages after a specific message in a conversation"""
+    try:
+        success = chat_crud.delete_messages_after(
+            db=db,
+            conversation_id=conversation_id,
+            after_message_id=message_id,
+            user_id=current_user.id
+        )
+        
+        if not success:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Conversation or message not found or access denied"
+            )
+        
+        return {"message": "Messages deleted successfully"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to delete messages: {str(e)}"
+        )

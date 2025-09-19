@@ -1,105 +1,298 @@
 # ScrumiX Backend
 
+A FastAPI-based backend service for the ScrumiX AI-powered Scrum management system. This backend provides RESTful APIs for project management, user authentication, task tracking, sprint management, and AI-powered features.
+
+## Features
+
+- **FastAPI Framework**: Modern, fast web framework for building APIs
+- **SQLAlchemy ORM**: Database abstraction and management
+- **PostgreSQL Support**: Primary database with SQLite fallback for testing
+- **JWT Authentication**: Secure token-based authentication
+- **Keycloak Integration**: OAuth2/OIDC authentication support
+- **Vector Database**: PGVector integration for AI embeddings
+- **Comprehensive Testing**: Pytest-based test suite with high coverage
+- **Database Migrations**: Alembic for schema management
+- **API Documentation**: Automatic OpenAPI/Swagger documentation
+
 ## Project Structure
+
 ```
 backend/
 ├── src/
 │   └── scrumix/
 │       ├── __init__.py
-│       ├── main.py               # FastAPI 应用实例
-│       ├── api/                  # API 启动相关
-│       │   ├── __init__.py
-│       │   ├── app.py
-│       │   ├── db/                   # 数据库相关
-│       │   │   ├── __init__.py
-│       │   │   ├── base.py           # SQLAlchemy Base 基类
-│       │   │   ├── database.py       # 数据库连接和初始化
-│       │   │   └── session.py        # Session 管理
-│       │   ├── core/                 # 核心配置与扩展
-│       │   │   ├── __init__.py
-│       │   │   ├── config.py         # 全局配置
-│       │   │   └── security.py       # 安全相关，如认证加密
-│       │   ├── routers/              # API 路由分发
-│       │   │   ├── __init__.py
-│       │   │   ├── users.py          # 用户路由
-│       │   │   └── xxx.py          # 项目/物品路由
-│       │   ├── models/               # SQLAlchemy ORM 数据模型
-│       │   │   ├── __init__.py
-│       │   │   ├── user.py           # 用户模型
-│       │   │   └── xxx.py
-│       │   ├── schemas/              # Pydantic 数据验证模型
-│       │   │   ├── __init__.py
-│       │   │   ├── user.py
-│       │   │   └── xxx.py
-│       │   ├── crud/                 # CRUD 封装
-│       │   │   ├── __init__.py
-│       │   │   ├── base.py
-│       │   │   ├── crud_user.py
-│       │   │   └── crud_xxx.py
-│       │   └── utils/                # 工具函数
-│       │       ├── __init__.py
-│       │       ├── helpers.py        # 通用函数
-│       │       └── logger.py         # 日志
-│       ├── agents/                 # 代理相关
-│       │   ├── __init__.py
-│       │   ├── agent/                # 代理基类
-│       │   │   ├── __init__.py
-│       │   │   ├── agent.py          # 代理基类
-│       │   │   └── agent_template.py # 代理模板
-│       │   ├── llm/                  # LLM 相关
-│       │   │   ├── __init__.py
-│       │   │   ├── base.py       # LLM 基类
-│       │   │   └── openai.py       # OpenAI 实现
-│       │   │   ├── anthropic.py    # Anthropic 实现
-│       │   │   ├── deepseek.py     # DeepSeek 实现
-│       │   │   └── gemini.py       # Gemini 实现
-│       │   ├── tools/               # 代理相关
-│       │   │   ├── __init__.py
-│       │   │   ├── email.py          # 邮件工具
-│       │   │   ├── file.py           # 文件工具
-│       │   │   ├── image.py          # 图片工具
-│       │   │   ├── pdf.py            # PDF 工具
-│       │   │   ├── text.py           # 文本工具
-│       │   │   └── web.py            # 网页工具
-│       │   ├── memory/               # 记忆相关
-│       │   │   ├── __init__.py
-│       │   │   ├── memory.py         # 记忆基类
-│       │   │   ├── long_memory.py    # 长时记忆
-│       │   │   └── short_memory.py   # 短时记忆
-│       │   ├── prompts/              # 提示词相关
-│       │   │   ├── __init__.py
-│       │   │   ├── prompt.py         # 提示词基类
-│       │   │   └── prompt_template.py # 提示词模板
-│       │   ├── tasks/                # 任务相关
-│       │   │   ├── __init__.py
-│       │   │   ├── task.py           # 任务基类
-│       │   │   └── task_template.py  # 任务模板
-│       │   ├── workflows/            # 工作流相关
-│       │   │   ├── __init__.py
-│       │   │   ├── workflow.py       # 工作流基类
-│       │   │   ├── workflow_manager.py   # 工作流管理器
-│       │   │   └── workflow_template.py # 工作流模板
-│       │   ├── plan/                 # 计划相关
-│       │   │   ├── __init__.py
-│       │   │   ├── plan.py           # 计划基类
-│       │   │   └── plan_manager.py   # 计划管理器
-│       │   │   └── plan_template.py  # 计划模板
-│       │   └── utils/                # 工具函数
-│       │       ├── __init__.py
-│       │       ├── helpers.py        # 通用函数
-│       │       └── logger.py         # 日志
-|       ├──
-├── tests/                        # 测试
+│       ├── main.py                    # FastAPI application entry point
+│       └── api/                       # API layer
+│           ├── __init__.py
+│           ├── app.py                 # FastAPI app configuration
+│           ├── core/                  # Core configuration and utilities
+│           │   ├── __init__.py
+│           │   ├── celery_app.py      # Celery task queue configuration
+│           │   ├── config.py          # Application settings and configuration
+│           │   ├── embedding_service.py # AI embedding service
+│           │   ├── init_db.py         # Database initialization
+│           │   ├── permissions.py     # Permission management
+│           │   └── security.py        # Authentication and security
+│           ├── db/                    # Database layer
+│           │   ├── __init__.py
+│           │   ├── base.py            # SQLAlchemy Base class
+│           │   ├── database.py        # Database connection and session
+│           │   ├── migrations/        # Custom migration scripts
+│           │   ├── models.py          # Database model registry
+│           │   └── session.py         # Database session management
+│           ├── models/                # SQLAlchemy ORM models
+│           │   ├── __init__.py
+│           │   ├── acceptance_criteria.py
+│           │   ├── backlog.py
+│           │   ├── burndown_snapshot.py
+│           │   ├── chat.py
+│           │   ├── documentation.py
+│           │   ├── meeting_action_item.py
+│           │   ├── meeting_agenda.py
+│           │   ├── meeting_note.py
+│           │   ├── meeting_participant.py
+│           │   ├── meeting.py
+│           │   ├── notification.py
+│           │   ├── personal_note.py
+│           │   ├── project.py
+│           │   ├── sprint.py
+│           │   ├── tag_documentation.py
+│           │   ├── tag_task.py
+│           │   ├── tag.py
+│           │   ├── task.py
+│           │   ├── user_documentation.py
+│           │   ├── user_notification_preference.py
+│           │   ├── user_project.py
+│           │   ├── user_task.py
+│           │   └── user.py
+│           ├── schemas/               # Pydantic data validation models
+│           │   ├── __init__.py
+│           │   ├── acceptance_criteria.py
+│           │   ├── backlog.py
+│           │   ├── burndown_snapshot.py
+│           │   ├── chat.py
+│           │   ├── documentation.py
+│           │   ├── meeting_action_item.py
+│           │   ├── meeting_agenda.py
+│           │   ├── meeting_note.py
+│           │   ├── meeting_participant.py
+│           │   ├── meeting.py
+│           │   ├── notification.py
+│           │   ├── personal_note.py
+│           │   ├── project.py
+│           │   ├── sprint.py
+│           │   ├── tag.py
+│           │   ├── task.py
+│           │   ├── user_notification_preference.py
+│           │   ├── user_project.py
+│           │   └── user.py
+│           ├── crud/                  # Database CRUD operations
+│           │   ├── __init__.py
+│           │   ├── acceptance_criteria.py
+│           │   ├── backlog.py
+│           │   ├── base.py            # Base CRUD class
+│           │   ├── burndown_snapshot.py
+│           │   ├── chat.py
+│           │   ├── documentation.py
+│           │   ├── meeting_action_item.py
+│           │   ├── meeting_agenda.py
+│           │   ├── meeting_note.py
+│           │   ├── meeting_participant.py
+│           │   ├── meeting.py
+│           │   ├── notification.py
+│           │   ├── personal_note.py
+│           │   ├── project.py
+│           │   ├── sprint_backlog.py
+│           │   ├── sprint.py
+│           │   ├── tag.py
+│           │   ├── task.py
+│           │   ├── user_documentation.py
+│           │   ├── user_notification_preference.py
+│           │   ├── user_project.py
+│           │   ├── user_task.py
+│           │   └── user.py
+│           ├── routes/                # FastAPI route handlers
+│           │   ├── __init__.py
+│           │   ├── acceptance_criteria.py
+│           │   ├── auth.py            # Authentication routes
+│           │   ├── backlogs.py
+│           │   ├── chat.py            # AI chat functionality
+│           │   ├── documentations.py
+│           │   ├── meeting_action_item.py
+│           │   ├── meeting_agenda.py
+│           │   ├── meeting_note.py
+│           │   ├── meeting_participants.py
+│           │   ├── meetings.py
+│           │   ├── notifications.py
+│           │   ├── personal_notes.py
+│           │   ├── projects.py
+│           │   ├── semantic_search.py # AI-powered search
+│           │   ├── sprints.py
+│           │   ├── tags.py
+│           │   ├── tasks.py
+│           │   ├── user_notification_preferences.py
+│           │   ├── users.py
+│           │   ├── velocity.py        # Velocity tracking
+│           │   └── workspace.py
+│           ├── services/              # Business logic services
+│           │   └── velocity_tracking.py
+│           └── utils/                 # Utility functions
+│               ├── __init__.py
+│               ├── backlog_performance_test.py
+│               ├── cookies.py         # Cookie management
+│               ├── helpers.py         # General helper functions
+│               ├── meeting_scheduler.py
+│               ├── notification_helpers.py
+│               ├── oauth.py           # OAuth utilities
+│               └── password.py        # Password utilities
+├── tests/                            # Test suite
 │   ├── __init__.py
-│   ├── conftest.py
-│   ├── test_api/
-│   └── test_crud/
-├── scripts/                      # 开发/部署脚本
-├── docker/                       # Docker 配置
-├── docs/                         # 项目文档
-├── alembic/                      # Alembic 数据库迁移脚本
-├── .env                          # 环境变量配置
-├── .gitignore
-├── requirements.txt              # Python 依赖
+│   ├── conftest.py                   # Pytest configuration
+│   ├── README.md                     # Testing documentation
+│   ├── COMPREHENSIVE_TESTING_IMPROVEMENTS.md
+│   └── test_*.py                     # Individual test files
+├── alembic/                          # Database migration scripts
+│   ├── env.py
+│   ├── script.py.mako
+│   └── versions/                     # Migration version files
+├── scripts/                          # Development and deployment scripts
+│   └── start.sh
+├── notebooks/                        # Jupyter notebooks for testing
+│   └── test_keycloak.ipynb
+├── htmlcov/                          # Test coverage reports
+├── alembic.ini                       # Alembic configuration
+├── Dockerfile                        # Docker container configuration
+├── Makefile                          # Build and development commands
+├── pyproject.toml                    # Python project configuration
+├── run_tests.py                      # Test runner script
+├── scrumix.db                        # SQLite database (development)
 └── README.md
 ```
+
+## Quick Start
+
+### Prerequisites
+
+- Python 3.8+
+- PostgreSQL (or SQLite for development)
+- Redis (optional, for task queue)
+
+### Installation
+
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd ScrumiX/backend
+   ```
+
+2. **Create virtual environment**
+   ```bash
+   conda create -n scrumix python=3.10
+   conda activate scrumix
+   # or
+   python -m venv venv
+   source venv/bin/activate  # On Windows: venv\Scripts\activate
+   ```
+
+3. **Install dependencies**
+   ```bash
+   pip install -e .
+   ```
+
+4. **Set up environment variables**
+   ```bash
+   cp .env.example .env
+   # Edit .env with your configuration
+   ```
+
+5. **Initialize database**
+   ```bash
+   alembic upgrade head
+   ```
+
+6. **Run the application**
+   ```bash
+   uvicorn src.scrumix.main:app --reload
+   ```
+
+The API will be available at `http://localhost:8000` with interactive documentation at `http://localhost:8000/docs`.
+
+## Development
+
+### Running Tests
+
+```bash
+# Run all tests
+pytest
+
+# Run with coverage
+pytest --cov=src/scrumix --cov-report=html
+
+# Run specific test file
+pytest tests/test_users.py
+
+# Run tests with specific markers
+pytest -m "not slow"
+```
+
+### Database Migrations
+
+```bash
+# Create a new migration
+alembic revision --autogenerate -m "Description of changes"
+
+# Apply migrations
+alembic upgrade head
+
+# Rollback migration
+alembic downgrade -1
+```
+
+### Code Quality
+
+The project follows Python best practices with:
+- Type hints throughout the codebase
+- Pydantic for data validation
+- SQLAlchemy ORM for database operations
+- Comprehensive test coverage (target: 80%+)
+- PEP 8 style guidelines
+
+## API Documentation
+
+Once the server is running, you can access:
+- **Interactive API docs**: `http://localhost:8000/docs`
+- **ReDoc documentation**: `http://localhost:8000/redoc`
+- **OpenAPI schema**: `http://localhost:8000/openapi.json`
+
+## Configuration
+
+Key configuration options in `.env`:
+
+```env
+# Database
+DATABASE_URL=postgresql://user:password@localhost/scrumix
+# or for SQLite: sqlite:///./scrumix.db
+
+# Security
+SECRET_KEY=your-secret-key-here
+ALGORITHM=HS256
+ACCESS_TOKEN_EXPIRE_MINUTES=30
+
+# Keycloak (optional)
+KEYCLOAK_URL=https://your-keycloak-instance
+KEYCLOAK_REALM=your-realm
+KEYCLOAK_CLIENT_ID=your-client-id
+
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests for new functionality
+5. Ensure all tests pass
+6. Submit a pull request
+
+## License
+
+This project is licensed under the Apache License 2.0. See the [LICENSE](LICENSE) file for details.

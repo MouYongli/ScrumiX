@@ -7,7 +7,9 @@ import { Home, ChevronRight } from 'lucide-react';
 interface BreadcrumbItem {
   label: string;
   href?: string;
+  // icon kept optional for other pages but not required; still supported
   icon?: React.ReactNode;
+  id?: string | number; // preferred stable key source
 }
 
 interface BreadcrumbProps {
@@ -24,8 +26,10 @@ const Breadcrumb: React.FC<BreadcrumbProps> = ({ items }) => {
         <Home className="w-4 h-4" />
       </Link>
       
-      {items.map((item, index) => (
-        <React.Fragment key={index}>
+      {items.map((item, index) => {
+        const key = item.id ?? `${item.href || item.label}-${index}`;
+        return (
+        <React.Fragment key={key}>
           <ChevronRight className="w-4 h-4 text-gray-400" />
           {item.href ? (
             <Link 
@@ -42,7 +46,7 @@ const Breadcrumb: React.FC<BreadcrumbProps> = ({ items }) => {
             </span>
           )}
         </React.Fragment>
-      ))}
+      );})}
     </nav>
   );
 };

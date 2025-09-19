@@ -1,5 +1,5 @@
 """
-用户相关的CRUD操作
+User-related CRUD operations
 """
 from typing import Optional, List
 from datetime import datetime, timedelta
@@ -11,49 +11,74 @@ import json
 from scrumix.api.models.user import User, UserOAuth, UserSession, AuthProvider
 from scrumix.api.schemas.user import UserCreate, UserUpdate
 from scrumix.api.utils.password import get_password_hash, verify_password
+from .base import CRUDBase
 
-class UserCRUD:
-    def create_user(self, db: Session, user_create: UserCreate) -> User:
-        """创建新用户"""
-        # 检查邮箱是否已存在
-        if self.get_by_email(db, user_create.email):
-            raise ValueError("邮箱已被注册")
+class UserCRUD(CRUDBase[User, UserCreate, UserUpdate]):
+    def __init__(self):
+        super().__init__(User)
+    
+    def create(self, db: Session, *, obj_in: UserCreate) -> User:
+        """Create a new user with proper validation"""
+        # Check if email already exists
+        if self.get_by_email(db, obj_in.email):
+            raise ValueError("Email already registered")
         
-        # 检查用户名是否已存在
-        if user_create.username and self.get_by_username(db, user_create.username):
-            raise ValueError("用户名已被使用")
+        # Check if username already exists
+        if obj_in.username and self.get_by_username(db, obj_in.username):
+            raise ValueError("Username already taken")
         
-        # 创建用户对象
+        # Handle name fields - prioritize first_name/last_name, fall back to full_name
+        first_name = obj_in.first_name
+        last_name = obj_in.last_name
+        full_name = obj_in.full_name
+        
+        # If first_name and last_name are provided, use them and construct full_name
+        if first_name or last_name:
+            full_name = f"{first_name or ''} {last_name or ''}".strip()
+        # If only full_name is provided, try to split it
+        elif full_name and not first_name and not last_name:
+            name_parts = full_name.strip().split(' ', 1)
+            first_name = name_parts[0] if name_parts else None
+            last_name = name_parts[1] if len(name_parts) > 1 else None
+        
+        # Create user object
         db_user = User(
-            email=user_create.email,
-            username=user_create.username,
-            full_name=user_create.full_name,
-            avatar_url=user_create.avatar_url,
-            timezone=user_create.timezone,
-            language=user_create.language,
-            hashed_password=get_password_hash(user_create.password) if user_create.password else None,
-            is_verified=False  # 需要邮箱验证
+            email=obj_in.email,
+            username=obj_in.username,
+            first_name=first_name,
+            last_name=last_name,
+            full_name=full_name,
+            avatar_url=obj_in.avatar_url,
+            timezone=obj_in.timezone,
+            language=obj_in.language,
+            date_format=getattr(obj_in, 'date_format', 'YYYY-MM-DD'),
+            hashed_password=get_password_hash(obj_in.password) if obj_in.password else None,
+            is_verified=False  # Requires email verification
         )
         
         db.add(db_user)
         db.commit()
         db.refresh(db_user)
         return db_user
+
+    def create_user(self, db: Session, user_create: UserCreate) -> User:
+        """Create a new user (alias for create method)"""
+        return self.create(db, obj_in=user_create)
     
     def get_by_id(self, db: Session, user_id: int) -> Optional[User]:
-        """根据ID获取用户"""
-        return db.query(User).filter(User.id == user_id).first()
+        """Get user by ID"""
+        return self.get(db, user_id)
     
     def get_by_email(self, db: Session, email: str) -> Optional[User]:
-        """根据邮箱获取用户"""
+        """Get user by email"""
         return db.query(User).filter(User.email == email).first()
     
     def get_by_username(self, db: Session, username: str) -> Optional[User]:
-        """根据用户名获取用户"""
+        """Get user by username"""
         return db.query(User).filter(User.username == username).first()
     
     def authenticate(self, db: Session, email: str, password: str) -> Optional[User]:
-        """验证用户登录"""
+        """Verify user login"""
         user = self.get_by_email(db, email)
         if not user:
             return None
@@ -64,24 +89,48 @@ class UserCRUD:
         return user
     
     def update_user(self, db: Session, user_id: int, user_update: UserUpdate) -> Optional[User]:
-        """更新用户信息"""
+        """Update user information"""
         user = self.get_by_id(db, user_id)
         if not user:
             return None
         
         update_data = user_update.model_dump(exclude_unset=True)
         
-        # 检查用户名是否已被使用
+        # Check if username is already taken
         if "username" in update_data and update_data["username"]:
             existing_user = self.get_by_username(db, update_data["username"])
             if existing_user and existing_user.id != user_id:
-                raise ValueError("用户名已被使用")
+                raise ValueError("Username already taken")
         
-        # 检查邮箱是否已被使用
+        # Check if email is already taken
         if "email" in update_data:
             existing_user = self.get_by_email(db, update_data["email"])
             if existing_user and existing_user.id != user_id:
-                raise ValueError("邮箱已被使用")
+                raise ValueError("Email already taken")
+        
+        # Handle name fields with proper logic
+        if "first_name" in update_data or "last_name" in update_data or "full_name" in update_data:
+            first_name = update_data.get("first_name", user.first_name)
+            last_name = update_data.get("last_name", user.last_name)
+            full_name = update_data.get("full_name", user.full_name)
+            
+            # If first_name and last_name are provided, construct full_name
+            if "first_name" in update_data or "last_name" in update_data:
+                full_name = f"{first_name or ''} {last_name or ''}".strip()
+            # If only full_name is provided, try to split it
+            elif "full_name" in update_data and full_name:
+                name_parts = full_name.strip().split(' ', 1)
+                first_name = name_parts[0] if name_parts else None
+                last_name = name_parts[1] if len(name_parts) > 1 else None
+            
+            user.first_name = first_name
+            user.last_name = last_name
+            user.full_name = full_name
+            
+            # Remove these from update_data to avoid double setting
+            update_data.pop("first_name", None)
+            update_data.pop("last_name", None)
+            update_data.pop("full_name", None)
         
         for field, value in update_data.items():
             setattr(user, field, value)
@@ -91,14 +140,14 @@ class UserCRUD:
         return user
     
     def update_last_login(self, db: Session, user_id: int) -> None:
-        """更新最后登录时间"""
+        """Update last login time"""
         user = self.get_by_id(db, user_id)
         if user:
             user.last_login_at = datetime.now()
             db.commit()
     
     def change_password(self, db: Session, user_id: int, current_password: str, new_password: str) -> bool:
-        """修改密码"""
+        """Change password"""
         user = self.get_by_id(db, user_id)
         if not user or not user.hashed_password:
             return False
@@ -111,7 +160,7 @@ class UserCRUD:
         return True
     
     def reset_password(self, db: Session, user_id: int, new_password: str) -> bool:
-        """重置密码（管理员操作或忘记密码）"""
+        """Reset password (admin operation or forgot password)"""
         user = self.get_by_id(db, user_id)
         if not user:
             return False
@@ -121,7 +170,7 @@ class UserCRUD:
         return True
     
     def verify_user(self, db: Session, user_id: int) -> bool:
-        """验证用户邮箱"""
+        """Verify user email"""
         user = self.get_by_id(db, user_id)
         if not user:
             return False
@@ -131,25 +180,113 @@ class UserCRUD:
         return True
     
     def deactivate_user(self, db: Session, user_id: int) -> bool:
-        """停用用户"""
+        """Deactivate user"""
         user = self.get_by_id(db, user_id)
         if not user:
             return False
         
         user.is_active = False
+        user.deactivated_at = datetime.now()
+        db.commit()
+        return True
+    
+    def delete_user(self, db: Session, user_id: int) -> bool:
+        """Delete user"""
+        user = self.get_by_id(db, user_id)
+        if not user:
+            return False
+        
+        db.delete(user)
         db.commit()
         return True
     
     def get_users(self, db: Session, skip: int = 0, limit: int = 100) -> List[User]:
-        """获取用户列表"""
+        """Get user list"""
         return db.query(User).offset(skip).limit(limit).all()
+    
+    def is_active(self, user: User) -> bool:
+        """Check if user is active"""
+        return user.is_active
+    
+    def is_superuser(self, user: User) -> bool:
+        """Check if user is superuser"""
+        return user.is_superuser
+
+    # Additional methods for session management
+    def create_session(self, db: Session, user_id: int, session_token: str, expires_at: Optional[datetime] = None, refresh_token: Optional[str] = None, user_agent: Optional[str] = None) -> UserSession:
+        """Create a new user session"""
+        if expires_at is None:
+            expires_at = datetime.now() + timedelta(days=30)
+        
+        session = UserSession(
+            user_id=user_id,
+            session_token=session_token,
+            user_agent=user_agent,
+            created_at=datetime.now(),
+            expires_at=expires_at
+        )
+        db.add(session)
+        db.commit()
+        db.refresh(session)
+        return session
+    
+    def get_by_session_token(self, db: Session, session_token: str) -> Optional[User]:
+        """Get user by session token"""
+        session = db.query(UserSession).filter(
+            UserSession.session_token == session_token,
+            UserSession.expires_at > datetime.now(),
+            UserSession.is_active == True
+        ).first()
+        
+        if session:
+            return self.get(db, session.user_id)
+        return None
+    
+    def update_activity(self, db: Session, user_id: int) -> bool:
+        """Update user's last activity timestamp"""
+        # Find active session for the user
+        session = db.query(UserSession).filter(
+            UserSession.user_id == user_id,
+            UserSession.is_active == True,
+            UserSession.expires_at > datetime.now()
+        ).first()
+        
+        if session:
+            session.last_activity_at = datetime.now()
+            db.commit()
+            return True
+        return False
+    
+    def deactivate_session(self, db: Session, session_token: str) -> bool:
+        """Deactivate a user session"""
+        session = db.query(UserSession).filter(
+            UserSession.session_token == session_token
+        ).first()
+        
+        if session:
+            session.is_active = False
+            session.deactivated_at = datetime.now()
+            db.commit()
+            return True
+        return False
+    
+    def cleanup_expired_sessions(self, db: Session) -> int:
+        """Clean up expired sessions"""
+        expired_sessions = db.query(UserSession).filter(
+            UserSession.expires_at < datetime.now()
+        )
+        expired_count = expired_sessions.count()
+        
+        expired_sessions.delete()
+        db.commit()
+        return expired_count
 
 class UserOAuthCRUD:
     def create_oauth_account(self, db: Session, user_id: int, provider: AuthProvider, 
                            provider_user_id: str, access_token: str, 
                            refresh_token: Optional[str] = None, 
                            raw_data: Optional[dict] = None) -> UserOAuth:
-        """创建OAuth账户关联"""
+        """Create OAuth account association"""
         oauth_account = UserOAuth(
             user_id=user_id,
             provider=provider,
@@ -165,7 +302,7 @@ class UserOAuthCRUD:
         return oauth_account
     
     def get_by_provider_user_id(self, db: Session, provider: AuthProvider, provider_user_id: str) -> Optional[UserOAuth]:
-        """根据OAuth提供商和用户ID获取账户"""
+        """Get account by OAuth provider and user ID"""
         return db.query(UserOAuth).filter(
             and_(
                 UserOAuth.provider == provider,
@@ -175,7 +312,7 @@ class UserOAuthCRUD:
     
     def update_oauth_tokens(self, db: Session, oauth_id: int, access_token: str, 
                           refresh_token: Optional[str] = None, expires_at: Optional[datetime] = None) -> bool:
-        """更新OAuth tokens"""
+        """Update OAuth tokens"""
         oauth_account = db.query(UserOAuth).filter(UserOAuth.id == oauth_id).first()
         if not oauth_account:
             return False
@@ -190,89 +327,72 @@ class UserOAuthCRUD:
         return True
 
 class UserSessionCRUD:
-    def create_session(self, db: Session, user_id: int, expires_at: datetime,
-                      user_agent: Optional[str] = None, ip_address: Optional[str] = None,
-                      device_info: Optional[str] = None) -> UserSession:
-        """创建用户会话"""
-        session_token = secrets.token_urlsafe(32)
-        refresh_token = secrets.token_urlsafe(32)
-        
+    def create_session(self, db: Session, user_id: int, session_token: str) -> UserSession:
+        """Create a new user session"""
+        from ..models.user import UserSession
         session = UserSession(
             user_id=user_id,
             session_token=session_token,
-            refresh_token=refresh_token,
-            user_agent=user_agent,
-            ip_address=ip_address,
-            device_info=device_info,
-            expires_at=expires_at
+            created_at=datetime.now(),
+            expires_at=datetime.now() + timedelta(days=30)
         )
-        
         db.add(session)
         db.commit()
         db.refresh(session)
         return session
     
-    def get_by_session_token(self, db: Session, session_token: str) -> Optional[UserSession]:
-        """根据会话token获取会话"""
-        return db.query(UserSession).filter(
-            and_(
-                UserSession.session_token == session_token,
-                UserSession.is_active == True,
-                UserSession.expires_at > datetime.now()
-            )
+    def get_by_session_token(self, db: Session, session_token: str) -> Optional[User]:
+        """Get user by session token"""
+        from ..models.user import UserSession
+        session = db.query(UserSession).filter(
+            UserSession.session_token == session_token,
+            UserSession.expires_at > datetime.now(),
+            UserSession.is_active == True
         ).first()
+        
+        if session:
+            return user_crud.get(db, session.user_id)
+        return None
     
-    def get_by_refresh_token(self, db: Session, refresh_token: str) -> Optional[UserSession]:
-        """根据刷新token获取会话"""
-        return db.query(UserSession).filter(
-            and_(
-                UserSession.refresh_token == refresh_token,
-                UserSession.is_active == True,
-                UserSession.expires_at > datetime.now()
-            )
+    def update_activity(self, db: Session, user_id: int) -> Optional[User]:
+        """Update user's last activity timestamp"""
+        user = user_crud.get(db, user_id)
+        if user:
+            user.last_activity_at = datetime.now()
+            db.commit()
+            db.refresh(user)
+        return user
+    
+    def deactivate_session(self, db: Session, session_token: str) -> bool:
+        """Deactivate a user session"""
+        from ..models.user import UserSession
+        session = db.query(UserSession).filter(
+            UserSession.session_token == session_token
         ).first()
-    
-    def update_activity(self, db: Session, session_id: int) -> bool:
-        """更新会话活动时间"""
-        session = db.query(UserSession).filter(UserSession.id == session_id).first()
-        if not session:
-            return False
         
-        session.last_activity_at = datetime.now()
-        db.commit()
-        return True
-    
-    def deactivate_session(self, db: Session, session_id: int) -> bool:
-        """停用会话"""
-        session = db.query(UserSession).filter(UserSession.id == session_id).first()
-        if not session:
-            return False
-        
-        session.is_active = False
-        db.commit()
-        return True
-    
-    def deactivate_user_sessions(self, db: Session, user_id: int) -> int:
-        """停用用户的所有会话"""
-        count = db.query(UserSession).filter(
-            and_(
-                UserSession.user_id == user_id,
-                UserSession.is_active == True
-            )
-        ).update({"is_active": False})
-        db.commit()
-        return count
+        if session:
+            session.is_active = False
+            session.deactivated_at = datetime.now()
+            db.commit()
+            return True
+        return False
     
     def cleanup_expired_sessions(self, db: Session) -> int:
-        """清理过期会话"""
-        count = db.query(UserSession).filter(
+        """Clean up expired sessions"""
+        from ..models.user import UserSession
+        expired_count = db.query(UserSession).filter(
             UserSession.expires_at < datetime.now()
-        ).update({"is_active": False})
+        ).count()
+        
+        db.query(UserSession).filter(
+            UserSession.expires_at < datetime.now()
+        ).delete()
+        
         db.commit()
-        return count
+        return expired_count
     
     def get_user_sessions(self, db: Session, user_id: int) -> List[UserSession]:
-        """获取用户的所有活跃会话"""
+        """Get all active sessions for user"""
         return db.query(UserSession).filter(
             and_(
                 UserSession.user_id == user_id,
@@ -280,8 +400,27 @@ class UserSessionCRUD:
                 UserSession.expires_at > datetime.now()
             )
         ).order_by(UserSession.last_activity_at.desc()).all()
+    
+    def deactivate_user_sessions(self, db: Session, user_id: int) -> int:
+        """Deactivate all sessions for a user"""
+        from ..models.user import UserSession
+        sessions = db.query(UserSession).filter(
+            and_(
+                UserSession.user_id == user_id,
+                UserSession.is_active == True
+            )
+        ).all()
+        
+        deactivated_count = 0
+        for session in sessions:
+            session.is_active = False
+            session.deactivated_at = datetime.now()
+            deactivated_count += 1
+        
+        db.commit()
+        return deactivated_count
 
-# 实例化CRUD对象
+# Create instances
 user_crud = UserCRUD()
 oauth_crud = UserOAuthCRUD()
 session_crud = UserSessionCRUD() 

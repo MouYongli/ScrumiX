@@ -2,139 +2,146 @@
 
 import React, { useState, useEffect } from 'react';
 import { 
-  Bell, User, Shield, Palette, Globe, 
-  Save, Moon, Sun, Monitor, Check, Settings,
-  Mail, MessageSquare, Calendar, Smartphone, 
-  Lock, Eye, Database, Download, Trash2
+  User, Moon, Sun, Monitor, Check, Settings,
+  Database, Trash2, AlertTriangle, X, Shield
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
+import { useTheme } from '@/contexts/ThemeContext';
+import { clearPreferencesCache } from '@/utils/dateFormat';
+import { authenticatedFetch } from '@/utils/auth';
+import { api } from '@/utils/api';
+
+
+
+interface UserProfile {
+  language: string;
+  timezone: string;
+  date_format: string;
+}
 
 interface SettingsData {
-  profile: {
-    language: string;
-    timezone: string;
-    dateFormat: string;
-    theme: 'light' | 'dark' | 'system';
-  };
-  notifications: {
-    email: {
-      projectUpdates: boolean;
-      taskAssignments: boolean;
-      sprintChanges: boolean;
-      meetingReminders: boolean;
-      weeklyDigest: boolean;
-    };
-    push: {
-      taskDeadlines: boolean;
-      mentionsAndComments: boolean;
-      projectInvitations: boolean;
-      systemUpdates: boolean;
-    };
-    inApp: {
-      realTimeUpdates: boolean;
-      soundNotifications: boolean;
-      desktopNotifications: boolean;
-    };
-  };
-  privacy: {
-    profileVisibility: 'public' | 'team' | 'private';
-    showOnlineStatus: boolean;
-    allowProjectInvitations: boolean;
-    dataCollection: boolean;
-  };
-  security: {
-    twoFactorAuth: boolean;
-    sessionTimeout: number;
-    loginAlerts: boolean;
-  };
+  profile: UserProfile;
 }
 
 const SettingsPage = () => {
   const [activeTab, setActiveTab] = useState('profile');
+  const { theme, setTheme } = useTheme();
   const [settings, setSettings] = useState<SettingsData>({
     profile: {
       language: 'en-US',
-      timezone: 'America/New_York',
-      dateFormat: 'MM/DD/YYYY',
-      theme: 'system',
-    },
-    notifications: {
-      email: {
-        projectUpdates: true,
-        taskAssignments: true,
-        sprintChanges: true,
-        meetingReminders: true,
-        weeklyDigest: false,
-      },
-      push: {
-        taskDeadlines: true,
-        mentionsAndComments: true,
-        projectInvitations: true,
-        systemUpdates: false,
-      },
-      inApp: {
-        realTimeUpdates: true,
-        soundNotifications: true,
-        desktopNotifications: true,
-      },
-    },
-    privacy: {
-      profileVisibility: 'team',
-      showOnlineStatus: true,
-      allowProjectInvitations: true,
-      dataCollection: true,
-    },
-    security: {
-      twoFactorAuth: false,
-      sessionTimeout: 30,
-      loginAlerts: true,
+      timezone: 'Europe/Berlin',
+      date_format: 'YYYY-MM-DD',
     },
   });
   const [isLoading, setIsLoading] = useState(false);
-  const [isSaved, setIsSaved] = useState(false);
+  const [autoSaveStatus, setAutoSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  
+  // Delete account modal states
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [deleteConfirmationStep, setDeleteConfirmationStep] = useState(1);
+  const [deleteConfirmationText, setDeleteConfirmationText] = useState('');
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
-  // Load settings
+  // Load settings from backend
   useEffect(() => {
-    const loadSettings = () => {
+    const loadSettings = async () => {
       try {
-        const savedSettings = localStorage.getItem('userSettings');
-        if (savedSettings) {
-          setSettings(JSON.parse(savedSettings));
+        setIsLoading(true);
+        
+        // Load user profile from backend
+        let backendProfile = null;
+        try {
+          const response = await authenticatedFetch('/api/v1/users/me/profile');
+          if (response.ok) {
+            const userData = await response.json();
+            backendProfile = {
+              language: userData.language || 'en-US',
+              timezone: userData.timezone || 'Europe/Berlin',
+              date_format: userData.date_format || 'YYYY-MM-DD',
+            };
+          }
+        } catch (error) {
+          console.warn('Failed to load user profile from backend:', error);
         }
+
+
+
+        // Load local settings as fallback
+        const savedSettings = localStorage.getItem('userSettings');
+        const parsedSettings = savedSettings ? JSON.parse(savedSettings) : {};
+        
+        // Merge settings with priority: backend > localStorage > defaults
+        setSettings({
+          profile: backendProfile || parsedSettings.profile || {
+            language: 'en-US',
+            timezone: 'Europe/Berlin',
+            date_format: 'YYYY-MM-DD',
+          },
+        });
       } catch (error) {
         console.error('Failed to load settings:', error);
+      } finally {
+        setIsLoading(false);
       }
     };
 
     loadSettings();
   }, []);
 
-  // Save settings
-  const handleSaveSettings = async () => {
-    setIsLoading(true);
+  // Auto-save settings to backend
+  const autoSaveSettings = async (updatedSettings: SettingsData) => {
+    setAutoSaveStatus('saving');
     try {
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
+      // Save profile preferences to backend
+      if (updatedSettings.profile) {
+        const response = await authenticatedFetch('/api/v1/users/me/profile', {
+          method: 'PUT',
+          body: JSON.stringify(updatedSettings.profile),
+        });
+
+        if (!response.ok) {
+          console.warn('Failed to save profile preferences to backend');
+          setAutoSaveStatus('error');
+          return;
+        }
+      }
+
+
       
-      localStorage.setItem('userSettings', JSON.stringify(settings));
-      setIsSaved(true);
-      setTimeout(() => setIsSaved(false), 2000);
+      // Save to localStorage as backup
+      localStorage.setItem('userSettings', JSON.stringify(updatedSettings));
+      
+      // Clear preferences cache so new preferences take effect immediately
+      clearPreferencesCache();
+      
+      setAutoSaveStatus('saved');
+      
+      // Reset status after 2 seconds
+      setTimeout(() => setAutoSaveStatus('idle'), 2000);
     } catch (error) {
-      console.error('Failed to save settings:', error);
-    } finally {
-      setIsLoading(false);
+      console.error('Failed to auto-save settings:', error);
+      // Still save locally even if backend fails
+      localStorage.setItem('userSettings', JSON.stringify(updatedSettings));
+      setAutoSaveStatus('error');
+      setTimeout(() => setAutoSaveStatus('idle'), 2000);
     }
   };
 
-  // Update settings
+  // Update settings with auto-save
   const updateSetting = (section: keyof SettingsData, key: string, value: any) => {
-    setSettings(prev => ({
-      ...prev,
+    const updatedSettings = {
+      ...settings,
       [section]: {
-        ...prev[section],
+        ...settings[section],
         [key]: value,
       },
-    }));
+    };
+    
+    setSettings(updatedSettings);
+    
+    // Trigger auto-save after a short delay to avoid too many API calls
+    setTimeout(() => autoSaveSettings(updatedSettings), 500);
   };
 
   // Update nested settings
@@ -142,9 +149,9 @@ const SettingsPage = () => {
     setSettings(prev => ({
       ...prev,
       [section]: {
-        ...prev[section],
+        ...(prev[section] || {}),
         [subsection]: {
-          ...(prev[section] as any)[subsection],
+          ...((prev[section] as any)?.[subsection] || {}),
           [key]: value,
         },
       },
@@ -156,7 +163,6 @@ const SettingsPage = () => {
     const userData = {
       profile: JSON.parse(localStorage.getItem('user') || '{}'),
       settings: settings,
-      favorites: JSON.parse(localStorage.getItem('favorites') || '[]'),
       exportDate: new Date().toISOString(),
     };
 
@@ -164,30 +170,63 @@ const SettingsPage = () => {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `scrumix-data-${new Date().toISOString().split('T')[0]}.json`;
+    a.download = `scrumiX-data-${new Date().toISOString().split('T')[0]}.json`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(url);
   };
 
-  // Delete account
-  const handleDeleteAccount = () => {
-    if (window.confirm('Are you sure you want to delete your account? This action cannot be undone.')) {
-      if (window.confirm('Please confirm again to delete your account. All data will be permanently deleted.')) {
-        // Clear all local data
-        localStorage.clear();
-        // Redirect to home page
-        window.location.href = '/';
+  // Delete account handlers
+  const openDeleteModal = () => {
+    setIsDeleteModalOpen(true);
+    setDeleteConfirmationStep(1);
+    setDeleteConfirmationText('');
+  };
+
+  const closeDeleteModal = () => {
+    setIsDeleteModalOpen(false);
+    setDeleteConfirmationStep(1);
+    setDeleteConfirmationText('');
+    setIsDeleting(false);
+    setDeleteError(null);
+  };
+
+  const handleDeleteAccount = async () => {
+    setIsDeleting(true);
+    setDeleteError(null);
+    
+    try {
+      // Call the API to delete the account from the database
+      const response = await api.users.deleteAccount();
+      
+      if (response.error) {
+        throw new Error(response.error);
       }
+      
+      // Account successfully deleted from database
+      console.log('Account deleted successfully:', response.data?.message);
+      
+      // Clear all local data
+      localStorage.clear();
+      
+      // Clear any cached API data
+      // (already done in the API call)
+      
+      // Redirect to home page
+      window.location.href = '/';
+    } catch (error) {
+      console.error('Failed to delete account:', error);
+      setDeleteError(error instanceof Error ? error.message : 'Failed to delete account');
+      setIsDeleting(false);
     }
   };
 
+  const canProceedToStep2 = deleteConfirmationStep === 1;
+  const canDeleteAccount = deleteConfirmationStep === 2 && deleteConfirmationText === 'DELETE MY ACCOUNT';
+
   const tabs = [
     { id: 'profile', label: 'Preferences', icon: User },
-    { id: 'notifications', label: 'Notifications', icon: Bell },
-    { id: 'privacy', label: 'Privacy', icon: Shield },
-    { id: 'security', label: 'Security', icon: Lock },
     { id: 'data', label: 'Data Management', icon: Database },
   ];
 
@@ -216,21 +255,6 @@ const SettingsPage = () => {
             Manage your account settings and preferences
           </p>
         </div>
-        
-        <button
-          onClick={handleSaveSettings}
-          disabled={isLoading}
-          className="bg-blue-600 hover:bg-blue-700 disabled:bg-blue-400 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
-        >
-          {isLoading ? (
-            <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-          ) : isSaved ? (
-            <Check className="w-4 h-4" />
-          ) : (
-            <Save className="w-4 h-4" />
-          )}
-          {isSaved ? 'Saved' : 'Save Settings'}
-        </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
@@ -266,7 +290,34 @@ const SettingsPage = () => {
             {/* Preferences */}
             {activeTab === 'profile' && (
               <div className="space-y-6">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Preferences</h2>
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Preferences</h2>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      Customize your experience. Changes are automatically saved.
+                    </p>
+                  </div>
+                  {/* Auto-save indicator for profile */}
+                  <div className="flex items-center gap-2">
+                    {autoSaveStatus === 'saving' && (
+                      <div className="flex items-center gap-2 text-blue-600">
+                        <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin"></div>
+                        <span className="text-sm">Saving...</span>
+                      </div>
+                    )}
+                    {autoSaveStatus === 'saved' && (
+                      <div className="flex items-center gap-2 text-green-600">
+                        <Check className="w-4 h-4" />
+                        <span className="text-sm">Saved</span>
+                      </div>
+                    )}
+                    {autoSaveStatus === 'error' && (
+                      <div className="flex items-center gap-2 text-red-600">
+                        <span className="text-sm">Save failed</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
                 
                 {/* Theme Settings */}
                 <div>
@@ -279,9 +330,9 @@ const SettingsPage = () => {
                       return (
                         <button
                           key={option.value}
-                          onClick={() => updateSetting('profile', 'theme', option.value)}
+                          onClick={() => setTheme(option.value as 'light' | 'dark' | 'system')}
                           className={`flex items-center gap-3 p-3 border rounded-lg transition-colors ${
-                            settings.profile.theme === option.value
+                            theme === option.value
                               ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400'
                               : 'border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700'
                           }`}
@@ -300,13 +351,11 @@ const SettingsPage = () => {
                     Language
                   </label>
                   <select
-                    value={settings.profile.language}
+                    value={settings.profile?.language || 'en-US'}
                     onChange={(e) => updateSetting('profile', 'language', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
                   >
                     <option value="en-US">English (US)</option>
-                    <option value="zh-CN">简体中文</option>
-                    <option value="ja-JP">日本語</option>
                   </select>
                 </div>
 
@@ -316,14 +365,11 @@ const SettingsPage = () => {
                     Timezone
                   </label>
                   <select
-                    value={settings.profile.timezone}
+                    value={settings.profile?.timezone || 'Europe/Berlin'}
                     onChange={(e) => updateSetting('profile', 'timezone', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
                   >
-                    <option value="America/New_York">New York (UTC-5)</option>
-                    <option value="Europe/London">London (UTC+0)</option>
-                    <option value="Asia/Shanghai">Shanghai (UTC+8)</option>
-                    <option value="Asia/Tokyo">Tokyo (UTC+9)</option>
+                    <option value="Europe/Berlin">Berlin (UTC+1/+2)</option>
                   </select>
                 </div>
 
@@ -333,307 +379,112 @@ const SettingsPage = () => {
                     Date Format
                   </label>
                   <select
-                    value={settings.profile.dateFormat}
-                    onChange={(e) => updateSetting('profile', 'dateFormat', e.target.value)}
+                    value={settings.profile?.date_format || 'YYYY-MM-DD'}
+                    onChange={(e) => updateSetting('profile', 'date_format', e.target.value)}
                     className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
                   >
-                    <option value="MM/DD/YYYY">03/15/2024</option>
-                    <option value="DD/MM/YYYY">15/03/2024</option>
-                    <option value="YYYY-MM-DD">2024-03-15</option>
+                    <option value="MM/DD/YYYY">03/15/2024 (US Format)</option>
+                    <option value="DD/MM/YYYY">15/03/2024 (European Format)</option>
+                    <option value="YYYY-MM-DD">2024-03-15 (ISO Format)</option>
                   </select>
-                </div>
-              </div>
-            )}
-
-            {/* Notification Settings */}
-            {activeTab === 'notifications' && (
-              <div className="space-y-6">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Notification Settings</h2>
-                
-                {/* Email Notifications */}
-                <div>
-                  <div className="flex items-center gap-2 mb-4">
-                    <Mail className="w-5 h-5 text-blue-500" />
-                    <h3 className="text-lg font-medium text-gray-900 dark:text-white">Email Notifications</h3>
-                  </div>
-                  <div className="space-y-3">
-                    {Object.entries(settings.notifications.email).map(([key, value]) => (
-                      <div key={key} className="flex items-center justify-between py-2">
-                        <span className="text-gray-700 dark:text-gray-300">
-                          {key === 'projectUpdates' && 'Project Updates'}
-                          {key === 'taskAssignments' && 'Task Assignments'}
-                          {key === 'sprintChanges' && 'Sprint Changes'}
-                          {key === 'meetingReminders' && 'Meeting Reminders'}
-                          {key === 'weeklyDigest' && 'Weekly Digest'}
-                        </span>
-                        <button
-                          onClick={() => updateNestedSetting('notifications', 'email', key, !value)}
-                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                            value ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
-                          }`}
-                        >
-                          <span
-                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                              value ? 'translate-x-6' : 'translate-x-1'
-                            }`}
-                          />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
+                  <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+                    Changes are automatically saved
+                  </p>
                 </div>
 
-                {/* Push Notifications */}
-                <div>
-                  <div className="flex items-center gap-2 mb-4">
-                    <Smartphone className="w-5 h-5 text-green-500" />
-                    <h3 className="text-lg font-medium text-gray-900 dark:text-white">Push Notifications</h3>
-                  </div>
-                  <div className="space-y-3">
-                    {Object.entries(settings.notifications.push).map(([key, value]) => (
-                      <div key={key} className="flex items-center justify-between py-2">
-                        <span className="text-gray-700 dark:text-gray-300">
-                          {key === 'taskDeadlines' && 'Task Deadline Reminders'}
-                          {key === 'mentionsAndComments' && 'Mentions and Comments'}
-                          {key === 'projectInvitations' && 'Project Invitations'}
-                          {key === 'systemUpdates' && 'System Updates'}
-                        </span>
-                        <button
-                          onClick={() => updateNestedSetting('notifications', 'push', key, !value)}
-                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                            value ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
-                          }`}
-                        >
-                          <span
-                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                              value ? 'translate-x-6' : 'translate-x-1'
-                            }`}
-                          />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* In-App Notifications */}
-                <div>
-                  <div className="flex items-center gap-2 mb-4">
-                    <MessageSquare className="w-5 h-5 text-purple-500" />
-                    <h3 className="text-lg font-medium text-gray-900 dark:text-white">In-App Notifications</h3>
-                  </div>
-                  <div className="space-y-3">
-                    {Object.entries(settings.notifications.inApp).map(([key, value]) => (
-                      <div key={key} className="flex items-center justify-between py-2">
-                        <span className="text-gray-700 dark:text-gray-300">
-                          {key === 'realTimeUpdates' && 'Real-time Updates'}
-                          {key === 'soundNotifications' && 'Sound Notifications'}
-                          {key === 'desktopNotifications' && 'Desktop Notifications'}
-                        </span>
-                        <button
-                          onClick={() => updateNestedSetting('notifications', 'inApp', key, !value)}
-                          className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                            value ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
-                          }`}
-                        >
-                          <span
-                            className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                              value ? 'translate-x-6' : 'translate-x-1'
-                            }`}
-                          />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Privacy Settings */}
-            {activeTab === 'privacy' && (
-              <div className="space-y-6">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Privacy Settings</h2>
-                
-                {/* Profile Visibility */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Profile Visibility
-                  </label>
-                  <select
-                    value={settings.privacy.profileVisibility}
-                    onChange={(e) => updateSetting('privacy', 'profileVisibility', e.target.value)}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-                  >
-                    <option value="public">Public</option>
-                    <option value="team">Team Members Only</option>
-                    <option value="private">Private</option>
-                  </select>
-                </div>
-
-                {/* Other Privacy Options */}
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between py-2">
-                    <div>
-                      <span className="text-gray-700 dark:text-gray-300 font-medium">Show Online Status</span>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">Let other users see your online status</p>
+                {/* Date Format Preview */}
+                <div className="mt-6 p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                  <h3 className="text-sm font-medium text-gray-900 dark:text-white mb-3">
+                    Date Format Preview
+                  </h3>
+                  <div className="space-y-2 text-sm">
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-600 dark:text-gray-400">Sample date:</span>
+                      <span className="font-mono">
+                        {(() => {
+                          const locale = settings.profile?.date_format === 'MM/DD/YYYY' ? 'en-US' : 
+                                       settings.profile?.date_format === 'DD/MM/YYYY' ? 'en-GB' : 'sv-SE';
+                          return new Date().toLocaleDateString(locale, { 
+                            timeZone: 'Europe/Berlin',
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit'
+                          });
+                        })()}
+                      </span>
                     </div>
-                    <button
-                      onClick={() => updateSetting('privacy', 'showOnlineStatus', !settings.privacy.showOnlineStatus)}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        settings.privacy.showOnlineStatus ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          settings.privacy.showOnlineStatus ? 'translate-x-6' : 'translate-x-1'
-                        }`}
-                      />
-                    </button>
-                  </div>
-
-                  <div className="flex items-center justify-between py-2">
-                    <div>
-                      <span className="text-gray-700 dark:text-gray-300 font-medium">Allow Project Invitations</span>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">Other users can invite you to join projects</p>
+                    <div className="flex items-center gap-2">
+                      <span className="text-gray-600 dark:text-gray-400">With time:</span>
+                      <span className="font-mono">
+                        {(() => {
+                          const locale = settings.profile?.date_format === 'MM/DD/YYYY' ? 'en-US' : 
+                                       settings.profile?.date_format === 'DD/MM/YYYY' ? 'en-GB' : 'sv-SE';
+                          return new Date().toLocaleString(locale, { 
+                            timeZone: 'Europe/Berlin',
+                            year: 'numeric',
+                            month: '2-digit',
+                            day: '2-digit',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          });
+                        })()}
+                      </span>
                     </div>
-                    <button
-                      onClick={() => updateSetting('privacy', 'allowProjectInvitations', !settings.privacy.allowProjectInvitations)}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        settings.privacy.allowProjectInvitations ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          settings.privacy.allowProjectInvitations ? 'translate-x-6' : 'translate-x-1'
-                        }`}
-                      />
-                    </button>
-                  </div>
-
-                  <div className="flex items-center justify-between py-2">
-                    <div>
-                      <span className="text-gray-700 dark:text-gray-300 font-medium">Data Collection</span>
-                      <p className="text-sm text-gray-500 dark:text-gray-400">Allow collection of anonymous usage data to improve service</p>
+                    <div className="text-xs text-gray-500 dark:text-gray-400">
+                      Timezone: Europe/Berlin (automatically adjusts for daylight saving time)
                     </div>
-                    <button
-                      onClick={() => updateSetting('privacy', 'dataCollection', !settings.privacy.dataCollection)}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                        settings.privacy.dataCollection ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
-                      }`}
-                    >
-                      <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                          settings.privacy.dataCollection ? 'translate-x-6' : 'translate-x-1'
-                        }`}
-                      />
-                    </button>
                   </div>
                 </div>
               </div>
             )}
 
-            {/* Security Settings */}
-            {activeTab === 'security' && (
-              <div className="space-y-6">
-                <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Security Settings</h2>
-                
-                {/* Two-Factor Authentication */}
-                <div className="flex items-center justify-between py-2">
-                  <div>
-                    <span className="text-gray-700 dark:text-gray-300 font-medium">Two-Factor Authentication</span>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Add an extra layer of security to your account</p>
-                  </div>
-                  <button
-                    onClick={() => updateSetting('security', 'twoFactorAuth', !settings.security.twoFactorAuth)}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      settings.security.twoFactorAuth ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        settings.security.twoFactorAuth ? 'translate-x-6' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
-                </div>
 
-                {/* Session Timeout */}
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Session Timeout (minutes)
-                  </label>
-                  <select
-                    value={settings.security.sessionTimeout}
-                    onChange={(e) => updateSetting('security', 'sessionTimeout', parseInt(e.target.value))}
-                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent dark:bg-gray-700 dark:text-white"
-                  >
-                    <option value={15}>15 minutes</option>
-                    <option value={30}>30 minutes</option>
-                    <option value={60}>1 hour</option>
-                    <option value={240}>4 hours</option>
-                    <option value={480}>8 hours</option>
-                  </select>
-                </div>
-
-                {/* Login Alerts */}
-                <div className="flex items-center justify-between py-2">
-                  <div>
-                    <span className="text-gray-700 dark:text-gray-300 font-medium">Login Alerts</span>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">Notify you when new devices sign in to your account</p>
-                  </div>
-                  <button
-                    onClick={() => updateSetting('security', 'loginAlerts', !settings.security.loginAlerts)}
-                    className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
-                      settings.security.loginAlerts ? 'bg-blue-600' : 'bg-gray-200 dark:bg-gray-700'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                        settings.security.loginAlerts ? 'translate-x-6' : 'translate-x-1'
-                      }`}
-                    />
-                  </button>
-                </div>
-              </div>
-            )}
 
             {/* Data Management */}
             {activeTab === 'data' && (
               <div className="space-y-6">
                 <h2 className="text-xl font-semibold text-gray-900 dark:text-white">Data Management</h2>
-                
-                {/* Export Data */}
-                <div className="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg">
-                  <div className="flex items-start gap-3">
-                    <Download className="w-5 h-5 text-blue-600 dark:text-blue-400 mt-0.5" />
-                    <div className="flex-1">
-                      <h3 className="font-medium text-blue-900 dark:text-blue-100">Export Data</h3>
-                      <p className="text-sm text-blue-700 dark:text-blue-300 mt-1">
-                        Download all your data from Scrumix, including profile information, project data, favorites, and more.
-                      </p>
-                      <button
-                        onClick={handleExportData}
-                        className="mt-2 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm transition-colors"
-                      >
-                        Export Data
-                      </button>
-                    </div>
-                  </div>
-                </div>
 
                 {/* Delete Account */}
-                <div className="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg">
-                  <div className="flex items-start gap-3">
-                    <Trash2 className="w-5 h-5 text-red-600 dark:text-red-400 mt-0.5" />
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-6">
+                  <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 bg-red-100 dark:bg-red-900/40 rounded-full flex items-center justify-center flex-shrink-0">
+                      <AlertTriangle className="w-6 h-6 text-red-600 dark:text-red-400" />
+                    </div>
                     <div className="flex-1">
-                      <h3 className="font-medium text-red-900 dark:text-red-100">Delete Account</h3>
-                      <p className="text-sm text-red-700 dark:text-red-300 mt-1">
-                        Permanently delete your account and all associated data. This action cannot be undone, please proceed with caution.
-                      </p>
-                      <button
-                        onClick={handleDeleteAccount}
-                        className="mt-2 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg text-sm transition-colors"
-                      >
+                      <h3 className="text-lg font-semibold text-red-900 dark:text-red-100 mb-2">
+                        Danger Zone
+                      </h3>
+                      <h4 className="font-medium text-red-800 dark:text-red-200 mb-2">
                         Delete Account
+                      </h4>
+                      <p className="text-sm text-red-700 dark:text-red-300 mb-4 leading-relaxed">
+                        Once you delete your account, there is no going back. This will permanently delete your account, 
+                        all your projects, sprint data, documentation, and remove you from any teams you're part of.
+                      </p>
+                      <div className="bg-red-100 dark:bg-red-900/60 border border-red-300 dark:border-red-700 rounded-lg p-4 mb-4">
+                        <div className="flex items-start gap-3">
+                          <Shield className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+                          <div>
+                            <h5 className="font-medium text-red-900 dark:text-red-100 mb-1">
+                              What will be deleted:
+                            </h5>
+                            <ul className="text-sm text-red-800 dark:text-red-200 space-y-1">
+                              <li>• Your profile and account information</li>
+                              <li>• All projects you own or are a member of</li>
+                              <li>• Sprint history and backlog items</li>
+                              <li>• Meeting notes and documentation</li>
+                              <li>• Personal calendar entries</li>
+                            </ul>
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        onClick={openDeleteModal}
+                        className="bg-red-600 hover:bg-red-700 focus:ring-4 focus:ring-red-500/50 text-white px-6 py-3 rounded-lg text-sm font-medium transition-all duration-200 flex items-center gap-2 shadow-lg hover:shadow-xl"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        Delete My Account
                       </button>
                     </div>
                   </div>
@@ -643,6 +494,195 @@ const SettingsPage = () => {
           </div>
         </div>
       </div>
+
+      {/* Delete Account Confirmation Modal */}
+      {isDeleteModalOpen && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl w-full max-w-md transform transition-all">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between p-6 border-b border-gray-200 dark:border-gray-700">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-red-100 dark:bg-red-900/40 rounded-full flex items-center justify-center">
+                  <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400" />
+                </div>
+                <div>
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-white">
+                    Delete Account
+                  </h2>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    Step {deleteConfirmationStep} of 2
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={closeDeleteModal}
+                disabled={isDeleting}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 disabled:opacity-50"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Content */}
+            <div className="p-6">
+              {deleteConfirmationStep === 1 && (
+                <div className="space-y-4">
+                  <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+                    <div className="flex items-start gap-3">
+                      <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <h3 className="font-medium text-red-900 dark:text-red-100 mb-2">
+                          This action is irreversible
+                        </h3>
+                        <p className="text-sm text-red-800 dark:text-red-200 mb-3">
+                          Deleting your account will permanently remove all data associated with your account. 
+                          This includes all projects, sprints, tasks, documentation, and team memberships.
+                        </p>
+                        <div className="bg-red-100 dark:bg-red-900/60 rounded-lg p-3">
+                          <h4 className="font-medium text-red-900 dark:text-red-100 mb-2 text-sm">
+                            Data that will be permanently deleted:
+                          </h4>
+                          <ul className="text-xs text-red-800 dark:text-red-200 space-y-1">
+                            <li>• Profile information and preferences</li>
+                            <li>• All owned and participated projects</li>
+                            <li>• Sprint history and backlog items</li>
+                            <li>• Meeting recordings and documentation</li>
+                            <li>• Personal notes and calendar entries</li>
+                            <li>• Team memberships and role assignments</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+                    <div className="flex items-start gap-3">
+                      <Shield className="w-5 h-5 text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" />
+                      <div>
+                        <h4 className="font-medium text-blue-900 dark:text-blue-100 mb-1 text-sm">
+                          Consider these alternatives:
+                        </h4>
+                        <ul className="text-xs text-blue-800 dark:text-blue-200 space-y-1">
+                          <li>• Export your data first using the export feature</li>
+                          <li>• Leave teams instead of deleting your entire account</li>
+                          <li>• Archive projects instead of permanent deletion</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {deleteConfirmationStep === 2 && (
+                <div className="space-y-4">
+                  <div className="text-center">
+                    <div className="w-16 h-16 bg-red-100 dark:bg-red-900/40 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <Trash2 className="w-8 h-8 text-red-600 dark:text-red-400" />
+                    </div>
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                      Final Confirmation
+                    </h3>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+                      To confirm account deletion, type <span className="font-mono font-bold text-red-600 dark:text-red-400">DELETE MY ACCOUNT</span> in the field below.
+                    </p>
+                  </div>
+                  
+                  <div>
+                    <input
+                      type="text"
+                      value={deleteConfirmationText}
+                      onChange={(e) => setDeleteConfirmationText(e.target.value)}
+                      placeholder="Type DELETE MY ACCOUNT"
+                      className="w-full px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:ring-2 focus:ring-red-500 focus:border-red-500 font-mono"
+                      disabled={isDeleting}
+                      autoFocus
+                    />
+                  </div>
+                  
+                  <div className="bg-gray-50 dark:bg-gray-700/50 rounded-lg p-4">
+                    <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                      <div className={`w-3 h-3 rounded-full ${
+                        canDeleteAccount ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'
+                      }`}></div>
+                      <span>
+                        {canDeleteAccount 
+                          ? 'Confirmation text matches - ready to delete' 
+                          : 'Type the exact phrase to enable deletion'
+                        }
+                      </span>
+                    </div>
+                  </div>
+                  
+                  {/* Error Display */}
+                  {deleteError && (
+                    <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg p-4">
+                      <div className="flex items-start gap-3">
+                        <AlertTriangle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+                        <div>
+                          <h4 className="font-medium text-red-900 dark:text-red-100 mb-1">
+                            Deletion Failed
+                          </h4>
+                          <p className="text-sm text-red-800 dark:text-red-200">
+                            {deleteError}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Modal Footer */}
+            <div className="bg-gray-50 dark:bg-gray-700/50 px-6 py-4 flex gap-3 rounded-b-xl">
+              {deleteConfirmationStep === 1 ? (
+                <>
+                  <button
+                    onClick={closeDeleteModal}
+                    className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 font-medium"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={() => setDeleteConfirmationStep(2)}
+                    className="flex-1 bg-red-600 hover:bg-red-700 focus:ring-4 focus:ring-red-500/50 text-white px-4 py-2 rounded-lg transition-all duration-200 font-medium flex items-center justify-center gap-2"
+                  >
+                    <AlertTriangle className="w-4 h-4" />
+                    I Understand, Continue
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    onClick={() => setDeleteConfirmationStep(1)}
+                    disabled={isDeleting}
+                    className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600 transition-all duration-200 font-medium disabled:opacity-50"
+                  >
+                    Back
+                  </button>
+                  <button
+                    onClick={handleDeleteAccount}
+                    disabled={!canDeleteAccount || isDeleting}
+                    className="flex-1 bg-red-600 hover:bg-red-700 focus:ring-4 focus:ring-red-500/50 disabled:bg-gray-400 disabled:cursor-not-allowed text-white px-4 py-2 rounded-lg transition-all duration-200 font-medium flex items-center justify-center gap-2"
+                  >
+                    {isDeleting ? (
+                      <>
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
+                        Deleting Account...
+                      </>
+                    ) : (
+                      <>
+                        <Trash2 className="w-4 h-4" />
+                        Delete My Account
+                      </>
+                    )}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
