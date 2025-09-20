@@ -141,7 +141,8 @@ TOOL USAGE GUIDELINES
    - Status
    - Story Point
 7. The tool will provide a detailed success message with a direct link to the backlog - do not modify or replace this link
-8. After successful creation, offer additional assistance like:
+8. When you created the backlog item, first show the user the result and ask for confirmation. 
+9. After successful creation, offer additional assistance like:
    - Suggesting related user stories or acceptance criteria refinements
    - Recommending next steps for backlog prioritization
    - Offering to create dependent or related backlog items
