@@ -604,7 +604,8 @@ You can view the updated item in the [Sprint Board](/project/${input.project_id}
 export const deleteSprintBacklogItem = tool({
   description: `Remove a backlog item from the sprint backlog (move it back to product backlog).
     Use this when items need to be removed from sprint scope due to capacity constraints or priority changes.
-    This only removes items from the sprint - it does NOT permanently delete them. Items are moved back to the product backlog for future sprints.`,
+    This only removes items from the sprint - it does NOT permanently delete them. Items are moved back to the product backlog for future sprints.
+    WARNING: This will also permanently delete all tasks associated with this backlog item in the sprint.`,
   inputSchema: deleteSprintBacklogItemSchema,
   execute: async (input, { experimental_context }) => {
     try {
@@ -662,7 +663,9 @@ export const deleteSprintBacklogItem = tool({
 **Item Details:**
 - **ID**: #${backlogItem.id}
 - **Priority**: ${backlogItem.priority.charAt(0).toUpperCase() + backlogItem.priority.slice(1).toLowerCase()}
-- **Story Points**: ${backlogItem.story_point || 'Not estimated'}`;
+- **Story Points**: ${backlogItem.story_point || 'Not estimated'}
+
+**Important**: All tasks associated with this backlog item in the sprint have been permanently deleted.`;
 
       if (input.reason) {
         message += `\n\n**Reason**: ${input.reason}`;
