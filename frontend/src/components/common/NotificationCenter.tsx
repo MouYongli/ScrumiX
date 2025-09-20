@@ -16,41 +16,45 @@ interface NotificationCenterProps {
 const NotificationCenter: React.FC<NotificationCenterProps> = ({ className = '' }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [notifications, setNotifications] = useState<UserNotification[]>([]);
-  const [unreadCount, setUnreadCount] = useState(() => {
-    // Try to restore from localStorage on initial load
-    if (typeof window !== 'undefined') {
-      try {
-        const saved = localStorage.getItem('scrumix_unread_count');
-        const parsed = saved ? parseInt(saved, 10) : 0;
-        return isNaN(parsed) ? 0 : parsed;
-      } catch (error) {
-        console.warn('Failed to load unread count from localStorage:', error);
-        return 0;
-      }
-    }
-    return 0;
-  });
+  const [unreadCount, setUnreadCount] = useState(0); // Always start with 0 for SSR consistency
   const [lastKnownUnreadCount, setLastKnownUnreadCount] = useState(0);
+  const [isClient, setIsClient] = useState(false); // Track client-side hydration
 
   // Save unread count to localStorage whenever it changes
   const updateUnreadCount = useCallback((count: number | undefined) => {
     const validCount = typeof count === 'number' && !isNaN(count) ? count : 0;
     setUnreadCount(validCount);
     setLastKnownUnreadCount(validCount);
-    if (typeof window !== 'undefined') {
+    // Only save to localStorage if we're on the client side
+    if (isClient) {
       try {
         localStorage.setItem('scrumix_unread_count', validCount.toString());
       } catch (error) {
         console.warn('Failed to save unread count to localStorage:', error);
       }
     }
-  }, []);
+  }, [isClient]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [page, setPage] = useState(1);
   const [hasMore, setHasMore] = useState(true);
   const [totalCount, setTotalCount] = useState(0);
   const hasLoadedRef = useRef(false);
+
+  // Handle client-side hydration and restore unread count from localStorage
+  useEffect(() => {
+    setIsClient(true);
+    // Restore unread count from localStorage after hydration
+    try {
+      const saved = localStorage.getItem('scrumix_unread_count');
+      const parsed = saved ? parseInt(saved, 10) : 0;
+      const validCount = isNaN(parsed) ? 0 : parsed;
+      setUnreadCount(validCount);
+      setLastKnownUnreadCount(validCount);
+    } catch (error) {
+      console.warn('Failed to load unread count from localStorage:', error);
+    }
+  }, []);
 
   // Fetch notifications
   const fetchNotifications = useCallback(async (pageNum = 1, reset = false) => {
