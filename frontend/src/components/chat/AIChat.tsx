@@ -2867,7 +2867,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                 <p className="text-gray-600 dark:text-gray-400 mb-4 max-w-md">
                   {currentAgent.description}
                 </p>
-                <div className="flex flex-wrap gap-2 justify-center">
+                <div className="flex flex-wrap gap-2 justify-center mb-6">
                   {currentAgent.expertise.map((skill, index) => (
                     <span
                       key={index}
@@ -2877,6 +2877,26 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                     </span>
                   ))}
                 </div>
+                
+                {/* New Chat Encouragement */}
+                {!currentConversationIds[activeAgent] && (
+                  <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-6 max-w-md">
+                    <div className="flex items-center justify-center mb-3">
+                      <MessageSquare className="w-6 h-6 text-blue-600 dark:text-blue-400 mr-2" />
+                      <span className="text-blue-800 dark:text-blue-300 font-medium">Ready to start?</span>
+                    </div>
+                    <p className="text-blue-700 dark:text-blue-300 text-sm mb-4">
+                      Create a new chat to begin your conversation with the {currentAgent.name}.
+                    </p>
+                    <button
+                      onClick={createNewChat}
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors flex items-center justify-center space-x-2"
+                    >
+                      <Plus className="w-4 h-4" />
+                      <span>Start New Chat</span>
+                    </button>
+                  </div>
+                )}
               </div>
             ) : (
               <>
@@ -3251,13 +3271,22 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
               />
 
             {/* Integrated Input Field with Buttons */}
-            <div className="relative flex items-center bg-gray-100 dark:bg-gray-700 rounded-2xl border-0 focus-within:bg-gray-200 dark:focus-within:bg-gray-600 transition-colors">
+            <div className={`relative flex items-center rounded-2xl border-0 transition-colors ${
+              !currentConversationIds[activeAgent] 
+                ? 'bg-gray-200 dark:bg-gray-800 cursor-not-allowed' 
+                : 'bg-gray-100 dark:bg-gray-700 focus-within:bg-gray-200 dark:focus-within:bg-gray-600'
+            }`}>
               {/* Plus Button with Dropdown */}
               <div className="relative plus-dropdown">
               <button
-                  onClick={() => setShowPlusDropdown(!showPlusDropdown)}
-                  className="p-3 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors flex items-center"
-                  title="More options"
+                  onClick={() => currentConversationIds[activeAgent] && setShowPlusDropdown(!showPlusDropdown)}
+                  className={`p-3 transition-colors flex items-center ${
+                    !currentConversationIds[activeAgent]
+                      ? 'text-gray-400 dark:text-gray-600 cursor-not-allowed'
+                      : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
+                  }`}
+                  title={!currentConversationIds[activeAgent] ? "Create a new chat to access options" : "More options"}
+                  disabled={!currentConversationIds[activeAgent]}
               >
                   <Plus className="w-4 h-4" />
               </button>
@@ -3345,11 +3374,20 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                   inputRefs.current[activeAgent] = el;
                 }}
                 value={currentState.inputValue}
-                onChange={(e) => handleInputChange(e, activeAgent)}
-                onKeyPress={(e) => handleKeyPress(e, activeAgent)}
-                placeholder={`Ask ${currentAgent.name} anything about your project...`}
-                className="flex-1 px-3 py-3 bg-transparent text-sm text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 border-0 focus:outline-none resize-none min-h-[48px] max-h-32 overflow-y-auto"
+                onChange={(e) => currentConversationIds[activeAgent] && handleInputChange(e, activeAgent)}
+                onKeyPress={(e) => currentConversationIds[activeAgent] && handleKeyPress(e, activeAgent)}
+                placeholder={
+                  !currentConversationIds[activeAgent] 
+                    ? "Create a new chat to start messaging..." 
+                    : `Ask ${currentAgent.name} anything about your project...`
+                }
+                className={`flex-1 px-3 py-3 bg-transparent text-sm border-0 focus:outline-none resize-none min-h-[48px] max-h-32 overflow-y-auto ${
+                  !currentConversationIds[activeAgent]
+                    ? 'text-gray-400 dark:text-gray-600 placeholder-gray-400 dark:placeholder-gray-600 cursor-not-allowed'
+                    : 'text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400'
+                }`}
                 rows={1}
+                disabled={!currentConversationIds[activeAgent]}
               />
               
               {/* Send/Stop Button */}
@@ -3363,10 +3401,14 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                 </button>
               ) : (
                 <button
-                  onClick={() => sendPersistentMessage(activeAgent)}
-                  disabled={(!currentState.inputValue.trim() && !currentState.files?.length) || currentState.isTyping}
+                  onClick={() => currentConversationIds[activeAgent] && sendPersistentMessage(activeAgent)}
+                  disabled={
+                    !currentConversationIds[activeAgent] || 
+                    (!currentState.inputValue.trim() && !currentState.files?.length) || 
+                    currentState.isTyping
+                  }
                   className="p-2 m-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 dark:disabled:bg-gray-500 text-white rounded-lg transition-colors disabled:cursor-not-allowed flex items-center"
-                  title="Send message"
+                  title={!currentConversationIds[activeAgent] ? "Create a new chat to send messages" : "Send message"}
                 >
                   <Send className="w-4 h-4" />
                 </button>
