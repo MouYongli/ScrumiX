@@ -259,20 +259,36 @@ export async function POST(req: Request) {
       // If temp upload marker exists, load local files as data URLs for the model
       let userPartsForModel: UIMessage['parts'] = message.parts;
       const markerPart = message.parts.find((p: any) => p.type === 'text' && typeof p.text === 'string' && p.text.startsWith('__UPLOAD_ID__:')) as any;
-      const uploadId = markerPart ? (markerPart.text as string).replace('__UPLOAD_ID__:', '') : undefined;
+      let uploadId = markerPart ? (markerPart.text as string).replace('__UPLOAD_ID__:', '') : undefined;
+      // Fallback: support explicit uploadId on message (first-turn new chats)
+      if (!uploadId) {
+        uploadId = (message as any).uploadId as string | undefined;
+      }
       if (uploadId) {
         try {
-          const base = process.env.NEXT_PUBLIC_BASE_URL || '';
-          const res = await fetch(`${base}/api/uploads/read?id=${encodeURIComponent(uploadId)}`);
+          const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+          const uploadUrl = `${baseUrl}/api/uploads/read?id=${encodeURIComponent(uploadId)}`;
+          console.log(`Developer Agent - Fetching upload from: ${uploadUrl}`);
+          
+          const res = await fetch(uploadUrl, {
+            method: 'GET',
+            headers: { cookie: cookies }
+          } as any);
+          
           if (res.ok) {
             const data = await res.json();
+            console.log(`Developer Agent - Successfully loaded ${data.files?.length || 0} files from upload ${uploadId}`);
             const fileParts = (data.files as Array<{ mediaType: string; dataUrl: string }>).map(f => ({ type: 'file', mediaType: f.mediaType, url: f.dataUrl } as any));
             userPartsForModel = [
               ...message.parts.filter((p: any) => p.type === 'text' && !((p.text || '').toString().startsWith('__UPLOAD_ID__:'))),
               ...fileParts
             ];
+          } else {
+            console.warn(`Developer Agent - Failed to fetch upload ${uploadId}: ${res.status} ${res.statusText}`);
           }
-        } catch {}
+        } catch (error) {
+          console.error(`Developer Agent - Error fetching upload ${uploadId}:`, error);
+        }
       }
 
       // Sanitize parts for persistence (text-only)

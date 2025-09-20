@@ -713,11 +713,14 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       // Wait for upload to complete, then send with uploadId
       const uploadId = await uploadPromise;
       if (uploadId) {
+        console.log(`AIChat - Upload completed with ID: ${uploadId}`);
         // Inject uploadId into the message for server-side file access
         userMessage.parts = [
           ...(userMessage.parts || []),
           { type: 'text', text: `__UPLOAD_ID__:${uploadId}` }
         ];
+      } else if (messageFiles && messageFiles.length > 0) {
+        console.warn('AIChat - Files were selected but upload failed');
       }
 
       // For new conversations, we need to send directly to API with the new conversation ID
@@ -725,11 +728,16 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       if (currentConversationIds[agentType]) {
         // Send to API directly with the new conversation ID
         const apiEndpoint = getApiEndpoint(agentType);
-        const apiUserMessage = {
+        const apiUserMessage: any = {
           id: userMessageId, // Use the same ID as the UI message
           role: 'user' as const,
-          parts: [{ type: 'text', text: messageContent }]
+          // Include the same parts we show in UI, which may contain the upload marker
+          parts: userMessage.parts
         };
+        // Provide uploadId on the message object for routes that read it directly
+        if (uploadId) {
+          apiUserMessage.uploadId = uploadId;
+        }
 
         const response = await fetch(apiEndpoint, {
           method: 'POST',
