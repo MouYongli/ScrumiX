@@ -138,7 +138,6 @@ interface AgentChatStateWithFiles extends AgentChatState {
   abortController?: AbortController;
 }
 
-
 const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   const [activeAgent, setActiveAgent] = useState<ProjectAgentType>('product-owner');
   const [isClient, setIsClient] = useState(false);
@@ -2130,10 +2129,9 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       const updatedMessages = [...messagesUpToEdit, updatedMessage];
 
       // Update state with edited message and removed subsequent messages
+      // Note: Loading state will be set by regenerateConversationFromMessage
       updateAgentState(agentType, {
-        messages: updatedMessages,
-        isTyping: true,
-        loadingState: webSearchEnabled ? 'searching' : 'thinking'
+        messages: updatedMessages
       });
 
       // Clear editing state
@@ -2185,11 +2183,31 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       const currentState = agentStates[agentType];
       const apiEndpoint = getApiEndpoint(agentType);
       
-      // Update state to include abort controller and streaming status
+      // Update state to include abort controller, streaming status, and clear any existing responses
+      // This prevents flashing of old agent responses during regeneration
       updateAgentState(agentType, {
+        messages: messages, // Use the truncated messages (up to and including the edited message)
         isStreaming: true,
-        abortController: abortController
+        abortController: abortController,
+        isTyping: true,
+        loadingState: webSearchEnabled ? 'searching' : 'thinking'
       });
+      
+      // Get the conversation ID for this agent
+      const chatHistory = getChatHistory(agentType);
+      const conversationId = selectedConversationIds[agentType] || chatHistory.conversation.id;
+      
+      // Ensure conversation exists (similar to ChatWidget approach)
+      try {
+        await chatAPI.upsertConversation({
+          id: conversationId,
+          agent_type: agentType,
+          project_id: projectId ? parseInt(projectId, 10) : undefined,
+          title: `${AGENTS[agentType].name} Chat`
+        });
+      } catch (error) {
+        console.warn('Failed to upsert conversation for regeneration:', error);
+      }
       
       // Prepare messages for API (using legacy format for regeneration)
       // This avoids duplicate message saves since we handle persistence manually
@@ -2200,6 +2218,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
 
       const response = await fetch(apiEndpoint, {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
         },
@@ -2303,20 +2322,18 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
           model: currentState.selectedModel
         };
 
-        // Update using functional state to avoid stale snapshots and dedupe by id/content
-        setAgentStates(prev => {
-          const prevState = prev[agentType];
-          const merged = upsertMessage([...messages, agentMessage] as EnhancedChatMessage[], agentMessage as EnhancedChatMessage);
-          return {
-            ...prev,
-            [agentType]: {
-              ...prevState,
-              messages: merged,
-              isTyping: true, // Keep typing true during streaming
-              loadingState: 'generating', // Keep generating state during streaming
-              currentTool: undefined
-            }
-          };
+        // Check if this agent message contains a confirmation request
+        const needsConfirmation = isConfirmationRequest(agentMessage.content);
+        const newPendingConfirmations = needsConfirmation 
+          ? new Set([...(currentState.pendingConfirmations || new Set()), agentMessage.id])
+          : currentState.pendingConfirmations;
+
+        // Update messages with the streaming content
+        updateAgentState(agentType, {
+          messages: [...messages, agentMessage],
+          isTyping: true,
+          loadingState: hasStartedGenerating ? 'generating' : (webSearchEnabled ? 'searching' : 'thinking'),
+          pendingConfirmations: newPendingConfirmations
         });
       }
       
@@ -2340,31 +2357,23 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
 
         const needsConfirmation = isConfirmationRequest(finalMessage.content);
         const finalPendingConfirmations = needsConfirmation 
-          ? new Set([...currentState.pendingConfirmations!, finalMessage.id])
+          ? new Set([...(currentState.pendingConfirmations || new Set()), finalMessage.id])
           : currentState.pendingConfirmations;
 
-        setAgentStates(prev => {
-          const prevState = prev[agentType];
-          const merged = upsertMessage([...messages, finalMessage] as EnhancedChatMessage[], finalMessage as EnhancedChatMessage);
-          return {
-            ...prev,
-            [agentType]: {
-              ...prevState,
-              messages: merged,
-              isTyping: false,
-              loadingState: undefined,
-              currentTool: undefined,
-              isStreaming: false,
-              abortController: undefined,
-              pendingConfirmations: finalPendingConfirmations
-            }
-          };
+        updateAgentState(agentType, {
+          messages: [...messages, finalMessage],
+          isTyping: false,
+          loadingState: undefined,
+          currentTool: undefined,
+          isStreaming: false,
+          abortController: undefined,
+          pendingConfirmations: finalPendingConfirmations
         });
         
-        // Save the final message to database
+        // Save the final message to database (legacy format requires manual saving)
         try {
           await chatAPI.saveMessage(conversationId, {
-            id: finalMessage.id,
+            id: messageId,
             role: 'assistant',
             parts: [{ type: 'text', text: finalMessage.content }]
           });
@@ -2375,7 +2384,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       } else {
         // No content received, just clean up state
         updateAgentState(agentType, {
-          messages: messages,
+          messages: [...messages],
           isTyping: false,
           loadingState: undefined,
           currentTool: undefined,
@@ -2383,9 +2392,6 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
           abortController: undefined
         });
       }
-      
-      // Return early to avoid duplicate cleanup
-      return;
       
       } catch (streamError) {
         // Handle streaming errors (including aborts)
@@ -2410,28 +2416,17 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
             };
 
             // Update with the partial response
-            setAgentStates(prev => {
-              const prevState = prev[agentType];
-              const merged = upsertMessage([...messages, partialMessage] as EnhancedChatMessage[], partialMessage as EnhancedChatMessage);
-              return {
-                ...prev,
-                [agentType]: {
-                  ...prevState,
-                  messages: merged,
-                  isTyping: false,
-                  loadingState: undefined,
-                  currentTool: undefined,
-                  isStreaming: false,
-                  abortController: undefined
-                }
-              };
+            updateAgentState(agentType, {
+              messages: [...messages, partialMessage],
+              isTyping: false,
+              loadingState: undefined,
+              currentTool: undefined,
+              isStreaming: false,
+              abortController: undefined
             });
 
-            // Save the interrupted partial response to database
+            // Save the interrupted partial response to database (legacy format requires manual saving)
             try {
-              const chatHistory = getChatHistory(agentType);
-              const conversationId = selectedConversationIds[agentType] || chatHistory.conversation.id;
-              
               await chatAPI.saveMessage(conversationId, {
                 id: messageId,
                 role: 'assistant',
