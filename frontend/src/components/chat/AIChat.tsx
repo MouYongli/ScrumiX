@@ -165,28 +165,10 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   });
   
   // Track the currently selected conversation for highlighting - with persistence
-  const [selectedConversationIds, setSelectedConversationIds] = useState<Record<ProjectAgentType, string>>(() => {
-    // Try to restore from localStorage on initial load
-    if (typeof window !== 'undefined') {
-      try {
-        const stored = localStorage.getItem(`chat-selected-conversations-${projectId}`);
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          return {
-            'product-owner': parsed['product-owner'] || '',
-            'scrum-master': parsed['scrum-master'] || '',
-            'developer': parsed['developer'] || ''
-          };
-        }
-      } catch (error) {
-        console.warn('Failed to restore selected conversations from localStorage:', error);
-      }
-    }
-    return {
-      'product-owner': '',
-      'scrum-master': '',
-      'developer': ''
-    };
+  const [selectedConversationIds, setSelectedConversationIds] = useState<Record<ProjectAgentType, string>>({
+    'product-owner': '',
+    'scrum-master': '',
+    'developer': ''
   });
   const [agentStates, setAgentStates] = useState<Record<ProjectAgentType, AgentChatStateWithFiles>>({
     'product-owner': { 
@@ -358,6 +340,27 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       });
       
       setAllConversations(groupedConversations);
+      
+      // Clean up invalid selectedConversationIds - but only if we have a selected ID that doesn't exist
+      // Be conservative to avoid clearing valid conversations during race conditions
+      setSelectedConversationIds(prev => {
+        const updated: Record<ProjectAgentType, string> = { ...prev };
+        let hasChanges = false;
+        
+        Object.keys(prev).forEach((agentType) => {
+          const agentConversations = groupedConversations[agentType] || [];
+          const selectedId = prev[agentType as ProjectAgentType];
+          
+          // Only clear if we have a selected ID AND conversations are loaded AND the ID doesn't exist
+          if (selectedId && agentConversations.length >= 0 && !agentConversations.some(conv => conv.id === selectedId)) {
+            console.log(`Clearing invalid selectedConversationId for ${agentType}: ${selectedId}`);
+            updated[agentType as ProjectAgentType] = '';
+            hasChanges = true;
+          }
+        });
+        
+        return hasChanges ? updated : prev;
+      });
     } catch (error) {
       console.error('Failed to load conversations:', error);
     } finally {
@@ -1184,17 +1187,28 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
 
   useEffect(() => {
     setIsClient(true);
+    
+    // Restore selectedConversationIds from localStorage (client-side only to avoid hydration issues)
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem(`chat-selected-conversations-${projectId}`);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          const restoredIds = {
+            'product-owner': parsed['product-owner'] || '',
+            'scrum-master': parsed['scrum-master'] || '',
+            'developer': parsed['developer'] || ''
+          };
+          setSelectedConversationIds(restoredIds);
+        }
+      } catch (error) {
+        console.warn('Failed to restore selected conversations from localStorage:', error);
+      }
+    }
+    
     // Load all conversations for the sidebar
     loadAllConversations();
-    
-    // If we have a selected conversation ID from localStorage, load it for each agent
-    Object.entries(selectedConversationIds).forEach(([agentType, conversationId]) => {
-      if (conversationId) {
-        console.log(`Restoring conversation ${conversationId} for ${agentType} from localStorage`);
-        // The useChatHistory hook will automatically load this conversation due to the selectedConversationId prop
-      }
-    });
-  }, [loadAllConversations]);
+  }, [loadAllConversations, projectId]);
 
   // Reload conversations when active agent changes
   useEffect(() => {
@@ -2508,6 +2522,17 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     return !!(currentConversationIds[agentType] || selectedConversationIds[agentType]);
   };
 
+  // Helper function to determine if we should show the "new chat encouragement"
+  // Show encouragement when: no existing conversations AND no active conversation (new or selected)
+  const shouldShowNewChatEncouragement = (agentType: ProjectAgentType): boolean => {
+    // Only show encouragement on client-side to avoid hydration issues
+    if (!isClient) return false;
+    
+    const hasExistingConversations = allConversations[agentType] && allConversations[agentType].length > 0;
+    const hasActiveConversation = !!(currentConversationIds[agentType] || selectedConversationIds[agentType]);
+    return !hasExistingConversations && !hasActiveConversation;
+  };
+
   return (
      <div className="flex flex-col h-screen bg-gray-50 dark:bg-gray-900 p-4">
        {/* Unified Complete Container */}
@@ -2885,7 +2910,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                 </div>
                 
                 {/* New Chat Encouragement */}
-                {!canWriteMessages(activeAgent) && (
+                {shouldShowNewChatEncouragement(activeAgent) && (
                   <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-6 max-w-md">
                     <div className="flex items-center justify-center mb-3">
                       <MessageSquare className="w-6 h-6 text-blue-600 dark:text-blue-400 mr-2" />

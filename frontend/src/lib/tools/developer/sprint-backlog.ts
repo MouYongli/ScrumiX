@@ -602,8 +602,9 @@ You can view the updated item in the [Sprint Board](/project/${input.project_id}
  * Delete/Remove sprint backlog item
  */
 export const deleteSprintBacklogItem = tool({
-  description: `Remove a backlog item from the sprint and optionally delete it completely.
-    Use this when items need to be removed from sprint scope or when work is no longer needed.`,
+  description: `Remove a backlog item from the sprint backlog (move it back to product backlog).
+    Use this when items need to be removed from sprint scope due to capacity constraints or priority changes.
+    This only removes items from the sprint - it does NOT permanently delete them. Items are moved back to the product backlog for future sprints.`,
   inputSchema: deleteSprintBacklogItemSchema,
   execute: async (input, { experimental_context }) => {
     try {
@@ -644,60 +645,32 @@ export const deleteSprintBacklogItem = tool({
 
       const itemTypeDisplay = backlogItem.item_type.charAt(0).toUpperCase() + backlogItem.item_type.slice(1);
 
-      if (input.action === 'remove_from_sprint') {
-        // Remove from sprint (move back to product backlog)
-        const removeResponse = await requestWithAuth(
-          `/sprints/${backlogItem.sprint_id}/backlog/${input.backlog_id}`,
-          { method: 'DELETE' },
-          experimental_context as AuthContext
-        );
+      // Developer agent can only remove from sprint, not permanently delete
+      // Always use 'remove_from_sprint' action regardless of input.action
+      const removeResponse = await requestWithAuth(
+        `/sprints/${backlogItem.sprint_id}/backlog/${input.backlog_id}`,
+        { method: 'DELETE' },
+        experimental_context as AuthContext
+      );
 
-        if (removeResponse.error) {
-          return `Failed to remove item from sprint: ${removeResponse.error}`;
-        }
+      if (removeResponse.error) {
+        return `Failed to remove item from sprint: ${removeResponse.error}`;
+      }
 
-        let message = `Successfully removed ${itemTypeDisplay.toLowerCase()} **"${backlogItem.title}"** from Sprint ${backlogItem.sprint_id}.
+      let message = `Successfully removed ${itemTypeDisplay.toLowerCase()} **"${backlogItem.title}"** from Sprint ${backlogItem.sprint_id}.
 
 **Item Details:**
 - **ID**: #${backlogItem.id}
 - **Priority**: ${backlogItem.priority.charAt(0).toUpperCase() + backlogItem.priority.slice(1).toLowerCase()}
 - **Story Points**: ${backlogItem.story_point || 'Not estimated'}`;
 
-        if (input.reason) {
-          message += `\n\n**Reason**: ${input.reason}`;
-        }
-
-        message += `\n\nThe item has been moved back to the product backlog. You can find it in the [Product Backlog](/project/${input.project_id}/backlog) if you need to add it to a future sprint.`;
-
-        return message;
-
-      } else {
-        // Delete completely
-        const deleteResponse = await requestWithAuth(
-          `/backlogs/${input.backlog_id}`,
-          { method: 'DELETE' },
-          experimental_context as AuthContext
-        );
-
-        if (deleteResponse.error) {
-          return `Failed to delete backlog item: ${deleteResponse.error}`;
-        }
-
-        let message = `Successfully deleted ${itemTypeDisplay.toLowerCase()} **"${backlogItem.title}"** completely.
-
-**Deleted Item Details:**
-- **ID**: #${backlogItem.id}
-- **Priority**: ${backlogItem.priority.charAt(0).toUpperCase() + backlogItem.priority.slice(1).toLowerCase()}
-- **Story Points**: ${backlogItem.story_point || 'Not estimated'}`;
-
-        if (input.reason) {
-          message += `\n\n**Reason**: ${input.reason}`;
-        }
-
-        message += `\n\n⚠️ **Warning**: This item has been permanently deleted and cannot be recovered.`;
-
-        return message;
+      if (input.reason) {
+        message += `\n\n**Reason**: ${input.reason}`;
       }
+
+      message += `\n\nThe item has been moved back to the product backlog. You can find it in the [Product Backlog](/project/${input.project_id}/backlog) if you need to add it to a future sprint.`;
+
+      return message;
 
     } catch (error) {
       console.error('Error in deleteSprintBacklogItem:', error);

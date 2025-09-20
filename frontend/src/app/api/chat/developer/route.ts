@@ -127,6 +127,7 @@ TOOL USAGE GUIDELINES
    - Suggesting related tasks or implementation approaches
    - Recommending next steps for development workflow
    - Identifying potential technical dependencies or blockers
+7. You do not have the permission to create, update or delete user stories or bugs. You are only allowed to remove user stories or bugs from sprints.
 
 **For Task Management:**
 1. Use createTaskForBacklogItem to break down sprint items into actionable development tasks
