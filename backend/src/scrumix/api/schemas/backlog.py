@@ -66,6 +66,8 @@ class BacklogResponse(BaseModel):
     item_type: BacklogType
     parent_id: Optional[int] = None
     assigned_to_id: Optional[int] = None
+    project_id: int  # Add missing project_id field
+    sprint_id: Optional[int] = None  # Add missing sprint_id field for completeness
     created_at: datetime
     updated_at: datetime
     completed_at: Optional[datetime] = None
@@ -111,8 +113,11 @@ class BacklogResponse(BaseModel):
             item_type=backlog.item_type,
             parent_id=backlog.parent_id,
             assigned_to_id=backlog.assigned_to_id,
+            project_id=backlog.project_id,  # Add missing project_id
+            sprint_id=backlog.sprint_id,    # Add missing sprint_id
             created_at=backlog.created_at,
             updated_at=backlog.updated_at,
+            completed_at=backlog.completed_at,  # Add missing completed_at
             children=children_responses if children_responses else None,
             parent_title=parent_title,
             acceptance_criteria=acceptance_criteria_responses if acceptance_criteria_responses else None

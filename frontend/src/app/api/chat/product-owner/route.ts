@@ -141,7 +141,8 @@ TOOL USAGE GUIDELINES
    - Status
    - Story Point
 7. The tool will provide a detailed success message with a direct link to the backlog - do not modify or replace this link
-8. After successful creation, offer additional assistance like:
+8. When you created the backlog item, first show the user the result and ask for confirmation. 
+9. After successful creation, offer additional assistance like:
    - Suggesting related user stories or acceptance criteria refinements
    - Recommending next steps for backlog prioritization
    - Offering to create dependent or related backlog items
@@ -361,19 +362,29 @@ export async function POST(req: Request) {
       if (uploadId) {
         try {
           // Read local files into data URLs for model consumption
-          const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL || ''}/api/uploads/read?id=${encodeURIComponent(uploadId)}`, {
+          const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+          const uploadUrl = `${baseUrl}/api/uploads/read?id=${encodeURIComponent(uploadId)}`;
+          console.log(`Product Owner Agent - Fetching upload from: ${uploadUrl}`);
+          
+          const res = await fetch(uploadUrl, {
             method: 'GET',
             headers: { cookie: cookies }
           } as any);
+          
           if (res.ok) {
             const data = await res.json();
+            console.log(`Product Owner Agent - Successfully loaded ${data.files?.length || 0} files from upload ${uploadId}`);
             const fileParts = (data.files as Array<{ mediaType: string; dataUrl: string }>).map(f => ({ type: 'file', mediaType: f.mediaType, url: f.dataUrl } as any));
             userPartsForModel = [
               ...message.parts.filter((p: any) => p.type === 'text'),
               ...fileParts
             ];
+          } else {
+            console.warn(`Product Owner Agent - Failed to fetch upload ${uploadId}: ${res.status} ${res.statusText}`);
           }
-        } catch {}
+        } catch (error) {
+          console.error(`Product Owner Agent - Error fetching upload ${uploadId}:`, error);
+        }
       }
 
       // Sanitize parts for persistence (text-only)

@@ -182,9 +182,9 @@ export const deleteSprintBacklogItemSchema = z.object({
     .positive('Backlog ID must be a positive integer')
     .describe('The ID of the backlog item to remove/delete'),
   
-  action: z.enum(['remove_from_sprint', 'delete_completely'])
+  action: z.enum(['remove_from_sprint'])
     .default('remove_from_sprint')
-    .describe('Whether to just remove from sprint (move back to backlog) or delete completely'),
+    .describe('Remove the item from sprint and move it back to the product backlog'),
   
   reason: z.string()
     .min(1, 'Reason cannot be empty')
