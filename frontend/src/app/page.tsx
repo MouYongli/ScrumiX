@@ -157,98 +157,156 @@ export default function Home() {
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
-            {/* Product Researcher Agent */}
+            {/* Product Owner AI Agent */}
             <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 shadow-xl hover:shadow-2xl transition-all duration-300 border border-gray-100 dark:border-gray-700 relative overflow-hidden group">
               <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-br from-blue-500/10 to-purple-500/10 rounded-bl-full"></div>
               <div className="relative">
                 <div className="w-16 h-16 bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg">
-                  <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  <svg className="w-10 h-10 text-white" fill="currentColor" viewBox="0 0 24 24">
+                    {/* Robot Head */}
+                    <rect x="8" y="3" width="8" height="6" rx="2" />
+                    {/* Robot Eyes */}
+                    <circle cx="10.5" cy="5.5" r="0.8" fill="#dbeafe" />
+                    <circle cx="13.5" cy="5.5" r="0.8" fill="#dbeafe" />
+                    {/* Robot Body */}
+                    <rect x="6" y="9" width="12" height="9" rx="2" />
+                    {/* Arms */}
+                    <rect x="4" y="11" width="2" height="5" rx="1" />
+                    <rect x="18" y="11" width="2" height="5" rx="1" />
+                    {/* Legs */}
+                    <rect x="8.5" y="18" width="2" height="3" rx="1" />
+                    <rect x="13.5" y="18" width="2" height="3" rx="1" />
+                    {/* Chest Panel */}
+                    <rect x="9" y="12" width="6" height="3" rx="1" fill="#dbeafe" opacity="0.3" />
+                    {/* Antenna */}
+                    <circle cx="12" cy="2" r="0.8" />
+                    <line x1="12" y1="3" x2="12" y2="2.2" stroke="#dbeafe" strokeWidth="0.8" />
+                    {/* Document symbol on chest */}
+                    <rect x="10.5" y="13" width="3" height="1.5" rx="0.2" fill="#1d4ed8" opacity="0.6" />
+                    <line x1="11" y1="13.8" x2="13" y2="13.8" stroke="#1d4ed8" strokeWidth="0.3" />
                   </svg>
                 </div>
                 <div className="mb-4">
                   <span className="inline-block bg-blue-100 dark:bg-blue-900/30 text-blue-800 dark:text-blue-300 text-xs font-semibold px-3 py-1 rounded-full mb-3">
-                    Product Research Agent
+                    Product Owner AI
                   </span>
                   <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
-                    Generate Customer Feedback Trends Report
+                    Backlog Management & Prioritization
                   </h3>
                 </div>
                 <p className="text-gray-600 dark:text-gray-400 mb-6 leading-relaxed">
-                  Analyzes customer feedback, market trends, and user behavior to generate comprehensive reports that guide product decisions and feature prioritization.
+                  Automatically prioritizes product backlog items, analyzes user stories for completeness, and provides data-driven recommendations for feature development based on business value.
                 </p>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
                     <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
                     <span className="text-sm text-gray-500 dark:text-gray-400">Active</span>
                   </div>
-                  <button className="text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 font-medium text-sm group-hover:translate-x-1 transition-transform">
-                    Learn More →
-                  </button>
                 </div>
               </div>
             </div>
 
-            {/* Meeting Assistant Agent */}
+            {/* Scrum Master AI Agent */}
             <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 shadow-xl hover:shadow-2xl transition-all duration-300 border border-gray-100 dark:border-gray-700 relative overflow-hidden group">
               <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-br from-green-500/10 to-emerald-500/10 rounded-bl-full"></div>
               <div className="relative">
                 <div className="w-16 h-16 bg-gradient-to-br from-green-500 to-green-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg">
-                  <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                  <svg className="w-10 h-10 text-white" fill="currentColor" viewBox="0 0 24 24">
+                    {/* Robot Head */}
+                    <rect x="8" y="3" width="8" height="6" rx="2" />
+                    {/* Robot Eyes */}
+                    <circle cx="10.5" cy="5.5" r="0.8" fill="#dcfce7" />
+                    <circle cx="13.5" cy="5.5" r="0.8" fill="#dcfce7" />
+                    {/* Robot Body */}
+                    <rect x="6" y="9" width="12" height="9" rx="2" />
+                    {/* Arms */}
+                    <rect x="4" y="11" width="2" height="5" rx="1" />
+                    <rect x="18" y="11" width="2" height="5" rx="1" />
+                    {/* Legs */}
+                    <rect x="8.5" y="18" width="2" height="3" rx="1" />
+                    <rect x="13.5" y="18" width="2" height="3" rx="1" />
+                    {/* Chest Panel */}
+                    <rect x="9" y="12" width="6" height="3" rx="1" fill="#dcfce7" opacity="0.3" />
+                    {/* Antenna */}
+                    <circle cx="12" cy="2" r="0.8" />
+                    <line x1="12" y1="3" x2="12" y2="2.2" stroke="#dcfce7" strokeWidth="0.8" />
+                    {/* Team/coaching symbol on chest */}
+                    <circle cx="11" cy="13.2" r="0.4" fill="#059669" opacity="0.7" />
+                    <circle cx="13" cy="13.2" r="0.4" fill="#059669" opacity="0.7" />
+                    <circle cx="12" cy="14.3" r="0.4" fill="#059669" opacity="0.7" />
+                    {/* Communication waves */}
+                    <path d="M10 2.5 Q12 1.8 14 2.5" stroke="#dcfce7" strokeWidth="0.4" fill="none" />
                   </svg>
                 </div>
                 <div className="mb-4">
                   <span className="inline-block bg-green-100 dark:bg-green-900/30 text-green-800 dark:text-green-300 text-xs font-semibold px-3 py-1 rounded-full mb-3">
-                    Meeting Assistant Agent
+                    Scrum Master AI
                   </span>
                   <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
-                    Generate Follow-up Email from Meetings
+                    Process Facilitation & Team Coaching
                   </h3>
                 </div>
                 <p className="text-gray-600 dark:text-gray-400 mb-6 leading-relaxed">
-                  Automatically captures meeting discussions, extracts action items, and generates professional follow-up emails with clear next steps and deadlines.
+                  Facilitates Scrum ceremonies, identifies process bottlenecks, generates meeting summaries, and provides coaching insights to improve team velocity and collaboration.
                 </p>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
                     <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
                     <span className="text-sm text-gray-500 dark:text-gray-400">Active</span>
                   </div>
-                  <button className="text-green-600 dark:text-green-400 hover:text-green-700 dark:hover:text-green-300 font-medium text-sm group-hover:translate-x-1 transition-transform">
-                    Learn More →
-                  </button>
                 </div>
               </div>
             </div>
 
-            {/* Sprint Planning Agent */}
+            {/* Developer AI Agent */}
             <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 shadow-xl hover:shadow-2xl transition-all duration-300 border border-gray-100 dark:border-gray-700 relative overflow-hidden group">
               <div className="absolute top-0 right-0 w-20 h-20 bg-gradient-to-br from-purple-500/10 to-pink-500/10 rounded-bl-full"></div>
               <div className="relative">
                 <div className="w-16 h-16 bg-gradient-to-br from-purple-500 to-purple-600 rounded-2xl flex items-center justify-center mb-6 shadow-lg">
-                  <svg className="w-8 h-8 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+                  <svg className="w-10 h-10 text-white" fill="currentColor" viewBox="0 0 24 24">
+                    {/* Robot Head */}
+                    <rect x="8" y="3" width="8" height="6" rx="2" />
+                    {/* Robot Eyes */}
+                    <circle cx="10.5" cy="5.5" r="0.8" fill="#f3e8ff" />
+                    <circle cx="13.5" cy="5.5" r="0.8" fill="#f3e8ff" />
+                    {/* Robot Body */}
+                    <rect x="6" y="9" width="12" height="9" rx="2" />
+                    {/* Arms */}
+                    <rect x="4" y="11" width="2" height="5" rx="1" />
+                    <rect x="18" y="11" width="2" height="5" rx="1" />
+                    {/* Legs */}
+                    <rect x="8.5" y="18" width="2" height="3" rx="1" />
+                    <rect x="13.5" y="18" width="2" height="3" rx="1" />
+                    {/* Chest Panel */}
+                    <rect x="9" y="12" width="6" height="3" rx="1" fill="#f3e8ff" opacity="0.3" />
+                    {/* Antenna */}
+                    <circle cx="12" cy="2" r="0.8" />
+                    <line x1="12" y1="3" x2="12" y2="2.2" stroke="#f3e8ff" strokeWidth="0.8" />
+                    {/* Code symbols on chest */}
+                    <text x="10.2" y="14" fontSize="1.8" fill="#7c3aed" opacity="0.8">&lt;</text>
+                    <text x="12" y="14" fontSize="1.5" fill="#7c3aed" opacity="0.8">/</text>
+                    <text x="13.2" y="14" fontSize="1.8" fill="#7c3aed" opacity="0.8">&gt;</text>
+                    {/* Data streams from antenna */}
+                    <path d="M10.5 2 L12 1.5 L13.5 2" stroke="#f3e8ff" strokeWidth="0.4" fill="none" />
+                    <path d="M10.8 2.2 L12 1.8 L13.2 2.2" stroke="#f3e8ff" strokeWidth="0.3" fill="none" />
                   </svg>
                 </div>
                 <div className="mb-4">
                   <span className="inline-block bg-purple-100 dark:bg-purple-900/30 text-purple-800 dark:text-purple-300 text-xs font-semibold px-3 py-1 rounded-full mb-3">
-                    Sprint Planning Agent
+                    Developer AI
                   </span>
                   <h3 className="text-xl font-bold text-gray-900 dark:text-white mb-2">
-                    Optimize Sprint Velocity & Planning
+                    Code Review & Task Estimation
                   </h3>
                 </div>
                 <p className="text-gray-600 dark:text-gray-400 mb-6 leading-relaxed">
-                  Analyzes team performance, predicts sprint capacity, and suggests optimal task distribution to maximize productivity and delivery success.
+                  Assists with task breakdown, provides accurate effort estimates, suggests technical solutions, and performs automated code quality assessments for better delivery.
                 </p>
                 <div className="flex items-center justify-between">
                   <div className="flex items-center space-x-2">
                     <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
                     <span className="text-sm text-gray-500 dark:text-gray-400">Active</span>
                   </div>
-                  <button className="text-purple-600 dark:text-purple-400 hover:text-purple-700 dark:hover:text-purple-300 font-medium text-sm group-hover:translate-x-1 transition-transform">
-                    Learn More →
-                  </button>
                 </div>
               </div>
             </div>
@@ -331,25 +389,9 @@ export default function Home() {
                 >
                   Start Free with AI Agents
                 </button>
-                <Link
-                  href="/docs"
-                  className="text-white border-2 border-white/30 px-8 py-4 rounded-xl font-semibold hover:bg-white/10 transition-all"
-                >
-                  Learn More
-                </Link>
               </div>
               <div className="mt-8 flex items-center justify-center space-x-8 text-blue-200">
                 <div className="flex items-center space-x-2">
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                  </svg>
-                  <span>No credit card required</span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 20 20">
-                    <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
-                  </svg>
-                  <span>Setup in minutes</span>
                 </div>
               </div>
             </div>
