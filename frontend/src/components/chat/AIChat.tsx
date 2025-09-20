@@ -628,9 +628,9 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     // Get the chat history instance to access its conversation ID
     const chatHistory = getChatHistory(agentType);
     
-    // Use the new conversation ID if we're starting a new chat, otherwise use the existing one from chatHistory
-    // This ensures we maintain conversation continuity
-    const conversationId = currentConversationIds[agentType] || chatHistory.conversation.id;
+    // Use the new conversation ID if we're starting a new chat, otherwise use the selected conversation ID or the existing one from chatHistory
+    // This ensures we maintain conversation continuity for both new and existing conversations
+    const conversationId = currentConversationIds[agentType] || selectedConversationIds[agentType] || chatHistory.conversation.id;
     
     // If we have a new conversation ID, we need to create the conversation first
     if (currentConversationIds[agentType]) {
@@ -2502,6 +2502,12 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   const currentState = agentStates[activeAgent];
   const AgentIcon = getAgentIcon(activeAgent);
 
+  // Helper function to determine if the user can write messages
+  // User can write if there's either a new conversation (currentConversationIds) or an existing selected conversation (selectedConversationIds)
+  const canWriteMessages = (agentType: ProjectAgentType): boolean => {
+    return !!(currentConversationIds[agentType] || selectedConversationIds[agentType]);
+  };
+
   return (
      <div className="flex flex-col h-screen bg-gray-50 dark:bg-gray-900 p-4">
        {/* Unified Complete Container */}
@@ -2879,7 +2885,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                 </div>
                 
                 {/* New Chat Encouragement */}
-                {!currentConversationIds[activeAgent] && (
+                {!canWriteMessages(activeAgent) && (
                   <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-6 max-w-md">
                     <div className="flex items-center justify-center mb-3">
                       <MessageSquare className="w-6 h-6 text-blue-600 dark:text-blue-400 mr-2" />
@@ -3272,21 +3278,21 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
 
             {/* Integrated Input Field with Buttons */}
             <div className={`relative flex items-center rounded-2xl border-0 transition-colors ${
-              !currentConversationIds[activeAgent] 
+              !canWriteMessages(activeAgent) 
                 ? 'bg-gray-200 dark:bg-gray-800 cursor-not-allowed' 
                 : 'bg-gray-100 dark:bg-gray-700 focus-within:bg-gray-200 dark:focus-within:bg-gray-600'
             }`}>
               {/* Plus Button with Dropdown */}
               <div className="relative plus-dropdown">
               <button
-                  onClick={() => currentConversationIds[activeAgent] && setShowPlusDropdown(!showPlusDropdown)}
+                  onClick={() => canWriteMessages(activeAgent) && setShowPlusDropdown(!showPlusDropdown)}
                   className={`p-3 transition-colors flex items-center ${
-                    !currentConversationIds[activeAgent]
+                    !canWriteMessages(activeAgent)
                       ? 'text-gray-400 dark:text-gray-600 cursor-not-allowed'
                       : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
                   }`}
-                  title={!currentConversationIds[activeAgent] ? "Create a new chat to access options" : "More options"}
-                  disabled={!currentConversationIds[activeAgent]}
+                  title={!canWriteMessages(activeAgent) ? "Create a new chat to access options" : "More options"}
+                  disabled={!canWriteMessages(activeAgent)}
               >
                   <Plus className="w-4 h-4" />
               </button>
@@ -3374,20 +3380,20 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                   inputRefs.current[activeAgent] = el;
                 }}
                 value={currentState.inputValue}
-                onChange={(e) => currentConversationIds[activeAgent] && handleInputChange(e, activeAgent)}
-                onKeyPress={(e) => currentConversationIds[activeAgent] && handleKeyPress(e, activeAgent)}
+                onChange={(e) => canWriteMessages(activeAgent) && handleInputChange(e, activeAgent)}
+                onKeyPress={(e) => canWriteMessages(activeAgent) && handleKeyPress(e, activeAgent)}
                 placeholder={
-                  !currentConversationIds[activeAgent] 
+                  !canWriteMessages(activeAgent) 
                     ? "Create a new chat to start messaging..." 
                     : `Ask ${currentAgent.name} anything about your project...`
                 }
                 className={`flex-1 px-3 py-3 bg-transparent text-sm border-0 focus:outline-none resize-none min-h-[48px] max-h-32 overflow-y-auto ${
-                  !currentConversationIds[activeAgent]
+                  !canWriteMessages(activeAgent)
                     ? 'text-gray-400 dark:text-gray-600 placeholder-gray-400 dark:placeholder-gray-600 cursor-not-allowed'
                     : 'text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400'
                 }`}
                 rows={1}
-                disabled={!currentConversationIds[activeAgent]}
+                disabled={!canWriteMessages(activeAgent)}
               />
               
               {/* Send/Stop Button */}
@@ -3401,14 +3407,14 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                 </button>
               ) : (
                 <button
-                  onClick={() => currentConversationIds[activeAgent] && sendPersistentMessage(activeAgent)}
+                  onClick={() => canWriteMessages(activeAgent) && sendPersistentMessage(activeAgent)}
                   disabled={
-                    !currentConversationIds[activeAgent] || 
+                    !canWriteMessages(activeAgent) || 
                     (!currentState.inputValue.trim() && !currentState.files?.length) || 
                     currentState.isTyping
                   }
                   className="p-2 m-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 dark:disabled:bg-gray-500 text-white rounded-lg transition-colors disabled:cursor-not-allowed flex items-center"
-                  title={!currentConversationIds[activeAgent] ? "Create a new chat to send messages" : "Send message"}
+                  title={!canWriteMessages(activeAgent) ? "Create a new chat to send messages" : "Send message"}
                 >
                   <Send className="w-4 h-4" />
                 </button>
