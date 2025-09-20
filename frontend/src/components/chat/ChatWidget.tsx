@@ -97,6 +97,8 @@ const ChatWidget: React.FC = () => {
   const [copiedMessageId, setCopiedMessageId] = useState<string | null>(null);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingContent, setEditingContent] = useState<string>('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
   const [agentStates, setAgentStates] = useState<Record<ProjectAgentType, AgentChatState>>({
     'product-owner': { 
       messages: [], 
@@ -106,7 +108,8 @@ const ChatWidget: React.FC = () => {
       loadingState: undefined,
       currentTool: undefined,
       pendingConfirmations: new Set(),
-      confirmedMessages: new Set()
+      confirmedMessages: new Set(),
+      files: undefined
     },
     'scrum-master': { 
       messages: [], 
@@ -116,7 +119,8 @@ const ChatWidget: React.FC = () => {
       loadingState: undefined,
       currentTool: undefined,
       pendingConfirmations: new Set(),
-      confirmedMessages: new Set()
+      confirmedMessages: new Set(),
+      files: undefined
     },
     'developer': { 
       messages: [], 
@@ -126,7 +130,8 @@ const ChatWidget: React.FC = () => {
       loadingState: undefined,
       currentTool: undefined,
       pendingConfirmations: new Set(),
-      confirmedMessages: new Set()
+      confirmedMessages: new Set(),
+      files: undefined
     }
   });
   
@@ -360,7 +365,8 @@ const ChatWidget: React.FC = () => {
           ...prev[agent],
           messages: [],
           isTyping: false,
-          inputValue: ''
+          inputValue: '',
+          files: undefined
         };
       });
       
@@ -377,7 +383,7 @@ const ChatWidget: React.FC = () => {
     setCurrentConversationId(''); // Reset conversation when switching agents
     setShowAgentDropdown(false);
     // Clear messages for the new agent to start fresh
-    updateAgentState(agentType, { messages: [] });
+    updateAgentState(agentType, { messages: [], files: undefined });
   };
 
   const stopGeneration = (agentType: ProjectAgentType) => {
@@ -947,6 +953,81 @@ const ChatWidget: React.FC = () => {
     await sendConfirmationResponse(userMessage);
   };
 
+  // File handling functions
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const files = event.target.files;
+    console.log('File input changed, files:', files);
+    if (files && files.length > 0) {
+      console.log('Setting files for agent:', activeAgent, files);
+      updateAgentState(activeAgent, { files: files });
+    }
+  };
+
+  const handleFileDrop = (files: FileList) => {
+    if (files && files.length > 0) {
+      updateAgentState(activeAgent, { files: files });
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragOver(false);
+    
+    const files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      handleFileDrop(files);
+    }
+  };
+
+  const removeFile = (index: number) => {
+    const currentFiles = agentStates[activeAgent].files;
+    if (currentFiles) {
+      const newFiles = Array.from(currentFiles).filter((_, i) => i !== index);
+      const fileList = new DataTransfer();
+      newFiles.forEach((file: File) => fileList.items.add(file));
+      updateAgentState(activeAgent, { files: fileList.files.length > 0 ? fileList.files : undefined });
+    }
+  };
+
+  const convertFilesToDataURLs = async (files: FileList): Promise<Array<{ type: string; mediaType: string; url: string }>> => {
+    const fileParts: Array<{ type: string; mediaType: string; url: string }> = [];
+    
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      try {
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = () => reject(reader.error);
+          reader.readAsDataURL(file);
+        });
+        
+        fileParts.push({
+          type: 'file',
+          mediaType: file.type || 'application/octet-stream',
+          url: dataUrl
+        });
+      } catch (error) {
+        console.error('Failed to convert file to data URL:', error);
+      }
+    }
+    
+    return fileParts;
+  };
+
   const sendConfirmationResponse = async (userMessage: ChatMessage) => {
     const currentState = agentStates[activeAgent];
     
@@ -1057,30 +1138,84 @@ const ChatWidget: React.FC = () => {
 
   const sendMessage = async () => {
     const currentState = agentStates[activeAgent];
-    if (!currentState.inputValue.trim()) return;
+    if (!currentState.inputValue.trim() && !currentState.files?.length) return;
 
+    // Generate message ID early to avoid scoping issues
+    const userMessageId = `user-${Date.now()}`;
+    
     // Create abort controller for this request
     const abortController = new AbortController();
     const messageContent = currentState.inputValue.trim();
+    const messageFiles = currentState.files;
+
+    // Show user message immediately with file previews (non-blocking)
+    let fileParts: Array<{ type: string; mediaType: string; url: string }> = [];
+    if (messageFiles && messageFiles.length > 0) {
+      try {
+        fileParts = await convertFilesToDataURLs(messageFiles);
+      } catch (e) {
+        console.warn('Failed to convert files to data URLs', e);
+      }
+    }
 
     const userMessage: ChatMessage = {
-      id: `user-${Date.now()}`,
+      id: userMessageId,
       content: messageContent,
       timestamp: new Date().toISOString(),
-      sender: 'user'
+      sender: 'user',
+      parts: [{ type: 'text', text: messageContent }], // Only text in parts
+      sessionData: fileParts.length > 0 ? { fileParts } : undefined // Files in session data
     };
 
     // Clear input and add user message immediately
-      updateAgentState(activeAgent, {
-        messages: [...currentState.messages, userMessage],
+    updateAgentState(activeAgent, {
+      messages: [...currentState.messages, userMessage],
       isTyping: true,
       inputValue: '',
+      files: undefined,
       isStreaming: true,
       abortController: abortController,
       loadingState: webSearchEnabled ? 'searching' : 'thinking'
     });
 
+    // Clear file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+
     try {
+      // Start file upload in parallel while showing message
+      let uploadPromise: Promise<string | null> = Promise.resolve(null);
+      if (messageFiles && messageFiles.length > 0) {
+        uploadPromise = (async () => {
+          try {
+            const form = new FormData();
+            Array.from(messageFiles).forEach((f: File) => form.append('files', f));
+            const res = await fetch('/api/uploads/temp', { method: 'POST', body: form });
+            if (res.ok) {
+              const data = await res.json();
+              console.log(`ChatWidget - Upload completed with ID: ${data.uploadId}`);
+              return data.uploadId;
+            }
+          } catch (e) {
+            console.warn('ChatWidget - Temp upload error', e);
+          }
+          return null;
+        })();
+      }
+
+      // Wait for upload to complete, then send with uploadId
+      const uploadId = await uploadPromise;
+      if (uploadId) {
+        // Inject uploadId into the message for server-side file access
+        userMessage.parts = [
+          ...(userMessage.parts || []),
+          { type: 'text', text: `__UPLOAD_ID__:${uploadId}` }
+        ];
+      } else if (messageFiles && messageFiles.length > 0) {
+        console.warn('ChatWidget - Files were selected but upload failed');
+      }
+
       // Create or use existing conversation ID
       const conversationId = currentConversationId || nanoid();
       if (!currentConversationId) {
@@ -1097,11 +1232,16 @@ const ChatWidget: React.FC = () => {
 
       // Send message to API
       const apiEndpoint = getApiEndpoint(activeAgent);
-      const userUIMessage: UIMessage = {
+      const userUIMessage: any = {
         id: userMessage.id,
         role: 'user',
-        parts: [{ type: 'text', text: messageContent }]
+        // Include the same parts we show in UI, which may contain the upload marker
+        parts: userMessage.parts
       };
+      // Provide uploadId on the message object for routes that read it directly
+      if (uploadId) {
+        userUIMessage.uploadId = uploadId;
+      }
 
       const response = await fetch(apiEndpoint, {
         method: 'POST',
@@ -1715,7 +1855,26 @@ const ChatWidget: React.FC = () => {
             {/* Messages */}
             {!isMinimized && (
               <>
-                <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50 dark:bg-gray-900">
+                <div 
+                  className={`flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50 dark:bg-gray-900 relative ${
+                    isDragOver ? 'bg-blue-50 dark:bg-blue-900/20' : ''
+                  }`}
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                >
+                  {/* Drag Overlay */}
+                  {isDragOver && (
+                    <div className="absolute inset-0 bg-blue-500/10 border-2 border-dashed border-blue-500 rounded-lg flex items-center justify-center z-10">
+                      <div className="text-center">
+                        <Upload className="w-8 h-8 text-blue-500 mx-auto mb-2" />
+                        <p className="text-sm font-medium text-blue-700 dark:text-blue-300">
+                          Drop files here to upload
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
                   {currentState.messages.length === 0 ? (
                     <div className="flex flex-col items-center justify-center h-full text-center">
                       <div className={`w-12 h-12 ${currentAgent.color} rounded-full flex items-center justify-center mb-3`}>
@@ -1803,6 +1962,31 @@ const ChatWidget: React.FC = () => {
                                   : 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white border border-gray-200 dark:border-gray-600'
                               }`}
                             >
+                                      {/* File Previews for User Messages */}
+                                      {message.sender === 'user' && message.sessionData?.fileParts && message.sessionData.fileParts.length > 0 && (
+                                        <div className="mb-3 space-y-2">
+                                          {message.sessionData.fileParts.map((filePart: any, index: number) => (
+                                            <div key={index} className="relative">
+                                              {filePart.mediaType?.startsWith('image/') ? (
+                                                <img
+                                                  src={filePart.url}
+                                                  alt="Uploaded image"
+                                                  className="max-w-full h-auto rounded-lg border border-white/20"
+                                                  style={{ maxHeight: '200px' }}
+                                                />
+                                              ) : (
+                                                <div className="flex items-center space-x-2 p-2 bg-white/10 rounded-lg">
+                                                  <Upload className="w-4 h-4 text-white/80" />
+                                                  <span className="text-sm text-white/90">
+                                                    Uploaded file ({filePart.mediaType})
+                                                  </span>
+                                                </div>
+                                              )}
+                                            </div>
+                                          ))}
+                                        </div>
+                                      )}
+
                                     <div className="prose max-w-none prose-slate dark:prose-invert">
                                       {/* Display text content with markdown rendering */}
                                       {message.content.split('\n').map((line, index) => {
@@ -2016,10 +2200,49 @@ const ChatWidget: React.FC = () => {
                   )}
                 </div>
 
+                {/* File Previews */}
+                {currentState.files && currentState.files.length > 0 && (
+                  <div className="border-t border-gray-200 dark:border-gray-700 p-3 bg-gray-50 dark:bg-gray-800">
+                    <div className="flex flex-wrap gap-2">
+                      {Array.from(currentState.files).map((file: File, index: number) => (
+                        <div
+                          key={index}
+                          className="flex items-center space-x-2 bg-white dark:bg-gray-700 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-600"
+                        >
+                          <div className="flex-1 min-w-0">
+                            <div className="text-xs font-medium text-gray-900 dark:text-white truncate">
+                              {file.name}
+                            </div>
+                            <div className="text-xs text-gray-500 dark:text-gray-400">
+                              {(file.size / 1024).toFixed(1)} KB
+                            </div>
+                          </div>
+                          <button
+                            onClick={() => removeFile(index)}
+                            className="p-1 hover:bg-gray-100 dark:hover:bg-gray-600 rounded transition-colors"
+                            title="Remove file"
+                          >
+                            <X className="w-3 h-3 text-gray-500 dark:text-gray-400" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 {/* Input Area */}
                 <div className="border-t border-gray-200 dark:border-gray-700 p-4 flex-shrink-0">
                   {/* Integrated Input Field with Buttons */}
-                  <div className="relative flex items-center bg-gray-100 dark:bg-gray-700 rounded-2xl border-0 focus-within:bg-gray-200 dark:focus-within:bg-gray-600 transition-colors">
+                  <div 
+                    className={`relative flex items-center rounded-2xl border-0 transition-colors ${
+                      isDragOver 
+                        ? 'bg-blue-100 dark:bg-blue-800/30 border-2 border-dashed border-blue-400' 
+                        : 'bg-gray-100 dark:bg-gray-700 focus-within:bg-gray-200 dark:focus-within:bg-gray-600'
+                    }`}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDrop}
+                  >
                     {/* Plus Button with Dropdown */}
                     <div className="relative plus-dropdown">
                       <button
@@ -2036,7 +2259,8 @@ const ChatWidget: React.FC = () => {
                           {/* Upload File Option */}
                           <button
                             onClick={() => {
-                              // Handle file upload
+                              console.log('Upload button clicked, fileInputRef:', fileInputRef.current);
+                              fileInputRef.current?.click();
                               setShowPlusDropdown(false);
                             }}
                             className="w-full p-3 text-left hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors first:rounded-t-lg flex items-center space-x-3"
@@ -2091,7 +2315,7 @@ const ChatWidget: React.FC = () => {
                     ) : (
                       <button
                         onClick={sendMessage}
-                        disabled={!currentState.inputValue.trim() || currentState.isTyping}
+                        disabled={(!currentState.inputValue.trim() && !currentState.files?.length) || currentState.isTyping}
                         className="p-2 m-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 dark:disabled:bg-gray-500 text-white rounded-lg transition-colors disabled:cursor-not-allowed flex items-center"
                         title="Send message"
                       >
@@ -2099,6 +2323,16 @@ const ChatWidget: React.FC = () => {
                       </button>
                     )}
                   </div>
+
+                  {/* Hidden File Input */}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    multiple
+                    accept="image/*,.pdf,.doc,.docx,.txt,.md"
+                    onChange={handleFileUpload}
+                    className="hidden"
+                  />
                 </div>
               </>
             )}

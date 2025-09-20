@@ -96,7 +96,7 @@ interface AIChatProps {
 }
 
 interface SessionData {
-  fileParts?: MessagePart[];
+  fileParts?: Array<{ type: string; mediaType: string; url: string }>;
   tempUploadId?: string;
 }
 
@@ -128,14 +128,9 @@ interface EnhancedChatMessage extends ChatMessage {
 
 interface AgentChatStateWithFiles extends AgentChatState {
   messages: EnhancedChatMessage[];
-  files?: FileList;
   isDragOver?: boolean;
-  loadingState?: 'thinking' | 'searching' | 'tool-call' | 'generating' | 'using-tool' | 'processing-tool-result';
-  currentTool?: string;
   pendingConfirmations?: Set<string>; // Message IDs that need confirmation
   confirmedMessages?: Set<string>; // Message IDs that have been confirmed/declined
-  isStreaming?: boolean;
-  abortController?: AbortController;
 }
 
 const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
@@ -654,10 +649,15 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     const messageFiles = currentState.files;
     
     // Show user message immediately with file previews (non-blocking)
-    let fileParts: MessagePart[] = [];
+    let fileParts: Array<{ type: string; mediaType: string; url: string }> = [];
     if (messageFiles && messageFiles.length > 0) {
       try {
-        fileParts = await convertFilesToDataURLs(messageFiles);
+        const convertedFiles = await convertFilesToDataURLs(messageFiles);
+        fileParts = convertedFiles.map(part => ({
+          type: part.type === 'file' ? 'file' : 'text',
+          mediaType: part.mediaType || '',
+          url: part.url || ''
+        }));
       } catch (e) {
         console.warn('Failed to convert files to data URLs', e);
       }
