@@ -249,8 +249,6 @@ async def update_project(
             schedule_embedding_update(background_tasks, project_id, db)
         
         # Send notifications for important project changes
-        print(f"    Current user: {current_user.id}")
-        print(f"    Update data: {project_update.dict(exclude_unset=True)}")
         
         try:
             # Check for name change
@@ -266,7 +264,7 @@ async def update_project(
                     updated_by_user_id=current_user.id
                 )
             else:
-                print(f"    ❌ No name change: current='{current_project.name}', update='{project_update.name}' (provided: {project_update.name is not None})")
+                pass
             
             # Check for status change
             if (project_update.status is not None and project_update.status != current_project.status):
@@ -281,7 +279,7 @@ async def update_project(
                     updated_by_user_id=current_user.id
                 )
             else:
-                print(f"    ❌ No status change: current='{current_project.status}', update='{project_update.status}' (provided: {project_update.status is not None})")
+                pass
             
             # Check for description change (only notify if description is substantial)
             if (project_update.description is not None and 
@@ -299,7 +297,7 @@ async def update_project(
                     updated_by_user_id=current_user.id
                 )
             else:
-                print(f"    ❌ No description change: update provided = {project_update.description is not None}")
+                pass
             
             # Check for start date change
             if (project_update.start_date is not None and project_update.start_date != current_project.start_date):
@@ -316,7 +314,7 @@ async def update_project(
                     updated_by_user_id=current_user.id
                 )
             else:
-                print(f"    ❌ No start date change: provided = {project_update.start_date is not None}")
+                pass
             
             # Check for end date change
             if (project_update.end_date is not None and project_update.end_date != current_project.end_date):
@@ -333,7 +331,7 @@ async def update_project(
                     updated_by_user_id=current_user.id
                 )
             else:
-                print(f"    ❌ No end date change: provided = {project_update.end_date is not None}")
+                pass
                 
         except Exception as e:
             # Log the error but don't fail the project update
