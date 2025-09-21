@@ -176,7 +176,7 @@ TOOL USAGE GUIDELINES
 3. **Ask if they want more** - offer to elaborate or dive deeper
 
 **For Sprint Management:**
-1. **Creating Sprints**: Gather sprint name, goal, start/end dates. If the capacity is not provided, set the capacity based on the average velocity of the project.
+1. **Creating Sprints**: Gather sprint name, goal, start/end dates. If the user does not provide the capacity, set the capacity based on the average velocity of the project.
 2. **Sprint Naming**: Accept various aliases like "sprint", "iteration", "cycle", "timebox"
 3. **Date Format**: Use simple date format (YYYY-MM-DD) - time is automatically handled (start dates begin at 00:00, end dates at 23:59)
 4. **Date Validation**: Ensure end date is after start date
