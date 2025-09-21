@@ -3,9 +3,11 @@
 import React from 'react';
 import Link from 'next/link';
 import { ArrowLeft, Shield, Eye, Lock, Database, Globe, Mail } from 'lucide-react';
+import { useAuthStatus } from '@/hooks/useAuthStatus';
 
 const PrivacyPage = () => {
   const lastUpdated = "December 2024";
+  const { isAuthenticated: isUserAuth, isLoading: authLoading } = useAuthStatus();
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -13,13 +15,15 @@ const PrivacyPage = () => {
       <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center space-x-4 mb-4">
-            <Link 
-              href="/"
-              className="flex items-center text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
-            >
-              <ArrowLeft className="w-5 h-5 mr-2" />
-              Back to Home
-            </Link>
+            {!authLoading && !isUserAuth && (
+              <Link 
+                href="/"
+                className="flex items-center text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
+              >
+                <ArrowLeft className="w-5 h-5 mr-2" />
+                Back to Home
+              </Link>
+            )}
           </div>
           
           <div className="flex items-center">
@@ -343,18 +347,6 @@ const PrivacyPage = () => {
               </div>
             </div>
 
-            {/* Children's Privacy */}
-            <div className="p-6">
-              <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
-                Children's Privacy
-              </h2>
-              <p className="text-gray-600 dark:text-gray-400 leading-relaxed">
-                ScrumiX is not intended for use by children under 13 years of age. We do not knowingly 
-                collect personal information from children under 13. If you believe we have collected 
-                information from a child under 13, please contact us immediately.
-              </p>
-            </div>
-
             {/* Updates to Policy */}
             <div className="p-6">
               <h2 className="text-xl font-semibold text-gray-900 dark:text-white mb-4">
@@ -381,9 +373,9 @@ const PrivacyPage = () => {
               </p>
               
               <div className="space-y-2 text-gray-600 dark:text-gray-400">
-                <p><strong>Email:</strong> privacy@scrumix.com</p>
-                <p><strong>Address:</strong> ScrumiX Privacy Team, [Company Address]</p>
-                <p><strong>Phone:</strong> +1 (555) 123-4567</p>
+                <p><strong>Email:</strong></p>
+                <p><strong>Address:</strong> </p>
+                <p><strong>Phone:</strong> </p>
               </div>
               
               <div className="mt-4 pt-4 border-t border-gray-200 dark:border-gray-600">

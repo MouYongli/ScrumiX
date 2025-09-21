@@ -6,10 +6,12 @@ import {
   ArrowLeft, FileText, Scale, Shield, AlertTriangle, 
   CheckCircle, XCircle, Mail, Clock
 } from 'lucide-react';
+import { useAuthStatus } from '@/hooks/useAuthStatus';
 
 const TermsPage = () => {
   const lastUpdated = "December 2024";
   const effectiveDate = "January 1, 2025";
+  const { isAuthenticated: isUserAuth, isLoading: authLoading } = useAuthStatus();
 
   return (
     <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
@@ -17,13 +19,15 @@ const TermsPage = () => {
       <div className="bg-white dark:bg-gray-800 border-b border-gray-200 dark:border-gray-700">
         <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center space-x-4 mb-4">
-            <Link 
-              href="/"
-              className="flex items-center text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
-            >
-              <ArrowLeft className="w-5 h-5 mr-2" />
-              Back to Home
-            </Link>
+            {!authLoading && !isUserAuth && (
+              <Link 
+                href="/"
+                className="flex items-center text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
+              >
+                <ArrowLeft className="w-5 h-5 mr-2" />
+                Back to Home
+              </Link>
+            )}
           </div>
           
           <div className="flex items-center">
@@ -428,10 +432,10 @@ const TermsPage = () => {
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="space-y-2 text-gray-600 dark:text-gray-400">
-                    <p><strong className="text-gray-900 dark:text-white">Email:</strong> legal@scrumix.com</p>
-                    <p><strong className="text-gray-900 dark:text-white">Address:</strong> ScrumiX Legal Team</p>
-                    <p>[Company Address]</p>
-                    <p><strong className="text-gray-900 dark:text-white">Phone:</strong> +1 (555) 123-4567</p>
+                    <p><strong className="text-gray-900 dark:text-white">Email:</strong></p>
+                    <p><strong className="text-gray-900 dark:text-white">Address:</strong></p>
+                    <p></p>
+                    <p><strong className="text-gray-900 dark:text-white">Phone:</strong></p>
                   </div>
                   
                   <div className="space-y-2">

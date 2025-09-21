@@ -7,10 +7,12 @@ import {
   Book, Users, Calendar, Settings, BarChart, FileText,
   ArrowLeft, ExternalLink
 } from 'lucide-react';
+import { useAuthStatus } from '@/hooks/useAuthStatus';
 
 const HelpPage = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [expandedSections, setExpandedSections] = useState<string[]>(['getting-started']);
+  const { isAuthenticated: isUserAuth, isLoading: authLoading } = useAuthStatus();
 
   const toggleSection = (sectionId: string) => {
     setExpandedSections(prev => 
@@ -129,13 +131,15 @@ const HelpPage = () => {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-4">
-              <Link 
-                href="/"
-                className="flex items-center text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
-              >
-                <ArrowLeft className="w-5 h-5 mr-2" />
-                Back to Home
-              </Link>
+              {!authLoading && !isUserAuth && (
+                <Link 
+                  href="/"
+                  className="flex items-center text-gray-600 dark:text-gray-400 hover:text-gray-900 dark:hover:text-white transition-colors"
+                >
+                  <ArrowLeft className="w-5 h-5 mr-2" />
+                  Back to Home
+                </Link>
+              )}
             </div>
           </div>
           
