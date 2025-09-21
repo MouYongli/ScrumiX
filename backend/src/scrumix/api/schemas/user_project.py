@@ -3,7 +3,7 @@ User-Project relationship schemas
 """
 from typing import Optional
 from datetime import datetime
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from scrumix.api.models.user_project import ScrumRole
 
@@ -45,7 +45,7 @@ class UserProjectResponse(BaseModel):
 
 class OwnershipTransferRequest(BaseModel):
     """Transfer project ownership schema"""
-    new_owner_id: int
+    new_owner_id: int = Field(..., gt=0, description="ID of the user to transfer ownership to")
 
 class RoleAssignmentRequest(BaseModel):
     """Assign Scrum role schema"""

@@ -6,6 +6,7 @@ from fastapi import status
 from unittest.mock import patch, Mock
 
 from scrumix.api.models.project import ProjectStatus
+from scrumix.api.models.user_project import ScrumRole
 from datetime import datetime, timedelta
 
 
@@ -199,9 +200,10 @@ class TestProjectEndpoints:
         response = client.put("/api/v1/projects/1", json=update_data)
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
 
-    def test_delete_project_success(self, client, auth_headers, db_session):
+    def test_delete_project_success(self, client, auth_headers, db_session, test_user):
         """Test successful project deletion"""
         from scrumix.api.models.project import Project
+        from scrumix.api.models.user_project import UserProject
         
         # Create a project to delete
         project = Project(
@@ -212,6 +214,16 @@ class TestProjectEndpoints:
             end_date=datetime.now() + timedelta(days=30)
         )
         db_session.add(project)
+        db_session.commit()
+        
+        # Make the test user the project owner
+        user_project = UserProject(
+            user_id=test_user.id,
+            project_id=project.id,
+            role=ScrumRole.DEVELOPER,  # Role doesn't matter, only is_owner matters
+            is_owner=True
+        )
+        db_session.add(user_project)
         db_session.commit()
         
         response = client.delete(f"/api/v1/projects/{project.id}", headers=auth_headers)
@@ -227,6 +239,36 @@ class TestProjectEndpoints:
         """Test deleting project without authentication"""
         response = client.delete("/api/v1/projects/1")
         assert response.status_code == status.HTTP_401_UNAUTHORIZED
+
+    def test_delete_project_non_owner_forbidden(self, client, auth_headers, db_session, test_user):
+        """Test deleting project as non-owner (should be forbidden)"""
+        from scrumix.api.models.project import Project
+        from scrumix.api.models.user_project import UserProject
+        
+        # Create a project
+        project = Project(
+            name="Test Project for Non-Owner Deletion",
+            description="A test project for non-owner deletion",
+            status=ProjectStatus.ACTIVE,
+            start_date=datetime.now(),
+            end_date=datetime.now() + timedelta(days=30)
+        )
+        db_session.add(project)
+        db_session.commit()
+        
+        # Make the test user a Scrum Master but NOT the project owner
+        user_project = UserProject(
+            user_id=test_user.id,
+            project_id=project.id,
+            role=ScrumRole.SCRUM_MASTER,
+            is_owner=False  # Not the project owner
+        )
+        db_session.add(user_project)
+        db_session.commit()
+        
+        response = client.delete(f"/api/v1/projects/{project.id}", headers=auth_headers)
+        assert response.status_code == status.HTTP_403_FORBIDDEN
+        assert "Only project owner can delete projects" in response.json()["detail"]
 
 
 class TestProjectCRUD:
