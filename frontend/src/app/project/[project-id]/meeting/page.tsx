@@ -457,43 +457,18 @@ const ProjectMeetings = () => {
       // Create a Date object in UTC with the exact values the user entered
       const datetimeToSend = new Date(Date.UTC(year, month - 1, day, hours, minutes, 0));
       
-      // Get the first available sprint or create a default one if none exist
-      let sprintId = 1; // Default fallback
-      if (sprints.length > 0) {
-        sprintId = sprints[0].id;
-      } else {
-        // Try to create a default sprint for this project
-        try {
-          const defaultSprintData = {
-            sprint_name: `Default Sprint ${new Date().getFullYear()}`,
-            sprint_goal: 'Default sprint for meetings',
-            start_date: new Date().toISOString(),
-            end_date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(), // 30 days from now
-            project_id: parseInt(projectId)
-          };
-          const sprintResponse = await api.sprints.create(defaultSprintData);
-          if (sprintResponse.data) {
-            sprintId = sprintResponse.data.id;
-            // Refresh sprints list
-            const refreshSprintsResponse = await api.sprints.getByProject(parseInt(projectId));
-            if (refreshSprintsResponse.data) {
-              setSprints(refreshSprintsResponse.data);
-            }
-          }
-        } catch (sprintError) {
-          console.warn('Failed to create default sprint:', sprintError);
-          // Continue with default sprintId = 1
-        }
-      }
+      // Meetings can be independent of sprints. Only associate a sprint when explicitly selected.
+      // By default, do not set a sprint for the meeting.
+      let sprintId: number | undefined = undefined;
       
-      const meetingData = {
-      title: formData.title,
+      const meetingData: any = {
+        title: formData.title,
         meeting_type: formData.type as MeetingType,
         start_datetime: datetimeToSend.toISOString(),
         description: formData.description,
-      duration: formData.duration,
-      location: formData.location,
-        sprint_id: sprintId,
+        duration: formData.duration,
+        location: formData.location,
+        ...(sprintId !== undefined ? { sprint_id: sprintId } : {}),
         project_id: parseInt(projectId)
       };
 

@@ -13,7 +13,7 @@ class MeetingBase(BaseModel):
     description: Optional[str] = Field(None, description="Meeting description")
     duration: int = Field(30, gt=0, le=480, description="Meeting duration in minutes")
     location: Optional[str] = Field(None, description="Meeting location or virtual link")
-    sprint_id: int = Field(..., gt=0, description="ID of the sprint this meeting belongs to")
+    sprint_id: Optional[int] = Field(None, gt=0, description="ID of the sprint this meeting belongs to (optional)")
     project_id: int = Field(..., gt=0, description="ID of the project this meeting belongs to")
     
     @field_validator('start_datetime')
@@ -103,7 +103,7 @@ class MeetingResponse(BaseModel):
     description: Optional[str]
     duration: int
     location: Optional[str]
-    sprintId: int = Field(alias="sprint_id", serialization_alias="sprintId")
+    sprintId: Optional[int] = Field(alias="sprint_id", serialization_alias="sprintId")
     projectId: int = Field(alias="project_id", serialization_alias="projectId")
     createdAt: datetime = Field(alias="created_at", serialization_alias="createdAt")
     updatedAt: datetime = Field(alias="updated_at", serialization_alias="updatedAt")

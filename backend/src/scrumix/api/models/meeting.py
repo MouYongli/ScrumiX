@@ -28,7 +28,7 @@ class Meeting(Base):
     description = Column(Text, nullable=True)
     duration = Column(Integer, nullable=False, default=30)
     location = Column(String(500), nullable=True)
-    sprint_id = Column(Integer, ForeignKey("sprints.id"), nullable=False, index=True)
+    sprint_id = Column(Integer, ForeignKey("sprints.id"), nullable=True, index=True)
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
