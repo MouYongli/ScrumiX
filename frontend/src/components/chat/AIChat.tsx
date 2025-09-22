@@ -316,10 +316,15 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     setLoadingConversations(true);
     try {
       const conversations = await chatAPI.getUserConversations();
+      // Filter by current project when in a project context
+      const pid = projectId ? parseInt(projectId, 10) : null;
+      const scopedConversations = pid != null
+        ? conversations.filter((conv: any) => conv.project_id === pid)
+        : conversations;
       
       // Group conversations by agent type
       const groupedConversations: Record<string, any[]> = {};
-      conversations.forEach((conv: any) => {
+      scopedConversations.forEach((conv: any) => {
         if (!groupedConversations[conv.agent_type]) {
           groupedConversations[conv.agent_type] = [];
         }

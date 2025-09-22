@@ -219,7 +219,12 @@ const ChatWidget: React.FC = () => {
     setIsLoadingChats(true);
     try {
       const conversations = await chatAPI.getUserConversations(agentType);
-      const sortedChats = conversations
+      // Filter by current project when in a project context
+      const pid = projectId ? parseInt(projectId, 10) : null;
+      const scopedConversations = pid != null
+        ? conversations.filter((conv: ChatConversation) => conv.project_id === pid)
+        : conversations;
+      const sortedChats = scopedConversations
         .sort((a, b) => new Date(b.last_message_at || b.updated_at || '').getTime() - new Date(a.last_message_at || a.updated_at || '').getTime());
       setRecentChats(sortedChats);
     } catch (error) {
