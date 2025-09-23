@@ -20,6 +20,7 @@ from scrumix.api.crud.sprint_backlog import sprint_backlog_crud
 from scrumix.api.utils.notification_helpers import notification_helper
 from scrumix.api.models.backlog import Backlog
 from scrumix.api.models.task import Task
+from scrumix.api.schemas.task import TaskResponse, TaskListResponse
 from scrumix.api.models.sprint import Sprint
 
 router = APIRouter()
@@ -66,6 +67,66 @@ def create_sprint(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error creating sprint: {str(e)}")
+
+# ------------------------------
+# Tasks listing within a sprint
+# ------------------------------
+@router.get("/{sprint_id}/tasks", response_model=TaskListResponse)
+def list_tasks_for_sprint(
+    sprint_id: int,
+    backlog_id: Optional[int] = Query(None, description="Filter by backlog ID within the sprint"),
+    status: Optional[str] = Query(None, description="Filter by task status (todo,in_progress,done,cancelled)"),
+    skip: int = Query(0, ge=0, description="Number of tasks to skip"),
+    limit: int = Query(100, ge=1, le=1000, description="Number of tasks to return"),
+    db: Session = Depends(get_db),
+    current_user: UserInDB = Depends(get_current_user)
+):
+    """List tasks scoped to a specific sprint with optional filters.
+
+    This ensures clients only get tasks that belong to the provided sprint,
+    preventing cross-project/sprint leakage.
+    """
+    try:
+        # Validate sprint exists
+        sprint = db.query(Sprint).filter(Sprint.id == sprint_id).first()
+        if not sprint:
+            raise HTTPException(status_code=404, detail="Sprint not found")
+
+        query = db.query(Task).filter(Task.sprint_id == sprint_id)
+
+        if backlog_id is not None:
+            query = query.filter(Task.backlog_id == backlog_id)
+
+        if status is not None:
+            normalized = status.lower()
+            valid_status = {"todo", "in_progress", "done", "cancelled"}
+            if normalized not in valid_status:
+                raise HTTPException(status_code=400, detail=f"Invalid status: {status}")
+            from scrumix.api.models.task import TaskStatus as TaskStatusEnum
+            query = query.filter(Task.status == TaskStatusEnum(normalized))
+
+        total = query.count()
+        items = (
+            query
+            .order_by(Task.created_at.desc())
+            .offset(skip)
+            .limit(limit)
+            .all()
+        )
+
+        pages = (total // limit + (1 if total % limit else 0)) if total > 0 else 0
+        current_page = (skip // limit) + 1 if total > 0 else 0
+
+        return TaskListResponse(
+            tasks=[TaskResponse.model_validate(t) for t in items],
+            total=total,
+            page=current_page,
+            pages=pages
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error listing sprint tasks: {str(e)}")
 
 @router.get("/{sprint_id}", response_model=SprintResponse)
 def get_sprint_by_id(
