@@ -1,5 +1,5 @@
 import { tool } from 'ai';
-import { burndownAnalysisSchema } from '../../schemas/scrum';
+import { burndownAnalysisSchema } from '../../schemas/velocity';
 import { requestWithAuth, getCurrentProjectContext, type AuthContext } from '../../utils';
 
 /**

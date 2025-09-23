@@ -110,7 +110,7 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
         // Fetch current user info
         const currentUserResponse = await api.auth.getCurrentUser();
         const currentUserId = currentUserResponse.data?.id;
-        setCurrentUserId(currentUserId);
+        setCurrentUserId(currentUserId ?? null);
         
         // Fetch project details to get the name
         const projectResponse = await api.projects.getById(parseInt(projectId));

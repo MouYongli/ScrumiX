@@ -7,9 +7,10 @@
 import {
   semanticSearchSprintsTool,
   findSimilarSprintsTool,
-  semanticSprintManagementTools,
-  type SemanticSprintManagementTools
+  semanticSprintManagementTools
 } from '../sprint';
+
+import type { SemanticSprintManagementTools } from '../sprint/semantic-sprint-management';
 
 // Re-export all tools from the new modular structure
 export {

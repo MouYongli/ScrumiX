@@ -135,7 +135,7 @@ export const getSprintTasks = tool({
       }
 
       const response = await requestWithAuth(
-        `/tasks?${queryParams.toString()}`,
+        `/sprints/${sprintId}/tasks?${queryParams.toString()}`,
         { method: 'GET' },
         experimental_context as AuthContext
       );

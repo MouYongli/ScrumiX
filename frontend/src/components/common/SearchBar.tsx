@@ -154,7 +154,7 @@ const SearchBar: React.FC<SearchBarProps> = ({
               status: backlog.status,
               url: `/project/${projectId}/backlog`,
               metadata: { 
-                itemType: backlog.itemType,
+                itemType: backlog.item_type,
                 priority: backlog.priority
               }
             });
@@ -195,7 +195,7 @@ const SearchBar: React.FC<SearchBarProps> = ({
                 description: meeting.description,
                 url: `/project/${projectId}/meeting/${meeting.id}`,
                 metadata: { 
-                  startDateTime: meeting.startDateTime,
+                  startDateTime: meeting.startDatetime,
                   meetingType: meeting.meetingType 
                 }
               });

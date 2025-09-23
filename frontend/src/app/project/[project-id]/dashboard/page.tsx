@@ -1680,7 +1680,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
       
       {/* Page Header */}
       <div className="flex justify-between items-start">
-        <div>
+        <div className="flex-1 min-w-0 pr-6">
           <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
             {project.name}
           </h1>
@@ -1688,7 +1688,7 @@ const ProjectDashboard: React.FC<ProjectDashboardProps> = ({ params }) => {
             {project.description || 'Project overview and real-time status'}
           </p>
         </div>
-        <div className="flex gap-3">
+        <div className="flex gap-3 flex-shrink-0">
           <Link
             href={`/project/${projectId}/sprint`}
             className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"

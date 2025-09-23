@@ -391,7 +391,7 @@ export const getProjectVelocityMetricsTool = tool({
       // Add velocity trend analysis if available
       if (metrics.velocity_trend && metrics.velocity_trend.length > 0) {
         metricsMessage += `**Recent Velocity Trend (Last ${metrics.velocity_trend.length} Sprints):**
-${metrics.velocity_trend.map((trend, index) => {
+${metrics.velocity_trend.map((trend: any, index: number) => {
   const trendIcon = index === 0 ? '📊' : 
                    trend.velocity_points > metrics.velocity_trend[index - 1].velocity_points ? '📈' :
                    trend.velocity_points < metrics.velocity_trend[index - 1].velocity_points ? '📉' : '➡️';
@@ -480,10 +480,10 @@ export const getProjectVelocityTrendTool = tool({
       let trendAnalysis = '';
       if (trends.length >= 3) {
         const recent = trends.slice(-3);
-        const isIncreasing = recent.every((sprint, index) => 
+        const isIncreasing = recent.every((sprint: any, index: number) => 
           index === 0 || sprint.velocity_points >= recent[index - 1].velocity_points
         );
-        const isDecreasing = recent.every((sprint, index) => 
+        const isDecreasing = recent.every((sprint: any, index: number) => 
           index === 0 || sprint.velocity_points <= recent[index - 1].velocity_points
         );
         
@@ -503,7 +503,7 @@ export const getProjectVelocityTrendTool = tool({
 **Recent Sprints Analyzed:** ${trends.length}
 
 **Velocity Trend (Chronological Order):**
-${trends.map((trend, index) => {
+${trends.map((trend: any, index: number) => {
   const position = index + 1;
   const trendIcon = index === 0 ? '📊' : 
                    trend.velocity_points > trends[index - 1].velocity_points ? '📈' :
@@ -514,9 +514,9 @@ ${trends.map((trend, index) => {
 ${trendAnalysis}
 
 **Trend Insights:**
-- **Highest Velocity:** ${Math.max(...trends.map(t => t.velocity_points))} story points
-- **Lowest Velocity:** ${Math.min(...trends.map(t => t.velocity_points))} story points
-- **Average (Recent ${trends.length} Sprints):** ${Math.round(trends.reduce((sum, t) => sum + t.velocity_points, 0) / trends.length)} story points
+- **Highest Velocity:** ${Math.max(...trends.map((t: any) => t.velocity_points))} story points
+- **Lowest Velocity:** ${Math.min(...trends.map((t: any) => t.velocity_points))} story points
+- **Average (Recent ${trends.length} Sprints):** ${Math.round(trends.reduce((sum: number, t: any) => sum + t.velocity_points, 0) / trends.length)} story points
 
 **Planning Recommendations:**
 ${trends.length >= 2 ? `

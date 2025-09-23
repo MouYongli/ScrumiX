@@ -12,11 +12,11 @@
 
 // Re-export velocity-related schemas from velocity.ts
 export {
-  getSprintVelocitySchema as velocityAnalysisSchema, // alias for backward compatibility
-  getSprintVelocitySchema as currentSprintVelocitySchema, // alias for backward compatibility
+  getSprintVelocitySchema as legacyVelocityAnalysisSchema, // alias for backward compatibility
+  getSprintVelocitySchema as legacyCurrentSprintVelocitySchema, // alias for backward compatibility
   getProjectVelocityMetricsSchema as sprintHealthAnalysisSchema, // alias for backward compatibility
   getProjectVelocityMetricsSchema as sprintMetricsSchema, // alias for backward compatibility
-  getProjectVelocityTrendSchema as burndownAnalysisSchema // alias for backward compatibility
+  getProjectVelocityTrendSchema as legacyBurndownAnalysisSchema // alias for backward compatibility
 } from './velocity';
 
 // Re-export retrospective schemas from retrospectives.ts
