@@ -1,35 +1,49 @@
 """
-用户相关的Pydantic schemas
+User-related Pydantic schemas
 """
-from typing import Optional, List
+from typing import Optional, List, Union
 from datetime import datetime
-from pydantic import BaseModel, EmailStr, ConfigDict
+from pydantic import BaseModel, EmailStr, ConfigDict, Field
 from scrumix.api.models.user import AuthProvider, UserStatus
 
 class UserBase(BaseModel):
-    """用户基础信息"""
+    """User basic information"""
     email: EmailStr
     username: Optional[str] = None
-    full_name: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    full_name: Optional[str] = None  # Keep for backward compatibility
     avatar_url: Optional[str] = None
+    phone: Optional[str] = None
+    department: Optional[str] = None
+    location: Optional[str] = None
+    bio: Optional[str] = None
     timezone: str = "UTC"
     language: str = "zh-CN"
+    date_format: str = "YYYY-MM-DD"
 
 class UserCreate(UserBase):
-    """创建用户"""
-    password: Optional[str] = None  # 本地注册时必须，OAuth注册时可选
+    """Create user"""
+    password: Optional[str] = None  # Required for local registration, optional for OAuth registration
 
 class UserUpdate(BaseModel):
-    """更新用户信息"""
+    """Update user information"""
     email: Optional[EmailStr] = None
     username: Optional[str] = None
-    full_name: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    full_name: Optional[str] = None  # Keep for backward compatibility
     avatar_url: Optional[str] = None
+    phone: Optional[str] = None
+    department: Optional[str] = None
+    location: Optional[str] = None
+    bio: Optional[str] = None
     timezone: Optional[str] = None
     language: Optional[str] = None
+    date_format: Optional[str] = None
 
 class UserInDB(UserBase):
-    """数据库中的用户信息"""
+    """User information in database"""
     model_config = ConfigDict(from_attributes=True)
     
     id: int
@@ -42,24 +56,24 @@ class UserInDB(UserBase):
     last_login_at: Optional[datetime] = None
 
 class UserResponse(UserBase):
-    """返回给前端的用户信息"""
+    """User information returned to frontend"""
     model_config = ConfigDict(from_attributes=True)
     
     id: int
-    is_active: bool
-    is_verified: bool
+    isActive: bool = Field(alias="is_active")
+    isVerified: bool = Field(alias="is_verified")
     status: UserStatus
-    created_at: datetime
-    last_login_at: Optional[datetime] = None
+    createdAt: datetime = Field(alias="created_at")
+    lastLoginAt: Optional[datetime] = Field(alias="last_login_at", default=None)
 
 class LoginRequest(BaseModel):
-    """登录请求"""
+    """Login request"""
     email: EmailStr
     password: str
     remember_me: bool = False
 
 class LoginResponse(BaseModel):
-    """登录响应"""
+    """Login response"""
     access_token: str
     refresh_token: Optional[str] = None
     token_type: str = "bearer"
@@ -67,19 +81,25 @@ class LoginResponse(BaseModel):
     user: UserResponse
 
 class TokenData(BaseModel):
-    """Token数据"""
-    user_id: Optional[int] = None
+    """Token data"""
+    user_id: Optional[Union[int, str]] = None
     email: Optional[str] = None
     scopes: List[str] = []
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    full_name: Optional[str] = None  # Keep for backward compatibility
+    username: Optional[str] = None
+    avatar_url: Optional[str] = None
+    provider: Optional[str] = None
 
 class OAuthTokenRequest(BaseModel):
-    """OAuth Token请求"""
+    """OAuth Token request"""
     code: str
     state: Optional[str] = None
     redirect_uri: str
 
 class OAuthTokenResponse(BaseModel):
-    """OAuth Token响应"""
+    """OAuth Token response"""
     access_token: str
     refresh_token: Optional[str] = None
     token_type: str = "bearer"
@@ -88,21 +108,60 @@ class OAuthTokenResponse(BaseModel):
     is_new_user: bool = False
 
 class PasswordResetRequest(BaseModel):
-    """密码重置请求"""
+    """Password reset request"""
     email: EmailStr
 
 class PasswordResetConfirm(BaseModel):
-    """密码重置确认"""
+    """Password reset confirmation"""
     token: str
     new_password: str
 
 class ChangePasswordRequest(BaseModel):
-    """修改密码请求"""
+    """Change password request"""
     current_password: str
     new_password: str
 
+class ProfileUpdate(BaseModel):
+    """Profile update request"""
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    full_name: Optional[str] = None  # Keep for backward compatibility
+    avatar_url: Optional[str] = None
+    phone: Optional[str] = None
+    department: Optional[str] = None
+    location: Optional[str] = None
+    bio: Optional[str] = None
+    timezone: Optional[str] = None
+    language: Optional[str] = None
+    date_format: Optional[str] = None
+
+class ProfileResponse(BaseModel):
+    """Profile response"""
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: int
+    email: str
+    username: Optional[str] = None
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    full_name: Optional[str] = None  # Keep for backward compatibility
+    avatar_url: Optional[str] = None
+    phone: Optional[str] = None
+    department: Optional[str] = None
+    location: Optional[str] = None
+    bio: Optional[str] = None
+    timezone: str
+    language: str
+    date_format: str
+    is_active: bool
+    is_verified: bool
+    provider: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    last_login_at: Optional[datetime] = None
+
 class UserSessionResponse(BaseModel):
-    """用户会话响应"""
+    """User session response"""
     model_config = ConfigDict(from_attributes=True)
     
     id: int

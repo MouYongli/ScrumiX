@@ -1,7 +1,7 @@
 """
-认证相关的API路由
+Authentication-related API routes
 """
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status, Request, Response
 from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
@@ -23,13 +23,18 @@ from scrumix.api.schemas.user import (
 )
 from scrumix.api.models.user import AuthProvider
 from scrumix.api.utils.oauth import keycloak_oauth
+from scrumix.api.utils.cookies import (
+    set_access_token_cookie, set_refresh_token_cookie, 
+    clear_auth_cookies, get_refresh_token_from_cookie,
+    get_session_cookie, set_session_cookie, clear_session_cookie
+)
 from scrumix.api.core.config import settings
 
 router = APIRouter()
 
-@router.post("/register", response_model=UserResponse)
+@router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def register(user_create: UserCreate, db: Session = Depends(get_db)):
-    """用户注册"""
+    """User registration"""
     if not user_create.password:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -39,7 +44,7 @@ async def register(user_create: UserCreate, db: Session = Depends(get_db)):
     try:
         user = user_crud.create_user(db, user_create)
         
-        # 发送邮箱验证邮件（这里需要实现邮件服务）
+        # Send email verification (email service needs to be implemented here)
         # verification_token = create_email_verification_token(user.email)
         # send_verification_email(user.email, verification_token)
         
@@ -54,9 +59,10 @@ async def register(user_create: UserCreate, db: Session = Depends(get_db)):
 async def login(
     login_data: LoginRequest,
     request: Request,
+    response: Response,
     db: Session = Depends(get_db)
 ):
-    """用户登录"""
+    """User Login - Enhanced with secure cookie session management"""
     user = user_crud.authenticate(db, login_data.email, login_data.password)
     if not user:
         raise HTTPException(
@@ -71,34 +77,59 @@ async def login(
             detail="Inactive user"
         )
     
-    # 创建访问令牌
+    # Create access token
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
     access_token = create_access_token(
-        data={"sub": str(user.id), "email": user.email}, 
+        data={
+            "sub": str(user.id), 
+            "email": user.email,
+            "username": user.username,
+            "full_name": user.full_name,
+            "provider": "local"
+        }, 
         expires_delta=access_token_expires
     )
     
-    # 创建刷新令牌（如果选择了记住我）
+    # Set access token as secure HTTP-only cookie
+    set_access_token_cookie(
+        response,
+        access_token,
+        expires_delta=access_token_expires
+    )
+    
+    # Create refresh token (if remember me is selected)
     refresh_token = None
     if login_data.remember_me:
         refresh_token = create_refresh_token(
-            data={"sub": str(user.id), "email": user.email}
+            data={
+                "sub": str(user.id), 
+                "email": user.email,
+                "username": user.username,
+                "full_name": user.full_name,
+                "provider": "local"
+            }
+        )
+        # Set refresh token as secure HTTP-only cookie
+        set_refresh_token_cookie(
+            response,
+            refresh_token,
+            expires_delta=timedelta(days=7)
         )
     
-    # 创建会话记录
+    # Create session record
     session_expires = datetime.now() + access_token_expires
     if login_data.remember_me:
         session_expires = datetime.now() + timedelta(days=7)
     
+    # Generate session token
+    session_token = secrets.token_urlsafe(32)
     session = session_crud.create_session(
         db,
         user.id,
-        session_expires,
-        user_agent=request.headers.get("User-Agent"),
-        ip_address=request.client.host
+        session_token
     )
     
-    # 更新最后登录时间
+    # Update last login time
     user_crud.update_last_login(db, user.id)
     
     return LoginResponse(
@@ -111,27 +142,57 @@ async def login(
 
 @router.post("/logout")
 async def logout(
+    response: Response,
+    request: Request,
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """用户登出"""
-    # 停用用户的所有会话
-    session_crud.deactivate_user_sessions(db, current_user.id)
+    """User logout - Enhanced with secure cookie clearing for all auth methods"""
+    # Clear all authentication cookies (both internal and Keycloak)
+    clear_auth_cookies(response)
+    
+    # Clear Keycloak-specific cookies
+    clear_session_cookie(response, "keycloak_access_token")
+    clear_session_cookie(response, "keycloak_refresh_token")
+    
+    # If this is a Keycloak user, optionally revoke the Keycloak token
+    try:
+        keycloak_token = get_session_cookie(request, "keycloak_access_token")
+        if keycloak_token:
+            # Attempt to revoke the Keycloak token (best effort)
+            await keycloak_oauth.revoke_token(keycloak_token, "access_token")
+    except Exception as e:
+        # Don't fail logout if Keycloak revocation fails
+        print(f"Failed to revoke Keycloak token: {e}")
+    
+    # Deactivate current user sessions for local users
+    # Note: Keycloak users don't have database sessions in current implementation
+    try:
+        if hasattr(current_user, 'id') and current_user.id:
+            session_crud.deactivate_user_sessions(db, current_user.id)
+    except Exception as e:
+        # Don't fail logout if session deactivation fails
+        print(f"Failed to deactivate sessions: {e}")
+    
     return {"message": "Successfully logged out"}
 
 @router.get("/oauth/keycloak/authorize")
-async def keycloak_authorize():
-    """获取Keycloak OAuth授权URL"""
-    # 后端callback的redirect_uri
+async def keycloak_authorize(origin: str = "login"):
+    """Get Keycloak OAuth authorization URL"""
+    # Backend callback redirect_uri
     redirect_uri = f"{settings.BACKEND_URL}/api/v1/auth/oauth/keycloak/callback"
-    state = secrets.token_urlsafe(32)
+    # Generate base state token
+    base_state = secrets.token_urlsafe(32)
+    # Encode origin into state: {base_state}:{origin}
+    encoded_state = f"{base_state}:{origin}"
+    
     authorization_url = keycloak_oauth.get_authorization_url(
         redirect_uri=redirect_uri,
-        state=state
+        state=encoded_state
     )
     return {
         "authorization_url": authorization_url,
-        "state": state
+        "state": encoded_state
     }
 
 @router.get("/oauth/keycloak/callback")
@@ -140,188 +201,60 @@ async def keycloak_callback_get(
     code: str = None,
     state: str = None,
     error: str = None,
-    error_description: str = None,
-    db: Session = Depends(get_db)
+    error_description: str = None
 ):
-    """处理Keycloak OAuth GET回调（Keycloak重定向到这里）"""
+    """Handle Keycloak OAuth GET callback (Keycloak redirects here) - Simplified version, not stored in database"""
     frontend_url = settings.FRONTEND_URL or "http://localhost:3000"
     
+    # Decode state to get origin information
+    origin = "login"  # Default to login
+    if state and ":" in state:
+        try:
+            base_state, origin = state.split(":", 1)
+        except ValueError:
+            # If parsing fails, use original state and default origin
+            pass
+    
+    # Determine redirect page based on origin
+    redirect_page = "/auth/signup" if origin == "signup" else "/auth/login"
+    
     try:
-        # 检查是否有错误
+        # Check for errors
         if error:
             error_msg = error_description or f"OAuth error: {error}"
             return RedirectResponse(
-                url=f"{frontend_url}/auth/login?error={error_msg}",
+                url=f"{frontend_url}{redirect_page}?error={error_msg}",
                 status_code=302
             )
         
-        # 检查必需的参数
-        if not code:
+        # Check required parameters
+        if not code or not state:
             return RedirectResponse(
-                url=f"{frontend_url}/auth/login?error=Missing authorization code",
+                url=f"{frontend_url}{redirect_page}?error=Missing authorization code or state",
                 status_code=302
             )
         
-        # 用授权码换取access token
-        redirect_uri = f"{settings.BACKEND_URL}/api/v1/auth/oauth/keycloak/callback"
-        token_data = await keycloak_oauth.exchange_code_for_token(code, redirect_uri)
-        
-        if not token_data:
-            return RedirectResponse(
-                url=f"{frontend_url}/auth/login?error=Failed to exchange code for token",
-                status_code=302
-            )
-        
-        # 获取用户信息
-        user_info = await keycloak_oauth.get_user_info(token_data["access_token"])
-        if not user_info:
-            return RedirectResponse(
-                url=f"{frontend_url}/auth/login?error=Failed to get user info",
-                status_code=302
-            )
-        
-        # 处理用户创建/更新逻辑 (与原POST callback相同)
-        oauth_account = oauth_crud.get_by_provider_user_id(
-            db, AuthProvider.KEYCLOAK, user_info["sub"]
+        # Redirect directly to frontend, let frontend handle token exchange
+        return RedirectResponse(
+            url=f"{frontend_url}{redirect_page}?code={code}&state={state}",
+            status_code=302
         )
-        
-        is_new_user = False
-        
-        if oauth_account:
-            oauth_crud.update_oauth_tokens(
-                db,
-                oauth_account.id,
-                token_data["access_token"],
-                token_data.get("refresh_token")
-            )
-            user = oauth_account.user
-        else:
-            user = user_crud.get_by_email(db, user_info["email"])
-            
-            if not user:
-                user_create = UserCreate(
-                    email=user_info["email"],
-                    full_name=user_info.get("name"),
-                    username=user_info.get("preferred_username"),
-                    avatar_url=user_info.get("picture")
-                )
-                user = user_crud.create_user(db, user_create)
-                user.is_verified = True
-                db.commit()
-                is_new_user = True
-            
-            oauth_crud.create_oauth_account(
-                db,
-                user.id,
-                AuthProvider.KEYCLOAK,
-                user_info["sub"],
-                token_data["access_token"],
-                token_data.get("refresh_token"),
-                user_info
-            )
-        
-        # 创建应用的JWT令牌
-        access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-        access_token = create_access_token(
-            data={"sub": str(user.id), "email": user.email},
-            expires_delta=access_token_expires
-        )
-        
-        refresh_token = create_refresh_token(
-            data={"sub": str(user.id), "email": user.email}
-        )
-        
-        # 创建会话记录
-        session_expires = datetime.now() + timedelta(days=7)
-        session = session_crud.create_session(
-            db,
-            user.id,
-            session_expires,
-            user_agent=request.headers.get("User-Agent"),
-            ip_address=request.client.host
-        )
-        
-        # 更新最后登录时间
-        user_crud.update_last_login(db, user.id)
-        
-        # 创建临时授权码用于前端获取token（更安全）
-        temp_code = secrets.token_urlsafe(32)
-        
-        # 将token信息临时存储（可以用Redis，这里简单用内存）
-        # 在生产环境中应该使用Redis或数据库
-        temp_tokens = getattr(settings, '_temp_tokens', {})
-        temp_tokens[temp_code] = {
-            'access_token': access_token,
-            'refresh_token': refresh_token,
-            'is_new_user': is_new_user,
-            'expires_at': datetime.now() + timedelta(minutes=5)  # 5分钟过期
-        }
-        settings._temp_tokens = temp_tokens
-        
-        # 重定向到前端，携带临时授权码
-        redirect_url = f"{frontend_url}/auth/oauth/success?code={temp_code}"
-        print(f"🚀 OAuth Success! Redirecting to: {redirect_url}")
-        print(f"📝 Temp code: {temp_code}")
-        return RedirectResponse(url=redirect_url, status_code=302)
         
     except Exception as e:
-        print(f"OAuth callback error: {str(e)}")
+        print(f"Keycloak callback error: {e}")
         return RedirectResponse(
-            url=f"{frontend_url}/auth/login?error=Authentication failed: {str(e)}",
+            url=f"{frontend_url}{redirect_page}?error=Internal server error",
             status_code=302
         )
 
-@router.post("/oauth/exchange-temp-code")
-async def exchange_temp_code(request: dict):
-    """用临时授权码换取token"""
-    temp_code = request.get('code')
-    if not temp_code:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Missing temporary code"
-        )
-    
-    # 获取临时存储的token信息
-    temp_tokens = getattr(settings, '_temp_tokens', {})
-    token_info = temp_tokens.get(temp_code)
-    
-    if not token_info:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid or expired temporary code"
-        )
-    
-    # 检查是否过期
-    if datetime.now() > token_info['expires_at']:
-        # 清除过期的token
-        del temp_tokens[temp_code]
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Temporary code has expired"
-        )
-    
-    # 返回token信息并清除临时存储
-    result = {
-        'access_token': token_info['access_token'],
-        'refresh_token': token_info['refresh_token'],
-        'token_type': 'bearer',
-        'expires_in': settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        'is_new_user': token_info['is_new_user']
-    }
-    
-    # 清除临时存储
-    del temp_tokens[temp_code]
-    
-    return result
-
-@router.post("/oauth/keycloak/callback", response_model=OAuthTokenResponse)
+@router.post("/oauth/keycloak/callback")
 async def keycloak_callback(
     oauth_request: OAuthTokenRequest,
     request: Request,
-    db: Session = Depends(get_db)
+    response: Response
 ):
-    """处理Keycloak OAuth回调"""
-    # 用授权码换取access token
+    """Handle Keycloak OAuth callback - Enhanced with secure cookie support"""
+    # Exchange authorization code for access token
     token_data = await keycloak_oauth.exchange_code_for_token(
         oauth_request.code, 
         oauth_request.redirect_uri
@@ -333,126 +266,327 @@ async def keycloak_callback(
             detail="Failed to exchange code for token"
         )
     
-    # 获取用户信息
-    user_info = await keycloak_oauth.get_user_info(token_data["access_token"])
+    # Get user information (try ID token first, then userinfo endpoint)
+    user_info = await keycloak_oauth.get_user_info_from_token_response(token_data)
     if not user_info:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Failed to get user info from Keycloak"
         )
     
-    # 检查是否已有OAuth账户关联
-    oauth_account = oauth_crud.get_by_provider_user_id(
-        db, AuthProvider.KEYCLOAK, user_info["sub"]
-    )
-    
-    is_new_user = False
-    
-    if oauth_account:
-        # 已存在OAuth账户，更新token
+    # Ensure a corresponding local user exists; create if missing
+    # Prefer matching by email; fall back to creating by Keycloak profile
+    db = next(get_db())
+    existing_user = user_crud.get_by_email(db, user_info["email"])
+    if not existing_user:
+        # Map Keycloak names
+        full_name = user_info.get("name")
+        preferred_username = user_info.get("preferred_username")
+        # Build create payload (password None for OAuth users)
+        user_create = UserCreate(
+            email=user_info["email"],
+            username=preferred_username,
+            full_name=full_name,
+            avatar_url=user_info.get("picture"),
+            password=None,
+            timezone="UTC",
+            language="en"
+        )
+        try:
+            existing_user = user_crud.create_user(db, user_create)
+            # Mark verified for SSO users
+            existing_user.is_verified = True
+            db.commit()
+            db.refresh(existing_user)
+        except ValueError:
+            # Race or constraints: try fetch again by email
+            existing_user = user_crud.get_by_email(db, user_info["email"])  # type: ignore
+    # Upsert OAuth account record and tokens
+    oauth_account = oauth_crud.get_by_provider_user_id(db, AuthProvider.KEYCLOAK, user_info["sub"])
+    if not oauth_account:
+        oauth_account = oauth_crud.create_oauth_account(
+            db,
+            user_id=existing_user.id,  # type: ignore
+            provider=AuthProvider.KEYCLOAK,
+            provider_user_id=user_info["sub"],
+            access_token=token_data["access_token"],
+            refresh_token=token_data.get("refresh_token"),
+            raw_data=user_info
+        )
+    else:
+        # Compute expiry if provided
+        expires_at = None
+        try:
+            from datetime import datetime
+            expires_at = datetime.now() + timedelta(seconds=token_data.get("expires_in", 3600))
+        except Exception:
+            expires_at = None
         oauth_crud.update_oauth_tokens(
             db,
-            oauth_account.id,
-            token_data["access_token"],
-            token_data.get("refresh_token")
+            oauth_id=oauth_account.id,
+            access_token=token_data["access_token"],
+            refresh_token=token_data.get("refresh_token"),
+            expires_at=expires_at
         )
-        user = oauth_account.user
-    else:
-        # 检查是否已有相同邮箱的用户
-        user = user_crud.get_by_email(db, user_info["email"])
-        
-        if not user:
-            # 创建新用户
-            user_create = UserCreate(
-                email=user_info["email"],
-                full_name=user_info.get("name"),
-                username=user_info.get("preferred_username"),
-                avatar_url=user_info.get("picture")
-            )
-            user = user_crud.create_user(db, user_create)
-            user.is_verified = True  # OAuth用户默认已验证
-            db.commit()
-            is_new_user = True
-        
-        # 创建OAuth账户关联
-        oauth_crud.create_oauth_account(
-            db,
-            user.id,
-            AuthProvider.KEYCLOAK,
-            user_info["sub"],
-            token_data["access_token"],
-            token_data.get("refresh_token"),
-            user_info
-        )
-    
-    # 创建应用的访问令牌
+
+    # Build user data to return to frontend based on local user
+    user_data = {
+        "id": existing_user.id,  # local DB id
+        "email": existing_user.email,
+        "full_name": existing_user.full_name,
+        "username": existing_user.username,
+        "avatar_url": existing_user.avatar_url,
+        "is_verified": True,
+        "provider": "keycloak"
+    }
+
+    # Create internal JWT token with local user id and keycloak provider
     access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": str(user.id), "email": user.email},
+    internal_access_token = create_access_token(
+        data={
+            "sub": str(existing_user.id),
+            "email": existing_user.email,
+            "full_name": existing_user.full_name,
+            "username": existing_user.username,
+            "avatar_url": existing_user.avatar_url,
+            "provider": "keycloak"
+        },
         expires_delta=access_token_expires
     )
     
-    refresh_token = create_refresh_token(
-        data={"sub": str(user.id), "email": user.email}
+    # Set secure HTTP-only cookies
+    # 1. Internal access token cookie (for unified authentication)
+    set_access_token_cookie(
+        response,
+        internal_access_token,
+        expires_delta=access_token_expires
     )
     
-    # 创建会话记录
-    session_expires = datetime.now() + timedelta(days=7)
-    session = session_crud.create_session(
-        db,
-        user.id,
-        session_expires,
-        user_agent=request.headers.get("User-Agent"),
-        ip_address=request.client.host
+    # 2. Keycloak access token cookie (for direct communication with Keycloak API)
+    keycloak_expires = timedelta(seconds=token_data.get("expires_in", 3600))
+    set_session_cookie(
+        response,
+        "keycloak_access_token",
+        token_data["access_token"],
+        expires_delta=keycloak_expires,
+        httponly=True
     )
     
-    # 更新最后登录时间
-    user_crud.update_last_login(db, user.id)
+    # 3. Keycloak refresh token cookie (if available)
+    if token_data.get("refresh_token"):
+        set_session_cookie(
+            response,
+            "keycloak_refresh_token",
+            token_data["refresh_token"],
+            expires_delta=timedelta(days=30),  # Keycloak refresh tokens typically last longer
+            httponly=True
+        )
     
-    return OAuthTokenResponse(
-        access_token=access_token,
+    # Return secure response - do not expose sensitive tokens in response body
+    return {
+        "access_token": internal_access_token,
+        "token_type": "bearer",
+        "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+        "user": user_data,
+        "provider": "keycloak",
+        "auth_method": "cookie",
+        "keycloak_expires_in": token_data.get("expires_in", 3600)
+    }
+
+@router.post("/refresh", response_model=LoginResponse)
+async def refresh_token(
+    request: Request,
+    response: Response,
+    db: Session = Depends(get_db)
+):
+    """Refresh access token - Using refresh token from secure cookie"""
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate refresh token",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    
+    # Get refresh token from cookie
+    refresh_token = get_refresh_token_from_cookie(request)
+    if not refresh_token:
+        raise credentials_exception
+    
+    try:
+        from scrumix.api.core.security import verify_token
+        token_data = verify_token(refresh_token)
+        if token_data is None:
+            raise credentials_exception
+    except Exception:
+        raise credentials_exception
+    
+    from scrumix.api.crud.user import user_crud
+    user = user_crud.get_by_id(db, user_id=token_data.user_id)
+    if user is None or not user.is_active:
+        raise credentials_exception
+    
+    # Create new access token
+    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+    new_access_token = create_access_token(
+        data={
+            "sub": str(user.id), 
+            "email": user.email,
+            "username": user.username,
+            "full_name": user.full_name,
+            "provider": "local"
+        },
+        expires_delta=access_token_expires
+    )
+    
+    # Set new access token cookie
+    set_access_token_cookie(
+        response,
+        new_access_token,
+        expires_delta=access_token_expires
+    )
+    
+    return LoginResponse(
+        access_token=new_access_token,
         refresh_token=refresh_token,
         token_type="bearer",
         expires_in=settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
-        user=user,
-        is_new_user=is_new_user
+        user=user
     )
 
-@router.post("/refresh")
-async def refresh_token(
-    refresh_token: str,
-    db: Session = Depends(get_db)
+@router.post("/oauth/keycloak/refresh")
+async def refresh_keycloak_token(
+    request: Request,
+    response: Response
 ):
-    """刷新访问令牌"""
-    session = session_crud.get_by_refresh_token(db, refresh_token)
-    if not session:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid refresh token"
-        )
-    
-    user = session.user
-    if not user.is_active:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Inactive user"
-        )
-    
-    # 创建新的访问令牌
-    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    access_token = create_access_token(
-        data={"sub": str(user.id), "email": user.email},
-        expires_delta=access_token_expires
+    """Refresh Keycloak token - Using Keycloak refresh token from secure cookie"""
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate Keycloak refresh token",
+        headers={"WWW-Authenticate": "Bearer"},
     )
     
-    # 更新会话活动时间
-    session_crud.update_activity(db, session.id)
+    # Get Keycloak refresh token from cookie
+    keycloak_refresh_token = get_session_cookie(request, "keycloak_refresh_token")
+    if not keycloak_refresh_token:
+        raise credentials_exception
     
-    return {
-        "access_token": access_token,
-        "token_type": "bearer",
-        "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60
-    }
+    try:
+        # Use Keycloak refresh token to get new access token
+        token_data = await keycloak_oauth.refresh_access_token(keycloak_refresh_token)
+        if not token_data:
+            raise credentials_exception
+        
+        # Get user information (verify new token validity)
+        user_info = await keycloak_oauth.get_user_info_from_token_response(token_data)
+        if not user_info:
+            raise credentials_exception
+        
+        # Ensure local user exists and update OAuth tokens
+        db = next(get_db())
+        local_user = user_crud.get_by_email(db, user_info["email"])  # type: ignore
+        if not local_user:
+            user_create = UserCreate(
+                email=user_info["email"],
+                username=user_info.get("preferred_username"),
+                full_name=user_info.get("name"),
+                avatar_url=user_info.get("picture"),
+                password=None,
+                timezone="UTC",
+                language="en"
+            )
+            try:
+                local_user = user_crud.create_user(db, user_create)
+                local_user.is_verified = True
+                db.commit()
+                db.refresh(local_user)
+            except ValueError:
+                local_user = user_crud.get_by_email(db, user_info["email"])  # type: ignore
+        oauth_account = oauth_crud.get_by_provider_user_id(db, AuthProvider.KEYCLOAK, user_info["sub"])  # type: ignore
+        if not oauth_account and local_user:
+            oauth_crud.create_oauth_account(
+                db,
+                user_id=local_user.id,
+                provider=AuthProvider.KEYCLOAK,
+                provider_user_id=user_info["sub"],
+                access_token=token_data["access_token"],
+                refresh_token=token_data.get("refresh_token"),
+                raw_data=user_info
+            )
+        else:
+            from datetime import datetime
+            expires_at = datetime.now() + timedelta(seconds=token_data.get("expires_in", 3600))
+            oauth_crud.update_oauth_tokens(
+                db,
+                oauth_id=oauth_account.id,  # type: ignore
+                access_token=token_data["access_token"],
+                refresh_token=token_data.get("refresh_token"),
+                expires_at=expires_at
+            )
+
+        # Build user data based on local user
+        user_data = {
+            "id": local_user.id if local_user else user_info["sub"],
+            "email": local_user.email if local_user else user_info["email"],
+            "full_name": (local_user.full_name if local_user else user_info.get("name")),
+            "username": (local_user.username if local_user else user_info.get("preferred_username")),
+            "avatar_url": (local_user.avatar_url if local_user else user_info.get("picture")),
+            "is_verified": True,
+            "provider": "keycloak"
+        }
+        
+        # Create new internal JWT token - Include full user data
+        access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        new_internal_token = create_access_token(
+            data={
+                "sub": str(user_data["id"]),
+                "email": user_data["email"],
+                "full_name": user_data["full_name"],
+                "username": user_data["username"],
+                "avatar_url": user_data["avatar_url"],
+                "provider": "keycloak"
+            },
+            expires_delta=access_token_expires
+        )
+        
+        # Update secure cookies
+        # 1. Update internal access token
+        set_access_token_cookie(
+            response,
+            new_internal_token,
+            expires_delta=access_token_expires
+        )
+        
+        # 2. Update Keycloak access token
+        keycloak_expires = timedelta(seconds=token_data.get("expires_in", 3600))
+        set_session_cookie(
+            response,
+            "keycloak_access_token",
+            token_data["access_token"],
+            expires_delta=keycloak_expires,
+            httponly=True
+        )
+        
+        # 3. If new refresh token is obtained, also update it
+        if token_data.get("refresh_token"):
+            set_session_cookie(
+                response,
+                "keycloak_refresh_token",
+                token_data["refresh_token"],
+                expires_delta=timedelta(days=30),
+                httponly=True
+            )
+        
+        return {
+            "access_token": new_internal_token,
+            "token_type": "bearer",
+            "expires_in": settings.ACCESS_TOKEN_EXPIRE_MINUTES * 60,
+            "user": user_data,
+            "provider": "keycloak",
+            "auth_method": "cookie"
+        }
+        
+    except Exception as e:
+        print(f"Keycloak refresh error: {e}")
+        raise credentials_exception
 
 @router.post("/password/change")
 async def change_password(
@@ -460,7 +594,7 @@ async def change_password(
     current_user = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """修改密码"""
+    """Change password"""
     success = user_crud.change_password(
         db,
         current_user.id,
@@ -474,7 +608,7 @@ async def change_password(
             detail="Invalid current password"
         )
     
-    # 停用所有会话，强制重新登录
+    # Deactivate all sessions, force re-login
     session_crud.deactivate_user_sessions(db, current_user.id)
     
     return {"message": "Password changed successfully"}
@@ -484,14 +618,14 @@ async def request_password_reset(
     reset_request: PasswordResetRequest,
     db: Session = Depends(get_db)
 ):
-    """请求密码重置"""
+    """Request password reset"""
     user = user_crud.get_by_email(db, reset_request.email)
     if user:
-        # 创建重置令牌并发送邮件
+        # Create reset token and send email
         reset_token = create_password_reset_token(user.email)
         # send_password_reset_email(user.email, reset_token)
     
-    # 无论用户是否存在都返回成功，避免邮箱枚举攻击
+    # Always return success regardless of whether user exists, avoid email enumeration attacks
     return {"message": "If the email exists, a password reset link has been sent"}
 
 @router.post("/password/reset/confirm")
@@ -499,7 +633,7 @@ async def confirm_password_reset(
     reset_data: PasswordResetConfirm,
     db: Session = Depends(get_db)
 ):
-    """确认密码重置"""
+    """Confirm password reset"""
     email = verify_password_reset_token(reset_data.token)
     if not email:
         raise HTTPException(
@@ -514,15 +648,38 @@ async def confirm_password_reset(
             detail="User not found"
         )
     
-    # 重置密码
+    # Reset password
     user_crud.reset_password(db, user.id, reset_data.new_password)
     
-    # 停用所有会话
+    # Deactivate all sessions
     session_crud.deactivate_user_sessions(db, user.id)
     
     return {"message": "Password reset successfully"}
 
-@router.get("/me", response_model=UserResponse)
-async def get_current_user_info(current_user = Depends(get_current_user)):
-    """获取当前用户信息"""
-    return current_user 
+@router.get("/me")
+async def get_current_user_info(
+    current_user = Depends(get_current_user)
+):
+    """Get current user information - Works with both header and cookie authentication"""
+    return current_user
+
+@router.get("/verify")
+async def verify_authentication(
+    request: Request,
+    current_user = Depends(get_current_user)
+):
+    """Verify user authentication status - Test endpoint for cookie authentication"""
+    return {
+        "authenticated": True,
+        "user_id": current_user.id,
+        "email": current_user.email,
+        "provider": current_user.provider,
+        "has_session_cookie": get_session_cookie(request, settings.SESSION_COOKIE_NAME) is not None,
+        "has_refresh_cookie": get_session_cookie(request, settings.REFRESH_COOKIE_NAME) is not None,
+        "cookie_settings": {
+            "secure": settings.SECURE_COOKIES,
+            "samesite": settings.COOKIE_SAMESITE,
+            "domain": settings.COOKIE_DOMAIN,
+            "environment": settings.ENVIRONMENT
+        }
+    } 

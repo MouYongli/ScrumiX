@@ -1,15 +1,15 @@
 """
-密码相关工具函数
+Password related utility functions
 """
 from passlib.context import CryptContext
 
-# 密码加密上下文
+# Password encryption context
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """验证密码"""
+    """Verify password"""
     return pwd_context.verify(plain_password, hashed_password)
 
 def get_password_hash(password: str) -> str:
-    """获取密码哈希值"""
+    """Get password hash value"""
     return pwd_context.hash(password) 

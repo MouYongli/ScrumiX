@@ -1,23 +1,85 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { Eye, EyeOff, Mail, Lock, User, ArrowRight, Github, CheckCircle } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Eye, EyeOff, Mail, Lock, User, ArrowRight, Github, CheckCircle, Shield, Home } from 'lucide-react';
 
 const SignupPage = () => {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [formData, setFormData] = useState({
-    name: '',
+    firstName: '',
+    lastName: '',
     email: '',
     password: '',
     confirmPassword: '',
     agreeToTerms: false,
+    username: '',
   });
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [isLoading, setIsLoading] = useState(false);
+
+  const handleOAuthCallback = async (code: string, state: string) => {
+    setIsLoading(true);
+    
+    try {
+      // Verify state (extract base state from encoded format)
+      const storedState = localStorage.getItem('oauth_state');
+      let baseState = state;
+      if (state && state.includes(':')) {
+        baseState = state.split(':')[0];
+      }
+      let storedBaseState = storedState;
+      if (storedState && storedState.includes(':')) {
+        storedBaseState = storedState.split(':')[0];
+      }
+      if (baseState !== storedBaseState) {
+        throw new Error('Invalid state parameter');
+      }
+
+      // Import the new cookie-based auth function
+      const { loginWithKeycloak } = await import('../../../utils/auth');
+      
+      // Exchange code for tokens using secure cookie method
+      const redirectUri = `${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'}/api/v1/auth/oauth/keycloak/callback`;
+      const tokenData = await loginWithKeycloak(code, state, redirectUri);
+      
+      // Clean up OAuth state and origin
+      localStorage.removeItem('oauth_state');
+      localStorage.removeItem('oauth_origin');
+      
+      console.log('Keycloak signup successful:', tokenData.user);
+      console.log('Auth method:', tokenData.auth_method); // Should show "cookie"
+      
+      // Redirect to workspace
+      router.push('/workspace');
+    } catch (error) {
+      console.error('OAuth callback error:', error);
+      setErrors({ oauth: error instanceof Error ? error.message : 'OAuth signup failed' });
+      
+      // Clean up URL parameters
+      router.replace('/auth/signup');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Check for OAuth errors or success on component mount
+  useEffect(() => {
+    const error = searchParams.get('error');
+    const code = searchParams.get('code');
+    const state = searchParams.get('state');
+
+    if (error) {
+      setErrors({ oauth: decodeURIComponent(error) });
+    } else if (code && state) {
+      // Handle OAuth callback
+      handleOAuthCallback(code, state);
+    }
+  }, [searchParams]);
 
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value, type, checked } = e.target;
@@ -34,10 +96,16 @@ const SignupPage = () => {
   const validateForm = () => {
     const newErrors: { [key: string]: string } = {};
 
-    if (!formData.name.trim()) {
-      newErrors.name = 'Please enter your name';
-    } else if (formData.name.trim().length < 2) {
-      newErrors.name = 'Name must be at least 2 characters';
+    if (!formData.firstName.trim()) {
+      newErrors.firstName = 'Please enter your first name';
+    } else if (formData.firstName.trim().length < 2) {
+      newErrors.firstName = 'First name must be at least 2 characters';
+    }
+
+    if (!formData.lastName.trim()) {
+      newErrors.lastName = 'Please enter your last name';
+    } else if (formData.lastName.trim().length < 2) {
+      newErrors.lastName = 'Last name must be at least 2 characters';
     }
 
     if (!formData.email) {
@@ -78,27 +146,26 @@ const SignupPage = () => {
     setIsLoading(true);
     
     try {
-      // Simulate signup API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
+      // Call backend registration API
+      const { register } = await import('../../../utils/auth');
       
-      // Simulate successful signup, set user data
-      const mockUserData = {
-        id: '1',
-        name: formData.name,
+      const user = await register({
         email: formData.email,
-        avatar: null
-      };
+        password: formData.password, 
+        first_name: formData.firstName,
+        last_name: formData.lastName,
+        username: formData.username || undefined
+      });
       
-      const mockToken = 'mock-jwt-token-' + Date.now();
+      console.log('Real registration successful:', user);
       
-      // Save to localStorage
-      localStorage.setItem('user', JSON.stringify(mockUserData));
-      localStorage.setItem('token', mockToken);
-      
-      // Signup successful, redirect to dashboard
-      router.push('/workspace');
+      // Registration successful, redirect to login with success message
+      router.push('/auth/login?message=Registration successful! Please sign in.');
     } catch (error) {
-      setErrors({ submit: 'Registration failed, please try again later' });
+      console.error('Registration error:', error);
+      setErrors({ 
+        submit: error instanceof Error ? error.message : 'Registration failed, please try again later' 
+      });
     } finally {
       setIsLoading(false);
     }
@@ -107,6 +174,32 @@ const SignupPage = () => {
   const handleSocialSignup = (provider: string) => {
     // Simulate third-party signup
     console.log(`Signup with ${provider}`);
+  };
+
+  const handleKeycloakSignup = async () => {
+    setIsLoading(true);
+    setErrors({});
+
+    try {
+      // Import the auth function for consistency
+      const { getKeycloakAuthUrl } = await import('../../../utils/auth');
+      
+      // Get authorization URL using the auth utility
+      const data = await getKeycloakAuthUrl('signup');
+      
+      // Store state in localStorage for verification
+      localStorage.setItem('oauth_state', data.state);
+      // Store that OAuth was initiated from signup page
+      localStorage.setItem('oauth_origin', 'signup');
+      
+      // Redirect to Keycloak
+      window.location.href = data.authorization_url;
+    } catch (error) {
+      console.error('Keycloak signup error:', error);
+      setErrors({ oauth: 'Failed to initiate Keycloak signup' });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const getPasswordStrength = () => {
@@ -175,39 +268,68 @@ const SignupPage = () => {
       </div>
 
       {/* Right signup form */}
-      <div className="flex-1 flex flex-col justify-center px-6 sm:px-12 lg:px-16 xl:px-20">
-        <div className="w-full max-w-md mx-auto">
-          {/* Top Logo */}
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center gap-2 mb-4">
-              <div className="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center">
-                <span className="text-white font-bold text-xl">S</span>
+      <div className="flex-1 flex flex-col px-6 sm:px-12 lg:px-16 xl:px-20 relative">
+        {/* Home Button - Fixed position top-right */}
+        <div className="absolute top-6 right-6 z-10">
+          <Link
+            href="/"
+            className="group inline-flex items-center gap-2 px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-600 rounded-full shadow-sm hover:shadow-md hover:border-indigo-300 dark:hover:border-indigo-500 transition-all duration-200"
+            title="Back to Home"
+          >
+            <Home className="w-4 h-4 text-gray-500 dark:text-gray-400 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors" />
+            <span className="text-sm font-medium text-gray-700 dark:text-gray-300 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+              Home
+            </span>
+          </Link>
+        </div>
+
+        {/* Centered form content */}
+        <div className="flex-1 flex items-center justify-center py-12">
+          <div className="w-full max-w-md">
+            {/* Logo and title */}
+            <div className="text-center mb-8">
+              <div className="inline-flex items-center gap-2 mb-4">
+                <div className="w-10 h-10 bg-indigo-600 rounded-lg flex items-center justify-center">
+                  <span className="text-white font-bold text-xl">S</span>
+                </div>
+                <span className="text-2xl font-bold text-gray-900 dark:text-white">Scrumix</span>
               </div>
-              <span className="text-2xl font-bold text-gray-900 dark:text-white">Scrumix</span>
+              <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
+                Create your account
+              </h2>
+              <p className="text-gray-600 dark:text-gray-400 mt-2">
+                Start your agile project management journey for free
+              </p>
             </div>
-            <h2 className="text-2xl font-bold text-gray-900 dark:text-white">
-              Create your account
-            </h2>
-            <p className="text-gray-600 dark:text-gray-400 mt-2">
-              Start your agile project management journey for free
-            </p>
-          </div>
 
           {/* Social signup */}
           <div className="space-y-3 mb-6">
+            {/* Google signup - temporarily hidden
             <button
               onClick={() => handleSocialSignup('google')}
               className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
             >
-              <span className="text-lg">🔍</span>
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M12.545,10.239v3.821h5.445c-0.712,2.315-2.647,3.972-5.445,3.972c-3.332,0-6.033-2.701-6.033-6.032s2.701-6.032,6.033-6.032c1.498,0,2.866,0.549,3.921,1.453l2.814-2.814C17.503,2.988,15.139,2,12.545,2C7.021,2,2.543,6.477,2.543,12s4.478,10,10.002,10c8.396,0,10.249-7.85,9.426-11.748L12.545,10.239z"/>
+              </svg>
               <span className="text-gray-700 dark:text-gray-300">Sign up with Google</span>
             </button>
+            */}
+            {/* GitHub signup - temporarily hidden
             <button
               onClick={() => handleSocialSignup('github')}
               className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
             >
               <Github className="w-5 h-5" />
               <span className="text-gray-700 dark:text-gray-300">Sign up with GitHub</span>
+            </button>
+            */}
+            <button
+              onClick={handleKeycloakSignup}
+              className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+            >
+              <Shield className="w-5 h-5" />
+              <span className="text-gray-700 dark:text-gray-300">Sign up with Keycloak</span>
             </button>
           </div>
 
@@ -225,30 +347,59 @@ const SignupPage = () => {
 
           {/* Signup form */}
           <form onSubmit={handleSubmit} className="space-y-6">
-            {/* Name */}
-            <div>
-              <label htmlFor="name" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                Full Name
-              </label>
-              <div className="relative">
-                <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
-                <input
-                  id="name"
-                  name="name"
-                  type="text"
-                  value={formData.name}
-                  onChange={handleInputChange}
-                  className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-800 dark:text-white transition-colors ${
-                    errors.name 
-                      ? 'border-red-300 dark:border-red-500' 
-                      : 'border-gray-300 dark:border-gray-600'
-                  }`}
-                  placeholder="Enter your full name"
-                />
+            {/* Name Fields */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* First Name */}
+              <div>
+                <label htmlFor="firstName" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  First Name
+                </label>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                  <input
+                    id="firstName"
+                    name="firstName"
+                    type="text"
+                    value={formData.firstName}
+                    onChange={handleInputChange}
+                    className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-800 dark:text-white transition-colors ${
+                      errors.firstName 
+                        ? 'border-red-300 dark:border-red-500' 
+                        : 'border-gray-300 dark:border-gray-600'
+                    }`}
+                    placeholder="Enter your first name"
+                  />
+                </div>
+                {errors.firstName && (
+                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.firstName}</p>
+                )}
               </div>
-              {errors.name && (
-                <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.name}</p>
-              )}
+
+              {/* Last Name */}
+              <div>
+                <label htmlFor="lastName" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Last Name
+                </label>
+                <div className="relative">
+                  <User className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-5 h-5" />
+                  <input
+                    id="lastName"
+                    name="lastName"
+                    type="text"
+                    value={formData.lastName}
+                    onChange={handleInputChange}
+                    className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:ring-indigo-500 focus:border-transparent dark:bg-gray-800 dark:text-white transition-colors ${
+                      errors.lastName 
+                        ? 'border-red-300 dark:border-red-500' 
+                        : 'border-gray-300 dark:border-gray-600'
+                    }`}
+                    placeholder="Enter your last name"
+                  />
+                </div>
+                {errors.lastName && (
+                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">{errors.lastName}</p>
+                )}
+              </div>
             </div>
 
             {/* Email */}
@@ -395,6 +546,13 @@ const SignupPage = () => {
               </div>
             )}
 
+            {/* OAuth error */}
+            {errors.oauth && (
+              <div className="p-3 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg">
+                <p className="text-sm text-red-600 dark:text-red-400">{errors.oauth}</p>
+              </div>
+            )}
+
             {/* Signup button */}
             <button
               type="submit"
@@ -423,6 +581,7 @@ const SignupPage = () => {
                 Sign in
               </Link>
             </p>
+          </div>
           </div>
         </div>
       </div>

@@ -1,164 +1,244 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { 
   ArrowLeft, Calendar, Clock, Users, Video, Plus,
   MoreHorizontal, Play, Edit, Trash2, UserCheck,
-  MessageSquare, Target, BarChart3, FolderOpen
+  MessageSquare, Target, BarChart3, FolderOpen,
+  X, Save, ChevronDown, AlertCircle, Search
 } from 'lucide-react';
 import Breadcrumb from '@/components/common/Breadcrumb';
 import ParticipantsTooltip from '@/components/common/ParticipantsTooltip';
+import { useDateFormat } from '@/hooks/useDateFormat';
+import { api } from '@/utils/api';
+import { MeetingType } from '@/types/enums';
+import { ApiMeeting, ApiSprint, ApiProject } from '@/types/api';
 
-// Meeting type configuration
+// Component for rendering user-aware formatted dates and times
+const FormattedDateTime: React.FC<{ 
+  date: Date; 
+  includeTime?: boolean; 
+  short?: boolean;
+}> = ({ date, includeTime = false, short = false }) => {
+  const [formattedDateTime, setFormattedDateTime] = useState<string>(
+    includeTime 
+      ? `${date.toLocaleDateString()} ${date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`
+      : date.toLocaleDateString()
+  );
+  const { formatDate, formatDateShort } = useDateFormat();
+
+  useEffect(() => {
+    let isMounted = true;
+    
+    const format = async () => {
+      try {
+        // When includeTime is true, always use formatDate regardless of short flag
+        // formatDateShort doesn't support time display
+        const result = includeTime 
+          ? await formatDate(date, true)
+          : short 
+            ? await formatDateShort(date)
+            : await formatDate(date, false);
+        
+        if (isMounted) {
+          setFormattedDateTime(result);
+        }
+      } catch (error) {
+        console.error('Error formatting date:', error);
+        // Fallback to simple formatting
+        if (isMounted) {
+          setFormattedDateTime(
+            includeTime 
+              ? `${date.toLocaleDateString()} ${date.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}`
+              : date.toLocaleDateString()
+          );
+        }
+      }
+    };
+
+    // Add a small delay to batch API calls
+    const timeoutId = setTimeout(format, 100);
+    
+    return () => {
+      isMounted = false;
+      clearTimeout(timeoutId);
+    };
+  }, [date, includeTime, short, formatDate, formatDateShort]);
+
+  return <span>{formattedDateTime}</span>;
+};
+
+// Meeting type configuration - maps backend enum values to display names
 const meetingTypes = {
-  'daily-standup': {
-    name: 'Daily Standup',
+  'team_meeting': {
+    name: 'Team Meeting',
     color: 'bg-blue-500',
     icon: MessageSquare,
   },
-  'sprint-planning': {
+  'sprint_planning': {
     name: 'Sprint Planning',
     color: 'bg-green-500',
     icon: Target,
   },
-  'sprint-review': {
+  'sprint_review': {
     name: 'Sprint Review',
     color: 'bg-purple-500',
     icon: BarChart3,
   },
-  'sprint-retrospective': {
+  'sprint_retrospective': {
     name: 'Sprint Retrospective',
     color: 'bg-orange-500',
     icon: UserCheck,
   },
-  'backlog-refinement': {
-    name: 'Backlog Refinement',
+  'daily_standup': {
+    name: 'Daily Standup',
     color: 'bg-indigo-500',
-    icon: Edit,
+    icon: MessageSquare,
+  },
+  'other': {
+    name: 'Other',
+    color: 'bg-gray-500',
+    icon: MessageSquare,
   },
 };
 
-// Mock meeting data
-const meetingsData = [
-  {
-    id: 'meeting-1',
-    title: 'Daily Standup - Week 3',
-    type: 'daily-standup',
-    status: 'scheduled',
-    date: '2024-03-15',
-    time: '09:00',
-    duration: 15,
-    location: 'Zoom Meeting Room',
-    facilitator: 'Alice Wang',
-    participants: ['John Smith', 'Alice Wang', 'Bob Zhang', 'Carol Li', 'David Zhao'],
-    description: 'Daily team sync meeting to share yesterday\'s progress, today\'s plans, and any blockers.',
-    agenda: ['Work completed yesterday', 'Today\'s work plan', 'Encountered blockers'],
-  },
-  {
-    id: 'meeting-2',
-    title: 'Sprint 6 Planning Meeting',
-    type: 'sprint-planning',
-    status: 'scheduled',
-    date: '2024-03-18',
-    time: '14:00',
-    duration: 120,
-    location: 'Conference Room A',
-    facilitator: 'Alice Wang',
-    participants: ['John Smith', 'Alice Wang', 'Bob Zhang', 'Carol Li'],
-    description: 'Plan Sprint 6 work content, estimate story points, and define Sprint goals.',
-    agenda: ['Sprint 5 Review', 'Product Backlog Refinement', 'Story Point Estimation', 'Sprint 6 Goal Setting'],
-  },
-  {
-    id: 'meeting-3',
-    title: 'Sprint 5 Review Meeting',
-    type: 'sprint-review',
-    status: 'completed',
-    date: '2024-03-12',
-    time: '15:30',
-    duration: 60,
-    location: 'Conference Room B',
-    facilitator: 'John Smith',
-    participants: ['John Smith', 'Alice Wang', 'Bob Zhang', 'Carol Li', 'Product Manager', 'Designer'],
-    description: 'Demonstrate Sprint 5 deliverables and collect stakeholder feedback.',
-    agenda: ['Feature Demo', 'User Feedback Collection', 'Next Sprint Suggestions'],
-    notes: 'Users are very satisfied with the new login flow, suggest adding social login options.',
-  },
-  {
-    id: 'meeting-4',
-    title: 'Sprint 5 Retrospective Meeting',
-    type: 'sprint-retrospective',
-    status: 'completed',
-    date: '2024-03-13',
-    time: '10:00',
-    duration: 90,
-    location: 'Conference Room A',
-    facilitator: 'Alice Wang',
-    participants: ['Alice Wang', 'Bob Zhang', 'Carol Li', 'David Zhao'],
-    description: 'Review Sprint 5 work process and identify improvement points.',
-    agenda: ['What went well', 'Areas for improvement', 'Action plan for next Sprint'],
-    notes: 'Team collaboration has improved significantly, need to strengthen code review process.',
-    actionItems: [
-      'Establish code review checklist',
-      'Increase automated test coverage',
-      'Optimize deployment process'
-    ],
-  },
-  {
-    id: 'meeting-5',
-    title: 'Product Backlog Refinement',
-    type: 'backlog-refinement',
-    status: 'in-progress',
-    date: '2024-03-15',
-    time: '16:00',
-    duration: 60,
-    location: 'Zoom Meeting Room',
-    facilitator: 'John Smith',
-    participants: ['John Smith', 'Alice Wang', 'Bob Zhang'],
-    description: 'Refine and detail the product backlog in preparation for the next Sprint.',
-    agenda: ['New requirements discussion', 'Existing story refinement', 'Priority adjustment'],
-  },
-  {
-    id: 'meeting-6',
-    title: 'Emergency Technical Discussion',
-    type: 'daily-standup',
-    status: 'cancelled',
-    date: '2024-03-14',
-    time: '11:00',
-    duration: 30,
-    location: 'Conference Room C',
-    facilitator: 'Bob Zhang',
-    participants: ['Bob Zhang', 'Carol Li'],
-    description: 'Discuss solutions to production environment performance issues.',
-    agenda: ['Problem analysis', 'Solution discussion', 'Implementation plan'],
-  },
-];
+// Empty array for real meetings data
+const meetingsData: any[] = [];
 
 const ProjectMeetings = () => {
   const params = useParams();
   const projectId = params['project-id'] as string;
-  const [meetings, setMeetings] = useState(meetingsData);
+  const [meetings, setMeetings] = useState<ApiMeeting[]>([]);
+  const [sprints, setSprints] = useState<ApiSprint[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [selectedFilter, setSelectedFilter] = useState('all');
+  const [searchTerm, setSearchTerm] = useState('');
   const [showAddModal, setShowAddModal] = useState(false);
-
-  // Get project name (should fetch from API in real project)
-  const getProjectName = (id: string) => {
-    const projects = {
-      '1': 'E-commerce Platform Rebuild',
-      '2': 'Mobile App Development',
-      '3': 'Data Analytics Platform',
-    };
-    return projects[id as keyof typeof projects] || 'Unknown Project';
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [editingMeeting, setEditingMeeting] = useState<ApiMeeting | null>(null);
+  const [deletingMeeting, setDeletingMeeting] = useState<ApiMeeting | null>(null);
+  const [openDropdown, setOpenDropdown] = useState<string | null>(null);
+  const [participantCounts, setParticipantCounts] = useState<Record<number, number>>({});
+  
+  // Function to fetch participant counts for all meetings
+  const fetchParticipantCounts = async (meetings: any[]) => {
+    const counts: Record<number, number> = {};
+    
+    // Fetch participant counts for each meeting in parallel
+    const countPromises = meetings.map(async (meeting) => {
+      try {
+        const participantsResponse = await api.meetingParticipants.getByMeeting(meeting.id);
+        if (participantsResponse.data) {
+          counts[meeting.id] = participantsResponse.data.totalCount || 0;
+        } else {
+          counts[meeting.id] = 0;
+        }
+      } catch (error) {
+        console.warn(`Failed to fetch participants for meeting ${meeting.id}:`, error);
+        counts[meeting.id] = 0;
+      }
+    });
+    
+    await Promise.all(countPromises);
+    setParticipantCounts(counts);
   };
 
-  const projectName = getProjectName(projectId);
+  // Fetch meetings and sprints from API
+  useEffect(() => {
+    const fetchData = async () => {
+      if (!projectId) return;
+      
+      try {
+        setIsLoading(true);
+        setError(null);
+        
+        // Fetch meetings
+        const meetingsResponse = await api.meetings.getByProject(parseInt(projectId));
+        if (meetingsResponse.error) throw new Error(meetingsResponse.error);
+        
+        const meetingsData = meetingsResponse.data || [];
+        setMeetings(meetingsData);
+        
+        // Fetch participant counts for all meetings
+        if (meetingsData.length > 0) {
+          await fetchParticipantCounts(meetingsData);
+        }
+        
+        // Fetch sprints for this project
+        const sprintsResponse = await api.sprints.getByProject(parseInt(projectId));
+        if (sprintsResponse.error) {
+          console.warn('Failed to fetch sprints:', sprintsResponse.error);
+          // Don't fail completely if sprints can't be fetched
+          setSprints([]);
+        } else {
+          setSprints(sprintsResponse.data || []);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to fetch data');
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [projectId]);
+  
+  // Form state
+  const [formData, setFormData] = useState({
+    title: '',
+    type: MeetingType.DAILY_STANDUP,
+    date: '',
+    time: '',
+    duration: 30,
+    location: '',
+    description: '',
+    agenda: [''],
+    sprintId: undefined as number | undefined
+  });
+
+  // Form validation state
+  const [formErrors, setFormErrors] = useState<{
+    date?: string;
+    time?: string;
+    title?: string;
+    location?: string;
+  }>({});
+
+  // Project state
+  const [project, setProject] = useState<ApiProject | null>(null);
+  const [projectLoading, setProjectLoading] = useState(true);
+
+  // Fetch project data
+  useEffect(() => {
+    const fetchProject = async () => {
+      if (!projectId) return;
+      
+      try {
+        setProjectLoading(true);
+        const projectResponse = await api.projects.getById(parseInt(projectId));
+        if (projectResponse.error) throw new Error(projectResponse.error);
+        setProject(projectResponse.data);
+      } catch (error) {
+        console.error('Error fetching project:', error);
+        setError('Failed to fetch project information');
+      } finally {
+        setProjectLoading(false);
+      }
+    };
+
+    fetchProject();
+  }, [projectId]);
+
+  const projectName = project?.name || 'Loading...';
 
   // Breadcrumb data with icons
   const breadcrumbItems = [
-    { label: 'Project', href: '/project', icon: <FolderOpen className="w-4 h-4" /> },
     { label: projectName, href: `/project/${projectId}/dashboard` },
-    { label: 'Meeting Management', icon: <Calendar className="w-4 h-4" /> }
+    { label: 'Meetings', icon: <Calendar className="w-4 h-4" /> }
   ];
 
   // Get status style
@@ -185,22 +265,561 @@ const ProjectMeetings = () => {
 
   // Filter meetings
   const filteredMeetings = meetings.filter(meeting => {
+    // Search filter
+    const matchesSearch = searchTerm === '' || 
+      meeting.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      meeting.description?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      meetingTypes[meeting.meetingType as keyof typeof meetingTypes]?.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+      meeting.location?.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    if (!matchesSearch) return false;
+    
+    // Status filter
     if (selectedFilter === 'all') return true;
-    if (selectedFilter === 'upcoming') return meeting.status === 'scheduled';
-    if (selectedFilter === 'completed') return meeting.status === 'completed';
-    return meeting.type === selectedFilter;
+    const datetimeValue = meeting.startDatetime || (meeting as any).start_datetime;
+    const start = parseDatetimeSafely(datetimeValue);
+    if (!start) return false;
+    if (selectedFilter === 'upcoming') return start > new Date();
+    if (selectedFilter === 'completed') return start < new Date();
+    return meeting.meetingType === selectedFilter;
   });
 
   // Get meeting statistics
   const getMeetingStats = () => {
     const total = meetings.length;
-    const scheduled = meetings.filter(m => m.status === 'scheduled').length;
-    const completed = meetings.filter(m => m.status === 'completed').length;
-    const inProgress = meetings.filter(m => m.status === 'in-progress').length;
-    return { total, scheduled, completed, inProgress };
+    const now = new Date();
+    const upcoming = meetings.filter(m => {
+      const datetimeValue = m.startDatetime || (m as any).start_datetime;
+      const d = parseDatetimeSafely(datetimeValue);
+      return d ? d > now : false;
+    }).length;
+    const completed = meetings.filter(m => {
+      const datetimeValue = m.startDatetime || (m as any).start_datetime;
+      const d = parseDatetimeSafely(datetimeValue);
+      return d ? d < now : false;
+    }).length;
+    const inProgress = 0; // TODO: Add status field to backend
+    return { total, scheduled: upcoming, completed, inProgress };
   };
 
   const stats = getMeetingStats();
+
+  // Close dropdown when clicking outside
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      // Check if the click is outside all dropdown elements
+      const dropdowns = document.querySelectorAll('[data-dropdown-container]');
+      let isOutside = true;
+      
+      dropdowns.forEach(dropdown => {
+        if (dropdown.contains(event.target as Node)) {
+          isOutside = false;
+        }
+      });
+      
+      if (isOutside) {
+        setOpenDropdown(null);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
+  // Validate form fields
+  const validateDateTime = (date: string, time: string): { isValid: boolean; error?: string } => {
+    if (!date || !time) {
+      return { isValid: true }; // Don't validate incomplete input
+    }
+
+    // Parse the datetime consistently with how we save it
+    const [year, month, day] = date.split('-').map(Number);
+    const [hours, minutes] = time.split(':').map(Number);
+    const inputDateTime = new Date(Date.UTC(year, month - 1, day, hours, minutes, 0));
+    
+    // Compare with current time in the same format (UTC with local time values)
+    const now = new Date();
+    const nowAsLocal = new Date(Date.UTC(
+      now.getFullYear(), 
+      now.getMonth(), 
+      now.getDate(), 
+      now.getHours(), 
+      now.getMinutes(), 
+      now.getSeconds()
+    ));
+    
+    if (inputDateTime <= nowAsLocal) {
+      const diffMinutes = Math.floor((nowAsLocal.getTime() - inputDateTime.getTime()) / (1000 * 60));
+      if (diffMinutes < 1) {
+        return { isValid: false, error: 'Meeting time must be at least 1 minute in the future' };
+      } else if (diffMinutes < 60) {
+        return { isValid: false, error: `Meeting time is ${diffMinutes} minutes in the past` };
+      } else if (diffMinutes < 1440) {
+        const hours = Math.floor(diffMinutes / 60);
+        return { isValid: false, error: `Meeting time is ${hours} hour${hours > 1 ? 's' : ''} in the past` };
+      } else {
+        const days = Math.floor(diffMinutes / 1440);
+        return { isValid: false, error: `Meeting date is ${days} day${days > 1 ? 's' : ''} in the past` };
+      }
+    }
+    
+    return { isValid: true };
+  };
+
+  // Handle form input changes
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
+    const { name, value } = e.target;
+    const newFormData = {
+      ...formData,
+      [name]: name === 'duration' ? parseInt(value) || 0 : 
+              name === 'sprintId' ? (value === '' ? undefined : parseInt(value)) : 
+              value
+    };
+    
+    setFormData(newFormData);
+    
+    // Real-time validation for date/time fields
+    const newErrors = { ...formErrors };
+    
+    if (name === 'date' || name === 'time') {
+      const dateToValidate = name === 'date' ? value : newFormData.date;
+      const timeToValidate = name === 'time' ? value : newFormData.time;
+      
+      const validation = validateDateTime(dateToValidate, timeToValidate);
+      if (!validation.isValid) {
+        newErrors.date = validation.error;
+        newErrors.time = validation.error;
+      } else {
+        delete newErrors.date;
+        delete newErrors.time;
+      }
+      
+      // Clear any previous page-level errors
+      setError(null);
+    }
+    
+    // Validate required fields
+    if (name === 'title') {
+      if (!value.trim()) {
+        newErrors.title = 'Meeting title is required';
+      } else {
+        delete newErrors.title;
+      }
+    }
+    
+    if (name === 'location') {
+      if (!value.trim()) {
+        newErrors.location = 'Meeting location is required';
+      } else {
+        delete newErrors.location;
+      }
+    }
+    
+    setFormErrors(newErrors);
+  };
+
+  // Handle agenda item changes
+  const handleAgendaChange = (index: number, value: string) => {
+    const newAgenda = [...formData.agenda];
+    newAgenda[index] = value;
+    setFormData(prev => ({ ...prev, agenda: newAgenda }));
+  };
+
+  // Add new agenda item
+  const addAgendaItem = () => {
+    setFormData(prev => ({ ...prev, agenda: [...prev.agenda, ''] }));
+  };
+
+  // Remove agenda item
+  const removeAgendaItem = (index: number) => {
+      const newAgenda = formData.agenda.filter((_, i) => i !== index);
+      setFormData(prev => ({ ...prev, agenda: newAgenda }));
+  };
+
+  // Handle form submission for creating new meeting
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    try {
+      // Create meeting data for API - handle timezone properly
+      // Check for validation errors before submitting
+      const dateTimeValidation = validateDateTime(formData.date, formData.time);
+      if (!dateTimeValidation.isValid) {
+        // Validation errors are already shown in the form
+        return;
+      }
+      
+      // Create the datetime preserving the user's intended local time
+      // We construct the datetime in a way that preserves the exact time the user entered
+      // By treating the user's input as if it were in UTC, we avoid timezone conversion
+      const [year, month, day] = formData.date.split('-').map(Number);
+      const [hours, minutes] = formData.time.split(':').map(Number);
+      
+      // Create a Date object in UTC with the exact values the user entered
+      const datetimeToSend = new Date(Date.UTC(year, month - 1, day, hours, minutes, 0));
+      
+      // Use the sprintId from form data (can be undefined for independent meetings)
+      const meetingData: any = {
+        title: formData.title,
+        meeting_type: formData.type as MeetingType,
+        start_datetime: datetimeToSend.toISOString(),
+        description: formData.description,
+        duration: formData.duration,
+        location: formData.location,
+        ...(formData.sprintId !== undefined ? { sprint_id: formData.sprintId } : {}),
+        project_id: parseInt(projectId)
+      };
+
+      const response = await api.meetings.create(meetingData);
+      if (response.error) {
+        const errorMessage = typeof response.error === 'string' ? response.error : JSON.stringify(response.error);
+        throw new Error(errorMessage);
+      }
+
+      // Create agenda items if any
+      if (formData.agenda.length > 0 && response.data) {
+        const agendaTitles = formData.agenda.filter(item => item.trim() !== '');
+        if (agendaTitles.length > 0) {
+          await api.meetingAgenda.bulkCreate(response.data.id, agendaTitles);
+        }
+      }
+
+      // Refresh meetings list
+      const refreshResponse = await api.meetings.getByProject(parseInt(projectId));
+      if (refreshResponse.error) throw new Error(refreshResponse.error);
+      
+      const refreshedMeetings = refreshResponse.data || [];
+      setMeetings(refreshedMeetings);
+      
+      // Refresh participant counts
+      if (refreshedMeetings.length > 0) {
+        await fetchParticipantCounts(refreshedMeetings);
+      }
+    
+    // Reset form and close modal
+    resetForm();
+    setShowAddModal(false);
+    } catch (error) {
+      console.error('Error creating meeting:', error);
+      // Show more specific error information
+      if (error instanceof Error) {
+        setError(`Failed to create meeting: ${error.message}`);
+      } else {
+        setError('Failed to create meeting: Unknown error occurred');
+      }
+    }
+  };
+
+  // Handle form submission for editing meeting
+  const handleEditSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    if (!editingMeeting) {
+      return;
+    }
+
+    try {
+      // Update meeting data for API - handle timezone properly
+      // For editing, allow any date (including past dates for completed meetings)
+      // No validation needed here - users should be able to edit historical meetings
+      
+      // Create the datetime preserving the user's intended local time
+      // We construct the datetime in a way that preserves the exact time the user entered
+      const [year, month, day] = formData.date.split('-').map(Number);
+      const [hours, minutes] = formData.time.split(':').map(Number);
+      
+      // Create a Date object in UTC with the exact values the user entered
+      const datetimeToSend = new Date(Date.UTC(year, month - 1, day, hours, minutes, 0));
+      
+      // Use the sprintId from form data (can be undefined for independent meetings)
+      const updateData = {
+        title: formData.title,
+        meeting_type: formData.type as MeetingType,
+        start_datetime: datetimeToSend.toISOString(),
+        description: formData.description,
+        duration: formData.duration,
+        location: formData.location,
+        ...(formData.sprintId !== undefined ? { sprint_id: formData.sprintId } : {}),
+        project_id: parseInt(projectId)
+      };
+
+      const response = await api.meetings.update(editingMeeting.id, updateData);
+      if (response.error) {
+        const errorMessage = typeof response.error === 'string' ? response.error : JSON.stringify(response.error);
+        throw new Error(errorMessage);
+      }
+
+      // Update agenda items - first delete all existing, then create new ones
+      await api.meetingAgenda.deleteAllByMeeting(editingMeeting.id);
+      const agendaTitles = formData.agenda.filter(item => item.trim() !== '');
+      if (agendaTitles.length > 0) {
+        await api.meetingAgenda.bulkCreate(editingMeeting.id, agendaTitles);
+      }
+
+      // Refresh meetings list
+      const refreshResponse = await api.meetings.getByProject(parseInt(projectId));
+      if (refreshResponse.error) throw new Error(refreshResponse.error);
+      
+      const refreshedMeetings = refreshResponse.data || [];
+      setMeetings(refreshedMeetings);
+      
+      // Refresh participant counts
+      if (refreshedMeetings.length > 0) {
+        await fetchParticipantCounts(refreshedMeetings);
+      }
+    
+    // Reset form and close modal
+    resetForm();
+    setShowEditModal(false);
+    setEditingMeeting(null);
+    setOpenDropdown(null);
+    } catch (error) {
+      console.error('Error updating meeting:', error);
+      // Show more specific error information
+      if (error instanceof Error) {
+        setError(`Failed to update meeting: ${error.message}`);
+      } else {
+        setError('Failed to update meeting: Unknown error occurred');
+      }
+    }
+  };
+
+  // Reset form data
+  const resetForm = () => {
+    setFormData({
+      title: '',
+      type: MeetingType.DAILY_STANDUP,
+      date: '',
+      time: '',
+      duration: 30,
+      location: '',
+      description: '',
+      agenda: [''],
+      sprintId: undefined
+    });
+    setFormErrors({});
+  };
+
+  // Close modal
+  const closeModal = () => {
+    setShowAddModal(false);
+    setShowEditModal(false);
+    setEditingMeeting(null);
+    setOpenDropdown(null);
+    resetForm();
+  };
+
+  // Utility function to safely parse datetime - enhanced to handle microseconds and various formats
+  function parseDatetimeSafely(datetimeValue: any): Date | null {
+    if (!datetimeValue) return null;
+    
+    try {
+      // Handle various possible formats
+      let dateToTry: Date;
+      
+      if (typeof datetimeValue === 'string') {
+        // Normalize common issues:
+        // - Replace space separator with 'T'
+        // - Trim microseconds to milliseconds (3 digits) to satisfy JS Date parser
+        let normalized = datetimeValue.trim();
+        
+        // Handle various separators and formats
+        if (/^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}/.test(normalized)) {
+          normalized = normalized.replace(' ', 'T');
+        }
+        
+        // Handle different timezone formats
+        // Replace +00:00 with Z for UTC
+        normalized = normalized.replace(/\+00:00$/, 'Z');
+        // Replace +00 with Z for UTC
+        normalized = normalized.replace(/\+00$/, 'Z');
+        
+        // Reduce fractional seconds to max 3 digits
+        normalized = normalized.replace(/\.(\d{3})\d+(?=(Z|[+\-]\d{2}:?\d{2})?$)/, '.$1');
+
+        // Try to parse as ISO string first
+        dateToTry = new Date(normalized);
+        
+        // If that fails, try to parse common string formats
+        if (isNaN(dateToTry.getTime())) {
+          // Try to parse as "YYYY-MM-DD HH:MM:SS" format
+          const isoMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2}):(\d{2})/);
+          if (isoMatch) {
+            const [, year, month, day, hour, minute, second] = isoMatch;
+            dateToTry = new Date(
+              parseInt(year), 
+              parseInt(month) - 1, 
+              parseInt(day), 
+              parseInt(hour), 
+              parseInt(minute), 
+              parseInt(second)
+            );
+          } else {
+            // Try to parse as "YYYY-MM-DD" format
+            const dateMatch = normalized.match(/^(\d{4})-(\d{2})-(\d{2})/);
+            if (dateMatch) {
+              const [, year, month, day] = dateMatch;
+              dateToTry = new Date(parseInt(year), parseInt(month) - 1, parseInt(day));
+            }
+          }
+        }
+        
+        // If still invalid, try parsing without timezone info
+        if (isNaN(dateToTry.getTime())) {
+          // Remove timezone info and try again
+          const noTzMatch = normalized.match(/^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?)/);
+          if (noTzMatch) {
+            const noTzString = noTzMatch[1];
+            dateToTry = new Date(noTzString);
+          }
+        }
+      } else if (typeof datetimeValue === 'object' && datetimeValue.constructor === Object) {
+        // Handle case where datetime is returned as object with date components
+        if (datetimeValue.year && datetimeValue.month && datetimeValue.day) {
+          // Extract date components (month is 0-indexed in JavaScript)
+          dateToTry = new Date(
+            datetimeValue.year, 
+            datetimeValue.month - 1, 
+            datetimeValue.day, 
+            datetimeValue.hour || 0, 
+            datetimeValue.minute || 0, 
+            datetimeValue.second || 0
+          );
+        } else if (datetimeValue.$date) {
+          // Handle MongoDB-style date objects
+          dateToTry = new Date(datetimeValue.$date);
+        } else if (datetimeValue.timestamp) {
+          // Handle timestamp objects
+          dateToTry = new Date(datetimeValue.timestamp);
+        } else if (datetimeValue.value) {
+          // Handle generic value objects
+          dateToTry = new Date(datetimeValue.value);
+        } else {
+          // Try to parse as-is
+          dateToTry = new Date(datetimeValue);
+        }
+      } else if (typeof datetimeValue === 'number') {
+        // Handle timestamp numbers
+        dateToTry = new Date(datetimeValue);
+      } else {
+        // Try to parse as-is
+        dateToTry = new Date(datetimeValue);
+      }
+      
+      // Check if the parsed date is valid
+      if (!isNaN(dateToTry.getTime())) {
+        return dateToTry;
+      }
+      
+    } catch (error) {
+      console.error('Error parsing datetime:', error, 'Value:', datetimeValue);
+    }
+    
+    return null;
+  }
+
+  // Handle edit meeting
+  const handleEditMeeting = async (meeting: ApiMeeting) => {
+    setEditingMeeting(meeting);
+    
+    // Convert API meeting data to form data with error handling
+    let dateStr = '';
+    let timeStr = '';
+    
+    // Handle both possible field names from backend
+    const datetimeValue = meeting.startDatetime || (meeting as any).start_datetime;
+    
+    const startDate = parseDatetimeSafely(datetimeValue);
+    
+    if (startDate) {
+      // Since we're now storing the datetime as the user intended (without timezone conversion),
+      // we can extract the date and time directly from the ISO string
+      const isoString = startDate.toISOString();
+      dateStr = isoString.split('T')[0];
+      timeStr = isoString.split('T')[1].substring(0, 5);
+
+    } else {
+      console.warn('Could not parse startDatetime for meeting:', meeting.id, 'Value:', datetimeValue);
+      
+      // Don't set fallback values - let the user see empty fields and set them manually
+      // This preserves the original meeting time and doesn't change it to current time
+      dateStr = '';
+      timeStr = '';
+    }
+    
+    // Load existing agenda items
+    let agendaItems = [''];
+    try {
+      const agendaResponse = await api.meetingAgenda.getByMeeting(meeting.id);
+      if (agendaResponse.data && agendaResponse.data.length > 0) {
+        agendaItems = agendaResponse.data.map(item => item.title);
+      }
+    } catch (error) {
+      console.error('Error loading agenda items:', error);
+    }
+    
+    setFormData({
+      title: meeting.title || '',
+      type: meeting.meetingType || MeetingType.TEAM_MEETING,
+      date: dateStr,
+      time: timeStr,
+      duration: meeting.duration || 30,
+      location: meeting.location || '',
+      description: meeting.description || '',
+      agenda: agendaItems,
+      sprintId: (meeting as any).sprintId || (meeting as any).sprint_id || undefined
+    });
+    setFormErrors({}); // Clear any validation errors when editing
+    setShowEditModal(true);
+    setOpenDropdown(null);
+  };
+
+  // Handle delete meeting
+  const handleDeleteMeeting = (meeting: ApiMeeting) => {
+    setDeletingMeeting(meeting);
+    setShowDeleteModal(true);
+    setOpenDropdown(null);
+  };
+
+  // Confirm delete meeting
+  const confirmDeleteMeeting = async () => {
+    if (deletingMeeting) {
+      try {
+        const response = await api.meetings.delete(deletingMeeting.id);
+        if (response.error) throw new Error(response.error);
+
+        // Refresh meetings list
+        const refreshResponse = await api.meetings.getByProject(parseInt(projectId));
+        if (refreshResponse.error) throw new Error(refreshResponse.error);
+        
+        const refreshedMeetings = refreshResponse.data || [];
+        setMeetings(refreshedMeetings);
+        
+        // Refresh participant counts
+        if (refreshedMeetings.length > 0) {
+          await fetchParticipantCounts(refreshedMeetings);
+        }
+      setShowDeleteModal(false);
+      setDeletingMeeting(null);
+      } catch (error) {
+        console.error('Error deleting meeting:', error);
+        // TODO: Show error notification
+      }
+    }
+  };
+
+  // Cancel delete meeting
+  const cancelDeleteMeeting = () => {
+    setShowDeleteModal(false);
+    setDeletingMeeting(null);
+  };
+
+  // Toggle dropdown
+  const toggleDropdown = (meetingId: number) => {
+    setOpenDropdown(openDropdown === meetingId.toString() ? null : meetingId.toString());
+  };
 
   return (
     <div className="space-y-8">
@@ -213,12 +832,21 @@ const ProjectMeetings = () => {
             Project Meetings
           </h1>
           <p className="text-gray-600 dark:text-gray-400 mt-2">
-            {projectName} - Manage all agile meetings
+            {projectLoading ? (
+              <span className="animate-pulse">Loading project information...</span>
+            ) : (
+              `${projectName} - Manage all agile meetings`
+            )}
           </p>
         </div>
         <button
           onClick={() => setShowAddModal(true)}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg flex items-center gap-2 transition-colors"
+          disabled={projectLoading}
+          className={`px-4 py-2 rounded-lg flex items-center gap-2 transition-colors ${
+            projectLoading
+              ? 'bg-gray-400 dark:bg-gray-600 cursor-not-allowed text-gray-200'
+              : 'bg-blue-600 hover:bg-blue-700 text-white'
+          }`}
         >
           <Plus className="w-5 h-5" />
           Schedule Meeting
@@ -240,7 +868,7 @@ const ProjectMeetings = () => {
         <div className="bg-white dark:bg-gray-800 p-6 rounded-lg border border-gray-200 dark:border-gray-700">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm text-gray-600 dark:text-gray-400">Scheduled</p>
+              <p className="text-sm text-gray-600 dark:text-gray-400">Upcoming</p>
               <p className="text-2xl font-bold text-gray-900 dark:text-white">{stats.scheduled}</p>
             </div>
             <Clock className="w-8 h-8 text-green-500" />
@@ -269,46 +897,83 @@ const ProjectMeetings = () => {
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-2">
-        {[
-          { key: 'all', label: 'All' },
-          { key: 'upcoming', label: 'Upcoming' },
-          { key: 'completed', label: 'Completed' },
-          { key: 'daily-standup', label: 'Daily Standup' },
-          { key: 'sprint-planning', label: 'Sprint Planning' },
-          { key: 'sprint-review', label: 'Sprint Review' },
-          { key: 'sprint-retrospective', label: 'Sprint Retrospective' },
-        ].map((filter) => (
-          <button
-            key={filter.key}
-            onClick={() => setSelectedFilter(filter.key)}
-            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-              selectedFilter === filter.key
-                ? 'bg-blue-600 text-white'
-                : 'bg-gray-100 dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600'
-            }`}
-          >
-            {filter.label}
-          </button>
-        ))}
+      <div className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 p-4">
+        <div className="flex flex-wrap gap-4">
+          <div className="flex-1 min-w-[200px]">
+            <div className="relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
+              <input
+                type="text"
+                placeholder="Search meetings..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+              />
+            </div>
+          </div>
+          
+          <div className="flex gap-4">
+            <select
+              value={selectedFilter}
+              onChange={(e) => setSelectedFilter(e.target.value)}
+              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white"
+            >
+              <option value="all">All Meetings</option>
+              <option value="upcoming">Upcoming</option>
+              <option value="completed">Completed</option>
+              <option value={MeetingType.DAILY_STANDUP}>Daily Standup</option>
+              <option value={MeetingType.SPRINT_PLANNING}>Sprint Planning</option>
+              <option value={MeetingType.SPRINT_REVIEW}>Sprint Review</option>
+              <option value={MeetingType.SPRINT_RETROSPECTIVE}>Sprint Retrospective</option>
+            </select>
+          </div>
+        </div>
       </div>
 
+      {/* Loading state */}
+      {isLoading && (
+        <div className="text-center py-12">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600 mx-auto mb-4"></div>
+          <p className="text-gray-600 dark:text-gray-400">Loading meetings...</p>
+        </div>
+      )}
+
+      {/* Error state */}
+      {error && (
+        <div className="text-center py-12">
+          <div className="text-red-500 mb-4">
+            <AlertCircle className="h-16 w-16 mx-auto" />
+          </div>
+          <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
+            Error Loading Meetings
+          </h3>
+          <p className="text-gray-600 dark:text-gray-400 mb-4">{error}</p>
+          <button
+            onClick={() => window.location.reload()}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
       {/* Meeting list */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {!isLoading && !error && (
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 relative mb-8">
         {filteredMeetings.map((meeting) => {
-          const meetingType = meetingTypes[meeting.type as keyof typeof meetingTypes];
-          const statusStyle = getStatusStyle(meeting.status);
+          const meetingType = meetingTypes[meeting.meetingType as keyof typeof meetingTypes] || meetingTypes.other;
+          const statusStyle = getStatusStyle('scheduled'); // TODO: Add status field to backend
           const IconComponent = meetingType.icon;
 
           return (
             <div
               key={meeting.id}
-              className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 overflow-hidden hover:shadow-lg transition-shadow"
+              className="bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700 hover:shadow-lg transition-shadow relative"
             >
               {/* Meeting header */}
-              <div className={`${meetingType.color} h-1`}></div>
+              <div className={`${meetingType.color} h-1 rounded-t-lg`}></div>
               
-              <div className="p-6">
+              <div className="p-6 pb-4 relative">
                 {/* Title and status */}
                 <div className="flex justify-between items-start mb-3">
                   <div className="flex items-center gap-3">
@@ -333,7 +998,18 @@ const ProjectMeetings = () => {
                 <div className="space-y-2 mb-4">
                   <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                     <Calendar className="w-4 h-4" />
-                    <span>{meeting.date} {meeting.time}</span>
+                    <span>
+                      {(() => {
+                        // Handle both possible field names from backend
+                        const datetimeValue = meeting.startDatetime || (meeting as any).start_datetime;
+                        const startDate = parseDatetimeSafely(datetimeValue);
+                        if (startDate) {
+                          return <FormattedDateTime date={startDate} includeTime={true} short={true} />;
+                        }
+
+                        return 'Date not available';
+                      })()}
+                    </span>
                   </div>
                   <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                     <Clock className="w-4 h-4" />
@@ -341,11 +1017,16 @@ const ProjectMeetings = () => {
                   </div>
                   <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                     <Video className="w-4 h-4" />
-                    <span>{meeting.location}</span>
+                    <span>{meeting.location || 'No location specified'}</span>
                   </div>
                   <div className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
                     <Users className="w-4 h-4" />
-                    <span>{meeting.participants.length} participants</span>
+                    <span>
+                      {(() => {
+                        const participantCount: number = participantCounts[meeting.id] || 0;
+                        return `${participantCount} ${participantCount === 1 ? 'participant' : 'participants'}`;
+                      })()}
+                    </span>
                   </div>
                 </div>
 
@@ -354,50 +1035,609 @@ const ProjectMeetings = () => {
                   {meeting.description}
                 </p>
 
-                {/* Participant avatars */}
-                <ParticipantsTooltip 
-                  participants={meeting.participants} 
-                  facilitator={meeting.facilitator}
-                />
-
                 {/* Action buttons */}
                 <div className="flex gap-2">
                   <Link 
                     href={`/project/${projectId}/meeting/${meeting.id}`}
                     className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-3 py-2 rounded-lg text-sm font-medium transition-colors flex items-center justify-center gap-2"
                   >
-                    {meeting.status === 'in-progress' ? (
+                    {(() => {
+                      const now = new Date();
+                      const datetimeValue = meeting.startDatetime || (meeting as any).start_datetime;
+                      const meetingStart = parseDatetimeSafely(datetimeValue);
+                      
+                      if (meetingStart) {
+                        const meetingEnd = new Date(meetingStart.getTime() + meeting.duration * 60000);
+                        
+                        if (now >= meetingStart && now <= meetingEnd) {
+                          return (
                       <>
                         <Play className="w-4 h-4" />
                         Join Meeting
                       </>
-                    ) : (
+                          );
+                        }
+                      }
+                      
+                      return (
                       <>
                         <MessageSquare className="w-4 h-4" />
                         View Details
                       </>
-                    )}
+                      );
+                    })()}
                   </Link>
-                  <button className="border border-gray-300 dark:border-gray-600 hover:bg-gray-50 dark:hover:bg-gray-700 px-3 py-2 rounded-lg text-sm transition-colors">
-                    <MoreHorizontal className="w-4 h-4" />
-                  </button>
+                  
+                  {/* Dropdown menu - only show for non-completed meetings or show with different styling */}
+                  <div className="relative" data-dropdown-container>
+                    <button 
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleDropdown(meeting.id);
+                      }}
+                      className="border border-gray-300 dark:border-gray-600 px-3 py-2 rounded-lg text-sm transition-colors hover:bg-gray-50 dark:hover:bg-gray-700"
+                    >
+                      <MoreHorizontal className="w-4 h-4" />
+                    </button>
+                    
+                    {openDropdown === meeting.id.toString() && (
+                      <div 
+                        className="absolute right-0 top-full mt-1 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-xl z-[100] min-w-[120px]"
+                        style={{ 
+                          position: 'absolute',
+                          right: 0,
+                          top: '100%',
+                          marginTop: '0.25rem'
+                        }}
+                      >
+                        <div className="py-1">
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEditMeeting(meeting);
+                                }}
+                                className="w-full text-left px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 flex items-center gap-2 transition-colors"
+                              >
+                                <Edit className="w-4 h-4" />
+                                Edit
+                              </button>
+                              <button
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteMeeting(meeting);
+                                }}
+                                className="w-full text-left px-4 py-2 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 flex items-center gap-2 transition-colors"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                                Delete
+                              </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
               </div>
             </div>
           );
         })}
       </div>
+      )}
 
       {/* Empty state */}
-      {filteredMeetings.length === 0 && (
+      {!isLoading && !error && filteredMeetings.length === 0 && (
         <div className="text-center py-12">
           <Calendar className="w-16 h-16 text-gray-400 mx-auto mb-4" />
           <h3 className="text-lg font-medium text-gray-900 dark:text-white mb-2">
-            No meetings found
+            {searchTerm ? 'No meetings found' : 'No meetings found'}
           </h3>
           <p className="text-gray-600 dark:text-gray-400">
-            No meetings found with current filter criteria. Try different filters or create a new meeting.
+            {searchTerm 
+              ? `No meetings found matching "${searchTerm}". Try adjusting your search or filters.`
+              : 'No meetings found with current filter criteria. Try different filters or create a new meeting.'
+            }
           </p>
+          {(searchTerm || selectedFilter !== 'all') && (
+            <button
+              onClick={() => {
+                setSearchTerm('');
+                setSelectedFilter('all');
+              }}
+              className="mt-4 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+            >
+              Clear Filters
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Schedule Meeting Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700">
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                Schedule New Meeting
+              </h2>
+              <button
+                onClick={closeModal}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <form onSubmit={handleSubmit} className="p-6 space-y-6">
+              {/* Meeting Title */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Meeting Title *
+                </label>
+                <input
+                  type="text"
+                  name="title"
+                  value={formData.title}
+                  onChange={handleInputChange}
+                  required
+                  className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white ${
+                    formErrors.title 
+                      ? 'border-red-500 dark:border-red-500' 
+                      : 'border-gray-300 dark:border-gray-600'
+                  }`}
+                  placeholder="Enter meeting title"
+                />
+                {formErrors.title && (
+                  <p className="mt-1 text-sm text-red-600 dark:text-red-400">{formErrors.title}</p>
+                )}
+              </div>
+
+              {/* Meeting Type */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Meeting Type *
+                </label>
+                <select
+                  name="type"
+                  value={formData.type}
+                  onChange={handleInputChange}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                >
+                  {Object.entries(meetingTypes).map(([key, type]) => (
+                    <option key={key} value={key}>
+                      {type.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Date and Time */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Date *
+                  </label>
+                  <input
+                    type="date"
+                    name="date"
+                    value={formData.date}
+                    onChange={handleInputChange}
+                    required
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white ${
+                      formErrors.date 
+                        ? 'border-red-500 dark:border-red-500' 
+                        : 'border-gray-300 dark:border-gray-600'
+                    }`}
+                  />
+                  {formErrors.date && (
+                    <p className="mt-1 text-sm text-red-600 dark:text-red-400">{formErrors.date}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Time *
+                  </label>
+                  <input
+                    type="time"
+                    name="time"
+                    value={formData.time}
+                    onChange={handleInputChange}
+                    required
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white ${
+                      formErrors.time 
+                        ? 'border-red-500 dark:border-red-500' 
+                        : 'border-gray-300 dark:border-gray-600'
+                    }`}
+                  />
+                  {formErrors.time && (
+                    <p className="mt-1 text-sm text-red-600 dark:text-red-400">{formErrors.time}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Duration and Location */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Duration (minutes) *
+                  </label>
+                  <input
+                    type="number"
+                    name="duration"
+                    value={formData.duration}
+                    onChange={handleInputChange}
+                    required
+                    min="15"
+                    max="480"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Location *
+                  </label>
+                  <input
+                    type="text"
+                    name="location"
+                    value={formData.location}
+                    onChange={handleInputChange}
+                    required
+                    className={`w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white ${
+                      formErrors.location 
+                        ? 'border-red-500 dark:border-red-500' 
+                        : 'border-gray-300 dark:border-gray-600'
+                    }`}
+                    placeholder="e.g., Conference Room A, Zoom Link"
+                  />
+                  {formErrors.location && (
+                    <p className="mt-1 text-sm text-red-600 dark:text-red-400">{formErrors.location}</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Sprint Association */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Sprint Association
+                </label>
+                <select
+                  name="sprintId"
+                  value={formData.sprintId || ''}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                >
+                  <option value="">No Sprint (Independent Meeting)</option>
+                  {sprints.map((sprint) => (
+                    <option key={sprint.id} value={sprint.id}>
+                      {sprint.sprintName} {sprint.status === 'active' ? '(Active)' : ''}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  Choose a sprint to associate this meeting with, or leave independent
+                </p>
+              </div>
+
+              {/* TODO: Add facilitator field to backend */}
+
+              {/* Description */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Description
+                </label>
+                <textarea
+                  name="description"
+                  value={formData.description}
+                  onChange={handleInputChange}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                  placeholder="Enter meeting description"
+                />
+              </div>
+
+              {/* Agenda Items */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Agenda Items
+                </label>
+                <div className="space-y-2">
+                  {formData.agenda.map((item, index) => (
+                    <div key={index} className="flex gap-2">
+                      <input
+                        type="text"
+                        value={item}
+                        onChange={(e) => handleAgendaChange(index, e.target.value)}
+                        className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                        placeholder={`Agenda item ${index + 1}`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeAgendaItem(index)}
+                        className="px-3 py-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={addAgendaItem}
+                    className="text-blue-600 hover:text-blue-700 text-sm font-medium flex items-center gap-1"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add agenda item
+                  </button>
+                </div>
+              </div>
+
+              {/* Form Actions */}
+              <div className="flex gap-3 pt-6 border-t border-gray-200 dark:border-gray-700">
+                <button
+                  type="button"
+                  onClick={closeModal}
+                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={Object.keys(formErrors).length > 0}
+                  className={`flex-1 px-4 py-2 rounded-lg transition-colors flex items-center justify-center gap-2 ${
+                    Object.keys(formErrors).length > 0
+                      ? 'bg-gray-400 dark:bg-gray-600 cursor-not-allowed text-gray-200'
+                      : 'bg-blue-600 hover:bg-blue-700 text-white'
+                  }`}
+                >
+                  <Save className="w-4 h-4" />
+                  Schedule Meeting
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Meeting Modal */}
+      {showEditModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-2xl w-full max-h-[90vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex justify-between items-center p-6 border-b border-gray-200 dark:border-gray-700">
+              <h2 className="text-xl font-semibold text-gray-900 dark:text-white">
+                Edit Meeting
+              </h2>
+              <button
+                onClick={closeModal}
+                className="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
+              >
+                <X className="w-6 h-6" />
+              </button>
+            </div>
+
+            {/* Modal Body - Same form as create but with different submit handler */}
+            <form onSubmit={handleEditSubmit} className="p-6 space-y-6">
+              {/* Meeting Title */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Meeting Title *
+                </label>
+                <input
+                  type="text"
+                  name="title"
+                  value={formData.title}
+                  onChange={handleInputChange}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                  placeholder="Enter meeting title"
+                />
+              </div>
+
+              {/* Meeting Type */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Meeting Type *
+                </label>
+                <select
+                  name="type"
+                  value={formData.type}
+                  onChange={handleInputChange}
+                  required
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                >
+                  {Object.entries(meetingTypes).map(([key, type]) => (
+                    <option key={key} value={key}>
+                      {type.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Date and Time */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Date *
+                  </label>
+                  <input
+                    type="date"
+                    name="date"
+                    value={formData.date}
+                    onChange={handleInputChange}
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Time *
+                  </label>
+                  <input
+                    type="time"
+                    name="time"
+                    value={formData.time}
+                    onChange={handleInputChange}
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                  />
+                </div>
+              </div>
+
+              {/* Duration and Location */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Duration (minutes) *
+                  </label>
+                  <input
+                    type="number"
+                    name="duration"
+                    value={formData.duration}
+                    onChange={handleInputChange}
+                    required
+                    min="15"
+                    max="480"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Location *
+                  </label>
+                  <input
+                    type="text"
+                    name="location"
+                    value={formData.location}
+                    onChange={handleInputChange}
+                    required
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                    placeholder="e.g., Conference Room A, Zoom Link"
+                  />
+                </div>
+              </div>
+
+              {/* Sprint Association */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Sprint Association
+                </label>
+                <select
+                  name="sprintId"
+                  value={formData.sprintId || ''}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                >
+                  <option value="">No Sprint (Independent Meeting)</option>
+                  {sprints.map((sprint) => (
+                    <option key={sprint.id} value={sprint.id}>
+                      {sprint.sprintName} {sprint.status === 'active' ? '(Active)' : ''}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  Choose a sprint to associate this meeting with, or leave independent
+                </p>
+              </div>
+
+              {/* Description */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Description
+                </label>
+                <textarea
+                  name="description"
+                  value={formData.description}
+                  onChange={handleInputChange}
+                  rows={3}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                  placeholder="Enter meeting description"
+                />
+              </div>
+
+              {/* Agenda Items */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Agenda Items
+                </label>
+                <div className="space-y-2">
+                  {formData.agenda.map((item, index) => (
+                    <div key={index} className="flex gap-2">
+                      <input
+                        type="text"
+                        value={item}
+                        onChange={(e) => handleAgendaChange(index, e.target.value)}
+                        className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                        placeholder={`Agenda item ${index + 1}`}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeAgendaItem(index)}
+                        className="px-3 py-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={addAgendaItem}
+                    className="text-blue-600 hover:text-blue-700 text-sm font-medium flex items-center gap-1"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Add agenda item
+                  </button>
+                </div>
+              </div>
+
+              {/* Form Actions */}
+              <div className="flex gap-3 pt-6 border-t border-gray-200 dark:border-gray-700">
+                <button
+                  type="button"
+                  onClick={closeModal}
+                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="flex-1 bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg transition-colors flex items-center justify-center gap-2"
+                >
+                  <Save className="w-4 h-4" />
+                  Save Changes
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteModal && deletingMeeting && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white dark:bg-gray-800 rounded-lg max-w-md w-full">
+            <div className="p-6">
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
+                Delete Meeting
+              </h3>
+              <p className="text-gray-600 dark:text-gray-400 mb-6">
+                Are you sure you want to delete "{deletingMeeting.title}"? This action cannot be undone.
+              </p>
+              <div className="flex gap-3">
+                <button
+                  onClick={cancelDeleteMeeting}
+                  className="flex-1 px-4 py-2 border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={confirmDeleteMeeting}
+                  className="flex-1 bg-red-600 hover:bg-red-700 text-white px-4 py-2 rounded-lg transition-colors"
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          </div>
         </div>
       )}
     </div>

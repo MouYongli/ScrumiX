@@ -1,0 +1,411 @@
+---
+globs: backend/**/*
+alwaysApply: false
+---
+
+# ScrumiX Backend Development Guidelines
+
+## Python Standards & Best Practices
+
+### Language Features
+
+- Use Python 3.8+ features and type hints consistently
+- Follow PEP 8 style guidelines with proper formatting
+- Use async/await for I/O operations where applicable
+- Leverage SQLAlchemy ORM and Pydantic models for structure
+- Use context managers for resource management
+- Support both English and Chinese comments (maintain existing patterns)
+- Do not use emojis in code, comments, or print/log statements
+- Use descriptive text instead of emojis for status indicators
+
+### Type Safety
+
+- Comprehensive type hints for all functions and classes
+- Use `typing` module for complex types (Union, Optional, List, Dict)
+- Define custom types for domain concepts (e.g., Enums for status)
+- Use TypeVar for generic CRUD operations
+
+## FastAPI Architecture Patterns
+
+### API Design
+
+- Use dependency injection for database connections and services
+- Implement proper request/response models with Pydantic
+- Follow RESTful API design principles with consistent naming
+- Use FastAPI's automatic OpenAPI documentation
+- Implement proper HTTP status codes and error responses
+
+### Route Organization
+
+- Group related routes in separate modules under `routes/`
+- Use APIRouter for modular route organization
+- Include routers in main API router with proper prefixes and tags
+- Implement consistent error handling and validation
+
+### Example Route Pattern
+
+```python
+from fastapi import APIRouter, Depends, Query, HTTPException, status
+from sqlalchemy.orm import Session
+from typing import Optional, List
+
+from ..core.security import get_current_user
+from ..db.database import get_db
+from ..schemas.project import ProjectCreate, ProjectResponse, ProjectUpdate
+from ..crud.project import project_crud
+
+router = APIRouter()
+
+@router.get("/", response_model=List[ProjectResponse])
+async def get_projects(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=1000),
+    status: Optional[str] = Query(None, description="Filter by project status"),
+    search: Optional[str] = Query(None, description="Search term"),
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Get Project List"""
+    try:
+        projects = project_crud.get_by_user_id(
+            db, 
+            user_id=current_user.id, 
+            skip=skip, 
+            limit=limit,
+            status=status,
+            search=search
+        )
+        return projects
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+```
+
+## Database Integration & ORM Patterns
+
+### SQLAlchemy Model Structure
+
+- Inherit from `Base` class in `db.base`
+- Use consistent column naming and types
+- Implement proper relationships with `back_populates`
+- Use enums for status fields and constrained values
+- Include `created_at` and `updated_at` timestamp columns
+
+### Model Example Pattern
+
+```python
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Enum as SQLEnum
+from sqlalchemy.orm import relationship
+from sqlalchemy.sql import func
+from enum import Enum
+
+from ..db.base import Base
+
+class TaskStatus(str, Enum):
+    TODO = "todo"
+    IN_PROGRESS = "in_progress"
+    DONE = "done"
+    CANCELLED = "cancelled"
+
+class Task(Base):
+    __tablename__ = "tasks"
+    
+    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
+    title = Column(String(200), nullable=False, index=True)
+    description = Column(Text, nullable=True)
+    status = Column(SQLEnum(TaskStatus), nullable=False, default=TaskStatus.TODO, index=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
+    
+    # Foreign keys
+    sprint_id = Column(Integer, ForeignKey("sprints.id"), nullable=False, index=True)
+    
+    # Relationships
+    sprint = relationship("Sprint", back_populates="tasks")
+    users = relationship("User", secondary="user_task", back_populates="tasks")
+```
+
+### Database Configuration
+
+- Use PostgreSQL for production with SQLite fallback for testing
+- Configure through `SQLALCHEMY_DATABASE_URI` in settings
+- Use dependency injection for database sessions
+- Implement proper session cleanup in `get_db()` function
+
+## CRUD Operations Framework
+
+### Base CRUD Pattern
+
+- Extend `CRUDBase` generic class for consistent operations
+- Use TypeVar for model, create, and update schema types
+- Implement automatic primary key detection
+- Support both dict and Pydantic model inputs
+
+### CRUD Implementation Example
+
+```python
+from typing import List, Optional, Dict, Any
+from sqlalchemy.orm import Session
+from fastapi.encoders import jsonable_encoder
+
+from .base import CRUDBase
+from ..models.project import Project
+from ..schemas.project import ProjectCreate, ProjectUpdate
+
+class ProjectCRUD(CRUDBase[Project, ProjectCreate, ProjectUpdate]):
+    def get_by_user_id(
+        self, 
+        db: Session, 
+        user_id: int, 
+        skip: int = 0, 
+        limit: int = 100,
+        status: Optional[str] = None,
+        search: Optional[str] = None
+    ) -> List[Project]:
+        """Get projects by user ID with optional filtering"""
+        query = db.query(self.model).join(UserProject).filter(
+            UserProject.user_id == user_id
+        )
+        
+        if status:
+            query = query.filter(self.model.status == status)
+        
+        if search:
+            query = query.filter(self.model.name.ilike(f"%{search}%"))
+        
+        return query.offset(skip).limit(limit).all()
+
+project_crud = ProjectCRUD(Project)
+```
+
+## Authentication & Security Patterns
+
+### Hybrid Authentication
+
+- Support both JWT header authentication and secure cookies
+- Implement `get_current_user_hybrid` for flexible auth
+- Handle both local users (int IDs) and Keycloak users (string UUIDs)
+- Create virtual user objects for Keycloak integration
+
+### JWT Token Handling
+
+```python
+def verify_token(token: str) -> Optional[TokenData]:
+    """验证JWT token"""
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=["HS256"])
+        user_id: Union[int, str] = payload.get("sub")
+        email: str = payload.get("email")
+        
+        if user_id is None:
+            return None
+        
+        # Check expiration
+        exp = payload.get("exp")
+        if exp and datetime.fromtimestamp(exp) < datetime.now():
+            return None
+        
+        return TokenData(user_id=user_id, email=email)
+    except JWTError:
+        return None
+```
+
+### Keycloak Integration
+
+- Configure Keycloak settings in environment variables
+- Support OAuth discovery URLs and token validation
+- Handle both local and external authentication providers
+- Implement secure cookie configuration based on environment
+
+## Pydantic Schema Patterns
+
+### Schema Organization
+
+- Separate base, create, update, and response schemas
+- Use `BaseModel` with `ConfigDict` for ORM compatibility
+- Implement proper field validation with `Field()`
+- Support optional fields with sensible defaults
+
+### Schema Example
+
+```python
+from typing import Optional, List
+from datetime import datetime
+from pydantic import BaseModel, ConfigDict, Field
+from ..models.task import TaskStatus, TaskPriority
+
+class TaskBase(BaseModel):
+    title: str = Field(..., min_length=1, max_length=200)
+    description: Optional[str] = None
+    status: TaskStatus = TaskStatus.TODO
+    priority: TaskPriority = TaskPriority.MEDIUM
+    story_point: Optional[int] = Field(None, ge=0)
+    sprint_id: Optional[int] = Field(None, gt=0)
+
+class TaskCreate(TaskBase):
+    sprint_id: int = Field(..., gt=0)
+
+class TaskUpdate(BaseModel):
+    title: Optional[str] = Field(None, min_length=1, max_length=200)
+    description: Optional[str] = None
+    status: Optional[TaskStatus] = None
+    priority: Optional[TaskPriority] = None
+    story_point: Optional[int] = Field(None, ge=0)
+
+class TaskResponse(TaskBase):
+    model_config = ConfigDict(from_attributes=True)
+    
+    id: int
+    created_at: datetime
+    updated_at: datetime
+```
+
+## Error Handling & Validation
+
+### HTTP Exception Patterns
+
+- Use appropriate HTTP status codes (400, 401, 403, 404, 500)
+- Provide meaningful error messages in both English and Chinese
+- Implement consistent error response structure
+- Handle database constraint violations gracefully
+
+### Input Validation
+
+- Validate all inputs using Pydantic models with proper constraints
+- Use Field validators for complex business rules
+- Implement proper error messages for validation failures
+- Handle file uploads and multipart data appropriately
+
+## Testing Strategies
+
+### Test Organization
+
+- Use pytest with async support and comprehensive fixtures
+- Organize tests by feature area (models, CRUD, routes, integration)
+- Implement both unit tests and integration workflow tests
+- Maintain high test coverage (target 80%+)
+
+### Test Pattern Example
+
+```python
+import pytest
+from httpx import AsyncClient
+from sqlalchemy.orm import Session
+
+from scrumix.api.models.project import Project
+from scrumix.api.models.user import User
+
+class TestProjectWorkflow:
+    """Test complete project workflow integration"""
+    
+    def test_create_project_with_sprint_and_tasks(
+        self, 
+        client: AsyncClient, 
+        auth_headers: dict, 
+        db_session: Session, 
+        test_user: User
+    ):
+        """Test complete workflow: Project → Sprint → Task creation"""
+        # Create project
+        project_data = {
+            "name": "Test Project",
+            "description": "Integration test project"
+        }
+        response = client.post("/api/v1/projects/", json=project_data, headers=auth_headers)
+        assert response.status_code == 201
+        project = response.json()
+        
+        # Verify relationships and business logic
+        # ... additional test implementation
+```
+
+### Test Configuration
+
+- Use pytest markers for different test types (unit, integration, slow)
+- Configure test database with proper isolation
+- Use factory patterns for test data creation
+- Implement proper cleanup and teardown
+
+## Configuration & Environment
+
+### Settings Management
+
+- Use Pydantic settings with environment variable support
+- Implement environment-aware configurations (dev/staging/prod)
+- Support multiple database backends (PostgreSQL/SQLite)
+- Configure security settings based on environment
+
+### Environment Variables
+
+- `DATABASE_URL` for database connection
+- `SECRET_KEY` for JWT signing
+- `KEYCLOAK_*` variables for OAuth integration
+- `ENVIRONMENT` for environment-specific behavior
+- Frontend/backend URL configuration
+
+## Performance & Best Practices
+
+### Database Optimization
+
+- Use proper indexes on frequently queried columns
+- Implement pagination for list endpoints
+- Use SQLAlchemy relationships efficiently
+- Consider eager loading for related objects
+
+### Resource Management
+
+- Use dependency injection for database sessions
+- Implement proper connection cleanup
+- Handle database transactions appropriately
+- Monitor and log performance metrics
+
+### API Design
+
+- Use consistent naming conventions for endpoints
+- Implement proper HTTP caching headers where appropriate
+- Support filtering, sorting, and pagination
+- Version APIs appropriately
+
+## Key Dependencies & Versions
+
+### Core Framework
+- FastAPI for API framework
+- SQLAlchemy for ORM and database operations
+- Pydantic for data validation and settings
+- Uvicorn for ASGI server
+
+### Authentication & Security
+- PyJWT for JWT token handling
+- Authlib for OAuth integration
+- Passlib for password hashing
+- Python-multipart for file uploads
+
+### Database & Testing
+- PostgreSQL with psycopg2-binary driver
+- Pytest with asyncio and coverage support
+- Alembic for database migrations
+- HTTPx for testing HTTP clients
+
+### Development Tools
+- Pytest with comprehensive test markers
+- Coverage reporting with HTML/XML output
+- Environment-based configuration
+- Chinese/English comment support
+
+## File Organization
+
+Follow the established project structure:
+```
+backend/src/scrumix/
+├── api/
+│   ├── core/          # Configuration, security, database
+│   ├── crud/          # CRUD operations for each model
+│   ├── db/            # Database setup and base classes
+│   ├── models/        # SQLAlchemy models
+│   ├── routes/        # FastAPI route handlers
+│   ├── schemas/       # Pydantic schemas
+│   └── utils/         # Utility functions
+├── agents/            # Agent system (future implementation)
+└── main.py           # Application entry point
+```
+
+Maintain consistency with existing patterns while implementing new features.

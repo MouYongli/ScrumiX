@@ -2,9 +2,13 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { Search, Bell, ChevronDown, User, Settings, HelpCircle, LogOut, Menu } from 'lucide-react';
-import NotificationPopover from '../common/NotificationPopover';
+import { useRouter, usePathname } from 'next/navigation';
+import { Search, Bell, ChevronDown, User, Settings, HelpCircle, LogOut, Menu, Sun, Moon, Monitor, Bot } from 'lucide-react';
+import NotificationCenter from '../common/NotificationCenter';
+import SearchBar from '../common/SearchBar';
+import LogoutModal from '../common/LogoutModal';
+import { useTheme } from '@/contexts/ThemeContext';
+import { useAuth } from '../auth/AuthGuard';
 
 interface HeaderProps {
   onMenuToggle?: () => void;
@@ -12,54 +16,110 @@ interface HeaderProps {
 
 const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
-  const [isNotificationsOpen, setIsNotificationsOpen] = useState(false);
-  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [isLogoutModalOpen, setIsLogoutModalOpen] = useState(false);
   const userMenuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
+  const pathname = usePathname();
+  
+  // Theme management
+  const { theme, setTheme, effectiveTheme } = useTheme();
+  
+  // Authentication management
+  const { user, isAuthenticated, logout: authLogout } = useAuth();
 
-  // Load user data
-  useEffect(() => {
-    const loadUserData = () => {
-      const userData = localStorage.getItem('user');
-      if (userData) {
-        setCurrentUser(JSON.parse(userData));
-      }
-    };
-
-    loadUserData();
-  }, []);
-
-  // Mock user data (fallback)
+  // Mock user data (fallback for unauthenticated users)
   const defaultUser = {
-    name: "John Doe",
-    email: "john.doe@example.com",
-    avatar: null
+    full_name: "Guest User",
+    email: "guest@example.com",
+    avatar_url: null
   };
 
-  // Use current user data or default data
-  const user = currentUser || defaultUser;
+  // Use authenticated user data or default data
+  const displayUser = isAuthenticated && user ? {
+    name: user.full_name || user.username || user.email.split('@')[0],
+    email: user.email,
+    avatar: user.avatar_url,
+    provider: user.provider
+  } : {
+    name: defaultUser.full_name,
+    email: defaultUser.email, 
+    avatar: defaultUser.avatar_url,
+    provider: 'local'
+  };
+
+  // Determine search scope and project ID based on current path
+  const getSearchContext = () => {
+    const projectMatch = pathname.match(/^\/project\/([^\/]+)/);
+    if (projectMatch) {
+      return {
+        scope: 'project' as const,
+        projectId: projectMatch[1],
+        placeholder: 'Search in this project...'
+      };
+    }
+    return {
+      scope: 'global' as const,
+      projectId: undefined,
+      placeholder: 'Search projects, tasks, meetings...'
+    };
+  };
+
+  const searchContext = getSearchContext();
+  
+  // Check if we're on a project page to show AI chat button
+  const isProjectPage = pathname?.startsWith('/project/') && pathname?.split('/').length >= 3;
+  const projectId = isProjectPage ? pathname?.split('/')[2] : null;
 
   const toggleUserMenu = () => {
     setIsUserMenuOpen(!isUserMenuOpen);
   };
 
-  // Notification popover handlers
-  const toggleNotifications = () => {
-    setIsNotificationsOpen(!isNotificationsOpen);
+
+
+  // Theme toggle functionality
+  const getThemeIcon = () => {
+    switch (theme) {
+      case 'light':
+        return Sun;
+      case 'dark':
+        return Moon;
+      case 'system':
+        return Monitor;
+      default:
+        return effectiveTheme === 'dark' ? Moon : Sun;
+    }
   };
 
-  const closeNotifications = () => {
-    setIsNotificationsOpen(false);
+  const cycleTheme = () => {
+    const themes: ('light' | 'dark' | 'system')[] = ['light', 'dark', 'system'];
+    const currentIndex = themes.indexOf(theme);
+    const nextIndex = (currentIndex + 1) % themes.length;
+    setTheme(themes[nextIndex]);
   };
 
   // Handle logout
   const handleLogout = () => {
-    console.log('User logout');
-    if (confirm('Are you sure you want to logout?')) {
-      localStorage.removeItem('user');
-      localStorage.removeItem('token');
-      router.push('/auth/login');
+    setIsUserMenuOpen(false); // Close user menu
+    setIsLogoutModalOpen(true); // Open logout modal
+  };
+
+  // Confirm logout
+  const confirmLogout = async () => {
+    console.log('[Header] Starting logout process...');
+    setIsLogoutModalOpen(false);
+    try {
+      await authLogout(); // This will handle clearing all auth data and redirect
+      console.log('[Header] Logout completed successfully');
+    } catch (error) {
+      console.error('[Header] Logout failed:', error);
+      // Force redirect even if logout fails
+      window.location.href = '/auth/login';
     }
+  };
+
+  // Cancel logout
+  const cancelLogout = () => {
+    setIsLogoutModalOpen(false);
   };
 
   // Click outside to close user menu
@@ -79,20 +139,42 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
     };
   }, [isUserMenuOpen]);
 
+  // Keyboard shortcut for logout (Ctrl+Alt+L)
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.ctrlKey && event.altKey && event.key.toLowerCase() === 'l') {
+        event.preventDefault();
+        handleLogout();
+      }
+      
+      // ESC to close logout modal
+      if (event.key === 'Escape' && isLogoutModalOpen) {
+        cancelLogout();
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isLogoutModalOpen]);
+
   // Render user avatar
   const renderUserAvatar = () => {
-    if (user.avatar) {
+    if (displayUser.avatar) {
       return (
         <img
-          src={user.avatar}
+          src={displayUser.avatar}
           alt="User Avatar"
-          className="w-8 h-8 rounded-full"
+          className="w-8 h-8 rounded-full object-cover"
         />
       );
     }
     return (
-      <div className="w-8 h-8 bg-gray-200 dark:bg-gray-700 rounded-full flex items-center justify-center">
-        <User className="w-5 h-5 text-gray-600 dark:text-gray-300" />
+      <div className="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
+        <span className="text-white font-semibold text-sm">
+          {displayUser.name.charAt(0).toUpperCase()}
+        </span>
       </div>
     );
   };
@@ -118,36 +200,49 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
                 <span className="text-white font-bold text-lg">S</span>
               </div>
               <span className="text-xl font-bold text-gray-900 dark:text-white">
-                Scrumix
+                ScrumiX
               </span>
             </Link>
           </div>
 
           {/* Middle: Search box */}
           <div className="flex-1 max-w-lg mx-4">
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Search className="h-4 w-4 text-gray-400" />
-              </div>
-              <input
-                type="text"
-                placeholder="Search projects, sprints, tasks..."
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg 
-                         bg-white dark:bg-gray-800 text-gray-900 dark:text-white 
-                         focus:ring-2 focus:ring-blue-500 focus:border-transparent
-                         placeholder-gray-500 dark:placeholder-gray-400 text-sm"
-              />
-            </div>
+            <SearchBar
+              scope={searchContext.scope}
+              projectId={searchContext.projectId}
+              placeholder={searchContext.placeholder}
+              className="w-full"
+              maxResults={8}
+            />
           </div>
 
-          {/* Right: Notifications and user menu */}
+          {/* Right: AI Chat (project pages only), Theme toggle, notifications and user menu */}
           <div className="flex items-center space-x-3">
-            {/* Notification Popover */}
-            <NotificationPopover 
-              isOpen={isNotificationsOpen} 
-              onToggle={toggleNotifications} 
-              onClose={closeNotifications} 
-            />
+            {/* AI Chat Button - Only on project pages */}
+            {isProjectPage && projectId && (
+              <Link
+                href={`/project/${projectId}/ai-chat`}
+                className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors group"
+                title="AI Assistants - Chat with Product Owner, Scrum Master & Developer agents"
+              >
+                <Bot className="w-5 h-5 text-gray-600 dark:text-gray-400 group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors" />
+              </Link>
+            )}
+            
+            {/* Theme Toggle */}
+            <button
+              onClick={cycleTheme}
+              className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+              title={`Current theme: ${theme} (Click to cycle: Light → Dark → System)`}
+            >
+              {(() => {
+                const IconComponent = getThemeIcon();
+                return <IconComponent className="w-5 h-5 text-gray-600 dark:text-gray-400" />;
+              })()}
+            </button>
+
+            {/* Notification Center */}
+            <NotificationCenter />
 
             {/* User menu */}
             <div className="relative" ref={userMenuRef}>
@@ -157,17 +252,32 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
               >
                 {renderUserAvatar()}
                 <span className="hidden md:block text-sm font-medium text-gray-700 dark:text-gray-300">
-                  {user.name}
+                  {displayUser.name}
                 </span>
+                {isAuthenticated && displayUser.provider === 'keycloak' && (
+                  <span className="hidden lg:block text-xs bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 px-2 py-1 rounded-full ml-1">
+                    SSO
+                  </span>
+                )}
                 <ChevronDown className="w-4 h-4 text-gray-400" />
               </button>
 
               {/* Dropdown menu */}
               {isUserMenuOpen && (
-                <div className="absolute right-0 mt-2 w-56 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50">
+                <div className="absolute right-0 mt-2 w-64 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700 py-1 z-50">
                   <div className="px-4 py-3 border-b border-gray-200 dark:border-gray-700">
-                    <p className="text-sm text-gray-900 dark:text-white font-medium">{user.name}</p>
-                    <p className="text-sm text-gray-500 dark:text-gray-400">{user.email}</p>
+                    <div className="flex items-center space-x-3">
+                      {renderUserAvatar()}
+                      <div className="flex-1">
+                        <p className="text-sm text-gray-900 dark:text-white font-medium">{displayUser.name}</p>
+                        <p className="text-sm text-gray-500 dark:text-gray-400">{displayUser.email}</p>
+                        {isAuthenticated && displayUser.provider === 'keycloak' && (
+                          <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
+                            Authenticated via Keycloak
+                          </p>
+                        )}
+                      </div>
+                    </div>
                   </div>
                   
                   <Link href="/profile" className="flex items-center px-4 py-2 text-sm text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700">
@@ -198,6 +308,14 @@ const Header: React.FC<HeaderProps> = ({ onMenuToggle }) => {
           </div>
         </div>
       </div>
+
+      {/* Logout Confirmation Modal */}
+      <LogoutModal
+        isOpen={isLogoutModalOpen}
+        onClose={cancelLogout}
+        onConfirm={confirmLogout}
+        userName={displayUser.name}
+      />
     </header>
   );
 };

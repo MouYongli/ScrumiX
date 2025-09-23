@@ -5,9 +5,9 @@ const Footer = () => {
   const currentYear = new Date().getFullYear();
 
   return (
-    <footer className="bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700">
+    <footer className="bg-white dark:bg-gray-900 border-t border-gray-200 dark:border-gray-700 mt-auto">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="py-8">
+        <div className="py-6">
           <div className="flex flex-col md:flex-row justify-between items-center">
             {/* Brand info */}
             <div className="flex items-center space-x-2 mb-4 md:mb-0">
@@ -15,7 +15,7 @@ const Footer = () => {
                 <span className="text-white font-bold text-lg">S</span>
               </div>
               <span className="text-xl font-bold text-gray-900 dark:text-white">
-                Scrumix
+                ScrumiX
               </span>
             </div>
 
@@ -37,7 +37,7 @@ const Footer = () => {
 
             {/* Copyright */}
             <div className="text-sm text-gray-500 dark:text-gray-400 mt-4 md:mt-0">
-              © {currentYear} Scrumix. All rights reserved.
+              © {currentYear} ScrumiX. All rights reserved.
             </div>
           </div>
         </div>

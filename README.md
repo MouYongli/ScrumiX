@@ -29,20 +29,44 @@
 
 
 ## Components
-- Frontend (Next.js): The user interface is built with Next.js. The frontend communicates with the backend (FastAPI) to handle the logic and AI operations.
 
-- Backend (FastAPI): The backend is built with FastAPI, handling API requests, interacting with databases, running AI workflows and agents, and serving the AI-generated Scrum management and development suggestions to the frontend.
-  
-- Databases:
-  - SQL Database (e.g., PostgreSQL, MySQL, SQLite, etc.) is used to store and manage structured system data (e.g., user information, project information, etc.)
-  - Vector Database (e.g., Weaviate, FAISS or similar) is used to store and manage unstructured user and system data (e.g., user feedback, project documents, etc.)
-  - S3 Object Storage (e.g., AWS S3, MinIO, etc.) is used to store and manage unstructured user and system data (e.g., user feedback, project documents, etc.)
+### Frontend (Next.js 15)
+- **Modern React Framework**: Built with Next.js 15, React 19, and TypeScript
+- **AI-Powered Interface**: Interactive chat agents and intelligent user experience
+- **Real-time Collaboration**: Live updates and team communication features
+- **Responsive Design**: Mobile-first approach with adaptive layouts
+- **Internationalization**: Multi-language support (English/Chinese)
+- **Role-Based Dashboards**: Specialized interfaces for different Scrum roles
 
-- AI Agents:
-  - Scrum Master Agent: The Scrum Master Agent is responsible for managing the Scrum process, including the Scrum meetings, the Scrum board, and the Scrum artifacts.
-  - Product Owner Agent: The Product Owner Agent is responsible for managing the product backlog, including the product backlog items, the product backlog items' status, and the product backlog items' priority.
-  - Developer Agent: The Developer Agent is responsible for managing the development process, including the development tasks, the development tasks' status, and the development tasks' priority.
-  - QA Agent: The QA Agent is responsible for managing the QA process, including the QA tasks, the QA tasks' status, and the QA tasks' priority.
+### Backend (FastAPI)
+- **High-Performance API**: FastAPI with async/await support and automatic OpenAPI documentation
+- **Database Integration**: SQLAlchemy ORM with PostgreSQL and pgvector for AI embeddings
+- **Authentication**: JWT tokens and Keycloak OAuth2/OIDC integration
+- **AI Integration**: OpenAI and Google AI model support for intelligent features
+- **RESTful Architecture**: Well-structured API endpoints with comprehensive error handling
+- **Database Migrations**: Alembic for schema management and version control
+
+### Database Layer
+- **PostgreSQL with pgvector**: Primary database for structured data and AI embeddings
+  - User management and authentication
+  - Project and sprint data
+  - Task and backlog management
+  - Meeting and documentation storage
+  - AI embeddings for semantic search
+- **SQLite**: Development and testing database fallback
+- **Vector Search**: pgvector extension for AI-powered semantic search and recommendations
+
+### AI Agents System
+- **Scrum Master Agent**: Manages Scrum ceremonies, team coordination, and process optimization
+- **Product Owner Agent**: Handles product backlog management, user story creation, and prioritization
+- **Developer Agent**: Assists with task management, technical implementation, and development workflow
+- **Support Agent**: Provides general assistance, troubleshooting, and user guidance
+
+### Authentication & Security
+- **Keycloak Integration**: Enterprise-grade identity and access management
+- **JWT Authentication**: Secure token-based authentication with refresh tokens
+- **Role-Based Access Control**: Granular permissions for different user roles
+- **OAuth2/OIDC Support**: Industry-standard authentication protocols
 
 
 
@@ -53,51 +77,74 @@
 
 ## Installation
 
-### Manual installation
+### Manual Installation
 
-1. Setup databases
-  - Install PostgreSQL, Weaviate and Redis via Docker
-    ```bash
-    docker run -it --name postgres -p 5432:5432 -e POSTGRES_USER=admin -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=scrumix postgres
-    docker run -it --name weaviate -p 8080:8080 -e WEAVIATE_AUTHENTICATION_ANONYMOUS_ACCESS_ENABLED=true -e WEAVIATE_ENABLE_MODULES=all weaviate/weaviate:1.25.0
-    docker run -it --name redis -p 6379:6379 redis
-    ```
-    or here with docker-compose
-    ```bash
-    cd docker
-    docker-compose -f docker-compose.local.yml up -d
-    ```
+1. **Setup Database and Services**
+   - Install PostgreSQL with pgvector extension and Keycloak via Docker
+     ```bash
+     # Using individual containers
+     docker run -d --name postgres -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=scrumix -e POSTGRES_DB=scrumix_dev pgvector/pgvector:pg16
+     docker run -d --name keycloak -p 8080:8080 -e KEYCLOAK_ADMIN=admin -e KEYCLOAK_ADMIN_PASSWORD=admin quay.io/keycloak/keycloak:23.0 start-dev
+     ```
+   - Or use Docker Compose for easier setup
+     ```bash
+     cd docker
+     docker-compose -f docker-compose.local.yaml up -d
+     ```
 
-2. Install frontend and backend environment
+2. **Install Backend Environment**
+   ```bash
+   cd backend
+   # Create virtual environment
+   conda create -n scrumix python=3.10
+   conda activate scrumix
+   # Or use venv
+   # python -m venv venv
+   # source venv/bin/activate  # On Windows: venv\Scripts\activate
+   
+   # Install dependencies
+   pip install -e .
+   
+   # Set up environment variables
+   cp .env.example .env
+   # Edit .env with your configuration
+   
+   # Run database migrations
+   alembic upgrade head
+   ```
 
-  - Install backend environment
-    ```bash
-    cd backend
-    conda create -n scrumix python=3.10
-    conda activate scrumix
-    pip install -e .
-    ```
+3. **Install Frontend Environment**
+   ```bash
+   cd frontend
+   # Install dependencies
+   npm install
+   
+   # Set up environment variables
+   cp .env.example .env.local
+   # Edit .env.local with your configuration
+   ```
 
-  - Install frontend environment
-    ```bash
-    cd frontend
-    npm install
-    ```
+4. **Run the Application**
+   ```bash
+   # Start backend (in one terminal)
+   cd backend
+   uvicorn src.scrumix.main:app --reload --host 0.0.0.0 --port 8000
+   
+   # Start frontend (in another terminal)
+   cd frontend
+   npm run dev
+   ```
+   
+   Or use the convenience script:
+   ```bash
+   ./scripts/start.sh
+   ```
 
-3. Run the application
-    ```bash
-    cd backend
-    uvicorn src.main:app --reload
-    ```
-    ```bash
-    cd frontend
-    npm run dev
-    ```
-    or
-
-    ```bash
-    ./start.sh
-    ```
+5. **Access the Application**
+   - Frontend: http://localhost:3000
+   - Backend API: http://localhost:8000
+   - API Documentation: http://localhost:8000/docs
+   - Keycloak Admin: http://localhost:8080 (admin/admin)
 
 ## Deployment
 

@@ -1,0 +1,415 @@
+"""
+Project-related CRUD operations
+"""
+from typing import Optional, List, Dict, Any, Tuple
+from datetime import datetime
+from sqlalchemy.orm import Session
+from sqlalchemy import and_, or_
+from fastapi import HTTPException, status
+
+from scrumix.api.models.project import Project, ProjectStatus
+from scrumix.api.models.user_project import ScrumRole, UserProject
+from scrumix.api.schemas.project import ProjectCreate, ProjectUpdate
+from scrumix.api.crud.base import CRUDBase
+from scrumix.api.crud.user_project import user_project_crud
+from scrumix.api.core.embedding_service import embedding_service
+
+class ProjectCRUD(CRUDBase[Project, ProjectCreate, ProjectUpdate]):
+    def get_by_id(self, db: Session, project_id: int) -> Optional[Project]:
+        """Get project by ID"""
+        return self.get(db, project_id)
+    
+    def get_user_projects(
+        self, 
+        db: Session, 
+        user_id: int, 
+        skip: int = 0, 
+        limit: int = 100,
+        status: Optional[ProjectStatus] = None
+    ) -> List[Project]:
+        """Get projects where the user is a member"""
+        query = db.query(self.model).join(UserProject).filter(
+            UserProject.user_id == user_id
+        )
+        
+        if status:
+            query = query.filter(self.model.status == status)
+        
+        return query.offset(skip).limit(limit).all()
+
+    def search_user_projects(
+        self, 
+        db: Session, 
+        user_id: int, 
+        search_term: str,
+        skip: int = 0, 
+        limit: int = 100
+    ) -> List[Project]:
+        """Search projects where the user is a member"""
+        query = db.query(self.model).join(UserProject).filter(
+            UserProject.user_id == user_id
+        ).filter(
+            or_(
+                self.model.name.ilike(f"%{search_term}%"),
+                self.model.description.ilike(f"%{search_term}%")
+            )
+        )
+        
+        return query.offset(skip).limit(limit).all()
+
+    def get_by_name(self, db: Session, name: str) -> Optional[Project]:
+        """Get project by name"""
+        return db.query(self.model).filter(self.model.name == name).first()
+
+    def update_project(
+        self, 
+        db: Session, 
+        project_id: int, 
+        project_update: ProjectUpdate,
+        user_id: int
+    ) -> Optional[Project]:
+        """Update project with user permission check"""
+        # Check if user has access to the project
+        user_role = user_project_crud.get_user_role(db, user_id, project_id)
+        if not user_role:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="User does not have access to this project"
+            )
+        
+        # Only project owner can update projects
+        if not user_project_crud.is_user_project_owner(db, user_id, project_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only project owner can update project"
+            )
+        
+        project = self.get_by_id(db, project_id)
+        if not project:
+            return None
+        
+        # Update project fields
+        update_data = project_update.dict(exclude_unset=True)
+        for field, value in update_data.items():
+            setattr(project, field, value)
+        
+        project.updated_at = datetime.now()
+        db.commit()
+        db.refresh(project)
+        
+        return project
+
+    def delete_project(
+        self, 
+        db: Session, 
+        project_id: int, 
+        user_id: int
+    ) -> bool:
+        """Delete project with user permission check"""
+        # Check if user has access to the project
+        user_role = user_project_crud.get_user_role(db, user_id, project_id)
+        if not user_role:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="User does not have access to this project"
+            )
+        
+        # Only project owner can delete projects
+        if not user_project_crud.is_user_project_owner(db, user_id, project_id):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Only project owner can delete projects"
+            )
+        
+        project = self.get_by_id(db, project_id)
+        if not project:
+            return False
+        
+        db.delete(project)
+        db.commit()
+        
+        return True
+
+    def create_project(
+        self, 
+        db: Session, 
+        project_create: ProjectCreate,
+        creator_id: int,
+        creator_role: ScrumRole = ScrumRole.SCRUM_MASTER
+    ) -> Project:
+        """Create a new project and set creator with specified role"""
+        # Validate dates
+        if project_create.start_date and project_create.end_date and project_create.start_date >= project_create.end_date:
+            raise ValueError("End date must be after start date")
+        
+        # Create project object
+        db_project = Project(
+            name=project_create.name,
+            description=project_create.description,
+            status=project_create.status,
+            start_date=project_create.start_date,
+            end_date=project_create.end_date,
+            color=project_create.color,
+            last_activity_at=datetime.now()
+        )
+        
+        db.add(db_project)
+        db.commit()
+        db.refresh(db_project)
+
+        # Add creator with specified role and project owner
+        user_project_crud.add_user_to_project(
+            db=db,
+            user_id=creator_id,
+            project_id=db_project.id,
+            role=creator_role,
+            is_owner=True
+        )
+        
+        return db_project
+
+    def get_project_with_user_role(
+        self,
+        db: Session,
+        project_id: int,
+        user_id: int
+    ) -> Dict[str, Any]:
+        """Get project with user's role information"""
+        project = self.get_by_id(db, project_id)
+        if not project:
+            return None
+            
+        role = user_project_crud.get_user_role(db, user_id, project_id)
+        if not role:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="User does not have access to this project"
+            )
+            
+        # Get project members count using database query for accuracy
+        members_count = db.query(UserProject).filter(UserProject.project_id == project_id).count()
+        
+        # Count backlog items (user stories) for progress calculation
+        backlog_total = 0
+        backlog_completed = 0
+        
+        for sprint in project.sprints:
+            for backlog_item in sprint.backlogs:
+                backlog_total += 1
+                if backlog_item.status.value == "done":
+                    backlog_completed += 1
+        
+        # Calculate progress based on completed backlog items
+        if backlog_total > 0:
+            progress = int((backlog_completed / backlog_total * 100))
+        else:
+            progress = 0
+            
+        return {
+            "project": project,
+            "user_role": role,
+            "members_count": members_count,
+            "backlog_completed": backlog_completed,
+            "backlog_total": backlog_total,
+            "progress": progress
+        }
+    
+    def get_project_member_count(self, db: Session, project_id: int) -> int:
+        """Get the number of members in a project"""
+        return db.query(UserProject).filter(UserProject.project_id == project_id).count()
+    
+    def get_user_projects_with_details(
+        self, 
+        db: Session, 
+        user_id: int, 
+        skip: int = 0, 
+        limit: int = 100,
+        status: Optional[ProjectStatus] = None
+    ) -> List[Dict[str, Any]]:
+        """Get projects where the user is a member with detailed information including member count"""
+        query = db.query(self.model).join(UserProject).filter(
+            UserProject.user_id == user_id
+        )
+        
+        if status:
+            query = query.filter(self.model.status == status)
+        
+        projects = query.offset(skip).limit(limit).all()
+        
+        # Get detailed information for each project
+        projects_with_details = []
+        for project in projects:
+            # Get user's role in the project
+            user_role = user_project_crud.get_user_role(db, user_id, project.id)
+            
+            # Get project member count
+            member_count = self.get_project_member_count(db, project.id)
+            
+            # Count backlog items for progress calculation
+            backlog_total = 0
+            backlog_completed = 0
+            
+            for sprint in project.sprints:
+                for backlog_item in sprint.backlogs:
+                    backlog_total += 1
+                    if backlog_item.status.value == "done":
+                        backlog_completed += 1
+            
+            # Calculate progress based on completed backlog items
+            if backlog_total > 0:
+                progress = int((backlog_completed / backlog_total * 100))
+            else:
+                progress = 0
+                
+            projects_with_details.append({
+                "project": project,
+                "user_role": user_role,
+                "members_count": member_count,
+                "backlog_completed": backlog_completed,
+                "backlog_total": backlog_total,
+                "progress": progress
+            })
+        
+        return projects_with_details
+    
+    async def semantic_search(
+        self,
+        db: Session,
+        query: str,
+        user_id: int,
+        limit: int = 10,
+        similarity_threshold: float = 0.7
+    ) -> List[Tuple[Project, float]]:
+        """
+        Perform semantic search on projects using embeddings.
+        Only returns projects where the user is a member.
+        
+        Args:
+            db: Database session
+            query: Search query text
+            user_id: User ID to filter projects by membership
+            limit: Maximum number of results
+            similarity_threshold: Minimum similarity score (0.0 to 1.0)
+            
+        Returns:
+            List of tuples containing (Project, similarity_score)
+        """
+        # Generate embedding for the query
+        query_embedding = await embedding_service.generate_embedding(query)
+        if not query_embedding:
+            return []
+        
+        # Build the base query - only projects where user is a member
+        base_query = db.query(self.model).join(UserProject).filter(
+            UserProject.user_id == user_id
+        )
+        
+        # Only include projects that have embeddings
+        base_query = base_query.filter(self.model.embedding.isnot(None))
+        
+        # Calculate cosine similarity and filter by threshold
+        similarity_expr = 1 - self.model.embedding.cosine_distance(query_embedding)
+        
+        query_with_similarity = base_query.add_columns(similarity_expr.label('similarity')).filter(
+            similarity_expr >= similarity_threshold
+        ).order_by(similarity_expr.desc()).limit(limit)
+        
+        # Execute query and format results
+        results = []
+        for project, similarity in query_with_similarity.all():
+            results.append((project, float(similarity)))
+        
+        return results
+    
+    async def find_similar_projects(
+        self,
+        db: Session,
+        project_id: int,
+        user_id: int,
+        limit: int = 5,
+        similarity_threshold: float = 0.6
+    ) -> List[Tuple[Project, float]]:
+        """
+        Find projects similar to the given project based on embeddings.
+        Only returns projects where the user is a member.
+        
+        Args:
+            db: Database session
+            project_id: ID of the reference project
+            user_id: User ID to filter projects by membership
+            limit: Maximum number of similar projects to return
+            similarity_threshold: Minimum similarity score
+            
+        Returns:
+            List of tuples containing (Project, similarity_score)
+        """
+        # Get the reference project
+        reference_project = self.get(db, id=project_id)
+        if not reference_project:
+            return []
+        
+        # Check if reference project has embedding
+        if not reference_project.embedding:
+            return []
+        
+        # Query for similar projects where user is a member
+        query = db.query(self.model).join(UserProject).filter(
+            and_(
+                UserProject.user_id == user_id,
+                self.model.id != project_id,  # Exclude the reference project
+                self.model.embedding.isnot(None)  # Only projects with embeddings
+            )
+        )
+        
+        # Calculate cosine similarity
+        similarity_expr = 1 - self.model.embedding.cosine_distance(reference_project.embedding)
+        
+        # Filter by similarity threshold and order by similarity
+        results_query = query.add_columns(
+            similarity_expr.label('similarity')
+        ).filter(
+            similarity_expr >= similarity_threshold
+        ).order_by(similarity_expr.desc()).limit(limit)
+        
+        # Execute query and format results
+        results = []
+        for project, similarity in results_query.all():
+            results.append((project, float(similarity)))
+        
+        return results
+    
+    async def update_embedding(self, db: Session, project_id: int, force: bool = False) -> bool:
+        """
+        Update embedding for a specific project.
+        
+        Args:
+            db: Database session
+            project_id: ID of the project to update
+            force: Force update even if embedding is up to date
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        return await embedding_service.update_project_embedding(db, project_id)
+    
+    async def update_all_embeddings(
+        self, 
+        db: Session, 
+        user_id: Optional[int] = None,
+        force: bool = False
+    ) -> Dict[str, int]:
+        """
+        Update embeddings for all projects (optionally filtered by user membership).
+        
+        Args:
+            db: Database session
+            user_id: Optional user ID to filter projects by membership
+            force: Force update all embeddings
+            
+        Returns:
+            Dictionary with update statistics
+        """
+        return await embedding_service.update_all_project_embeddings(db, user_id, force)
+
+# Create CRUD instance
+project_crud = ProjectCRUD(Project)
