@@ -1,11 +1,11 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Eye, EyeOff, Mail, Lock, User, ArrowRight, Github, CheckCircle, Shield, Home } from 'lucide-react';
 
-const SignupPage = () => {
+const SignupPageContent = () => {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [formData, setFormData] = useState({
@@ -586,6 +586,25 @@ const SignupPage = () => {
         </div>
       </div>
     </div>
+  );
+};
+
+// Loading component for Suspense fallback
+const SignupPageLoading = () => (
+  <div className="min-h-screen flex items-center justify-center">
+    <div className="text-center">
+      <div className="w-8 h-8 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+      <p className="text-gray-600 dark:text-gray-400">Loading...</p>
+    </div>
+  </div>
+);
+
+// Main component wrapped in Suspense
+const SignupPage = () => {
+  return (
+    <Suspense fallback={<SignupPageLoading />}>
+      <SignupPageContent />
+    </Suspense>
   );
 };
 

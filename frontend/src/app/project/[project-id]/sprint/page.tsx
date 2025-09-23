@@ -464,64 +464,7 @@ const EditSprintModal: React.FC<{
             />
           </div>
 
-          {/* Team Members */}
-          <div>
-            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-              Team Members
-            </label>
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setIsTeamDropdownOpen(!isTeamDropdownOpen)}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent flex justify-between items-center"
-              >
-                <span className="text-gray-500 dark:text-gray-400">
-                  {(formData.teamMembers?.length || 0) === 0 
-                    ? 'Select team members...' 
-                    : `${formData.teamMembers?.length || 0} member${(formData.teamMembers?.length || 0) !== 1 ? 's' : ''} selected`
-                  }
-                </span>
-                <ChevronDown className={`w-4 h-4 transform transition-transform ${isTeamDropdownOpen ? 'rotate-180' : ''}`} />
-              </button>
-              
-              {isTeamDropdownOpen && (
-                <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-48 overflow-y-auto">
-                  {availableTeamMembers.map(member => (
-                    <label key={member} className="flex items-center px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-600 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={formData.teamMembers?.includes(member)}
-                        onChange={() => toggleTeamMember(member)}
-                        className="mr-3 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
-                      />
-                      <span className="text-gray-900 dark:text-white">{member}</span>
-                    </label>
-                  ))}
-                </div>
-              )}
-            </div>
-            
-            {/* Selected team members */}
-            {(formData.teamMembers?.length || 0) > 0 && (
-              <div className="mt-2 flex flex-wrap gap-2">
-                {formData.teamMembers?.map(member => (
-                  <span
-                    key={member}
-                    className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 dark:bg-blue-900/20 text-blue-800 dark:text-blue-400 text-sm rounded-full"
-                  >
-                    {member}
-                    <button
-                      type="button"
-                      onClick={() => removeTeamMember(member)}
-                      className="hover:text-blue-600 dark:hover:text-blue-300"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
-          </div>
+          {/* Team Members selection removed */}
 
           {/* Status */}
           <div>
@@ -587,7 +530,6 @@ const ProjectSprints: React.FC<ProjectSprintsProps> = ({ params }) => {
     avatar_url?: string;
     role: string;
     joined_at: string;
-    is_admin: boolean;
   }>>([]);
 
   // Breadcrumb navigation

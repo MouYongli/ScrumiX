@@ -146,12 +146,14 @@ const ViewDocumentation: React.FC<ViewDocumentationProps> = ({ params }) => {
 
     if (document.file_url) {
       // Download file from URL
-      const link = document.createElement('a');
-      link.href = document.file_url;
-      link.download = document.title;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
+      if (typeof window !== 'undefined') {
+        const link = window.document.createElement('a');
+        link.href = document.file_url;
+        link.download = document.title;
+        window.document.body.appendChild(link);
+        link.click();
+        window.document.body.removeChild(link);
+      }
     } else if (document.content) {
       // Download as markdown file
       const fileName = document.title || 'document';
@@ -177,15 +179,17 @@ const ViewDocumentation: React.FC<ViewDocumentationProps> = ({ params }) => {
       markdownContent += document.content;
 
       // Create and download file
-      const blob = new Blob([markdownContent], { type: 'text/markdown;charset=utf-8' });
-      const url = URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `${sanitizedFileName}.md`;
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-      URL.revokeObjectURL(url);
+      if (typeof window !== 'undefined') {
+        const blob = new Blob([markdownContent], { type: 'text/markdown;charset=utf-8' });
+        const url = URL.createObjectURL(blob);
+        const link = window.document.createElement('a');
+        link.href = url;
+        link.download = `${sanitizedFileName}.md`;
+        window.document.body.appendChild(link);
+        link.click();
+        window.document.body.removeChild(link);
+        URL.revokeObjectURL(url);
+      }
     }
   };
 

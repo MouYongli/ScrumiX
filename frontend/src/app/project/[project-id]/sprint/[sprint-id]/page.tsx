@@ -1219,7 +1219,7 @@ const EditSprintModal: React.FC<{
     avatar_url?: string;
     role: string;
     joined_at: string;
-    is_admin: boolean;
+    // is_admin removed
   }>;
 }> = ({ isOpen, onClose, onSubmit, sprint, projectDevelopers }) => {
   const [formData, setFormData] = useState<Sprint>(sprint);
@@ -1765,7 +1765,7 @@ const SprintDetail: React.FC<SprintDetailProps> = ({ params }) => {
     avatar_url?: string;
     role: string;
     joined_at: string;
-    is_admin: boolean;
+    // is_admin removed
   }>>([]);
 
   // Add project name state
