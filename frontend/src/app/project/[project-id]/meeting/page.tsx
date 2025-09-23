@@ -196,7 +196,8 @@ const ProjectMeetings = () => {
     duration: 30,
     location: '',
     description: '',
-    agenda: ['']
+    agenda: [''],
+    sprintId: undefined as number | undefined
   });
 
   // Form validation state
@@ -372,7 +373,9 @@ const ProjectMeetings = () => {
     const { name, value } = e.target;
     const newFormData = {
       ...formData,
-      [name]: name === 'duration' ? parseInt(value) || 0 : value
+      [name]: name === 'duration' ? parseInt(value) || 0 : 
+              name === 'sprintId' ? (value === '' ? undefined : parseInt(value)) : 
+              value
     };
     
     setFormData(newFormData);
@@ -457,10 +460,7 @@ const ProjectMeetings = () => {
       // Create a Date object in UTC with the exact values the user entered
       const datetimeToSend = new Date(Date.UTC(year, month - 1, day, hours, minutes, 0));
       
-      // Meetings can be independent of sprints. Only associate a sprint when explicitly selected.
-      // By default, do not set a sprint for the meeting.
-      let sprintId: number | undefined = undefined;
-      
+      // Use the sprintId from form data (can be undefined for independent meetings)
       const meetingData: any = {
         title: formData.title,
         meeting_type: formData.type as MeetingType,
@@ -468,7 +468,7 @@ const ProjectMeetings = () => {
         description: formData.description,
         duration: formData.duration,
         location: formData.location,
-        ...(sprintId !== undefined ? { sprint_id: sprintId } : {}),
+        ...(formData.sprintId !== undefined ? { sprint_id: formData.sprintId } : {}),
         project_id: parseInt(projectId)
       };
 
@@ -533,17 +533,15 @@ const ProjectMeetings = () => {
       // Create a Date object in UTC with the exact values the user entered
       const datetimeToSend = new Date(Date.UTC(year, month - 1, day, hours, minutes, 0));
       
-      // Get the first available sprint or use a default (same logic as create)
-      const sprintId = sprints.length > 0 ? sprints[0].id : 1;
-      
+      // Use the sprintId from form data (can be undefined for independent meetings)
       const updateData = {
-      title: formData.title,
+        title: formData.title,
         meeting_type: formData.type as MeetingType,
         start_datetime: datetimeToSend.toISOString(),
         description: formData.description,
-      duration: formData.duration,
-      location: formData.location,
-        sprint_id: sprintId,
+        duration: formData.duration,
+        location: formData.location,
+        ...(formData.sprintId !== undefined ? { sprint_id: formData.sprintId } : {}),
         project_id: parseInt(projectId)
       };
 
@@ -598,7 +596,8 @@ const ProjectMeetings = () => {
       duration: 30,
       location: '',
       description: '',
-      agenda: ['']
+      agenda: [''],
+      sprintId: undefined
     });
     setFormErrors({});
   };
@@ -769,7 +768,8 @@ const ProjectMeetings = () => {
       duration: meeting.duration || 30,
       location: meeting.location || '',
       description: meeting.description || '',
-      agenda: agendaItems
+      agenda: agendaItems,
+      sprintId: (meeting as any).sprintId || (meeting as any).sprint_id || undefined
     });
     setFormErrors({}); // Clear any validation errors when editing
     setShowEditModal(true);
@@ -1296,9 +1296,30 @@ const ProjectMeetings = () => {
                 </div>
               </div>
 
+              {/* Sprint Association */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Sprint Association
+                </label>
+                <select
+                  name="sprintId"
+                  value={formData.sprintId || ''}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                >
+                  <option value="">No Sprint (Independent Meeting)</option>
+                  {sprints.map((sprint) => (
+                    <option key={sprint.id} value={sprint.id}>
+                      {sprint.sprintName} {sprint.status === 'active' ? '(Active)' : ''}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  Choose a sprint to associate this meeting with, or leave independent
+                </p>
+              </div>
+
               {/* TODO: Add facilitator field to backend */}
-
-
 
               {/* Description */}
               <div>
@@ -1495,7 +1516,28 @@ const ProjectMeetings = () => {
                 </div>
               </div>
 
-
+              {/* Sprint Association */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  Sprint Association
+                </label>
+                <select
+                  name="sprintId"
+                  value={formData.sprintId || ''}
+                  onChange={handleInputChange}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-gray-700 dark:text-white"
+                >
+                  <option value="">No Sprint (Independent Meeting)</option>
+                  {sprints.map((sprint) => (
+                    <option key={sprint.id} value={sprint.id}>
+                      {sprint.sprintName} {sprint.status === 'active' ? '(Active)' : ''}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
+                  Choose a sprint to associate this meeting with, or leave independent
+                </p>
+              </div>
 
               {/* Description */}
               <div>
