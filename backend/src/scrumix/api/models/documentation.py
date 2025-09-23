@@ -5,7 +5,7 @@ from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Enum as SQ
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from enum import Enum
-from pgvector.sqlalchemy import Vector
+from scrumix.api.db.vector_utils import get_vector_column
 from typing import Optional
 from scrumix.api.db.base import Base
 
@@ -33,9 +33,9 @@ class Documentation(Base):
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
     
     # Vector embeddings for semantic search - separate embeddings for each field
-    title_embedding = Column(Vector(1536), nullable=True, comment="Embedding for title")
-    description_embedding = Column(Vector(1536), nullable=True, comment="Embedding for description")
-    content_embedding = Column(Vector(1536), nullable=True, comment="Embedding for content")
+    title_embedding = Column(get_vector_column(1536), nullable=True, comment="Embedding for title")
+    description_embedding = Column(get_vector_column(1536), nullable=True, comment="Embedding for description")
+    content_embedding = Column(get_vector_column(1536), nullable=True, comment="Embedding for content")
     embedding_updated_at = Column(DateTime(timezone=True), nullable=True, comment="Last time embeddings were generated")
     
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

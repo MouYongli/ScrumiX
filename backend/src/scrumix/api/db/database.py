@@ -9,7 +9,7 @@ import os
 # Create database engine
 def get_database_url():
     """Get database URL with fallback to SQLite for testing"""
-    # Check for explicit DATABASE_URL environment variable first
+    # Check for explicit DATABASE_URL environment variable first (Railway's primary method)
     database_url = os.environ.get("DATABASE_URL")
     if database_url:
         # If it's a PostgreSQL URL, test if it works, otherwise fallback to SQLite
@@ -17,10 +17,12 @@ def get_database_url():
             try:
                 import psycopg2
                 # Quick connection test
-                psycopg2.connect(database_url, connect_timeout=2)
+                psycopg2.connect(database_url, connect_timeout=5)
+                print(f"Successfully connected to PostgreSQL via DATABASE_URL")
                 return database_url
-            except Exception:
-                print("PostgreSQL connection failed, falling back to SQLite")
+            except Exception as e:
+                print(f"PostgreSQL connection failed via DATABASE_URL: {e}")
+                print("Falling back to SQLite")
                 return settings.DATABASE_URL
         return database_url
     

@@ -4,7 +4,7 @@ Project-related database models
 from sqlalchemy import Column, Integer, String, DateTime, Enum as SQLEnum, Text
 from sqlalchemy.sql import func
 from enum import Enum
-from pgvector.sqlalchemy import Vector
+from scrumix.api.db.vector_utils import get_vector_column
 from typing import Optional
 from scrumix.api.db.base import Base
 from sqlalchemy.orm import relationship
@@ -31,7 +31,7 @@ class Project(Base):
     color = Column(String(20), nullable=True, comment="Project color")
     
     # Vector embedding for semantic search - combined embedding for name and description
-    embedding = Column(Vector(1536), nullable=True, comment="Combined embedding for name and description")
+    embedding = Column(get_vector_column(1536), nullable=True, comment="Combined embedding for name and description")
     embedding_updated_at = Column(DateTime(timezone=True), nullable=True, comment="Last time embedding was generated")
     
     last_activity_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

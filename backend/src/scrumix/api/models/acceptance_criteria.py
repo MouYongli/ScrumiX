@@ -1,7 +1,7 @@
 from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, Boolean
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from pgvector.sqlalchemy import Vector
+from scrumix.api.db.vector_utils import get_vector_column
 from typing import Optional
 
 from ..db.base import Base
@@ -18,7 +18,7 @@ class AcceptanceCriteria(Base):
     is_met = Column(Boolean, default=False, nullable=False, comment="Whether the criteria is met")
     
     # Vector embedding for semantic search
-    embedding = Column(Vector(1536), nullable=True, comment="Embedding for title")
+    embedding = Column(get_vector_column(1536), nullable=True, comment="Embedding for title")
     embedding_updated_at = Column(DateTime(timezone=True), nullable=True, comment="Last time embedding was generated")
     
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

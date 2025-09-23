@@ -2,7 +2,7 @@ from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Enum
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from enum import Enum
-from pgvector.sqlalchemy import Vector
+from scrumix.api.db.vector_utils import get_vector_column
 from typing import Optional
 
 from ..db.base import Base
@@ -35,7 +35,7 @@ class Task(Base):
     priority = Column(SQLEnum(TaskPriority), nullable=False, default=TaskPriority.MEDIUM, index=True)
     
     # Vector embedding for semantic search - combined embedding for title, description, status, and priority
-    embedding = Column(Vector(1536), nullable=True, comment="Combined embedding for title, description, status, and priority")
+    embedding = Column(get_vector_column(1536), nullable=True, comment="Combined embedding for title, description, status, and priority")
     embedding_updated_at = Column(DateTime(timezone=True), nullable=True, comment="Last time embedding was generated")
     
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

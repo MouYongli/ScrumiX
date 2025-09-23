@@ -5,7 +5,7 @@ from sqlalchemy import Column, String, Integer, DateTime, Text, ForeignKey, JSON
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
-from pgvector.sqlalchemy import Vector
+from scrumix.api.db.vector_utils import get_vector_column
 
 from ..db.base import Base
 
@@ -23,7 +23,7 @@ class ChatConversation(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     last_message_at = Column(DateTime(timezone=True), server_default=func.now())
     summary = Column(Text, nullable=True)
-    memory_embedding = Column(Vector(1536), nullable=True)
+    memory_embedding = Column(get_vector_column(1536), nullable=True)
 
     # Relationships
     user = relationship("User", back_populates="chat_conversations")
@@ -40,7 +40,7 @@ class ChatMessage(Base):
     role = Column(String, nullable=False)  # 'user', 'assistant', 'system'
     parts = Column(JSON, nullable=False)  # Message parts (text, files, etc.)
     text_content = Column(Text, nullable=True)  # Extracted text content for search
-    embedding = Column(Vector(1536), nullable=True)
+    embedding = Column(get_vector_column(1536), nullable=True)
     tool_name = Column(String, nullable=True)
     tool_call_id = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

@@ -63,12 +63,12 @@ class Settings(BaseSettings):
     AZURE_OPENAI_DEPLOYMENT_NAME: str = os.environ.get("AZURE_OPENAI_DEPLOYMENT_NAME", "text-embedding-3-small")
     EMBEDDING_MODEL: str = os.environ.get("EMBEDDING_MODEL", "text-embedding-3-small")
 
-    # Postgres Configuration
-    POSTGRES_SERVER: str = os.environ.get("POSTGRES_SERVER", "localhost")  # Default to localhost for local dev
-    POSTGRES_USER: str = os.environ.get("POSTGRES_USER", "postgres")
-    POSTGRES_PASSWORD: str = os.environ.get("POSTGRES_PASSWORD", "scrumix")
-    POSTGRES_DB: str = os.environ.get("POSTGRES_DB", "scrumix_dev")  
-    POSTGRES_PORT: str = os.environ.get("POSTGRES_PORT", "5433")
+    # Postgres Configuration - Railway uses different env var names
+    POSTGRES_SERVER: str = os.environ.get("PGHOST", os.environ.get("POSTGRES_SERVER", "localhost"))
+    POSTGRES_USER: str = os.environ.get("PGUSER", os.environ.get("POSTGRES_USER", "postgres"))
+    POSTGRES_PASSWORD: str = os.environ.get("PGPASSWORD", os.environ.get("POSTGRES_PASSWORD", "scrumix"))
+    POSTGRES_DB: str = os.environ.get("PGDATABASE", os.environ.get("POSTGRES_DB", "scrumix_dev"))
+    POSTGRES_PORT: str = os.environ.get("PGPORT", os.environ.get("POSTGRES_PORT", "5432"))
 
     # OAuth/Keycloak Configuration
     KEYCLOAK_SERVER_URL: str = os.environ.get("KEYCLOAK_SERVER_URL", "http://localhost:8080")  # Internal URL

@@ -10,6 +10,7 @@ from datetime import datetime
 import logging
 
 from .config import settings
+from ..db.vector_utils import is_pgvector_available
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +51,10 @@ class EmbeddingService:
         Returns:
             List of floats representing the embedding, or None if generation fails
         """
+        if not is_pgvector_available():
+            logger.warning("pgvector not available, skipping embedding generation")
+            return None
+            
         if not self.client or not text.strip():
             return None
         
@@ -83,6 +88,10 @@ class EmbeddingService:
         Returns:
             List of embeddings (or None for failed generations)
         """
+        if not is_pgvector_available():
+            logger.warning("pgvector not available, skipping batch embedding generation")
+            return [None] * len(texts)
+            
         if not self.client or not texts:
             return [None] * len(texts)
         

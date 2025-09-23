@@ -19,6 +19,7 @@ RUN apt-get update && apt-get install -y \
 # Copy Python dependencies
 COPY pyproject.toml /app/
 COPY src/ /app/src/
+COPY start.sh /app/start.sh
 
 # Install Python dependencies
 RUN pip install --no-cache-dir --upgrade pip && \
@@ -27,14 +28,15 @@ RUN pip install --no-cache-dir --upgrade pip && \
 # Create non-root user for security
 RUN groupadd -r scrumix && useradd -r -g scrumix scrumix
 RUN chown -R scrumix:scrumix /app
+RUN chmod +x /app/start.sh
 USER scrumix
 
-# Expose port
-EXPOSE 8000
+# Expose port (Railway will set PORT env var)
+EXPOSE $PORT
 
-# Health check
+# Health check - use Railway's PORT environment variable
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:$PORT/health || exit 1
+    CMD curl -f http://localhost:${PORT}/health || exit 1
 
 # Command to run the application
-CMD ["python", "-m", "scrumix.main"]
+CMD ["/app/start.sh"]

@@ -5,7 +5,7 @@ from sqlalchemy import Column, Integer, String, DateTime, Enum as SQLEnum, Text,
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from enum import Enum
-from pgvector.sqlalchemy import Vector
+from scrumix.api.db.vector_utils import get_vector_column
 from typing import Optional
 from scrumix.api.db.base import Base
 
@@ -55,7 +55,7 @@ class Backlog(Base):
     path = Column(String(500), nullable=True, index=True)  # Materialized path for efficient queries
     
     # Vector embedding for semantic search
-    embedding = Column(Vector(1536), nullable=True, comment="Combined embedding for title, description, and acceptance criteria")
+    embedding = Column(get_vector_column(1536), nullable=True, comment="Combined embedding for title, description, and acceptance criteria")
     embedding_updated_at = Column(DateTime(timezone=True), nullable=True, comment="Last time embedding was generated")
     
     # System timestamps
