@@ -1,7 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: 'standalone',
+  //output: 'standalone',
   // External packages configuration
   serverExternalPackages: [],
   // Ignore ESLint errors during production builds to allow deployment
