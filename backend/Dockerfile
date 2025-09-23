@@ -29,16 +29,12 @@ RUN groupadd -r scrumix && useradd -r -g scrumix scrumix
 RUN chown -R scrumix:scrumix /app
 USER scrumix
 
-# Expose port (Railway will set PORT env var)
-EXPOSE $PORT
+# Expose port
+EXPOSE 8000
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 \
     CMD curl -f http://localhost:$PORT/health || exit 1
 
-# Copy startup script
-COPY start.sh /app/start.sh
-RUN chmod +x /app/start.sh
-
 # Command to run the application
-CMD ["/app/start.sh"]
+CMD ["python", "-m", "scrumix.main"]

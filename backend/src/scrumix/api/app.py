@@ -35,26 +35,7 @@ app.add_middleware(
 
 app.include_router(api_router, prefix=settings.API_V1_STR)
 
-@app.get("/")
-async def root():
-    """Root endpoint for Railway deployment verification"""
-    return {
-        "message": "ScrumiX API is running",
-        "version": "1.0.0",
-        "docs": "/docs",
-        "health": "/health"
-    }
-
 @app.get("/health")
 async def health_check():
-    """Health check endpoint for Railway deployment"""
-    import os
-    from datetime import datetime
-    
-    return {
-        "status": "ok", 
-        "message": "ScrumiX API is running",
-        "timestamp": datetime.utcnow().isoformat(),
-        "environment": os.environ.get("ENVIRONMENT", "development"),
-        "port": os.environ.get("PORT", "8000")
-    }
+    """Health check endpoint"""
+    return {"status": "ok", "message": "ScrumiX API is running"}
