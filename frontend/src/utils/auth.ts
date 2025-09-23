@@ -5,6 +5,8 @@
 export interface User {
   id: number | string; // Support both local users (int) and Keycloak users (string)
   email: string;
+  first_name?: string;
+  last_name?: string;
   full_name?: string;
   username?: string;
   avatar_url?: string;
@@ -347,7 +349,8 @@ export const login = async (
 export const register = async (userData: {
   email: string;
   password: string;
-  full_name?: string;
+  first_name?: string;
+  last_name?: string;
   username?: string;
 }): Promise<User> => {
   // Use mock authentication in development mode

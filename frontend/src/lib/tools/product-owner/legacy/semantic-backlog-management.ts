@@ -9,9 +9,10 @@ import {
   bm25SearchBacklogTool,
   hybridSearchBacklogTool,
   findSimilarBacklogTool,
-  semanticBacklogManagementTools,
-  type SemanticBacklogManagementTools
+  semanticBacklogManagementTools
 } from '../backlog';
+
+import type { SemanticBacklogManagementTools } from '../backlog/semantic-backlog-management';
 
 // Re-export all tools from the new modular structure
 export {
