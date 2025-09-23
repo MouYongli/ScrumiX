@@ -9,6 +9,7 @@ import ConditionalSidebar from "@/components/layout/ConditionalSidebar";
 import ChatWidget from "@/components/chat/ChatWidget";
 import GuideAgent from "@/components/chat/GuideAgent";
 import { ThemeProvider } from "@/contexts/ThemeContext";
+import { isAuthenticated } from "@/utils/auth";
 
 // Script to apply theme before React hydrates to prevent flash
 const themeScript = `
@@ -65,12 +66,21 @@ export default function RootLayout({
 }>) {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
   const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
+  const [isUserAuthenticated, setIsUserAuthenticated] = useState<boolean | null>(null);
+  const [isHydrated, setIsHydrated] = useState(false);
   const pathname = usePathname();
   
   // Check if it's auth page or home page
   const isAuthPage = pathname?.startsWith('/auth');
   const isHomePage = pathname === '/';
-  const isPublicPage = isAuthPage || isHomePage;
+  // Footer link pages that should be accessible to both authenticated and non-authenticated users
+  const isFooterPage = pathname === '/help' || pathname === '/docs' || pathname === '/privacy' || pathname === '/terms';
+  
+  // Determine if we should use public layout
+  // - Always public: auth pages and home page
+  // - Footer pages: public only if user is NOT authenticated (or auth status is loading)
+  // During hydration, we default to public layout to prevent hydration mismatch
+  const isPublicPage = isAuthPage || isHomePage || (isFooterPage && (!isHydrated || isUserAuthenticated === false || isUserAuthenticated === null));
   
   // Check if it's a project-specific page (under /project/[project-id]/)
   const isProjectPage = pathname?.startsWith('/project/') && pathname?.split('/').length >= 3;
@@ -86,6 +96,23 @@ export default function RootLayout({
     setIsMobileSidebarOpen(!isMobileSidebarOpen);
   };
 
+  // Handle hydration and authentication check
+  useEffect(() => {
+    setIsHydrated(true);
+    
+    const checkAuthStatus = async () => {
+      try {
+        const authenticated = await isAuthenticated();
+        setIsUserAuthenticated(authenticated);
+      } catch (error) {
+        console.error('Auth check failed:', error);
+        setIsUserAuthenticated(false);
+      }
+    };
+    
+    checkAuthStatus();
+  }, [pathname]);
+
   // Close mobile sidebar when route changes
   useEffect(() => {
     setIsMobileSidebarOpen(false);
@@ -98,12 +125,12 @@ export default function RootLayout({
         <ThemeProvider>
           {isPublicPage ? (
             // Public page layout - no navigation (home and auth pages)
-            <div className="min-h-screen flex flex-col">
+            <div className="min-h-screen flex flex-col" suppressHydrationWarning>
               {children}
             </div>
           ) : (
             // Main app layout - with full navigation
-            <div className="flex flex-col min-h-screen">
+            <div className="flex flex-col min-h-screen" suppressHydrationWarning>
               {/* Header - occupies entire top width */}
               <Header onMenuToggle={toggleMobileSidebar} />
 

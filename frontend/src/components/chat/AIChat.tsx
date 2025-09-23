@@ -54,7 +54,7 @@ const AGENTS: Record<ProjectAgentType, ProjectAgent> = {
     color: 'bg-emerald-500',
     accentColor: 'text-emerald-600 dark:text-emerald-400',
     expertise: ['User Stories', 'Backlog Prioritization', 'Acceptance Criteria', 'Stakeholder Management', 'Backlog Updates'],
-    defaultModel: getAgentModelConfig('product-owner').model
+    defaultModel: AI_MODELS.GPT5
   },
   'scrum-master': {
     id: 'scrum-master',
@@ -64,7 +64,7 @@ const AGENTS: Record<ProjectAgentType, ProjectAgent> = {
     color: 'bg-blue-500',
     accentColor: 'text-blue-600 dark:text-blue-400',
     expertise: ['Sprint Planning', 'Daily Standups', 'Retrospectives', 'Impediment Resolution'],
-    defaultModel: getAgentModelConfig('scrum-master').model
+    defaultModel: AI_MODELS.CLAUDE_SONNET_4
   },
   'developer': {
     id: 'developer',
@@ -74,7 +74,7 @@ const AGENTS: Record<ProjectAgentType, ProjectAgent> = {
     color: 'bg-purple-500',
     accentColor: 'text-purple-600 dark:text-purple-400',
     expertise: ['Code Review', 'Technical Debt', 'Architecture', 'Best Practices'],
-    defaultModel: getAgentModelConfig('developer').model
+    defaultModel: AI_MODELS.GPT5_MINI
   }
 };
 
@@ -96,7 +96,7 @@ interface AIChatProps {
 }
 
 interface SessionData {
-  fileParts?: MessagePart[];
+  fileParts?: Array<{ type: string; mediaType: string; url: string }>;
   tempUploadId?: string;
 }
 
@@ -128,14 +128,9 @@ interface EnhancedChatMessage extends ChatMessage {
 
 interface AgentChatStateWithFiles extends AgentChatState {
   messages: EnhancedChatMessage[];
-  files?: FileList;
   isDragOver?: boolean;
-  loadingState?: 'thinking' | 'searching' | 'tool-call' | 'generating' | 'using-tool' | 'processing-tool-result';
-  currentTool?: string;
   pendingConfirmations?: Set<string>; // Message IDs that need confirmation
   confirmedMessages?: Set<string>; // Message IDs that have been confirmed/declined
-  isStreaming?: boolean;
-  abortController?: AbortController;
 }
 
 const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
@@ -165,28 +160,10 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   });
   
   // Track the currently selected conversation for highlighting - with persistence
-  const [selectedConversationIds, setSelectedConversationIds] = useState<Record<ProjectAgentType, string>>(() => {
-    // Try to restore from localStorage on initial load
-    if (typeof window !== 'undefined') {
-      try {
-        const stored = localStorage.getItem(`chat-selected-conversations-${projectId}`);
-        if (stored) {
-          const parsed = JSON.parse(stored);
-          return {
-            'product-owner': parsed['product-owner'] || '',
-            'scrum-master': parsed['scrum-master'] || '',
-            'developer': parsed['developer'] || ''
-          };
-        }
-      } catch (error) {
-        console.warn('Failed to restore selected conversations from localStorage:', error);
-      }
-    }
-    return {
-      'product-owner': '',
-      'scrum-master': '',
-      'developer': ''
-    };
+  const [selectedConversationIds, setSelectedConversationIds] = useState<Record<ProjectAgentType, string>>({
+    'product-owner': '',
+    'scrum-master': '',
+    'developer': ''
   });
   const [agentStates, setAgentStates] = useState<Record<ProjectAgentType, AgentChatStateWithFiles>>({
     'product-owner': { 
@@ -339,10 +316,15 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     setLoadingConversations(true);
     try {
       const conversations = await chatAPI.getUserConversations();
+      // Filter by current project when in a project context
+      const pid = projectId ? parseInt(projectId, 10) : null;
+      const scopedConversations = pid != null
+        ? conversations.filter((conv: any) => conv.project_id === pid)
+        : conversations;
       
       // Group conversations by agent type
       const groupedConversations: Record<string, any[]> = {};
-      conversations.forEach((conv: any) => {
+      scopedConversations.forEach((conv: any) => {
         if (!groupedConversations[conv.agent_type]) {
           groupedConversations[conv.agent_type] = [];
         }
@@ -358,6 +340,27 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       });
       
       setAllConversations(groupedConversations);
+      
+      // Clean up invalid selectedConversationIds - but only if we have a selected ID that doesn't exist
+      // Be conservative to avoid clearing valid conversations during race conditions
+      setSelectedConversationIds(prev => {
+        const updated: Record<ProjectAgentType, string> = { ...prev };
+        let hasChanges = false;
+        
+        Object.keys(prev).forEach((agentType) => {
+          const agentConversations = groupedConversations[agentType] || [];
+          const selectedId = prev[agentType as ProjectAgentType];
+          
+          // Only clear if we have a selected ID AND conversations are loaded AND the ID doesn't exist
+          if (selectedId && agentConversations.length >= 0 && !agentConversations.some(conv => conv.id === selectedId)) {
+            console.log(`Clearing invalid selectedConversationId for ${agentType}: ${selectedId}`);
+            updated[agentType as ProjectAgentType] = '';
+            hasChanges = true;
+          }
+        });
+        
+        return hasChanges ? updated : prev;
+      });
     } catch (error) {
       console.error('Failed to load conversations:', error);
     } finally {
@@ -628,9 +631,9 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     // Get the chat history instance to access its conversation ID
     const chatHistory = getChatHistory(agentType);
     
-    // Use the new conversation ID if we're starting a new chat, otherwise use the existing one from chatHistory
-    // This ensures we maintain conversation continuity
-    const conversationId = currentConversationIds[agentType] || chatHistory.conversation.id;
+    // Use the new conversation ID if we're starting a new chat, otherwise use the selected conversation ID or the existing one from chatHistory
+    // This ensures we maintain conversation continuity for both new and existing conversations
+    const conversationId = currentConversationIds[agentType] || selectedConversationIds[agentType] || chatHistory.conversation.id;
     
     // If we have a new conversation ID, we need to create the conversation first
     if (currentConversationIds[agentType]) {
@@ -651,10 +654,15 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     const messageFiles = currentState.files;
     
     // Show user message immediately with file previews (non-blocking)
-    let fileParts: MessagePart[] = [];
+    let fileParts: Array<{ type: string; mediaType: string; url: string }> = [];
     if (messageFiles && messageFiles.length > 0) {
       try {
-        fileParts = await convertFilesToDataURLs(messageFiles);
+        const convertedFiles = await convertFilesToDataURLs(messageFiles);
+        fileParts = convertedFiles.map(part => ({
+          type: part.type === 'file' ? 'file' : 'text',
+          mediaType: part.mediaType || '',
+          url: part.url || ''
+        }));
       } catch (e) {
         console.warn('Failed to convert files to data URLs', e);
       }
@@ -710,11 +718,14 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       // Wait for upload to complete, then send with uploadId
       const uploadId = await uploadPromise;
       if (uploadId) {
+        console.log(`AIChat - Upload completed with ID: ${uploadId}`);
         // Inject uploadId into the message for server-side file access
         userMessage.parts = [
           ...(userMessage.parts || []),
           { type: 'text', text: `__UPLOAD_ID__:${uploadId}` }
         ];
+      } else if (messageFiles && messageFiles.length > 0) {
+        console.warn('AIChat - Files were selected but upload failed');
       }
 
       // For new conversations, we need to send directly to API with the new conversation ID
@@ -722,11 +733,16 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       if (currentConversationIds[agentType]) {
         // Send to API directly with the new conversation ID
         const apiEndpoint = getApiEndpoint(agentType);
-        const apiUserMessage = {
+        const apiUserMessage: any = {
           id: userMessageId, // Use the same ID as the UI message
           role: 'user' as const,
-          parts: [{ type: 'text', text: messageContent }]
+          // Include the same parts we show in UI, which may contain the upload marker
+          parts: userMessage.parts
         };
+        // Provide uploadId on the message object for routes that read it directly
+        if (uploadId) {
+          apiUserMessage.uploadId = uploadId;
+        }
 
         const response = await fetch(apiEndpoint, {
           method: 'POST',
@@ -1184,17 +1200,28 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
 
   useEffect(() => {
     setIsClient(true);
+    
+    // Restore selectedConversationIds from localStorage (client-side only to avoid hydration issues)
+    if (typeof window !== 'undefined') {
+      try {
+        const stored = localStorage.getItem(`chat-selected-conversations-${projectId}`);
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          const restoredIds = {
+            'product-owner': parsed['product-owner'] || '',
+            'scrum-master': parsed['scrum-master'] || '',
+            'developer': parsed['developer'] || ''
+          };
+          setSelectedConversationIds(restoredIds);
+        }
+      } catch (error) {
+        console.warn('Failed to restore selected conversations from localStorage:', error);
+      }
+    }
+    
     // Load all conversations for the sidebar
     loadAllConversations();
-    
-    // If we have a selected conversation ID from localStorage, load it for each agent
-    Object.entries(selectedConversationIds).forEach(([agentType, conversationId]) => {
-      if (conversationId) {
-        console.log(`Restoring conversation ${conversationId} for ${agentType} from localStorage`);
-        // The useChatHistory hook will automatically load this conversation due to the selectedConversationId prop
-      }
-    });
-  }, [loadAllConversations]);
+  }, [loadAllConversations, projectId]);
 
   // Reload conversations when active agent changes
   useEffect(() => {
@@ -2502,6 +2529,23 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   const currentState = agentStates[activeAgent];
   const AgentIcon = getAgentIcon(activeAgent);
 
+  // Helper function to determine if the user can write messages
+  // User can write if there's either a new conversation (currentConversationIds) or an existing selected conversation (selectedConversationIds)
+  const canWriteMessages = (agentType: ProjectAgentType): boolean => {
+    return !!(currentConversationIds[agentType] || selectedConversationIds[agentType]);
+  };
+
+  // Helper function to determine if we should show the "new chat encouragement"
+  // Show encouragement when: no existing conversations AND no active conversation (new or selected)
+  const shouldShowNewChatEncouragement = (agentType: ProjectAgentType): boolean => {
+    // Only show encouragement on client-side to avoid hydration issues
+    if (!isClient) return false;
+    
+    const hasExistingConversations = allConversations[agentType] && allConversations[agentType].length > 0;
+    const hasActiveConversation = !!(currentConversationIds[agentType] || selectedConversationIds[agentType]);
+    return !hasExistingConversations && !hasActiveConversation;
+  };
+
   return (
      <div className="flex flex-col h-screen bg-gray-50 dark:bg-gray-900 p-4">
        {/* Unified Complete Container */}
@@ -2879,7 +2923,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                 </div>
                 
                 {/* New Chat Encouragement */}
-                {!currentConversationIds[activeAgent] && (
+                {shouldShowNewChatEncouragement(activeAgent) && (
                   <div className="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-6 max-w-md">
                     <div className="flex items-center justify-center mb-3">
                       <MessageSquare className="w-6 h-6 text-blue-600 dark:text-blue-400 mr-2" />
@@ -3272,21 +3316,21 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
 
             {/* Integrated Input Field with Buttons */}
             <div className={`relative flex items-center rounded-2xl border-0 transition-colors ${
-              !currentConversationIds[activeAgent] 
+              !canWriteMessages(activeAgent) 
                 ? 'bg-gray-200 dark:bg-gray-800 cursor-not-allowed' 
                 : 'bg-gray-100 dark:bg-gray-700 focus-within:bg-gray-200 dark:focus-within:bg-gray-600'
             }`}>
               {/* Plus Button with Dropdown */}
               <div className="relative plus-dropdown">
               <button
-                  onClick={() => currentConversationIds[activeAgent] && setShowPlusDropdown(!showPlusDropdown)}
+                  onClick={() => canWriteMessages(activeAgent) && setShowPlusDropdown(!showPlusDropdown)}
                   className={`p-3 transition-colors flex items-center ${
-                    !currentConversationIds[activeAgent]
+                    !canWriteMessages(activeAgent)
                       ? 'text-gray-400 dark:text-gray-600 cursor-not-allowed'
                       : 'text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200'
                   }`}
-                  title={!currentConversationIds[activeAgent] ? "Create a new chat to access options" : "More options"}
-                  disabled={!currentConversationIds[activeAgent]}
+                  title={!canWriteMessages(activeAgent) ? "Create a new chat to access options" : "More options"}
+                  disabled={!canWriteMessages(activeAgent)}
               >
                   <Plus className="w-4 h-4" />
               </button>
@@ -3374,20 +3418,20 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                   inputRefs.current[activeAgent] = el;
                 }}
                 value={currentState.inputValue}
-                onChange={(e) => currentConversationIds[activeAgent] && handleInputChange(e, activeAgent)}
-                onKeyPress={(e) => currentConversationIds[activeAgent] && handleKeyPress(e, activeAgent)}
+                onChange={(e) => canWriteMessages(activeAgent) && handleInputChange(e, activeAgent)}
+                onKeyPress={(e) => canWriteMessages(activeAgent) && handleKeyPress(e, activeAgent)}
                 placeholder={
-                  !currentConversationIds[activeAgent] 
+                  !canWriteMessages(activeAgent) 
                     ? "Create a new chat to start messaging..." 
                     : `Ask ${currentAgent.name} anything about your project...`
                 }
                 className={`flex-1 px-3 py-3 bg-transparent text-sm border-0 focus:outline-none resize-none min-h-[48px] max-h-32 overflow-y-auto ${
-                  !currentConversationIds[activeAgent]
+                  !canWriteMessages(activeAgent)
                     ? 'text-gray-400 dark:text-gray-600 placeholder-gray-400 dark:placeholder-gray-600 cursor-not-allowed'
                     : 'text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400'
                 }`}
                 rows={1}
-                disabled={!currentConversationIds[activeAgent]}
+                disabled={!canWriteMessages(activeAgent)}
               />
               
               {/* Send/Stop Button */}
@@ -3401,14 +3445,14 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
                 </button>
               ) : (
                 <button
-                  onClick={() => currentConversationIds[activeAgent] && sendPersistentMessage(activeAgent)}
+                  onClick={() => canWriteMessages(activeAgent) && sendPersistentMessage(activeAgent)}
                   disabled={
-                    !currentConversationIds[activeAgent] || 
+                    !canWriteMessages(activeAgent) || 
                     (!currentState.inputValue.trim() && !currentState.files?.length) || 
                     currentState.isTyping
                   }
                   className="p-2 m-1 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-400 dark:disabled:bg-gray-500 text-white rounded-lg transition-colors disabled:cursor-not-allowed flex items-center"
-                  title={!currentConversationIds[activeAgent] ? "Create a new chat to send messages" : "Send message"}
+                  title={!canWriteMessages(activeAgent) ? "Create a new chat to send messages" : "Send message"}
                 >
                   <Send className="w-4 h-4" />
                 </button>

@@ -40,6 +40,9 @@ export interface ChatMessage {
   isTyping?: boolean;
   // New multimodal support
   parts?: MessagePart[];
+  sessionData?: {
+    fileParts?: Array<{ type: string; mediaType: string; url: string }>;
+  };
 }
 
 export interface UIMessage {
@@ -67,4 +70,5 @@ export interface AgentChatState {
   currentTool?: string;
   pendingConfirmations?: Set<string>;
   confirmedMessages?: Set<string>;
+  files?: FileList;
 }

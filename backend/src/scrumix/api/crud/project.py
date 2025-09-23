@@ -114,11 +114,11 @@ class ProjectCRUD(CRUDBase[Project, ProjectCreate, ProjectUpdate]):
                 detail="User does not have access to this project"
             )
         
-        # Only Scrum Master can delete projects
-        if user_role != ScrumRole.SCRUM_MASTER:
+        # Only project owner can delete projects
+        if not user_project_crud.is_user_project_owner(db, user_id, project_id):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Only Scrum Master can delete projects"
+                detail="Only project owner can delete projects"
             )
         
         project = self.get_by_id(db, project_id)

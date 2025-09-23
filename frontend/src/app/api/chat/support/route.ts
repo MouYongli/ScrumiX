@@ -41,6 +41,14 @@ Goal: Help users understand and utilize ScrumiX capabilities
 - **Backlog & Sprint Management**: User stories, sprint planning, burndown charts, velocity reports
 - **Team Collaboration**: Meeting scheduling, agendas, action items, team management
 - **Reports & Analytics**: Understanding reports, export capabilities, performance metrics
+- **General Workflow**:
+  1. Create Project
+  2. Invite Team members via Team Member Page in the sidebar
+  3. Create backlog items in the backlog management page
+  4. Create sprints and manage them in the sprint management page
+  5. Update stories and tasks in sprint specific page or kanban board
+  6. Update sprints and their tasks
+  7. Reiterate
 
 4. SCRUM METHODOLOGY SUPPORT
 Goal: Provide foundational Scrum knowledge

@@ -92,6 +92,7 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
   const [isCurrentUserOwner, setIsCurrentUserOwner] = useState<boolean>(false);
+  const [currentUserId, setCurrentUserId] = useState<number | null>(null);
 
   // Breadcrumb navigation
   const breadcrumbItems = [
@@ -109,6 +110,7 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
         // Fetch current user info
         const currentUserResponse = await api.auth.getCurrentUser();
         const currentUserId = currentUserResponse.data?.id;
+        setCurrentUserId(currentUserId);
         
         // Fetch project details to get the name
         const projectResponse = await api.projects.getById(parseInt(projectId));
@@ -148,6 +150,14 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
     // If the new member is now the owner, update current user's owner status
     if (newMember.is_owner) {
       setIsCurrentUserOwner(false);
+      
+      // Also update the current user's is_owner status in the team members list
+      if (currentUserId) {
+        setTeamMembers(prev => prev.map(member => 
+          member.id === currentUserId ? { ...member, is_owner: false } : member
+        ));
+      }
+      
       setSuccessMessage(`${newMember.full_name || newMember.username || newMember.email} has been invited and is now the project owner!`);
     } else {
       setSuccessMessage(`${newMember.full_name || newMember.username || newMember.email} has been invited to the project!`);
@@ -165,6 +175,14 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
     // If the updated member is now the owner, update current user's owner status
     if (updatedMember.is_owner) {
       setIsCurrentUserOwner(false);
+      
+      // Also update the current user's is_owner status in the team members list
+      if (currentUserId) {
+        setTeamMembers(prev => prev.map(member => 
+          member.id === currentUserId ? { ...member, is_owner: false } : member
+        ));
+      }
+      
       setSuccessMessage(`${updatedMember.full_name || updatedMember.username || updatedMember.email} is now the project owner!`);
     } else {
       setSuccessMessage(`${updatedMember.full_name || updatedMember.username || updatedMember.email}'s role has been updated!`);
@@ -454,13 +472,16 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
                         >
                           <Edit2 className="w-4 h-4" />
                         </button>
-                        <button 
-                          onClick={() => openDeleteModal(member)}
-                          className="px-3 py-2 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-700 rounded transition-colors"
-                          title="Remove member"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </button>
+                        {/* Don't show delete button for the project owner themselves */}
+                        {member.id !== currentUserId && (
+                          <button 
+                            onClick={() => openDeleteModal(member)}
+                            className="px-3 py-2 border border-red-300 dark:border-red-600 text-red-700 dark:text-red-300 hover:bg-red-50 dark:hover:bg-red-700 rounded transition-colors"
+                            title="Remove member"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        )}
                       </>
                     )}
                   </div>
@@ -532,13 +553,16 @@ const ProjectTeam: React.FC<ProjectTeamProps> = ({ params }) => {
                           >
                             <Edit2 className="w-4 h-4" />
                           </button>
-                          <button 
-                            onClick={() => openDeleteModal(member)}
-                            className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
-                            title="Remove member"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                          {/* Don't show delete button for the project owner themselves */}
+                          {member.id !== currentUserId && (
+                            <button 
+                              onClick={() => openDeleteModal(member)}
+                              className="text-red-600 hover:text-red-800 dark:text-red-400 dark:hover:text-red-300"
+                              title="Remove member"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          )}
                         </div>
                       )}
                     </td>

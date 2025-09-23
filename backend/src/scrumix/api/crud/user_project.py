@@ -365,19 +365,88 @@ class UserProjectCRUD(CRUDBase[UserProject, dict, dict]):
                     detail="New owner must be a member of the project"
                 )
             
-            # Transfer ownership
+            # Note: Same user validation is handled in the route endpoint
+            
+            # Transfer ownership using a single transaction with proper constraint handling
+            # Step 1: Remove current owner status (this releases the unique constraint)
             current_owner_relation.is_owner = False
+            db.flush()  # Flush changes to database but don't commit yet
+            
+            # Step 2: Set new owner status (keep their existing role)
             new_owner_relation.is_owner = True
             
+            # Step 3: Commit all changes atomically
             db.commit()
             return True
             
-        except HTTPException:
+        except HTTPException as e:
             db.rollback()
             raise
-        except Exception:
+        except Exception as e:
             db.rollback()
+            
+            # Check if it's a database constraint violation
+            error_str = str(e).lower()
+            if 'unique constraint' in error_str or 'duplicate key' in error_str:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Database constraint violation. This might be due to role conflicts or duplicate ownership."
+                )
+            elif 'foreign key' in error_str:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="Invalid user or project reference."
+                )
+            
             return False
+
+    def check_project_data_integrity(self, db: Session, project_id: int) -> Dict[str, Any]:
+        """Check for data integrity issues in a project that might cause ownership transfer failures"""
+        issues = []
+        
+        # Check for multiple owners
+        owners = db.query(UserProject).filter(
+            and_(
+                UserProject.project_id == project_id,
+                UserProject.is_owner == True
+            )
+        ).all()
+        
+        if len(owners) > 1:
+            issues.append(f"Multiple owners found: {len(owners)} users have is_owner=True")
+        elif len(owners) == 0:
+            issues.append("No project owner found")
+        
+        # Check for multiple Product Owners
+        product_owners = db.query(UserProject).filter(
+            and_(
+                UserProject.project_id == project_id,
+                UserProject.role == ScrumRole.PRODUCT_OWNER
+            )
+        ).all()
+        
+        if len(product_owners) > 1:
+            issues.append(f"Multiple Product Owners found: {len(product_owners)} users have role=PRODUCT_OWNER")
+        
+        # Check for multiple Scrum Masters
+        scrum_masters = db.query(UserProject).filter(
+            and_(
+                UserProject.project_id == project_id,
+                UserProject.role == ScrumRole.SCRUM_MASTER
+            )
+        ).all()
+        
+        if len(scrum_masters) > 1:
+            issues.append(f"Multiple Scrum Masters found: {len(scrum_masters)} users have role=SCRUM_MASTER")
+        
+        return {
+            "project_id": project_id,
+            "has_issues": len(issues) > 0,
+            "issues": issues,
+            "owners_count": len(owners),
+            "product_owners_count": len(product_owners),
+            "scrum_masters_count": len(scrum_masters)
+        }
 
     def assign_scrum_role(
         self,

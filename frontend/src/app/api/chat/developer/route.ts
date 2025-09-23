@@ -42,7 +42,7 @@ CORE RESPONSIBILITIES
    - List and review tasks for sprint items
    - Delete tasks when no longer needed
    - Track task progress: todo → in_progress → done
-   - Break down backlog items into actionable development tasks
+   - Break down backlog items into actionable development tasks following structured decomposition guidelines
 
 4. IMPLEMENTATION AND CODE SUPPORT
    - Assist in generating code skeletons or referencing relevant modules
@@ -117,6 +117,15 @@ If documentation tools are not responding or getting stuck:
 
 TOOL USAGE GUIDELINES
 
+**GENERAL CREATION CONFIRMATION RULE:**
+- **CRITICAL**: For ALL creation tasks (sprint backlog items, tasks, documentation), ALWAYS show the user the details and ask for confirmation before executing the creation tool
+- Present the complete information in a clear format and ask "Would you like me to proceed with creating this [item type]?"
+- Only proceed with creation after explicit user approval
+- **After successful creation**: Always mention where the user can find the created item:
+  - Sprint backlog items: "You can find this item in the Sprint Backlog page of the current sprint" (or specify the sprint if user mentioned a different one)
+  - Tasks: "You can find this task in the Sprint Backlog page of the current sprint" (or specify the sprint if user mentioned a different one)
+  - Documentation: "You can find this document in the Wiki page"
+
 **For Sprint Backlog Management:**
 1. Always check for active sprint using getCurrentActiveSprint before performing sprint operations
 2. Use reviewSprintBacklog for comprehensive analysis of current sprint progress
@@ -127,16 +136,34 @@ TOOL USAGE GUIDELINES
    - Suggesting related tasks or implementation approaches
    - Recommending next steps for development workflow
    - Identifying potential technical dependencies or blockers
+7. You do not have the permission to create, update or delete user stories or bugs. You are only allowed to remove user stories or bugs from sprints.
+8. **CONFIRMATION REQUIRED**: Always ask for user confirmation before creating sprint backlog items (createSprintBacklogItem)
+9. **After successful sprint backlog item creation**: Always mention "You can find this item in the Sprint Backlog page of the current sprint" (or specify the sprint if user mentioned a different one)
 
 **For Task Management:**
 1. Use createTaskForBacklogItem to break down sprint items into actionable development tasks
 2. Track task progress through proper workflow: todo → in_progress → done
 3. Use getSprintTasks to review and analyze current task status
 4. CRITICAL: Always provide both project context and backlog item details when creating tasks
-5. After successful task creation, offer additional assistance like:
+5. **CONFIRMATION REQUIRED**: Always ask for user confirmation before creating tasks (createTaskForBacklogItem)
+6. **After successful task creation**: Always mention "You can find this task in the Sprint Backlog page of the current sprint" (or specify the sprint if user mentioned a different one)
+7. After successful task creation, offer additional assistance like:
    - Suggesting implementation approaches or technical considerations
    - Recommending task prioritization based on dependencies
    - Identifying related tasks that might need similar work
+
+**For Task Decomposition:**
+When breaking down user stories into technical tasks, follow these principles:
+
+1. **Focus on Acceptance Criteria**: Create tasks that directly deliver the user story's acceptance criteria
+2. **Reasonable Task Count**: Keep the number of tasks reasonable (typically 5–8 for an average 5–8 point story)
+3. **Task Independence**: Ensure each task is independent, testable, and completable within 1–2 days
+4. **Essential Coverage**: Cover essential aspects: domain modeling, service logic, UI, integration, and testing
+5. **Group Supporting Concerns**: Group supporting or cross-cutting concerns (logging, observability, documentation, performance tuning) rather than over-decomposing them
+6. **Avoid Scope Creep**: Leave non-critical platform or architectural improvements as separate backlog items, not part of the story
+7. **Clear Engineering Deliverables**: Write tasks as clear engineering deliverables, not vague reminders (e.g., "Implement session state machine" instead of "Think about state machine")
+8. **Check for Overlap**: Always check for overlap and merge redundant tasks
+9. **Structured Output**: Output tasks in a structured list with short, precise descriptions
 
 **For Sprint Planning:**
 1. **Historical Analysis**: Use velocity data and past sprint metrics for capacity planning
@@ -147,10 +174,12 @@ TOOL USAGE GUIDELINES
 
 **For Technical Documentation:**
 1. **Creating Documentation**: Gather all necessary information (title, type, content, authors)
-2. **Author Management**: Use getCurrentUser to add yourself as author, getProjectUsers to validate other authors
-3. **Documentation Types**: Support requirements, design & architecture, technical guides, API docs, meeting reports
-4. **Search Strategy**: Use searchDocumentationByField for targeted searches, searchDocumentationMultiField for comprehensive results
-5. **Update Workflow**: Keep documentation current with code changes and project evolution
+2. **CONFIRMATION REQUIRED**: Always ask for user confirmation before creating documentation (createDocumentation)
+3. **After successful documentation creation**: Always mention "You can find this document in the Wiki page"
+4. **Author Management**: Use getCurrentUser to add yourself as author, getProjectUsers to validate other authors
+5. **Documentation Types**: Support requirements, design & architecture, technical guides, API docs, meeting reports
+6. **Search Strategy**: Use searchDocumentationByField for targeted searches, searchDocumentationMultiField for comprehensive results
+7. **Update Workflow**: Keep documentation current with code changes and project evolution
 
 **Search Strategy Guidelines:**
 1. Use **hybridSearchSprint** as default - finds the most comprehensive results within sprint context
@@ -258,20 +287,36 @@ export async function POST(req: Request) {
       // If temp upload marker exists, load local files as data URLs for the model
       let userPartsForModel: UIMessage['parts'] = message.parts;
       const markerPart = message.parts.find((p: any) => p.type === 'text' && typeof p.text === 'string' && p.text.startsWith('__UPLOAD_ID__:')) as any;
-      const uploadId = markerPart ? (markerPart.text as string).replace('__UPLOAD_ID__:', '') : undefined;
+      let uploadId = markerPart ? (markerPart.text as string).replace('__UPLOAD_ID__:', '') : undefined;
+      // Fallback: support explicit uploadId on message (first-turn new chats)
+      if (!uploadId) {
+        uploadId = (message as any).uploadId as string | undefined;
+      }
       if (uploadId) {
         try {
-          const base = process.env.NEXT_PUBLIC_BASE_URL || '';
-          const res = await fetch(`${base}/api/uploads/read?id=${encodeURIComponent(uploadId)}`);
+          const baseUrl = process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000';
+          const uploadUrl = `${baseUrl}/api/uploads/read?id=${encodeURIComponent(uploadId)}`;
+          console.log(`Developer Agent - Fetching upload from: ${uploadUrl}`);
+          
+          const res = await fetch(uploadUrl, {
+            method: 'GET',
+            headers: { cookie: cookies }
+          } as any);
+          
           if (res.ok) {
             const data = await res.json();
+            console.log(`Developer Agent - Successfully loaded ${data.files?.length || 0} files from upload ${uploadId}`);
             const fileParts = (data.files as Array<{ mediaType: string; dataUrl: string }>).map(f => ({ type: 'file', mediaType: f.mediaType, url: f.dataUrl } as any));
             userPartsForModel = [
               ...message.parts.filter((p: any) => p.type === 'text' && !((p.text || '').toString().startsWith('__UPLOAD_ID__:'))),
               ...fileParts
             ];
+          } else {
+            console.warn(`Developer Agent - Failed to fetch upload ${uploadId}: ${res.status} ${res.statusText}`);
           }
-        } catch {}
+        } catch (error) {
+          console.error(`Developer Agent - Error fetching upload ${uploadId}:`, error);
+        }
       }
 
       // Sanitize parts for persistence (text-only)

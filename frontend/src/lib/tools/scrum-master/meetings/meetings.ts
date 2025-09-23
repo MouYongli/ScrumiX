@@ -18,7 +18,8 @@ export const manageMeetingsTool = tool({
         if (!validated.title || !validated.start_datetime) return `Please provide both 'title' and 'start_datetime'.`;
         if (!projectId) return `Unable to determine project context. Please provide a project_id.`;
         const tz = await getUserTimezoneAndFormatDatetime(validated.start_datetime, experimental_context as AuthContext);
-        const createData = {
+        // Build payload and OMIT sprint_id when not provided → creates an independent meeting
+        const createData: any = {
           title: validated.title,
           meeting_type: validated.meeting_type || 'other',
           start_datetime: tz.formattedDatetime,
@@ -26,14 +27,17 @@ export const manageMeetingsTool = tool({
           location: validated.location || '',
           description: validated.description || '',
           project_id: projectId,
-          sprint_id: (validated as any).sprint_id
+          ...(validated.sprint_id !== undefined ? { sprint_id: validated.sprint_id } : {})
         };
         const createResponse = await requestWithAuth('/meetings/', { method: 'POST', body: JSON.stringify(createData) }, experimental_context as AuthContext);
         if (createResponse.error) return `Failed to create meeting: ${createResponse.error}`;
         const createdMeeting = createResponse.data as any;
+        const sprintInfo = createdMeeting.sprint_id || createdMeeting.sprintId
+          ? ` | Sprint ID: ${createdMeeting.sprint_id || createdMeeting.sprintId}`
+          : ` | No sprint association`;
         return `Successfully created meeting: "${validated.title}"
 
-ID: #${createdMeeting.id} | Type: ${validated.meeting_type || 'other'} | ${tz.displayDateTime}`;
+ID: #${createdMeeting.id} | Type: ${validated.meeting_type || 'other'} | ${tz.displayDateTime}${sprintInfo}`;
       }
       case 'read': {
         if (!validated.meeting_id) return `Please provide 'meeting_id' for reading meeting details.`;

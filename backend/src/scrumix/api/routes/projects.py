@@ -5,6 +5,7 @@ from typing import List, Optional, Dict
 from fastapi import APIRouter, Depends, HTTPException, Query, BackgroundTasks
 from fastapi import status as fastapi_status
 from sqlalchemy.orm import Session
+from sqlalchemy import and_
 
 from scrumix.api.db.session import get_db
 from scrumix.api.core.security import get_current_user
@@ -12,6 +13,7 @@ from scrumix.api.crud.project import project_crud
 from scrumix.api.crud.user_project import user_project_crud
 from scrumix.api.utils.notification_helpers import notification_helper
 from scrumix.api.models.project import ProjectStatus
+from scrumix.api.models.user_project import UserProject
 from scrumix.api.models.user_project import ScrumRole
 from scrumix.api.schemas.project import ProjectCreate, ProjectUpdate, ProjectResponse
 from scrumix.api.schemas.user_project import ProjectMemberResponse, UserProjectCreate, UserProjectUpdate, OwnershipTransferRequest, RoleAssignmentRequest
@@ -247,8 +249,6 @@ async def update_project(
             schedule_embedding_update(background_tasks, project_id, db)
         
         # Send notifications for important project changes
-        print(f"    Current user: {current_user.id}")
-        print(f"    Update data: {project_update.dict(exclude_unset=True)}")
         
         try:
             # Check for name change
@@ -264,7 +264,7 @@ async def update_project(
                     updated_by_user_id=current_user.id
                 )
             else:
-                print(f"    ❌ No name change: current='{current_project.name}', update='{project_update.name}' (provided: {project_update.name is not None})")
+                pass
             
             # Check for status change
             if (project_update.status is not None and project_update.status != current_project.status):
@@ -279,7 +279,7 @@ async def update_project(
                     updated_by_user_id=current_user.id
                 )
             else:
-                print(f"    ❌ No status change: current='{current_project.status}', update='{project_update.status}' (provided: {project_update.status is not None})")
+                pass
             
             # Check for description change (only notify if description is substantial)
             if (project_update.description is not None and 
@@ -297,7 +297,7 @@ async def update_project(
                     updated_by_user_id=current_user.id
                 )
             else:
-                print(f"    ❌ No description change: update provided = {project_update.description is not None}")
+                pass
             
             # Check for start date change
             if (project_update.start_date is not None and project_update.start_date != current_project.start_date):
@@ -314,7 +314,7 @@ async def update_project(
                     updated_by_user_id=current_user.id
                 )
             else:
-                print(f"    ❌ No start date change: provided = {project_update.start_date is not None}")
+                pass
             
             # Check for end date change
             if (project_update.end_date is not None and project_update.end_date != current_project.end_date):
@@ -331,7 +331,7 @@ async def update_project(
                     updated_by_user_id=current_user.id
                 )
             else:
-                print(f"    ❌ No end date change: provided = {project_update.end_date is not None}")
+                pass
                 
         except Exception as e:
             # Log the error but don't fail the project update
@@ -704,11 +704,11 @@ async def remove_project_member(
                 detail="User is not a member of this project"
             )
         
-        # Prevent users from removing themselves (except Product Owners)
-        if user_id == current_user.id and current_user_role != ScrumRole.PRODUCT_OWNER:
+        # Prevent project owner from removing themselves
+        if user_id == current_user.id:
             raise HTTPException(
                 status_code=fastapi_status.HTTP_403_FORBIDDEN,
-                detail="You cannot remove yourself from the project"
+                detail="Project owner cannot remove themselves from the project. Transfer ownership first."
             )
         
         # Remove the user from the project
@@ -895,6 +895,20 @@ async def transfer_project_ownership(
 ):
     """Transfer project ownership to another user (only current owner can do this)"""
     try:
+        # Validate the new_owner_id
+        if not isinstance(transfer_request.new_owner_id, int) or transfer_request.new_owner_id <= 0:
+            raise HTTPException(
+                status_code=fastapi_status.HTTP_400_BAD_REQUEST,
+                detail="Invalid new_owner_id. Must be a positive integer."
+            )
+        
+        # Check if trying to transfer to the same user
+        if current_user.id == transfer_request.new_owner_id:
+            raise HTTPException(
+                status_code=fastapi_status.HTTP_400_BAD_REQUEST,
+                detail="Cannot transfer ownership to yourself."
+            )
+        
         # Verify current user is the project owner
         if not user_project_crud.is_user_project_owner(db, current_user.id, project_id):
             raise HTTPException(
@@ -911,24 +925,6 @@ async def transfer_project_ownership(
         )
         
         if success:
-            # Get project and new owner details for notification
-            project = project_crud.get(db, project_id)
-            from scrumix.api.crud.user import user_crud
-            new_owner = user_crud.get(db, transfer_request.new_owner_id)
-            
-            # Send notification to new owner
-            try:
-                await notification_helper.send_notification(
-                    db=db,
-                    user_id=transfer_request.new_owner_id,
-                    title="Project Ownership Transferred",
-                    message=f"You are now the owner of project '{project.name if project else 'Unknown Project'}'",
-                    notification_type="project_ownership",
-                    related_id=project_id
-                )
-            except Exception as e:
-                print(f"Failed to send ownership transfer notification: {e}")
-            
             return {
                 "message": "Ownership transferred successfully",
                 "project_id": project_id,
@@ -945,7 +941,45 @@ async def transfer_project_ownership(
     except Exception as e:
         raise HTTPException(
             status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail=f"Internal server error: {str(e)}"
+        )
+
+@router.get("/{project_id}/data-integrity")
+async def check_project_data_integrity(
+    project_id: int,
+    current_user = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Check for data integrity issues in a project that might cause ownership transfer failures"""
+    try:
+        # Check if user has access to the project
+        user_project = db.query(UserProject).filter(
+            and_(
+                UserProject.user_id == current_user.id,
+                UserProject.project_id == project_id
+            )
+        ).first()
+        
+        if not user_project:
+            raise HTTPException(
+                status_code=fastapi_status.HTTP_404_NOT_FOUND,
+                detail="Project not found or user not a member"
+            )
+        
+        integrity_check = user_project_crud.check_project_data_integrity(db, project_id)
+        
+        return {
+            "project_id": project_id,
+            "integrity_check": integrity_check,
+            "message": "Data integrity check completed"
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(
+            status_code=fastapi_status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to check data integrity: {str(e)}"
         )
 
 @router.post("/{project_id}/assign-role")
@@ -971,18 +1005,8 @@ async def assign_scrum_role(
         user = user_crud.get(db, role_request.user_id)
         project = project_crud.get(db, project_id)
         
-        # Send notification to the user whose role was changed
-        try:
-            await notification_helper.send_notification(
-                db=db,
-                user_id=role_request.user_id,
-                title="Role Assignment Updated",
-                message=f"Your role in project '{project.name if project else 'Unknown Project'}' has been changed to {role_request.role.value.replace('_', ' ').title()}",
-                notification_type="role_assignment",
-                related_id=project_id
-            )
-        except Exception as e:
-            print(f"Failed to send role assignment notification: {e}")
+        # Note: Role assignment notification could be added here if needed
+        # For now, we'll skip notifications for role assignments
         
         return {
             "message": "Role assigned successfully",

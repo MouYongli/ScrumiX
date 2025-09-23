@@ -59,6 +59,7 @@ const ProjectSettings: React.FC<ProjectSettingsProps> = ({ params }) => {
   const [unsavedChanges, setUnsavedChanges] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [isCurrentUserOwner, setIsCurrentUserOwner] = useState<boolean>(false);
   
   // Notification preferences state
   const [notificationPreferences, setNotificationPreferences] = useState<NotificationPreferencesResponse | null>(null);
@@ -88,12 +89,26 @@ const ProjectSettings: React.FC<ProjectSettingsProps> = ({ params }) => {
       setError(null);
       const idNum = parseInt(projectId);
       try {
+        // Get current user info
+        const currentUserResponse = await api.auth.getCurrentUser();
+        const currentUserId = currentUserResponse.data?.id;
+
+        // Get project data
         const resp = await api.projects.getById(idNum);
         if (resp.error) throw new Error(resp.error);
         const data = resp.data as ApiProject;
         const merged = { ...defaultUISettings, ...data };
         setProjectData(merged);
         setInitialProjectData(merged);
+
+        // Check if current user is the project owner
+        if (currentUserId) {
+          const membersResponse = await api.projects.getMembers(idNum);
+          if (membersResponse.data) {
+            const currentUserMember = membersResponse.data.find(member => member.id === currentUserId);
+            setIsCurrentUserOwner(currentUserMember?.is_owner || false);
+          }
+        }
       } catch (e: any) {
         setError(e?.message || 'Failed to load project');
       } finally {
@@ -114,8 +129,15 @@ const ProjectSettings: React.FC<ProjectSettingsProps> = ({ params }) => {
     { id: 'general', label: 'General', icon: <Settings className="w-4 h-4" /> },
     { id: 'notifications', label: 'Notifications', icon: <Bell className="w-4 h-4" /> },
     { id: 'integrations', label: 'Integrations', icon: <Globe className="w-4 h-4" /> },
-    { id: 'danger', label: 'Danger Zone', icon: <AlertTriangle className="w-4 h-4" /> },
+    ...(isCurrentUserOwner ? [{ id: 'danger', label: 'Danger Zone', icon: <AlertTriangle className="w-4 h-4" /> }] : []),
   ];
+
+  // Redirect to general tab if trying to access danger zone without owner permissions
+  useEffect(() => {
+    if (activeTab === 'danger' && !isCurrentUserOwner) {
+      setActiveTab('general');
+    }
+  }, [activeTab, isCurrentUserOwner]);
 
   // Helpers to convert date strings
   const toInputDate = (iso?: string) => {

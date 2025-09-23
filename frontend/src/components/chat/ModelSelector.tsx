@@ -107,14 +107,12 @@ const ModelSelector: React.FC<ModelSelectorProps> = ({
       // Convert to our component's format and deduplicate - only curated models
       const modelMap = new Map<string, ModelInfo>();
       
-      // Define our curated model IDs for final filtering
+      // Define our curated model IDs for final filtering (excluding Gemini 2.5 Flash and Flash Lite)
       const curatedModelIds = new Set([
         'openai/gpt-5',
         'openai/gpt-5-mini',
         'anthropic/claude-sonnet-4',
-        'anthropic/claude-3.5-sonnet',
-        'google/gemini-2.5-flash',
-        'google/gemini-2.5-flash-lite'
+        'anthropic/claude-3.5-sonnet'
       ]);
       
       adaptiveModels.forEach(model => {

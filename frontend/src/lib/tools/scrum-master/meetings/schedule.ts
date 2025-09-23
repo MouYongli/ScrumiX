@@ -16,7 +16,7 @@ export const scheduleEventTool = tool({
       projectName = projectContext.project_name;
     }
     const tz = await getUserTimezoneAndFormatDatetime(validated.start_datetime, experimental_context as AuthContext);
-    const res = await requestWithAuth('/meetings/', { method: 'POST', body: JSON.stringify({
+    const payload: any = {
       title: validated.event_type,
       meeting_type: validated.event_type,
       start_datetime: tz.formattedDatetime,
@@ -24,13 +24,17 @@ export const scheduleEventTool = tool({
       location: validated.location || '',
       description: validated.description || '',
       project_id: projectId,
-      sprint_id: (validated as any).sprint_id
-    }) }, experimental_context as AuthContext);
+      ...(validated.sprint_id !== undefined ? { sprint_id: validated.sprint_id } : {})
+    };
+    const res = await requestWithAuth('/meetings/', { method: 'POST', body: JSON.stringify(payload) }, experimental_context as AuthContext);
     if (res.error) return `Failed to schedule event: ${res.error}`;
     const eventTitle = validated.event_type.replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase());
+    const sprintInfo = (res.data as any)?.sprint_id || (res.data as any)?.sprintId
+      ? `\n- **Sprint:** ${(res.data as any).sprint_id || (res.data as any).sprintId}`
+      : `\n- **Sprint:** None`;
     return `Successfully scheduled **${eventTitle}** for project ${projectName || projectId}
 - **Date & Time:** ${tz.displayDateTime}
-- **Duration:** ${validated.duration || 60} minutes`;
+- **Duration:** ${validated.duration || 60} minutes${sprintInfo}`;
   }
 });
 
