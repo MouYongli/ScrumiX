@@ -17,4 +17,11 @@ if os.environ.get("POSTGRES_SERVER") and os.environ.get("POSTGRES_PASSWORD"):
         print("Application will start without database connection")
 
 if __name__ == "__main__":
-    uvicorn.run("scrumix.api.app:app", host="0.0.0.0", port=8000, reload=True)
+    port = int(os.environ.get("PORT", "8000"))
+    environment = os.environ.get("ENVIRONMENT", "development").lower()
+    uvicorn.run(
+        "scrumix.api.app:app",
+        host="0.0.0.0",
+        port=port,
+        reload=(environment != "production")
+    )

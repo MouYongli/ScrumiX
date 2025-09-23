@@ -16,8 +16,11 @@ app = FastAPI(
 # Configure CORS for cookie-based authentication
 allowed_origins = [
     "http://localhost:3000",  # Next.js dev server
-    settings.FRONTEND_URL,    # From environment
 ]
+
+# Support comma-separated FRONTEND_URL(s)
+if settings.FRONTEND_URL:
+    allowed_origins.extend([o.strip() for o in settings.FRONTEND_URL.split(",") if o.strip()])
 
 # Set all CORS enabled origins
 app.add_middleware(
