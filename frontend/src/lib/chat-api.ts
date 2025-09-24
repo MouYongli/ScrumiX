@@ -101,9 +101,19 @@ class ChatAPI {
     project_id?: number;
     title?: string;
   }, cookies?: string): Promise<ChatConversation> {
+    const payload = {
+      id: conversationData.id,
+      agent_type: conversationData.agent_type,
+      project_id: typeof conversationData.project_id === 'number'
+        ? conversationData.project_id
+        : (conversationData.project_id ? Number(conversationData.project_id) : null),
+      title: conversationData.title ?? null,
+    } as any;
+    console.log('[Upsert Payload]', payload);
     const response = await this.fetchWithAuth(`${API_BASE_URL}/chat/conversations/upsert`, {
       method: 'POST',
-      body: JSON.stringify(conversationData),
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
     }, cookies);
     return response.json();
   }
