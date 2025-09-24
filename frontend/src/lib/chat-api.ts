@@ -63,9 +63,15 @@ class ChatAPI {
       delete (headers as any)['Authorization'];
     }
 
-    // Server-side: forward incoming cookies to backend
+    // Server-side: forward incoming cookies to backend and attach user JWT as Authorization
     if (cookies && isBackendUrl) {
       headers['Cookie'] = cookies;
+      // Extract session token from cookies (HttpOnly cookie is still visible to the server via header)
+      const match = cookies.match(/(^|;\s*)scrumix_session=([^;]+)/);
+      const accessToken = match ? decodeURIComponent(match[2]) : undefined;
+      if (accessToken) {
+        headers['Authorization'] = `Bearer ${accessToken}`;
+      }
     }
 
     // Only attach Authorization for external AI Gateway calls (never for backend)
