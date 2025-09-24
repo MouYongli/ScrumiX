@@ -5,7 +5,7 @@ import { useParams } from 'next/navigation';
 import { Sparkles } from 'lucide-react';
 import AIChat from '@/components/chat/AIChat';
 import Breadcrumb from '@/components/common/Breadcrumb';
-import AuthGuard from '@/components/auth/AuthGuard';
+import { AuthGuard } from '@/components/auth/AuthGuard';
 
 const AIChatPage: React.FC = () => {
   const params = useParams();
