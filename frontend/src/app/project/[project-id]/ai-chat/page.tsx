@@ -5,6 +5,7 @@ import { useParams } from 'next/navigation';
 import { Sparkles } from 'lucide-react';
 import AIChat from '@/components/chat/AIChat';
 import Breadcrumb from '@/components/common/Breadcrumb';
+import AuthGuard from '@/components/auth/AuthGuard';
 
 const AIChatPage: React.FC = () => {
   const params = useParams();
@@ -24,12 +25,14 @@ const AIChatPage: React.FC = () => {
   ];
 
   return (
-    <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
-      <div className="container mx-auto px-4 py-6">
-        <Breadcrumb items={breadcrumbItems} />
-        <AIChat projectId={projectId} />
+    <AuthGuard>
+      <div className="min-h-screen bg-gray-50 dark:bg-gray-900">
+        <div className="container mx-auto px-4 py-6">
+          <Breadcrumb items={breadcrumbItems} />
+          <AIChat projectId={projectId} />
+        </div>
       </div>
-    </div>
+    </AuthGuard>
   );
 };
 
