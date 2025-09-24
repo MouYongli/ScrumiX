@@ -540,10 +540,9 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     }
   }, [getChatHistory]);
 
-  // Helper function to get API endpoint for agent type
+  // Helper function to get API endpoint for agent type (Next.js route for streaming)
   const getApiEndpoint = (agentType: ProjectAgentType): string => {
-    const base = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
-    return `${base}/chat/conversations/upsert`;
+    return `/api/chat/${agentType}`;
   };
 
   const scrollToBottom = () => {
