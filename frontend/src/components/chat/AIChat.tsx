@@ -755,8 +755,15 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
           parts: apiUserMessage.parts
         });
 
-        // No backend streaming here; generation continues client-side below
-        responseStream = undefined as any;
+        // Get a client-side generation stream (same as ongoing conversation path)
+        const result = await chatHistory.sendMessage(
+          messageContent,
+          currentState.selectedModel,
+          webSearchEnabled,
+          messageFiles ? Array.from(messageFiles) : undefined,
+          abortController.signal
+        );
+        responseStream = result.stream;
         
         // Update the chat history to use this conversation ID for future messages
         // Don't clear the currentConversationIds yet - we need it for subsequent messages
