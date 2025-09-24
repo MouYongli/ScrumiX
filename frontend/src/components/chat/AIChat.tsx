@@ -543,7 +543,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   // Helper function to get API endpoint for agent type
   const getApiEndpoint = (agentType: ProjectAgentType): string => {
     const base = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
-    return `${base}/chat/conversations`;
+    return `${base}/chat/conversations/upsert`;
   };
 
   const scrollToBottom = () => {
@@ -1447,7 +1447,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
       // Use real AI for Product Owner, Scrum Master, and Developer
       const getApiEndpoint = (type: ProjectAgentType) => {
         const base = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
-        return `${base}/chat/conversations`;
+        return `${base}/chat/conversations/upsert`;
       };
       const apiEndpoint = getApiEndpoint(agentType);
       
@@ -2014,7 +2014,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     const currentState = agentStates[agentType];
     const getApiEndpoint = (type: ProjectAgentType) => {
       const base = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
-      return `${base}/chat/conversations`;
+      return `${base}/chat/conversations/upsert`;
     };
 
     try {
@@ -2184,7 +2184,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   const regenerateConversationFromMessage = async (agentType: ProjectAgentType, messages: ChatMessage[], editedMessage: ChatMessage) => {
     const getApiEndpoint = (type: ProjectAgentType) => {
       const base = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
-      return `${base}/chat/conversations`;
+      return `${base}/chat/conversations/upsert`;
     };
 
     // Create abort controller for this regeneration request

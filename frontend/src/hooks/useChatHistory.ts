@@ -233,5 +233,5 @@ export function useChatHistory(options: UseChatHistoryOptions) {
 // Helper function to get API endpoint for agent type
 function getApiEndpoint(agentType: 'product-owner' | 'scrum-master' | 'developer'): string {
   const base = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
-  return `${base}/chat/conversations`;
+  return `${base}/chat/conversations/upsert`;
 }

@@ -148,13 +148,13 @@ const ChatWidget: React.FC = () => {
     const base = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
     switch (agentType) {
       case 'product-owner':
-        return `${base}/chat/conversations`;
+        return `${base}/chat/conversations/upsert`;
       case 'scrum-master':
-        return `${base}/chat/conversations`;
+        return `${base}/chat/conversations/upsert`;
       case 'developer':
-        return `${base}/chat/conversations`;
+        return `${base}/chat/conversations/upsert`;
       default:
-        return `${base}/chat/conversations`;
+        return `${base}/chat/conversations/upsert`;
     }
   };
 
