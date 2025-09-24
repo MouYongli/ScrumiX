@@ -197,6 +197,10 @@ BOUNDARIES
 export async function POST(req: Request) {
   try {
     const body = await req.json();
+    try {
+      const incomingCookie = req.headers.get('cookie') || '';
+      console.log('Scrum Master route cookie length', incomingCookie.length);
+    } catch {}
     
     // New format: { id, message, projectId, selectedModel, webSearchEnabled }
     // Legacy format: { messages, projectId, selectedModel, webSearchEnabled }
@@ -218,6 +222,7 @@ export async function POST(req: Request) {
 
       // Extract cookies for authentication
       const cookies = req.headers.get('cookie') || '';
+      console.log('Scrum Master route (new format) cookie length', cookies.length);
 
       // Upsert conversation via backend API
       await chatAPI.upsertConversation({
@@ -397,6 +402,7 @@ export async function POST(req: Request) {
         : SCRUM_MASTER_SYSTEM_PROMPT;
 
       const cookies = req.headers.get('cookie') || '';
+      console.log('Scrum Master route (legacy format) cookie length', cookies.length);
 
       const result = streamText({
         model: gateway(modelToUse),

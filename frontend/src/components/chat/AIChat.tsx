@@ -1417,8 +1417,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     if (agentType === 'product-owner' || agentType === 'scrum-master' || agentType === 'developer') {
       // Use real AI for Product Owner, Scrum Master, and Developer
       const getApiEndpoint = (type: ProjectAgentType) => {
-        const base = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
-        return `${base}/chat/conversations/upsert`;
+        return `/api/chat/${type}`;
       };
       const apiEndpoint = getApiEndpoint(agentType);
       // Determine conversation ID for this send
@@ -1980,8 +1979,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   const sendConfirmationResponse = async (agentType: ProjectAgentType, userMessage: ChatMessage) => {
     const currentState = agentStates[agentType];
     const getApiEndpoint = (type: ProjectAgentType) => {
-      const base = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
-      return `${base}/chat/conversations/upsert`;
+      return `/api/chat/${type}`;
     };
 
     try {

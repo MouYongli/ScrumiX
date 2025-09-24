@@ -366,6 +366,10 @@ Bad response: Long analysis with calculations, trade-offs, and detailed breakdow
 export async function POST(req: Request) {
   try {
     const body = await req.json();
+    try {
+      const incomingCookie = req.headers.get('cookie') || '';
+      console.log('Product Owner route cookie length', incomingCookie.length);
+    } catch {}
     
     // New format: { id, message, projectId, selectedModel, webSearchEnabled }
     // Legacy format: { messages, projectId, selectedModel, webSearchEnabled }
@@ -388,6 +392,7 @@ export async function POST(req: Request) {
       // Ensure conversation exists
       // Extract cookies for authentication
       const cookies = req.headers.get('cookie') || '';
+      console.log('Product Owner route (new format) cookie length', cookies.length);
 
       // Upsert conversation via backend API
       await chatAPI.upsertConversation({
@@ -611,6 +616,7 @@ OR
         : PRODUCT_OWNER_SYSTEM_PROMPT;
 
       const cookies = req.headers.get('cookie') || '';
+      console.log('Product Owner route (legacy format) cookie length', cookies.length);
 
       const result = streamText({
         model: modelToUse,
