@@ -5,11 +5,15 @@ from scrumix.api.db.base import Base
 from scrumix.api.core.config import settings
 from scrumix.api.db.models import *  # Import all models
 import os
+import logging
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 # Create database engine
 def get_database_url():
     """Get database URL with fallback to SQLite for testing"""
-    # Check for explicit DATABASE_URL environment variable first (Railway's primary method)
+    # Check for explicit DATABASE_URL environment variable first
     database_url = os.environ.get("DATABASE_URL")
     if database_url:
         # If it's a PostgreSQL URL, test if it works, otherwise fallback to SQLite
@@ -17,12 +21,10 @@ def get_database_url():
             try:
                 import psycopg2
                 # Quick connection test
-                psycopg2.connect(database_url, connect_timeout=5)
-                print(f"Successfully connected to PostgreSQL via DATABASE_URL")
+                psycopg2.connect(database_url, connect_timeout=2)
                 return database_url
-            except Exception as e:
-                print(f"PostgreSQL connection failed via DATABASE_URL: {e}")
-                print("Falling back to SQLite")
+            except Exception:
+                print("PostgreSQL connection failed, falling back to SQLite")
                 return settings.DATABASE_URL
         return database_url
     
@@ -49,15 +51,15 @@ def create_database_engine():
     engine_kwargs = {
         "echo": False,  # Disable SQL logging to reduce noise
         "pool_pre_ping": True,  # Verify connections before use
-        "pool_recycle": 300,    # Recycle connections every 5 minutes
+        "pool_recycle": settings.DB_POOL_RECYCLE,    # Recycle connections
     }
     
     # PostgreSQL-specific optimizations
     if database_url.startswith('postgresql'):
         engine_kwargs.update({
-            "pool_size": 5,          # Connection pool size
-            "max_overflow": 10,      # Max connections beyond pool_size
-            "pool_timeout": 30,      # Timeout when getting connection from pool
+            "pool_size": settings.DB_POOL_SIZE,         # Configurable connection pool size
+            "max_overflow": settings.DB_MAX_OVERFLOW,   # Configurable max connections beyond pool_size
+            "pool_timeout": settings.DB_POOL_TIMEOUT,   # Configurable timeout when getting connection from pool
             "connect_args": {
                 "connect_timeout": 10,
                 "application_name": f"scrumix-{settings.ENVIRONMENT}"
@@ -76,11 +78,19 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 def get_db():
     if SessionLocal is None:
         raise RuntimeError("Database not initialized. SessionLocal is None.")
-    db = SessionLocal()
+    
+    db = None
     try:
+        db = SessionLocal()
         yield db
+    except Exception as e:
+        logger.error(f"Database session error: {e}")
+        if db:
+            db.rollback()
+        raise
     finally:
-        db.close()
+        if db:
+            db.close()
 
 # Create database tables
 def create_tables():
@@ -96,3 +106,33 @@ def create_all_tables():
 
 # Database URL for configuration
 SQLALCHEMY_DATABASE_URL = get_database_url()
+
+# Connection pool health check
+def get_connection_pool_status():
+    """Get current connection pool status for monitoring"""
+    if hasattr(engine.pool, 'size'):
+        return {
+            "pool_size": engine.pool.size(),
+            "checked_in": engine.pool.checkedin(),
+            "checked_out": engine.pool.checkedout(),
+            "overflow": engine.pool.overflow(),
+            "invalid": engine.pool.invalid()
+        }
+    return {"status": "pool_info_not_available"}
+
+# Health check endpoint data
+def get_database_health():
+    """Get database health information"""
+    try:
+        pool_status = get_connection_pool_status()
+        return {
+            "status": "healthy",
+            "pool_status": pool_status,
+            "database_url": SQLALCHEMY_DATABASE_URL.split('@')[-1] if '@' in SQLALCHEMY_DATABASE_URL else "local"
+        }
+    except Exception as e:
+        logger.error(f"Database health check failed: {e}")
+        return {
+            "status": "unhealthy",
+            "error": str(e)
+        }

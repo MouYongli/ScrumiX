@@ -34,6 +34,12 @@ class Settings(BaseSettings):
     # Environment Configuration
     ENVIRONMENT: str = os.environ.get("ENVIRONMENT", "development")
     
+    # Database Pool Configuration
+    DB_POOL_SIZE: int = int(os.environ.get("DB_POOL_SIZE", "10"))
+    DB_MAX_OVERFLOW: int = int(os.environ.get("DB_MAX_OVERFLOW", "20"))
+    DB_POOL_TIMEOUT: int = int(os.environ.get("DB_POOL_TIMEOUT", "60"))
+    DB_POOL_RECYCLE: int = int(os.environ.get("DB_POOL_RECYCLE", "300"))
+    
     # Debug Settings (TODO: Remove in production)
     DEBUG_OAUTH: bool = os.environ.get("DEBUG_OAUTH", "true").lower() == "true"
     

@@ -23,6 +23,7 @@ from .personal_notes import router as personal_notes_router
 from .semantic_search import router as semantic_search_router
 from .chat import router as chat_router
 from .velocity import router as velocity_router
+from .health import router as health_router
 
 api_router = APIRouter()
 
@@ -47,3 +48,4 @@ api_router.include_router(personal_notes_router, prefix="", tags=["personal-note
 api_router.include_router(semantic_search_router, prefix="/semantic-search", tags=["semantic-search"])
 api_router.include_router(chat_router, prefix="/chat", tags=["chat"])
 api_router.include_router(velocity_router, prefix="/velocity", tags=["velocity", "burndown"])
+api_router.include_router(health_router, prefix="", tags=["health"])
