@@ -91,6 +91,9 @@ class TokenData(BaseModel):
     username: Optional[str] = None
     avatar_url: Optional[str] = None
     provider: Optional[str] = None
+    # Service token fields
+    is_service: Optional[bool] = None
+    service_name: Optional[str] = None
 
 class OAuthTokenRequest(BaseModel):
     """OAuth Token request"""
