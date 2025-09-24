@@ -467,7 +467,7 @@ export const authenticatedFetch = async (
 ): Promise<Response> => {
   // Convert relative URLs to absolute URLs
   const baseUrl = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
-  const fullUrl = url.startsWith('/api/v1') ? `http://localhost:8000${url}` : url.startsWith('/') ? `${baseUrl}${url}` : url;
+  const fullUrl = url.startsWith('/api/v1') ? `${baseUrl}${url}` : url.startsWith('/') ? `${baseUrl}${url}` : url;
   
   const defaultHeaders = {
     'Content-Type': 'application/json',
