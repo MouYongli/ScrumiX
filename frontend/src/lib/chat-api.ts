@@ -3,6 +3,7 @@
  */
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
+const AI_GATEWAY_BASE_URL = process.env.NEXT_PUBLIC_AI_GATEWAY_BASE_URL || '';
 
 export interface ChatMessagePart {
   type: string;
@@ -41,27 +42,11 @@ class ChatAPI {
   private serviceTokenExpiry: number | null = null;
 
   private async getServiceToken(): Promise<string> {
-    // Check if we have a valid cached token
+    // Deprecated for backend calls. Keep for potential AI Gateway usage only.
     if (this.serviceToken && this.serviceTokenExpiry && Date.now() < this.serviceTokenExpiry) {
       return this.serviceToken;
     }
-
-    // Get new service token from backend
-    const response = await fetch(`${API_BASE_URL}/auth/service-token`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to get service token: ${response.status}`);
-    }
-
-    const data = await response.json();
-    this.serviceToken = data.access_token;
-    this.serviceTokenExpiry = Date.now() + (data.expires_in * 1000) - 60000; // 1 minute buffer
-    return this.serviceToken!;
+    throw new Error('Service token not configured');
   }
 
   private async fetchWithAuth(url: string, options: RequestInit = {}, cookies?: string) {
@@ -69,25 +54,29 @@ class ChatAPI {
       'Content-Type': 'application/json',
       ...(options.headers as Record<string, string> || {}),
     };
-    
-    // For AI agent calls, get service token for authentication
-    if (process.env.AI_GATEWAY_API_KEY) {
-      try {
-        const serviceToken = await this.getServiceToken();
-        headers['Authorization'] = `Bearer ${serviceToken}`;
-      } catch (error) {
-        console.error('Failed to get service token:', error);
-        // Fallback to API key if service token fails
-        headers['Authorization'] = `Bearer ${process.env.AI_GATEWAY_API_KEY}`;
-      }
-    } else if (cookies) {
-      // Fallback to cookies for local development
+
+    const isBackendUrl = url.startsWith(API_BASE_URL) || url.startsWith('/api/');
+    const isAiGatewayUrl = !!AI_GATEWAY_BASE_URL && url.startsWith(AI_GATEWAY_BASE_URL);
+
+    // Default: no Authorization header for backend requests; rely on cookies/session
+    if ('Authorization' in headers) {
+      delete (headers as any)['Authorization'];
+    }
+
+    // Server-side: forward incoming cookies to backend
+    if (cookies && isBackendUrl) {
       headers['Cookie'] = cookies;
     }
-    
+
+    // Only attach Authorization for external AI Gateway calls (never for backend)
+    if (isAiGatewayUrl && process.env.AI_GATEWAY_API_KEY) {
+      headers['Authorization'] = `Bearer ${process.env.AI_GATEWAY_API_KEY}`;
+    }
+
     const response = await fetch(url, {
       ...options,
-      credentials: cookies ? undefined : 'include', // Use credentials only for client-side
+      // Include credentials only when calling backend from the browser (no manual cookies passed)
+      credentials: !cookies && isBackendUrl ? 'include' : undefined,
       headers,
     });
 
