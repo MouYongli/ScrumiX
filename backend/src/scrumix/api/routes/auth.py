@@ -12,7 +12,8 @@ import secrets
 from scrumix.api.core.security import (
     create_access_token, create_refresh_token, get_current_user,
     create_email_verification_token, verify_email_verification_token,
-    create_password_reset_token, verify_password_reset_token
+    create_password_reset_token, verify_password_reset_token,
+    create_service_token
 )
 from scrumix.api.db.database import get_db
 from scrumix.api.crud.user import user_crud, oauth_crud, session_crud
@@ -682,4 +683,21 @@ async def verify_authentication(
             "domain": settings.COOKIE_DOMAIN,
             "environment": settings.ENVIRONMENT
         }
-    } 
+    }
+
+@router.post("/service-token")
+async def create_ai_service_token():
+    """Create a service token for AI agent authentication"""
+    try:
+        service_token = create_service_token("ai-agent")
+        return {
+            "access_token": service_token,
+            "token_type": "bearer",
+            "expires_in": 30 * 24 * 60 * 60,  # 30 days in seconds
+            "service": "ai-agent"
+        }
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to create service token: {str(e)}"
+        ) 

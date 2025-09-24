@@ -38,6 +38,22 @@ def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None):
     encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm="HS256")
     return encoded_jwt
 
+def create_service_token(service_name: str = "ai-agent", expires_delta: Optional[timedelta] = None):
+    """Create service token for AI agent"""
+    to_encode = {
+        "sub": f"service:{service_name}",
+        "email": f"{service_name}@scrumix.internal",
+        "scopes": ["ai-agent"],
+        "is_service": True
+    }
+    if expires_delta:
+        expire = datetime.now() + expires_delta
+    else:
+        expire = datetime.now() + timedelta(days=30)  # Service tokens last 30 days
+    to_encode.update({"exp": expire, "type": "service"})
+    encoded_jwt = jwt.encode(to_encode, settings.SECRET_KEY, algorithm="HS256")
+    return encoded_jwt
+
 def verify_token(token: str) -> Optional[TokenData]:
     """Verify JWT token"""
     try:
@@ -62,6 +78,10 @@ def verify_token(token: str) -> Optional[TokenData]:
         token_data.username = payload.get("username") 
         token_data.avatar_url = payload.get("avatar_url")
         token_data.provider = payload.get("provider", "local")
+        
+        # Add service token fields
+        token_data.is_service = payload.get("is_service", False)
+        token_data.service_name = payload.get("service_name")
         
         return token_data
     except JWTError:
@@ -153,6 +173,9 @@ async def get_current_user_hybrid(
             self.phone = None
             self.department = None
             self.location = None
+            # Service token support
+            self.is_service = getattr(token_data, 'is_service', False)
+            self.service_name = getattr(token_data, 'service_name', None)
             self.bio = None
             self.provider = "keycloak"
             
@@ -232,6 +255,9 @@ async def get_current_user_from_cookie(
             self.phone = None
             self.department = None
             self.location = None
+            # Service token support
+            self.is_service = getattr(token_data, 'is_service', False)
+            self.service_name = getattr(token_data, 'service_name', None)
             self.bio = None
             self.provider = "keycloak"
             

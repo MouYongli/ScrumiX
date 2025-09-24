@@ -37,14 +37,51 @@ export interface ChatHistoryResponse {
 }
 
 class ChatAPI {
+  private serviceToken: string | null = null;
+  private serviceTokenExpiry: number | null = null;
+
+  private async getServiceToken(): Promise<string> {
+    // Check if we have a valid cached token
+    if (this.serviceToken && this.serviceTokenExpiry && Date.now() < this.serviceTokenExpiry) {
+      return this.serviceToken;
+    }
+
+    // Get new service token from backend
+    const response = await fetch(`${API_BASE_URL}/auth/service-token`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to get service token: ${response.status}`);
+    }
+
+    const data = await response.json();
+    this.serviceToken = data.access_token;
+    this.serviceTokenExpiry = Date.now() + (data.expires_in * 1000) - 60000; // 1 minute buffer
+    return this.serviceToken!;
+  }
+
   private async fetchWithAuth(url: string, options: RequestInit = {}, cookies?: string) {
     const headers: Record<string, string> = {
       'Content-Type': 'application/json',
       ...(options.headers as Record<string, string> || {}),
     };
     
-    // If cookies are provided (from server-side), use them instead of credentials
-    if (cookies) {
+    // For AI agent calls, get service token for authentication
+    if (process.env.AI_GATEWAY_API_KEY) {
+      try {
+        const serviceToken = await this.getServiceToken();
+        headers['Authorization'] = `Bearer ${serviceToken}`;
+      } catch (error) {
+        console.error('Failed to get service token:', error);
+        // Fallback to API key if service token fails
+        headers['Authorization'] = `Bearer ${process.env.AI_GATEWAY_API_KEY}`;
+      }
+    } else if (cookies) {
+      // Fallback to cookies for local development
       headers['Cookie'] = cookies;
     }
     
