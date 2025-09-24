@@ -23,7 +23,8 @@ class ChatConversation(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     last_message_at = Column(DateTime(timezone=True), server_default=func.now())
     summary = Column(Text, nullable=True)
-    memory_embedding = Column(get_vector_column(1536), nullable=True)
+    # Note: Vector columns disabled for regular PostgreSQL - use pgvector for semantic search
+    # memory_embedding = Column(get_vector_column(1536), nullable=True)
 
     # Relationships
     user = relationship("User", back_populates="chat_conversations")
@@ -40,7 +41,8 @@ class ChatMessage(Base):
     role = Column(String, nullable=False)  # 'user', 'assistant', 'system'
     parts = Column(JSON, nullable=False)  # Message parts (text, files, etc.)
     text_content = Column(Text, nullable=True)  # Extracted text content for search
-    embedding = Column(get_vector_column(1536), nullable=True)
+    # Note: Vector columns disabled for regular PostgreSQL - use pgvector for semantic search
+    # embedding = Column(get_vector_column(1536), nullable=True)
     tool_name = Column(String, nullable=True)
     tool_call_id = Column(String, nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())

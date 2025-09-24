@@ -18,8 +18,9 @@ class AcceptanceCriteria(Base):
     is_met = Column(Boolean, default=False, nullable=False, comment="Whether the criteria is met")
     
     # Vector embedding for semantic search
-    embedding = Column(get_vector_column(1536), nullable=True, comment="Embedding for title")
-    embedding_updated_at = Column(DateTime(timezone=True), nullable=True, comment="Last time embedding was generated")
+    # Note: Vector columns disabled for regular PostgreSQL - use pgvector for semantic search
+    # embedding = Column(get_vector_column(1536), nullable=True, comment="Embedding for title")
+    # embedding_updated_at = Column(DateTime(timezone=True), nullable=True, comment="Last time embedding was generated")
     
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

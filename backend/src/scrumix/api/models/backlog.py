@@ -55,8 +55,9 @@ class Backlog(Base):
     path = Column(String(500), nullable=True, index=True)  # Materialized path for efficient queries
     
     # Vector embedding for semantic search
-    embedding = Column(get_vector_column(1536), nullable=True, comment="Combined embedding for title, description, and acceptance criteria")
-    embedding_updated_at = Column(DateTime(timezone=True), nullable=True, comment="Last time embedding was generated")
+    # Note: Vector columns disabled for regular PostgreSQL - use pgvector for semantic search
+    # embedding = Column(get_vector_column(1536), nullable=True, comment="Combined embedding for title, description, and acceptance criteria")
+    # embedding_updated_at = Column(DateTime(timezone=True), nullable=True, comment="Last time embedding was generated")
     
     # System timestamps
     created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)

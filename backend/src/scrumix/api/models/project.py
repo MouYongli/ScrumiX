@@ -31,8 +31,9 @@ class Project(Base):
     color = Column(String(20), nullable=True, comment="Project color")
     
     # Vector embedding for semantic search - combined embedding for name and description
-    embedding = Column(get_vector_column(1536), nullable=True, comment="Combined embedding for name and description")
-    embedding_updated_at = Column(DateTime(timezone=True), nullable=True, comment="Last time embedding was generated")
+    # Note: Vector columns disabled for regular PostgreSQL - use pgvector for semantic search
+    # embedding = Column(get_vector_column(1536), nullable=True, comment="Combined embedding for name and description")
+    # embedding_updated_at = Column(DateTime(timezone=True), nullable=True, comment="Last time embedding was generated")
     
     last_activity_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)

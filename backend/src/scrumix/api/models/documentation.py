@@ -33,10 +33,11 @@ class Documentation(Base):
     project_id = Column(Integer, ForeignKey("projects.id"), nullable=False, index=True)
     
     # Vector embeddings for semantic search - separate embeddings for each field
-    title_embedding = Column(get_vector_column(1536), nullable=True, comment="Embedding for title")
-    description_embedding = Column(get_vector_column(1536), nullable=True, comment="Embedding for description")
-    content_embedding = Column(get_vector_column(1536), nullable=True, comment="Embedding for content")
-    embedding_updated_at = Column(DateTime(timezone=True), nullable=True, comment="Last time embeddings were generated")
+    # Note: Vector columns disabled for regular PostgreSQL - use pgvector for semantic search
+    # title_embedding = Column(get_vector_column(1536), nullable=True, comment="Embedding for title")
+    # description_embedding = Column(get_vector_column(1536), nullable=True, comment="Embedding for description")
+    # content_embedding = Column(get_vector_column(1536), nullable=True, comment="Embedding for content")
+    # embedding_updated_at = Column(DateTime(timezone=True), nullable=True, comment="Last time embeddings were generated")
     
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)

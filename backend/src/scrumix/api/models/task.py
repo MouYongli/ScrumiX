@@ -35,8 +35,9 @@ class Task(Base):
     priority = Column(SQLEnum(TaskPriority), nullable=False, default=TaskPriority.MEDIUM, index=True)
     
     # Vector embedding for semantic search - combined embedding for title, description, status, and priority
-    embedding = Column(get_vector_column(1536), nullable=True, comment="Combined embedding for title, description, status, and priority")
-    embedding_updated_at = Column(DateTime(timezone=True), nullable=True, comment="Last time embedding was generated")
+    # Note: Vector columns disabled for regular PostgreSQL - use pgvector for semantic search
+    # embedding = Column(get_vector_column(1536), nullable=True, comment="Combined embedding for title, description, status, and priority")
+    # embedding_updated_at = Column(DateTime(timezone=True), nullable=True, comment="Last time embedding was generated")
     
     created_at = Column(DateTime(timezone=True), server_default=func.now(), nullable=False)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False)
