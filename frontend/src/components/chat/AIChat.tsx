@@ -741,7 +741,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
 
         // Step 1: ensure conversation exists (upsert)
         await chatAPI.upsertConversation({
-          id: conversationId,
+            id: conversationId,
           agent_type: agentType,
           project_id: projectId ? parseInt(projectId, 10) : undefined,
           title: `${AGENTS[agentType].name} Chat`
@@ -1991,6 +1991,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
 
       const response = await fetch(apiEndpoint, {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
         },
