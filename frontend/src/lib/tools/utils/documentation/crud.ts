@@ -40,7 +40,8 @@ export async function makeAuthenticatedDocumentationApiCall(
   }
 
   try {
-    const url = `/documentations${endpoint ? `/${endpoint}` : ''}`;
+    // Avoid 307 redirect by targeting the canonical path with trailing slash
+    const url = endpoint ? `/documentations/${endpoint}` : '/documentations/';
     console.log(`Documentation API call: ${method} ${url}`);
     
     const requestInit: RequestInit = {

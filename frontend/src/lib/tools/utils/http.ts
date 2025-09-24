@@ -13,13 +13,24 @@ export async function requestWithAuth<T = unknown>(
   if (!cookies) return { error: 'Authentication context missing' };
 
   try {
+    // Try to extract scrumix_session for Authorization header (hybrid auth support)
+    let authHeaders: Record<string, string> = {
+      'Content-Type': 'application/json',
+      Cookie: cookies,
+      ...(options.headers as Record<string, string> || {}),
+    };
+    try {
+      const match = cookies.match(/(^|;\s*)scrumix_session=([^;]+)/);
+      const accessToken = match ? decodeURIComponent(match[2]) : undefined;
+      if (accessToken) {
+        authHeaders = { ...authHeaders, Authorization: `Bearer ${accessToken}` };
+      }
+    } catch {}
+
     const res = await fetch(`${getApiBaseUrl()}${endpoint}`, {
       ...options,
-      headers: {
-        'Content-Type': 'application/json',
-        Cookie: cookies,
-        ...(options.headers || {}),
-      },
+      credentials: 'include',
+      headers: authHeaders,
     });
 
     const text = await res.text();
