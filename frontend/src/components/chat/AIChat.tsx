@@ -740,58 +740,23 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
           apiUserMessage.uploadId = uploadId;
         }
 
-        const response = await fetch(apiEndpoint, {
-          method: 'POST',
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            id: conversationId,
-            message: apiUserMessage,
-            projectId: projectId ? parseInt(projectId, 10) : null,
-            selectedModel: currentState.selectedModel,
-            webSearchEnabled
-          }),
-          signal: abortController.signal,
+        // Step 1: ensure conversation exists (upsert)
+        await chatAPI.upsertConversation({
+          id: conversationId,
+          agent_type: agentType,
+          project_id: projectId ? parseInt(projectId, 10) : undefined,
+          title: `${AGENTS[agentType].name} Chat`
         });
 
-        if (!response.ok) {
-          throw new Error(`API Error: ${response.status}`);
-        }
+        // Step 2: persist the user's message
+        await chatAPI.saveMessage(conversationId, {
+          id: userMessageId,
+          role: 'user',
+          parts: apiUserMessage.parts
+        });
 
-        // Get the backend-generated message ID from response headers
-        const backendMessageId = response.headers.get('X-Message-ID');
-        const originalMessageId = response.headers.get('X-Original-Message-ID');
-        
-        // Keep minimal logging for production debugging if needed
-        if (backendMessageId && originalMessageId && backendMessageId !== originalMessageId) {
-          console.log('AIChat - Syncing message ID:', originalMessageId, '→', backendMessageId);
-        }
-        
-        // Update the user message ID in state if we got a new ID from backend
-        if (backendMessageId && originalMessageId && backendMessageId !== originalMessageId) {
-          
-          // Use functional update to ensure we have the latest state
-          setAgentStates(prev => {
-            const currentMessages = prev[agentType].messages;
-            const updatedMessages = currentMessages.map(msg => 
-              msg.id === originalMessageId ? { ...msg, id: backendMessageId } : msg
-            );
-            return {
-              ...prev,
-              [agentType]: {
-                ...prev[agentType],
-                messages: updatedMessages
-              }
-            };
-          });
-          
-          // Also update the userMessage reference for consistency
-          userMessage.id = backendMessageId;
-        }
-
-        responseStream = response.body;
+        // No backend streaming here; generation continues client-side below
+        responseStream = undefined as any;
         
         // Update the chat history to use this conversation ID for future messages
         // Don't clear the currentConversationIds yet - we need it for subsequent messages
@@ -1450,6 +1415,9 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
         return `${base}/chat/conversations/upsert`;
       };
       const apiEndpoint = getApiEndpoint(agentType);
+      // Determine conversation ID for this send
+      const historyForAgent = getChatHistory(agentType);
+      const conversationId = currentConversationIds[agentType] || selectedConversationIds[agentType] || historyForAgent.conversation.id;
       
       try {
         // Prepare messages for API - use multimodal format if files are present
@@ -1467,30 +1435,23 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
               content: msg.content
             }));
 
-        const response = await fetch(apiEndpoint, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            messages: apiMessages,
-            projectId: projectId ? parseInt(projectId, 10) : null,
-            selectedModel: currentState.selectedModel,
-            webSearchEnabled: webSearchEnabled
-          }),
-          signal: abortController.signal,
+        // Ensure conversation exists (idempotent)
+        await chatAPI.upsertConversation({
+          id: conversationId,
+          agent_type: agentType,
+          project_id: projectId ? parseInt(projectId, 10) : undefined,
+          title: `${AGENTS[agentType].name} Chat`
         });
 
-        if (!response.ok) {
-          const errorText = await response.text();
-          console.error('API Error Response:', errorText);
-          throw new Error(`API Error: ${response.status} - ${errorText}`);
-        }
+        // Persist the user's latest message before generation
+        await chatAPI.saveMessage(conversationId, {
+          id: userMessage.id,
+          role: 'user',
+          parts: [{ type: 'text', text: userMessage.content }]
+        });
 
-        const reader = response.body?.getReader();
-        if (!reader) {
-          throw new Error('No response stream available');
-        }
+        // Continue with client-side generation (no backend stream required here)
+        const reader = undefined as any;
 
         let aiResponse = '';
         const decoder = new TextDecoder();
