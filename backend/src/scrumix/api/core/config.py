@@ -45,8 +45,8 @@ class Settings(BaseSettings):
     
     @property
     def COOKIE_SAMESITE(self) -> str:
-        """Strict in production, Lax in development for easier testing"""
-        return "strict" if self.ENVIRONMENT == "production" else "lax"
+        """None for cross-domain Railway setup, Lax for development"""
+        return "none" if self.ENVIRONMENT == "production" else "lax"
     
     COOKIE_DOMAIN: Optional[str] = os.environ.get("COOKIE_DOMAIN", None)
     SESSION_COOKIE_NAME: str = os.environ.get("SESSION_COOKIE_NAME", "scrumix_session")
