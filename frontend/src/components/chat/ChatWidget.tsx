@@ -145,15 +145,16 @@ const ChatWidget: React.FC = () => {
 
   // Helper function to get API endpoint for agent type
   const getApiEndpoint = (agentType: ProjectAgentType): string => {
+    const base = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
     switch (agentType) {
       case 'product-owner':
-        return '/api/chat/product-owner';
+        return `${base}/chat/conversations`;
       case 'scrum-master':
-        return '/api/chat/scrum-master';
+        return `${base}/chat/conversations`;
       case 'developer':
-        return '/api/chat/developer';
+        return `${base}/chat/conversations`;
       default:
-        return '/api/chat/support';
+        return `${base}/chat/conversations`;
     }
   };
 

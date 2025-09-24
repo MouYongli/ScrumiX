@@ -542,12 +542,8 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
 
   // Helper function to get API endpoint for agent type
   const getApiEndpoint = (agentType: ProjectAgentType): string => {
-    switch (agentType) {
-      case 'product-owner': return '/api/chat/product-owner';
-      case 'scrum-master': return '/api/chat/scrum-master';
-      case 'developer': return '/api/chat/developer';
-      default: return '/api/chat/product-owner';
-    }
+    const base = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
+    return `${base}/chat/conversations`;
   };
 
   const scrollToBottom = () => {
@@ -1450,12 +1446,8 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     if (agentType === 'product-owner' || agentType === 'scrum-master' || agentType === 'developer') {
       // Use real AI for Product Owner, Scrum Master, and Developer
       const getApiEndpoint = (type: ProjectAgentType) => {
-        switch (type) {
-          case 'product-owner': return '/api/chat/product-owner';
-          case 'scrum-master': return '/api/chat/scrum-master';
-          case 'developer': return '/api/chat/developer';
-          default: return '/api/chat/product-owner'; // fallback
-        }
+        const base = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
+        return `${base}/chat/conversations`;
       };
       const apiEndpoint = getApiEndpoint(agentType);
       
@@ -2021,12 +2013,8 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
   const sendConfirmationResponse = async (agentType: ProjectAgentType, userMessage: ChatMessage) => {
     const currentState = agentStates[agentType];
     const getApiEndpoint = (type: ProjectAgentType) => {
-      switch (type) {
-        case 'product-owner': return '/api/chat/product-owner';
-        case 'scrum-master': return '/api/chat/scrum-master';
-        case 'developer': return '/api/chat/developer';
-        default: return '/api/chat/product-owner';
-      }
+      const base = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
+      return `${base}/chat/conversations`;
     };
 
     try {
@@ -2195,12 +2183,8 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
 
   const regenerateConversationFromMessage = async (agentType: ProjectAgentType, messages: ChatMessage[], editedMessage: ChatMessage) => {
     const getApiEndpoint = (type: ProjectAgentType) => {
-      switch (type) {
-        case 'product-owner': return '/api/chat/product-owner';
-        case 'scrum-master': return '/api/chat/scrum-master';
-        case 'developer': return '/api/chat/developer';
-        default: return '/api/chat/product-owner';
-      }
+      const base = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://localhost:8000/api/v1';
+      return `${base}/chat/conversations`;
     };
 
     // Create abort controller for this regeneration request
