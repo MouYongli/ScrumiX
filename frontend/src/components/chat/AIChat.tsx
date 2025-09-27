@@ -233,6 +233,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     onMessagesUpdated: (messages) => {
       // Only perform full sync during initial load
       if (initialLoadingStates['product-owner']) {
+        console.log('Product Owner onMessagesUpdated: Initial load, syncing', messages.length, 'messages');
         // Initial load - set all messages as enhanced messages (no session data from backend)
         const chatMessages: EnhancedChatMessage[] = messages.map(msg => ({
           id: msg.id,
@@ -246,8 +247,11 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
         updateAgentState('product-owner', { messages: chatMessages });
         setInitialLoadingStates(prev => ({ ...prev, 'product-owner': false }));
         setLastSyncTimes(prev => ({ ...prev, 'product-owner': Date.now() }));
+      } else {
+        console.log('Product Owner onMessagesUpdated: Ignoring callback - not in initial load state');
       }
       // For all other cases, ignore - we'll handle message updates locally
+      // This prevents duplicate messages from being added during normal chat flow
     }
   });
   
@@ -258,6 +262,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     onMessagesUpdated: (messages) => {
       // Only perform full sync during initial load
       if (initialLoadingStates['scrum-master']) {
+        console.log('Scrum Master onMessagesUpdated: Initial load, syncing', messages.length, 'messages');
         // Initial load - set all messages as enhanced messages (no session data from backend)
         const chatMessages: EnhancedChatMessage[] = messages.map(msg => ({
           id: msg.id,
@@ -271,8 +276,11 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
         updateAgentState('scrum-master', { messages: chatMessages });
         setInitialLoadingStates(prev => ({ ...prev, 'scrum-master': false }));
         setLastSyncTimes(prev => ({ ...prev, 'scrum-master': Date.now() }));
+      } else {
+        console.log('Scrum Master onMessagesUpdated: Ignoring callback - not in initial load state');
       }
       // For all other cases, ignore - we'll handle message updates locally
+      // This prevents duplicate messages from being added during normal chat flow
     }
   });
   
@@ -283,6 +291,7 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
     onMessagesUpdated: (messages) => {
       // Only perform full sync during initial load
       if (initialLoadingStates['developer']) {
+        console.log('Developer onMessagesUpdated: Initial load, syncing', messages.length, 'messages');
         // Initial load - set all messages as enhanced messages (no session data from backend)
         const chatMessages: EnhancedChatMessage[] = messages.map(msg => ({
           id: msg.id,
@@ -296,8 +305,11 @@ const AIChat: React.FC<AIChatProps> = ({ projectId }) => {
         updateAgentState('developer', { messages: chatMessages });
         setInitialLoadingStates(prev => ({ ...prev, 'developer': false }));
         setLastSyncTimes(prev => ({ ...prev, 'developer': Date.now() }));
+      } else {
+        console.log('Developer onMessagesUpdated: Ignoring callback - not in initial load state');
       }
       // For all other cases, ignore - we'll handle message updates locally
+      // This prevents duplicate messages from being added during normal chat flow
     }
   });
 
