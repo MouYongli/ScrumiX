@@ -10,7 +10,12 @@ export async function requestWithAuth<T = unknown>(
   context: AuthContext
 ): Promise<{ data?: T; error?: string }> {
   const cookies = context?.cookies;
-  if (!cookies) return { error: 'Authentication context missing' };
+  if (!cookies) {
+    console.log('requestWithAuth: No cookies provided');
+    return { error: 'Authentication context missing' };
+  }
+
+  console.log('requestWithAuth: Making request to', `${getApiBaseUrl()}${endpoint}`, 'with cookies length:', cookies.length);
 
   try {
     // Try to extract scrumix_session for Authorization header (hybrid auth support)
@@ -34,6 +39,8 @@ export async function requestWithAuth<T = unknown>(
     });
 
     const text = await res.text();
+    console.log('requestWithAuth: Response status:', res.status, 'Response text:', text.substring(0, 200));
+    
     if (!res.ok) {
       let detail: string;
       try {
@@ -42,6 +49,7 @@ export async function requestWithAuth<T = unknown>(
       } catch {
         detail = text || res.statusText;
       }
+      console.log('requestWithAuth: Error response:', detail);
       return { error: `HTTP ${res.status}: ${detail}` };
     }
 

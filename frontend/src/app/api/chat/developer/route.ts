@@ -260,6 +260,7 @@ export async function POST(req: Request) {
 
       // Extract cookies for authentication
       const cookies = req.headers.get('cookie') || '';
+      console.log('Developer route cookie length', cookies.length);
 
       // Upsert conversation via backend API
       await chatAPI.upsertConversation({
@@ -370,6 +371,7 @@ export async function POST(req: Request) {
         abortSignal: req.signal,
         experimental_context: {
           cookies: cookies,
+          projectId: projectId,
         },
         onAbort: async () => {
           // Save partial assistant response when aborted
